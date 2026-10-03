@@ -83,7 +83,11 @@ void usbd_event_handler(uint8_t event)
 void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
 {
     (void)ep;
-    taskENTER_CRITICAL();
+    /* Interrupt context.  This is the sole producer of the ring, and the shell
+     * task is the sole consumer, so the head/tail pair needs no lock -- and a
+     * task-context critical section here would be wrong: taskENTER_CRITICAL()
+     * from an ISR can assert on interrupt priority and hang the handler, which
+     * stalls enumeration.  Only our own index is written here. */
     for (uint32_t i = 0; i < nbytes; i++) {
         uint16_t next = (uint16_t)((s_rx_head + 1u) % RX_RING_SIZE);
         if (next != s_rx_tail) {           /* drop on overflow rather than block */
@@ -91,7 +95,6 @@ void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
             s_rx_head = next;
         }
     }
-    taskEXIT_CRITICAL();
     usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
 }
 
@@ -133,13 +136,12 @@ bool tdsh_bl616_console_connected(void)
 
 int tdsh_bl616_console_read_byte(void)
 {
+    /* Sole consumer of the ring; the ISR owns the head.  No lock needed. */
     int out = -1;
-    taskENTER_CRITICAL();
     if (s_rx_tail != s_rx_head) {
         out = (int)s_rx_ring[s_rx_tail];
         s_rx_tail = (uint16_t)((s_rx_tail + 1u) % RX_RING_SIZE);
     }
-    taskEXIT_CRITICAL();
     return out;
 }
 

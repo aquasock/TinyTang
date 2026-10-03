@@ -55,10 +55,19 @@ int main(void)
 
     printf("TinyTang: usb stack initialised\r\n");
 
+#ifdef TINYTANG_USB_ONLY
+    // Diagnostic build: no scheduler, no shell.  If the device enumerates in
+    // this configuration but not with the shell, the fault is above the USB
+    // stack; if it still does not, the fault is in the USB bring-up itself.
+    while (1) {
+        bflb_mtimer_delay_ms(1000);
+    }
+#else
     xTaskCreate(shell_task, "shell", SHELL_TASK_STACK_WORDS, NULL,
                 SHELL_TASK_PRIORITY, NULL);
 
     vTaskStartScheduler();
+#endif
 
     while (1) {
         bflb_mtimer_delay_ms(1000);

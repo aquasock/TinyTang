@@ -15,6 +15,13 @@ sdk_add_include_directories(. ports/bl616 third_party/tinydesk-shell/include)
 # port needs; the core itself is untouched.
 sdk_add_compile_options(-std=gnu11)
 
+# Diagnostic: build without the scheduler and shell, to isolate the USB
+# bring-up from everything above it.  Selected by the environment so it does
+# not disturb the SDK's own CMake definitions.
+if(DEFINED ENV{TINYTANG_USB_ONLY})
+    sdk_add_compile_definitions(-DTINYTANG_USB_ONLY=1)
+endif()
+
 file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")
 file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
 
