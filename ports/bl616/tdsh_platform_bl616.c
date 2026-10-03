@@ -153,11 +153,26 @@ static const tdsh_platform_api_t s_platform = {
 
 /* ----------------------------------------------------------------- console */
 
+/* The shell's terminal io is redirectable so the same shell can run inside
+ * TinyDesk's Terminal window, where its bytes belong to a ring the desktop
+ * drains rather than to the USB CDC.  One redirect is enough: only one shell
+ * runs at a time, because while the desktop is up the outer shell is parked
+ * inside the command that started it and is neither reading nor writing. */
+static int  (*s_term_read)(void);
+static int  (*s_term_write)(const void *data, size_t length);
+
+void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
+                                int (*write_fn)(const void *data, size_t length))
+{
+    s_term_read = read_fn;
+    s_term_write = write_fn;
+}
+
 static int bl616_terminal_read_byte(void *context, uint8_t *byte_out)
 {
     (void)context;
     for (;;) {
-        int b = tdsh_bl616_console_read_byte();
+        int b = s_term_read ? s_term_read() : tdsh_bl616_console_read_byte();
         if (b >= 0) {
             *byte_out = (uint8_t)b;
             return 0;
@@ -169,6 +184,9 @@ static int bl616_terminal_read_byte(void *context, uint8_t *byte_out)
 static int bl616_terminal_write_bytes(void *context, const void *data, size_t length)
 {
     (void)context;
+    if (s_term_write) {
+        return s_term_write(data, length);
+    }
     return tdsh_bl616_console_write(data, length);
 }
 
@@ -312,15 +330,28 @@ static int bl616_readline(const char *prompt, char *line, size_t capacity)
 
 int tdsh_bl616_run(void)
 {
+    return tdsh_bl616_run_until(NULL);
+}
+
+/* The same loop, but it gives up when *stop goes true.  The desktop's
+ * Terminal passes a flag: the shell there has to end when the desktop does,
+ * while the console shell runs until the board is switched off. */
+int tdsh_bl616_run_until(volatile const bool *stop)
+{
     static char line[TDSH_MAX_LINE + 2];
     static char prompt[TDSH_MAX_PATH + TDSH_HOSTNAME_MAX + TDSH_USERNAME_MAX + 64];
 
+    /* Written through the terminal io, not straight to the console, so the
+     * greeting lands wherever this shell's output is going. */
     static const char banner[] =
         "\r\n\033[1;36mTinyTang\033[0m — TinyDesk Shell " TDSH_VERSION "\r\n"
         "A Tang core booted from the board. Type 'help' for commands.\r\n\r\n";
-    tdsh_bl616_console_write(banner, sizeof(banner) - 1);
+    (void)bl616_terminal_write_bytes(NULL, banner, sizeof(banner) - 1);
 
     for (;;) {
+        if (stop && *stop) {
+            return 0;
+        }
         build_prompt(prompt, sizeof(prompt));
         int n = bl616_readline(prompt, line, sizeof(line));
         if (n < 0) continue;

@@ -17,14 +17,17 @@
 // td_fs_stdio.c compiles against that shim unchanged.  The ESP32-C6 port does
 // the same thing through its VFS.
 //
-// Two things are deliberately absent for now:
+// Three things are deliberately absent for now:
 //
-//   * The Terminal app has no backend, so it opens empty.  The shell reaches
-//     TinyDesk's Terminal through a td_term_backend_t that bridges the two
-//     over ring buffers; that is the next piece, kept separate because a
-//     desktop that does not run at all would make it wasted work.
 //   * There is no clock.  The board has no RTC and nothing sets the time, so
 //     time_now() reports "not set" rather than inventing a date.
+//   * The network apps (Network, MQTT, Modbus, OTA) are left out, because they
+//     are built on POSIX sockets and mbedTLS; see td_apps_register_all() below.
+//   * There is one user and one session.  The Terminal window shares both with
+//     the console shell instead of starting its own; see td_bridge_bl616.c.
+//
+// The Terminal window is filled by td_bridge_bl616.c, which runs the shell
+// against the ring buffers the window reads and writes.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -44,6 +47,10 @@
 #include "tdsh_bl616.h"
 
 int tdsh_printf(const char *fmt, ...);
+
+/* The shell bridge (td_bridge_bl616.c): what fills TinyDesk's Terminal. */
+const td_term_backend_t *td_bridge_bl616_backend(void);
+void td_bridge_bl616_stop(void);
 
 /* The desktop's root is the card -- the same filesystem the shell uses, so
  * both see the same files. */
@@ -200,13 +207,21 @@ static void desktop_run(void)
     td_logf('I', "terminal size %dx%d", td_stats()->cols, td_stats()->rows);
     td_logf('I', "files root %s", TD_DESKTOP_ROOT);
 
-    /* The Terminal app has no backend yet, so it opens empty.  Everything
-     * else -- Files, Editor, System Monitor, Settings, Log, About -- works
-     * against the card. */
+    /* The Terminal app has no backend of its own: without this it draws
+     * "No shell backend in this build." and nothing else. */
+    td_terminal_set_backend(td_bridge_bl616_backend());
+
+    /* Everything else -- Files, Editor, System Monitor, Settings, Log, About
+     * -- works against the card. */
     td_apps_register_all();
 
     td_run();               /* returns after td_quit() */
     td_shutdown();
+
+    /* The window is gone but the shell task behind it is not: end it before
+     * the redirect is cleared, or it would read the console alongside the
+     * outer shell. */
+    td_bridge_bl616_stop();
 }
 
 static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)

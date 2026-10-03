@@ -28,6 +28,13 @@ int  tdsh_bl616_fs_last_result(void);   /* FRESULT of the last mount attempt */
 /* Shell lifecycle (tdsh_platform_bl616.c). */
 int  tdsh_bl616_init(const char *hostname);
 int  tdsh_bl616_run(void);
+/* The same shell loop, ending when *stop goes true — for a shell hosted by
+ * something else, such as TinyDesk's Terminal window. */
+int  tdsh_bl616_run_until(volatile const bool *stop);
+/* Point the shell's terminal at another byte stream, or back at the console
+ * with NULL, NULL.  Only one shell runs at a time, so one redirect is enough. */
+void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
+                                int (*write_fn)(const void *data, size_t length));
 
 /* The BL616 <-> FPGA UART link and the ROM loader over it (tang_fpga_uart.c). */
 int  tdsh_bl616_fpga_register(void);

@@ -19,13 +19,18 @@ is called out in the source where it is used.
   `root@tinytang:~#`. The full 25-command shell, redirection, scripts.
 - **`desktop`** — run **TinyDesk**, the desktop environment, on that same
   console: overlapping draggable text-mode windows with a taskbar, a start
-  menu, and Files, Editor, System Monitor, Task Manager, Log, Settings,
-  Counter and About. The board renders it and streams ANSI down the CDC, so
-  the computer is only a display — there is no display hardware involved.
-  Quitting returns to the shell prompt. Two things are deliberately absent:
-  the Terminal window opens empty, because the shell bridge is the next piece,
-  and the network apps (Network, MQTT, Modbus, OTA) are left out because they
-  are built on POSIX sockets and mbedTLS.
+  menu, and Terminal, Files, Editor, System Monitor, Task Manager, Log,
+  Settings, Counter and About. The board renders it and streams ANSI down the
+  CDC, so the computer is only a display — there is no display hardware
+  involved. Quitting returns to the shell prompt.
+- **The Terminal window runs the shell.** It is the same session as the
+  console, reached through a bridge over two ring buffers, so
+  `tdsh run /scripts/boot-cart.tdsh` typed into a desktop window boots a core
+  and starts a cartridge — the whole cycle without leaving the desktop. One
+  user and one session by design: the outer shell is parked inside the command
+  that started the desktop, so the inner one can share both. The network apps
+  (Network, MQTT, Modbus, OTA) are left out because they are built on POSIX
+  sockets and mbedTLS.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
   `rm`, `mkdir`, `cp`, `mv` all work on the card.
 - **`tangload <path>`** — program the FPGA with a core image from the SD over
@@ -149,6 +154,9 @@ video fault; the script stops with a non-zero status instead.
     `desktop` command. The filesystem needs no porting — TinyDesk's
     `ports/common/td_fs_stdio.c` is written against the stdio and dirent shim
     this port already provides over FatFS.
+  - `td_bridge_bl616.c` — the shell inside TinyDesk's Terminal window: a
+    `td_term_backend_t` over two ring buffers, plus the shutdown path that ends
+    the inner shell when the desktop does.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
