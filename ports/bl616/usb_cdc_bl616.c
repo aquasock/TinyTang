@@ -56,10 +56,16 @@ static const uint8_t cdc_descriptor[] = {
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX static uint8_t s_out_buf[CDC_MAX_MPS];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX static uint8_t s_in_buf[CDC_MAX_MPS];
 
-#define RX_RING_SIZE 1024
+#define RX_RING_SIZE 4096
+#define RX_RING_MASK (RX_RING_SIZE - 1)
 static volatile uint8_t  s_rx_ring[RX_RING_SIZE];
 static volatile uint16_t s_rx_head = 0;   /* written by the USB callback */
 static volatile uint16_t s_rx_tail = 0;   /* read by the shell */
+/* Flow control.  The OUT endpoint is only re-armed while the ring has room for
+ * a full packet, so a host that sends faster than the shell consumes is held
+ * off by USB itself instead of having its bytes dropped.  Without this a bulk
+ * upload (a firmware image, say) loses most of its data silently. */
+static volatile bool     s_rx_rearm_pending = false;
 static volatile bool     s_configured = false;
 static volatile bool     s_tx_busy = false;
 static volatile bool     s_dtr = false;
@@ -118,13 +124,21 @@ void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
      * from an ISR can assert on interrupt priority and hang the handler, which
      * stalls enumeration.  Only our own index is written here. */
     for (uint32_t i = 0; i < nbytes; i++) {
-        uint16_t next = (uint16_t)((s_rx_head + 1u) % RX_RING_SIZE);
-        if (next != s_rx_tail) {           /* drop on overflow rather than block */
+        uint16_t next = (uint16_t)((s_rx_head + 1u) & RX_RING_MASK);
+        if (next != s_rx_tail) {
             s_rx_ring[s_rx_head] = s_out_buf[i];
             s_rx_head = next;
         }
     }
-    usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+    /* Re-arm only with room for a whole packet; otherwise the read is armed
+     * again from read_byte() once the consumer has made room. */
+    uint16_t used = (uint16_t)((s_rx_head - s_rx_tail) & RX_RING_MASK);
+    if ((uint16_t)(RX_RING_SIZE - 1u - used) >= CDC_MAX_MPS) {
+        s_rx_rearm_pending = false;
+        usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+    } else {
+        s_rx_rearm_pending = true;
+    }
 }
 
 void usbd_cdc_acm_bulk_in(uint8_t ep, uint32_t nbytes)
@@ -169,7 +183,14 @@ int tdsh_bl616_console_read_byte(void)
     int out = -1;
     if (s_rx_tail != s_rx_head) {
         out = (int)s_rx_ring[s_rx_tail];
-        s_rx_tail = (uint16_t)((s_rx_tail + 1u) % RX_RING_SIZE);
+        s_rx_tail = (uint16_t)((s_rx_tail + 1u) & RX_RING_MASK);
+    }
+    if (out >= 0 && s_rx_rearm_pending) {
+        uint16_t used = (uint16_t)((s_rx_head - s_rx_tail) & RX_RING_MASK);
+        if ((uint16_t)(RX_RING_SIZE - 1u - used) >= CDC_MAX_MPS) {
+            s_rx_rearm_pending = false;
+            usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+        }
     }
     return out;
 }
