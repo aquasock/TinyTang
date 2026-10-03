@@ -57,6 +57,13 @@ else()
     # filesystem and console are implemented under ports/bl616.
     file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")
     file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
+
+    # The shell prints with printf; with CONFIG_NEWLIB off that resolves to the
+    # SDK's UART printf.  Redirect only the shell's translation units to this
+    # port's console implementation (see tdsh_stdio_redirect.h).
+    set_source_files_properties(${TDSH_CORE_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/ports/bl616/tdsh_stdio_redirect.h")
+
     target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TDSH_CORE_SOURCES})
     sdk_set_main_file(main.cpp)
 endif()

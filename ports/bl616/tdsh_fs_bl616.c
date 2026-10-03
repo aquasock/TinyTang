@@ -24,6 +24,8 @@
 #include "board.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "bflb_gpio.h"
+#include "bflb_mtimer.h"
 
 /* FatFS and POSIX both call their directory object DIR.  Rename FatFS's for
  * this translation unit so the two can coexist; FF_DIR is the same struct
@@ -39,18 +41,41 @@
 
 static FATFS s_fs;
 static bool  s_mounted = false;
+static int   s_last_result = -999;
+
+/* The card is gated behind a GPIO on this board.
+ *
+ * The SDK's board_sdh_gpio_init() only routes the six SDH data/clock pins, and
+ * on this board that is not enough: the card stays unpowered and f_mount
+ * returns FR_NOT_READY (3).  The working firmware on this board drives GPIO 16
+ * high to enable SDMMC before initialising the controller, and that is what
+ * this does. */
+static void sdh_power_enable(void)
+{
+    struct bflb_device_s *gpio = bflb_device_get_by_name("gpio");
+    bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+    bflb_gpio_set(gpio, GPIO_PIN_16);
+    bflb_mtimer_delay_ms(30);   /* let the card come up before probing it */
+}
 
 int tdsh_bl616_fs_mount(void)
 {
+    sdh_power_enable();
     board_sdh_gpio_init();
     fatfs_sdh_driver_register();
 
     FRESULT ret = f_mount(&s_fs, "/sd", 1);
+    s_last_result = (int)ret;
     if (ret != FR_OK) {
         return -(int)ret;
     }
     s_mounted = true;
     return 0;
+}
+
+int tdsh_bl616_fs_last_result(void)
+{
+    return s_last_result;
 }
 
 bool tdsh_bl616_fs_ready(void)

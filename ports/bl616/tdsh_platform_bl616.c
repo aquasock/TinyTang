@@ -175,6 +175,34 @@ static int bl616_terminal_write_bytes(void *context, const void *data, size_t le
 static tdsh_session_t s_session;
 static char s_hostname[TDSH_HOSTNAME_MAX] = "tinytang";
 
+/* Our own console printf (ports/bl616/tdsh_console_stdio_bl616.c); the shell
+ * core reaches it through the redirect header, but this file uses it by name. */
+int tdsh_printf(const char *fmt, ...);
+
+/* Tang-specific commands.  This is where the FPGA loader and the peek/poke
+ * commands will live; for now it reports the state that is still being brought
+ * up, so it can be asked without a reflash. */
+static int cmd_tang(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    tdsh_printf("tinytang: platform=bl616/freertos  sd FRESULT=%d  mounted=%d\r\n",
+                tdsh_bl616_fs_last_result(), tdsh_bl616_fs_ready() ? 1 : 0);
+    return 0;
+}
+
+static int cmd_tang_mount(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    int rc = tdsh_bl616_fs_mount();
+    tdsh_printf("tinytang: mount -> %d (FRESULT %d)\r\n", rc, tdsh_bl616_fs_last_result());
+    return 0;
+}
+
+static const tdsh_command_t s_tang_commands[] = {
+    { "tang",      "tang",      "Show TinyTang platform and SD status", cmd_tang,       0 },
+    { "tangmount", "tangmount", "Retry the SD card mount",              cmd_tang_mount, 0 },
+};
+
 int tdsh_bl616_init(const char *hostname)
 {
     if (hostname && hostname[0]) {
@@ -195,6 +223,10 @@ int tdsh_bl616_init(const char *hostname)
     int rc = tdsh_core_init(&core);
     if (rc) return rc;
     rc = tdsh_register_core_builtins();
+    if (rc) return rc;
+
+    rc = tdsh_register_commands(s_tang_commands,
+                                sizeof(s_tang_commands) / sizeof(s_tang_commands[0]));
     if (rc) return rc;
 
     rc = tdsh_session_init(&s_session, "root", true);

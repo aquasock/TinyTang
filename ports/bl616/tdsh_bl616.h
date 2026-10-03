@@ -23,6 +23,7 @@ int  tdsh_bl616_console_write(const void *data, size_t length);
 /* Filesystem (tdsh_fs_fatfs.c): a stdio shim over FatFS on the SD card. */
 int  tdsh_bl616_fs_mount(void);
 bool tdsh_bl616_fs_ready(void);
+int  tdsh_bl616_fs_last_result(void);   /* FRESULT of the last mount attempt */
 
 /* Shell lifecycle (tdsh_platform_bl616.c). */
 int  tdsh_bl616_init(const char *hostname);
