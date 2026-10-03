@@ -1,25 +1,55 @@
 // TinyTang — a TangCore drop-in replacement powered by TinyDesk Shell.
 //
-// Milestone 0: prove the build harness and the board bring-up.  This file
-// grows into the shell's host once ports/bl616 exists; for now it does the
-// least that can be shown to run on the board.
+// The BL616 boots this firmware, brings up the USB CDC console, mounts the SD
+// card, and runs TinyDesk Shell in a task.  The shell is the interface: the
+// user's terminal is just a display, and the shell is where a Tang core will
+// be loaded from (the FPGA loader lands here next).
 
 #include <stdio.h>
 
 extern "C" {
-#include "bflb_mtimer.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "board.h"
-#include "bflb_gpio.h"
+#include "bflb_mtimer.h"
+
+#include "tdsh_bl616.h"
+}
+
+// 16 KB of stack for the shell task: the line editor, the parser and uScript
+// want more than an idle task, and this is the task the user interacts with.
+#define SHELL_TASK_STACK_WORDS 4096
+#define SHELL_TASK_PRIORITY    5
+
+static void shell_task(void *arg)
+{
+    (void)arg;
+
+    tdsh_bl616_console_init();
+
+    // A missing SD card is not fatal: the shell still comes up, and says so
+    // when the filesystem is asked for.
+    (void)tdsh_bl616_fs_mount();
+
+    if (tdsh_bl616_init("tinytang") != 0) {
+        static const char msg[] = "tinytang: shell init failed\r\n";
+        tdsh_bl616_console_write(msg, sizeof(msg) - 1);
+    } else {
+        tdsh_bl616_run();
+    }
+
+    vTaskDelete(NULL);
 }
 
 int main(void)
 {
     board_init();
 
-    printf("\r\nTinyTang: board bring-up alive\r\n");
+    xTaskCreate(shell_task, "shell", SHELL_TASK_STACK_WORDS, NULL,
+                SHELL_TASK_PRIORITY, NULL);
 
-    // Blink nothing and print nothing else over the SDK console: the shell
-    // will own the console, so this stands in until it does.
+    vTaskStartScheduler();
+
     while (1) {
         bflb_mtimer_delay_ms(1000);
     }
