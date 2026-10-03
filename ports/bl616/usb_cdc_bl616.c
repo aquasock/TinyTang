@@ -64,6 +64,35 @@ static volatile bool     s_configured = false;
 static volatile bool     s_tx_busy = false;
 static volatile bool     s_dtr = false;
 
+/* Last byte handed to the host, so a bare '\n' can be turned into "\r\n".
+ *
+ * A USB CDC carries bytes verbatim, and the terminal on the other end is in
+ * raw mode (screen, picocom, minicom all are), so it does NOT translate LF to
+ * CRLF the way a cooked tty does.  The shell emits bare '\n' in places, which
+ * on a raw terminal moves down without returning the carriage -- the output
+ * walks off to the right.  Normalising here fixes every consumer at once and
+ * is harmless for a cooked one. */
+static uint8_t s_last_tx = 0;
+
+static void console_flush(const uint8_t *buf, size_t len)
+{
+    size_t done = 0;
+    while (done < len) {
+        if (!s_configured) return;
+        size_t chunk = len - done;
+        if (chunk > CDC_MAX_MPS) chunk = CDC_MAX_MPS;
+        memcpy(s_in_buf, buf + done, chunk);
+        s_tx_busy = true;
+        usbd_ep_start_write(CDC_IN_EP, s_in_buf, chunk);
+        uint32_t spin = 0;
+        while (s_tx_busy) {
+            if (++spin > 1000000u) { s_tx_busy = false; break; }
+            taskYIELD();
+        }
+        done += chunk;
+    }
+}
+
 void usbd_event_handler(uint8_t event)
 {
     switch (event) {
@@ -148,20 +177,23 @@ int tdsh_bl616_console_read_byte(void)
 int tdsh_bl616_console_write(const void *data, size_t length)
 {
     const uint8_t *p = (const uint8_t *)data;
-    size_t done = 0;
-    while (done < length) {
-        if (!s_configured) return -1;
-        size_t chunk = length - done;
-        if (chunk > CDC_MAX_MPS) chunk = CDC_MAX_MPS;
-        memcpy(s_in_buf, p + done, chunk);
-        s_tx_busy = true;
-        usbd_ep_start_write(CDC_IN_EP, s_in_buf, chunk);
-        uint32_t spin = 0;
-        while (s_tx_busy) {
-            if (++spin > 1000000u) { s_tx_busy = false; break; }
-            taskYIELD();
+    uint8_t out[CDC_MAX_MPS];
+    size_t  out_len = 0;
+    size_t  count = 0;
+
+    for (size_t i = 0; i < length; i++) {
+        uint8_t c = p[i];
+
+        if (c == '\n' && s_last_tx != '\r') {
+            if (out_len == sizeof(out)) { console_flush(out, out_len); out_len = 0; }
+            out[out_len++] = '\r';
         }
-        done += chunk;
+        if (out_len == sizeof(out)) { console_flush(out, out_len); out_len = 0; }
+        out[out_len++] = c;
+        s_last_tx = c;
+        count++;
     }
-    return (int)done;
+
+    if (out_len) console_flush(out, out_len);
+    return (int)count;
 }
