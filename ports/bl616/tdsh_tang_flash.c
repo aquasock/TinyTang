@@ -322,6 +322,31 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
+/* ------------------------------------------------------------- tangload */
+
+/* The vendored Gowin JTAG programmer (ports/bl616/tang_jtag_programmer.c).
+ * It loads the FPGA's SRAM directly, so this is what "boot our core" means
+ * on this board: the .bin is a bitstream, not anything the BL616 executes. */
+bool fpga_program(const char *fname);
+
+static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: tangload <path>\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("tangload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+
+    tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
+    const bool ok = fpga_program(real);
+    tdsh_printf("tangload: %s\r\n", ok ? "core loaded" : "failed");
+    return ok ? 0 : 1;
+}
+
 /* ------------------------------------------------------------ registration */
 
 static const tdsh_command_t s_tang_flash_commands[] = {
@@ -329,6 +354,8 @@ static const tdsh_command_t s_tang_flash_commands[] = {
       cmd_tangflash, 0 },
     { "tangput",   "tangput <size> <path>", "Receive raw bytes over the console into a file",
       cmd_tangput, 0 },
+    { "tangload",  "tangload <path>", "Program the FPGA with a core image from the SD",
+      cmd_tangload, 0 },
 };
 
 int tdsh_bl616_tang_flash_register(void)
