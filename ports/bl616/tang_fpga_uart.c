@@ -71,6 +71,8 @@
 #include "ff.h"
 
 #include "tdsh.h"
+#include "tang_fpga_link.h"
+#include "tang_osd.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -81,15 +83,7 @@ int tdsh_printf(const char *fmt, ...);
 #define FPGA_UART_RX_PIN   GPIO_PIN_27
 
 #define FPGA_FRAME_MAGIC   0xAAu
-#define FPGA_CMD_CORE_ID   0x01u
-#define FPGA_CMD_SET_LOAD  0x06u
-#define FPGA_CMD_ROM_DATA  0x07u
-#define FPGA_CMD_OVERLAY   0x08u
 
-#define FPGA_RESP_CORE_ID  0x01u
-
-/* The core rejects a frame whose length high byte is >= 8. */
-#define FPGA_FRAME_MAX     2047u
 /* The reference firmware reads the ROM in 1024-byte pieces; keep its size.
  * 1024 data bytes make a 1025-byte frame, comfortably under the ceiling. */
 #define FPGA_ROM_CHUNK     1024u
@@ -142,22 +136,39 @@ static bool rx_pop(uint8_t *out)
     return true;
 }
 
-static void rx_drain(void)
+void tang_fpga_drain(void)
 {
     s_rx_tail = s_rx_head;
 }
 
+/* The transmit lock.  A FreeRTOS mutex rather than a critical section:
+ * interrupts stay enabled, because the RX interrupt is what keeps the core's
+ * replies from overflowing the 32-byte FIFO. */
+void tang_fpga_lock(void)
+{
+    if (s_tx_lock) {
+        xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    }
+}
+
+void tang_fpga_unlock(void)
+{
+    if (s_tx_lock) {
+        xSemaphoreGive(s_tx_lock);
+    }
+}
+
 /* ------------------------------------------------------------------ startup */
 
-static bool fpga_uart_ensure(void)
+int tang_fpga_link_open(void)
 {
     if (s_uart_ready) {
-        return true;
+        return 0;
     }
     if (!s_tx_lock) {
         s_tx_lock = xSemaphoreCreateMutex();
         if (!s_tx_lock) {
-            return false;
+            return -1;
         }
     }
 
@@ -188,7 +199,7 @@ static bool fpga_uart_ensure(void)
     bflb_irq_enable(s_uart->irq_num);
 
     s_uart_ready = true;
-    return true;
+    return 0;
 }
 
 /* ------------------------------------------------------------- TX to core */
@@ -203,8 +214,8 @@ static int uart_write(const uint8_t *data, size_t length)
     return 0;
 }
 
-/* One frame.  Caller holds s_tx_lock. */
-static int frame_send(uint8_t type, const uint8_t *payload, size_t length)
+/* One frame.  Caller holds the lock. */
+int tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length)
 {
     const size_t len = length + 1;      /* the type byte is counted */
     if (len > FPGA_FRAME_MAX) {
@@ -227,8 +238,8 @@ static int frame_send(uint8_t type, const uint8_t *payload, size_t length)
  * is parsed and discarded so it cannot desynchronise the reader.  Returns the
  * payload length, or -1 on timeout or on a short-copy that would exceed cap.
  */
-static int response_wait(uint8_t want_type, uint8_t *out, size_t cap,
-                         uint32_t timeout_ms)
+int tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
+                   uint32_t timeout_ms)
 {
     enum { RS_MAGIC, RS_LEN_HI, RS_LEN_LO, RS_TYPE, RS_PAYLOAD } state = RS_MAGIC;
     uint8_t  body[FPGA_RESP_MAX];
@@ -299,15 +310,15 @@ static int cmd_fpga(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session; (void)argc; (void)argv;
 
-    if (!fpga_uart_ensure()) {
+    if (tang_fpga_link_open() != 0) {
         tdsh_printf("fpga: cannot bring up UART1\r\n");
         return 1;
     }
 
-    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
-    rx_drain();
-    const int sent = frame_send(FPGA_CMD_CORE_ID, NULL, 0);
-    xSemaphoreGive(s_tx_lock);
+    tang_fpga_lock();
+    tang_fpga_drain();
+    const int sent = tang_fpga_frame(FPGA_CMD_CORE_ID, NULL, 0);
+    tang_fpga_unlock();
 
     if (sent != 0) {
         tdsh_printf("fpga: link up, but the frame could not be sent\r\n");
@@ -315,7 +326,7 @@ static int cmd_fpga(tdsh_session_t *session, int argc, char **argv)
     }
 
     uint8_t id = 0;
-    const int got = response_wait(FPGA_RESP_CORE_ID, &id, sizeof(id), 500);
+    const int got = tang_fpga_wait(FPGA_RESP_CORE_ID, &id, sizeof(id), 500);
     if (got == 1) {
         tdsh_printf("fpga: core %u answering on UART1 at %u baud\r\n",
                     (unsigned)id, (unsigned)FPGA_UART_BAUD);
@@ -368,7 +379,7 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     }
 
     const unsigned mapper = (unsigned)((magic[7] & 0xF0) | (magic[6] >> 4));
-    if (!fpga_uart_ensure()) {
+    if (tang_fpga_link_open() != 0) {
         f_close(&file);
         tdsh_printf("nesload: cannot bring up UART1\r\n");
         return 1;
@@ -377,12 +388,12 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     tdsh_printf("nesload: %u bytes, mapper %u -> the core at %u baud\r\n",
                 (unsigned)size, mapper, (unsigned)FPGA_UART_BAUD);
 
-    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
-    rx_drain();
+    tang_fpga_lock();
+    tang_fpga_drain();
 
     /* Non-zero holds the core in reset while the cartridge goes in. */
-    if (frame_send(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 1 }, 1) != 0) {
-        xSemaphoreGive(s_tx_lock);
+    if (tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 1 }, 1) != 0) {
+        tang_fpga_unlock();
         f_close(&file);
         tdsh_printf("nesload: cannot start the load\r\n");
         return 1;
@@ -392,7 +403,7 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     for (;;) {
         UINT br = 0;
         if (f_read(&file, s_rom_chunk, FPGA_ROM_CHUNK, &br) != FR_OK) {
-            xSemaphoreGive(s_tx_lock);
+            tang_fpga_unlock();
             f_close(&file);
             tdsh_printf("nesload: SD read failed at %u\r\n", (unsigned)sent_total);
             return 1;
@@ -400,8 +411,8 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
         if (br == 0) {
             break;
         }
-        if (frame_send(FPGA_CMD_ROM_DATA, s_rom_chunk, br) != 0) {
-            xSemaphoreGive(s_tx_lock);
+        if (tang_fpga_frame(FPGA_CMD_ROM_DATA, s_rom_chunk, br) != 0) {
+            tang_fpga_unlock();
             f_close(&file);
             tdsh_printf("nesload: the core stopped accepting data at %u\r\n",
                         (unsigned)sent_total);
@@ -411,15 +422,18 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
         if (br < FPGA_ROM_CHUNK) {
             break;
         }
-        xSemaphoreGive(s_tx_lock);
+        tang_fpga_unlock();
         taskYIELD();                    /* keep the console and USB alive */
-        xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+        tang_fpga_lock();
     }
 
-    /* Hide the OSD before the core starts.  Leaving it on shows the text
-     * layer over a game that is otherwise running perfectly. */
-    if (frame_send(FPGA_CMD_OVERLAY, (const uint8_t[]){ 0 }, 1) != 0) {
-        xSemaphoreGive(s_tx_lock);
+    tang_fpga_unlock();
+
+    /* Hide the OSD before the core starts: leaving it on shows the text layer
+     * over a game that is otherwise running perfectly.  Through the OSD
+     * module, so that its idea of the overlay's state stays true -- which
+     * means dropping the lock first, since the OSD takes it itself. */
+    if (tang_osd_set(false) != 0) {
         f_close(&file);
         tdsh_printf("nesload: streamed %u bytes but could not clear the OSD\r\n",
                     (unsigned)sent_total);
@@ -427,8 +441,9 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     }
 
     /* Releasing the load starts the game. */
-    const int released = frame_send(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
-    xSemaphoreGive(s_tx_lock);
+    tang_fpga_lock();
+    const int released = tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
+    tang_fpga_unlock();
     f_close(&file);
 
     if (released != 0) {

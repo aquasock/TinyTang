@@ -26,6 +26,10 @@ is called out in the source where it is used.
   without watching the HDMI output.
 - **`nesload <path>`** — stream an iNES ROM into the running core and start it.
   Castlevania boots off the card in about a second.
+- **`osd`** — draw on the core's on-screen text page: 32 columns by 28 rows of
+  8x8 ASCII over the video. `osd on`, `osd off`, `osd clear`,
+  `osd at <x> <y> <text...>`, and `osd menu <n> <title> <item...>` for a list
+  with a marked row.
 - **`tangflash <path>` / `tangput <size> <path>`** — reflash the BL616 itself
   from a file on the SD, with no BOOT button.
 
@@ -110,7 +114,9 @@ video fault; the script stops with a non-zero status instead.
   - `tdsh_console_stdio_bl616.c`, `tdsh_stdio_redirect.h` — the shell's
     `printf` family, redirected to the console.
   - `tdsh_tang_flash.c` — `tangput` and `tangflash`.
-  - `tang_fpga_uart.c` — the UART link to the core, and `nesload` over it.
+  - `tang_fpga_link.h`, `tang_fpga_uart.c` — the UART link to the core: the
+    frame transport, and `fpga` and `nesload` over it.
+  - `tang_osd.h`, `tang_osd.c` — the core's on-screen text page, and `osd`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
@@ -152,6 +158,14 @@ These were each measured on hardware, and each one cost a debugging session:
    is not one. The loader must clear it (command `0x08`, payload 0) before
    releasing the core. This cost a session to find, with the game running
    audibly the whole time.
+9. **The on-screen page is 32 columns by 28 rows of 8x8 cells**, drawn from a
+   full ASCII bitmap font (`src/assets/font.vh`) whose eighth row is blank, so
+   lines have natural spacing. Column 0 of every row draws in the core's
+   cursor colour and cannot be switched off, so a menu marks its selection
+   there. The core also draws its own logo into this layer at `LOGO_Y = 201`;
+   it survives an `osd clear`, because clearing writes the character buffer
+   while the logo comes from a separate table — so rows 25-26, columns 11-20
+   are not usable for text.
 
 ## Diagnostics
 
