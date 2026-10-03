@@ -241,6 +241,19 @@ These were each measured on hardware, and each one cost a debugging session:
     last gap: its `phase 2: DRVBUS_POL=1, pds=00000013` line shows the polarity
     flip really happened (`pds` went from `00000003` to `00000013`), and the
     port's status still never moved and nothing enumerated.
+13. **The desktop's Ctrl+S never arrives, and it looks exactly like a hang.**
+    TinyDesk's Editor saves with Ctrl+S, and its own host HAL puts the local
+    terminal in raw mode partly so control characters get through —
+    `ports/posix/hal_posix.c` clears IXON, with a comment about ISIG and Ctrl+C
+    in the next line. A board port cannot do that: there is no termios on the
+    BL616, so nothing on this side disables software flow control on the
+    *user's* terminal. With IXON on (the usual default) Ctrl+S is swallowed as
+    **XOFF, which stops the display** — that reads as the desktop locking up,
+    and Ctrl+Q brings it straight back. The Editor's other save path works
+    instead: Ctrl+W or Esc closes the window and offers Save|Discard|Cancel.
+    Turning flow control off avoids it properly (PuTTY: Connection, Serial,
+    Flow control = None). The same trap catches Ctrl+A, which is screen's
+    command prefix, so `^A` select-all never reaches the desktop under screen.
 
 ## Diagnostics
 
