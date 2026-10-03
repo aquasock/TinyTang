@@ -283,6 +283,17 @@ int _stat_r(struct _reent *reent, const char *path, struct stat *st)
     FILINFO info;
     FRESULT ret = f_stat(path, &info);
     if (ret != FR_OK) {
+        /* FatFS does not describe the volume root itself: it has no directory
+         * entry, so f_stat fails on it even though it can be opened.  A path
+         * that f_stat cannot describe is still a directory if it opens as
+         * one, which is what makes `ls /` -- the shell's root -- work. */
+        FF_DIR probe;
+        if (f_opendir(&probe, path) == FR_OK) {
+            f_closedir(&probe);
+            memset(st, 0, sizeof(*st));
+            st->st_mode = S_IFDIR;
+            return 0;
+        }
         reent->_errno = (ret == FR_NO_FILE || ret == FR_NO_PATH) ? ENOENT : EIO;
         return -1;
     }

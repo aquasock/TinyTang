@@ -19,6 +19,8 @@
 #include "bflb_sec_trng.h"
 
 #include "tdsh.h"
+#include "dirent.h"
+#include <sys/stat.h>
 #include "tdsh_terminal.h"
 
 /* ---------------------------------------------------------------- platform */
@@ -182,11 +184,32 @@ int tdsh_printf(const char *fmt, ...);
 /* Tang-specific commands.  This is where the FPGA loader and the peek/poke
  * commands will live; for now it reports the state that is still being brought
  * up, so it can be asked without a reflash. */
+/* Which form does this FatFS port accept for the card's root?  Probed rather
+ * than assumed: the shell's root maps to cfg.fs_root verbatim, and getting the
+ * form wrong makes `ls /` fail while everything below it works. */
+static void probe_root(const char *p)
+{
+    DIR *d = opendir(p);
+    struct stat st;
+    const int rc = stat(p, &st);
+    tdsh_printf("  %-8s opendir=%s  stat=%d(%s)\r\n", p,
+                d ? "OK" : "null", rc,
+                rc == 0 ? (S_ISDIR(st.st_mode) ? "dir" : "file") : "fail");
+    if (d) {
+        closedir(d);
+    }
+}
+
 static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session; (void)argc; (void)argv;
     tdsh_printf("tinytang: platform=bl616/freertos  sd FRESULT=%d  mounted=%d\r\n",
                 tdsh_bl616_fs_last_result(), tdsh_bl616_fs_ready() ? 1 : 0);
+    probe_root("/sd");
+    probe_root("/sd/");
+    probe_root("sd:");
+    probe_root("sd:/");
+    probe_root("/");
     return 0;
 }
 
@@ -212,9 +235,12 @@ int tdsh_bl616_init(const char *hostname)
     tdsh_core_config_t core = TDSH_CORE_CONFIG_DEFAULT();
     core.hostname = s_hostname;
     core.default_user = "root";
-    /* The SD card's volume string is the shell's root: the SDK's newlib+FatFS
-     * port resolves "/sd/..." paths, so the core composes them directly. */
-    core.fs_root = "/sd";
+    /* The SD card's volume string is the shell's root.  The trailing slash
+     * matters: the core maps a logical "/" to fs_root verbatim, and FatFS
+     * rejects "/sd" on its own, so without it `ls /` fails while /sd/cores
+     * and everything below it works.  With the slash, "/" is "/sd/" and
+     * "/cores" is still "/sd/cores". */
+    core.fs_root = "/sd/";
     core.history_length = 32;
     core.platform = &s_platform;
     core.path_translate = NULL;
