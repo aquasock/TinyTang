@@ -1,0 +1,66 @@
+#!/bin/tdsh
+# boot-cart.tdsh — boot a cartridge in one command.
+#
+# The three-step cycle, with the checks that make it safe to run blind:
+# program the FPGA with a core, prove the core is answering on the UART, then
+# stream a ROM into it and let it start.
+#
+#     tdsh run /scripts/boot-cart.tdsh
+#
+# Both paths default to the NES pair. To use another core or game, set the
+# variable in the session first — `tdsh run` passes no arguments to a script,
+# but the script inherits the session's variables:
+#
+#     ROM=/roms/other.nes; tdsh run /scripts/boot-cart.tdsh
+#
+# The probe between the two loads is the point of the script: streaming a ROM
+# into a core that is not listening is a second of UART traffic that vanishes
+# with no error anywhere, and the symptom is a black screen that looks like a
+# video fault.
+
+if "$CORE" == ""
+    CORE=/cores/console138k/nestang.bin
+endif
+if "$ROM" == ""
+    ROM=/roms/castlevania.nes
+endif
+
+echo "boot-cart: core  $CORE"
+echo "boot-cart: rom   $ROM"
+
+if test -f "$CORE"
+    echo "boot-cart: core image found"
+else
+    echo "boot-cart: no core image at $CORE"
+    return 1
+endif
+if test -f "$ROM"
+    echo "boot-cart: rom found"
+else
+    echo "boot-cart: no rom at $ROM"
+    return 1
+endif
+
+echo "boot-cart: programming the FPGA"
+tangload "$CORE"
+if $? != 0
+    echo "boot-cart: the core did not load"
+    return 1
+endif
+
+echo "boot-cart: probing the link"
+fpga
+if $? != 0
+    echo "boot-cart: the core is not answering on the UART; not streaming"
+    return 1
+endif
+
+echo "boot-cart: streaming the rom"
+nesload "$ROM"
+if $? != 0
+    echo "boot-cart: the rom did not load"
+    return 1
+endif
+
+echo "boot-cart: up"
+return 0

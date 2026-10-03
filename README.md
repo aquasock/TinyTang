@@ -76,6 +76,27 @@ place-and-route report names `GW5AST-LV138PG484AC1/I0`. The console60k image is
 generated from the device name by `build.tcl` rather than checked in as a
 `.gprj`, so grepping for a project file will not find it.
 
+All three steps are a script on the card, `scripts/boot-cart.tdsh`, which runs
+them with a check between each:
+
+```
+tdsh run /scripts/boot-cart.tdsh
+```
+
+Put it there from this repository with
+`tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh`. Set
+`CORE` or `ROM` in the session first to use another pair — `tdsh run` passes no
+arguments to a script, but the script inherits the session's variables:
+
+```
+ROM=/roms/other.nes; tdsh run /scripts/boot-cart.tdsh
+```
+
+The check that matters is the probe between the two loads. Streaming a ROM
+into a core that is not listening is a second of UART traffic that disappears
+with no error anywhere, and the symptom is a black screen that looks like a
+video fault; the script stops with a non-zero status instead.
+
 ## How it is put together
 
 - `main.cpp` — board bring-up, then the shell task.
@@ -93,6 +114,8 @@ generated from the device name by `build.tcl` rather than checked in as a
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
+- `scripts/` — `.tdsh` scripts for the card, run there with `tdsh run`:
+  - `boot-cart.tdsh` — program the FPGA, probe the core, stream a ROM.
 
 ## Board facts that shape the firmware
 
