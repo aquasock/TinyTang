@@ -270,6 +270,10 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_usbstat_register();
     if (rc) return rc;
 
+    extern int tang_usb_role_register(void);
+    rc = tang_usb_role_register();
+    if (rc) return rc;
+
     rc = tdsh_session_init(&s_session, "root", true);
     if (rc) return rc;
     s_session.terminal_caps = TDSH_TERM_CAP_ANSI | TDSH_TERM_CAP_COLOR;

@@ -37,6 +37,10 @@ is called out in the source where it is used.
 - **`usbstat` / `usbwatch`** — read the USB OTG block (role, ID input, VBUS,
   detected speed) and log it across a cable swap. Added to answer whether the
   board gives us the connector's role; the answer is in fact 11.
+- **`usbrole` / `usbrole probe`** — switch the OTG connector between the CDC
+  console and being a USB host, and test whether host mode can find a device at
+  all. The switching works; the host side has no hardware to work with, per
+  fact 12.
 - **`tangflash <path>` / `tangput <size> <path>`** — reflash the BL616 itself
   from a file on the SD, with no BOOT button.
 
@@ -128,6 +132,9 @@ video fault; the script stops with a non-zero status instead.
     as a small terminal emulator, behind `osd term on`.
   - `tang_usbstat.c` — `usbstat` and `usbwatch`: read and log the USB OTG role
     signals, which is how fact 11 was established.
+  - `tang_usb_role.c` — `usbrole`: switch the OTG connector between the CDC
+    console and a USB host, log each transition to `/usbrole.log` on the card,
+    and probe host mode. How fact 12 was established.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
@@ -201,6 +208,24 @@ These were each measured on hardware, and each one cost a debugging session:
     `USBD_EVENT_CONFIGURED` on enumeration and `USBD_EVENT_DISCONNECTED` when
     the host goes away, and `tdsh_bl616_console_connected()` exposes exactly
     that. Any role switching should be built on it rather than on the ID pin.
+12. **The OTG connector cannot host: it does not source VBUS.** `usbrole probe`
+    switches the port to host and watches for a device. The SDK's host bring-up
+    does run and does request VBUS — `OTG_CSR` ends up with `USB_A_BUS_REQ_HOV`
+    set and `USB_A_BUS_DROP_HOV` clear, and `PDS usb_ctl` has `IDDIG` cleared to
+    force A-device — but nothing comes out of the connector. A device that
+    visibly reacts to power stayed dark through a full 60-second window, and
+    the OTG block's status never changed once. Flipping
+    `PDS_REG_USB_DRVBUS_POL` — the VBUS drive polarity, which the SDK defines
+    and then never writes anywhere — made no difference, so the request is not
+    reaching a switch. Nor is the rail simply always on: in device mode a
+    device plugged in with no PC present gets nothing, which is correct for a
+    peripheral and shows the port's VBUS is switched rather than shared with
+    the board's supply. The conclusion is that the connector is device-only,
+    which is what nand2mario's own comment predicts — in his words it exists as
+    a "PC-facing debug link". The role switching itself works and is logged;
+    there is simply no hardware behind the host half. (The one piece not read
+    back is the `phase 2:` line in `/usbrole.log`; the probe loop guarantees it
+    runs whenever no device is found, but the file is what would prove it.)
 
 ## Diagnostics
 
