@@ -223,9 +223,10 @@ These were each measured on hardware, and each one cost a debugging session:
     the board's supply. The conclusion is that the connector is device-only,
     which is what nand2mario's own comment predicts — in his words it exists as
     a "PC-facing debug link". The role switching itself works and is logged;
-    there is simply no hardware behind the host half. (The one piece not read
-    back is the `phase 2:` line in `/usbrole.log`; the probe loop guarantees it
-    runs whenever no device is found, but the file is what would prove it.)
+    there is simply no hardware behind the host half. `/usbrole.log` closes the
+    last gap: its `phase 2: DRVBUS_POL=1, pds=00000013` line shows the polarity
+    flip really happened (`pds` went from `00000003` to `00000013`), and the
+    port's status still never moved and nothing enumerated.
 
 ## Diagnostics
 
