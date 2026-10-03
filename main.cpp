@@ -25,6 +25,14 @@ static void shell_task(void *arg)
 {
     (void)arg;
 
+#ifdef TINYTANG_NO_SHELL
+    // Diagnostic: the scheduler and the USB console are live, but the shell is
+    // never initialised.  Separates a fault in the shell from one in the
+    // console or the scheduler.
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+#else
     if (tdsh_bl616_init("tinytang") != 0) {
         static const char msg[] = "tinytang: shell init failed\r\n";
         tdsh_bl616_console_write(msg, sizeof(msg) - 1);
@@ -33,24 +41,25 @@ static void shell_task(void *arg)
     }
 
     vTaskDelete(NULL);
+#endif
 }
 
 int main(void)
 {
     board_init();
 
-    // Storage is brought up here, in main, before the USB device is
-    // initialised -- the order the working firmware on this board uses.  Doing
-    // it from the shell task instead put the card's GPIO and clock setup in
-    // flight while the host was still enumerating the device, which is the
-    // kind of interference that stops enumeration altogether.  A missing card
-    // is not fatal: the shell still comes up and reports it.
-    (void)tdsh_bl616_fs_mount();
-
-    // USB comes up before the scheduler, the order the SDK's own device
-    // examples use: the stack registers its endpoints and its event handler
-    // here, and enumeration then proceeds independently of any task.
+    // USB comes up first, before any storage work: the stack registers its
+    // endpoints and its event handler here, and enumeration then proceeds
+    // independently of anything that follows.  Card probing is deliberately
+    // after it -- mounting before the device was up is what the last failing
+    // build did, and the working firmware on this board also leaves the mount
+    // until later rather than doing it at boot.
     tdsh_bl616_console_init();
+
+    // A missing card is not fatal: the shell still comes up and reports it.
+#ifndef TINYTANG_NO_FS
+    (void)tdsh_bl616_fs_mount();
+#endif
 
 #ifdef TINYTANG_USB_ONLY
     // Diagnostic build: no scheduler, no shell.
