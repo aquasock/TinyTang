@@ -58,13 +58,55 @@ else()
     file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")
     file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
 
+    # TinyDesk, the desktop environment.  Its core and apps are compiled here
+    # against the shell we already have -- TinyDesk pins the same revision
+    # (232a39f), so there is no second copy to keep in step.  The filesystem
+    # comes from its own ports/common/td_fs_stdio.c, which is written against
+    # stdio, <dirent.h> and <sys/stat.h> and therefore lands on this port's
+    # FatFS shim unmodified.
+    #
+    # The geometry is the output of TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, two
+    # buffers: 100x30 costs about 48 KB for the screens and 25 KB for the
+    # terminal view, against the BL616's 320 KB of OCRAM.
+    file(GLOB TINYDESK_CORE_SOURCES "third_party/tinydesk/src/*.c")
+
+    # Only the local apps.  TinyDesk's own apps/apps.c registers Network,
+    # MQTT, Modbus and the OTA updater as well, and those sit on
+    # proto/td_sock.c and proto/td_tls.c -- POSIX sockets, esp_timer, and
+    # mbedTLS with esp_crt_bundle.  None of that exists on the BL616, so
+    # apps.c, mqtt.c, modbus.c, network.c and update.c stay out and this port
+    # supplies td_apps_register_all() itself.  desktop.c is the window
+    # manager's own app; the rest are local and use the card.
+    set(TINYDESK_APP_SOURCES
+        third_party/tinydesk/apps/about.c
+        third_party/tinydesk/apps/counter.c
+        third_party/tinydesk/apps/datetime.c
+        third_party/tinydesk/apps/desktop.c
+        third_party/tinydesk/apps/editor.c
+        third_party/tinydesk/apps/files.c
+        third_party/tinydesk/apps/logview.c
+        third_party/tinydesk/apps/session.c
+        third_party/tinydesk/apps/settings.c
+        third_party/tinydesk/apps/sysmon.c
+        third_party/tinydesk/apps/taskmgr.c
+        third_party/tinydesk/apps/terminal.c)
+    sdk_add_include_directories(
+        third_party/tinydesk/include
+        third_party/tinydesk/apps
+        third_party/tinydesk/ports/common)
+    sdk_add_compile_definitions(
+        -DTD_MAX_COLS=100 -DTD_MAX_ROWS=30
+        -DTD_VT_SCROLLBACK=12 -DTD_MAX_WIDGETS=96)
+
     # The shell prints with printf; with CONFIG_NEWLIB off that resolves to the
     # SDK's UART printf.  Redirect only the shell's translation units to this
     # port's console implementation (see tdsh_stdio_redirect.h).
     set_source_files_properties(${TDSH_CORE_SOURCES} PROPERTIES
         COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/ports/bl616/tdsh_stdio_redirect.h")
 
-    target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TDSH_CORE_SOURCES})
+    target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TDSH_CORE_SOURCES}
+                               ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
+                               third_party/tinydesk/ports/common/td_fs_stdio.c)
     sdk_set_main_file(main.cpp)
 endif()
 
