@@ -1,0 +1,3 @@
+[submodule "third_party/tinydesk-shell"]
+	path = third_party/tinydesk-shell
+	url = https://github.com/schikani/tinydesk-shell.git

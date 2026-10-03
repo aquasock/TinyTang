@@ -1,0 +1,8 @@
+# Bouffalo SDK build output.
+/build/
+
+# Editor / tooling noise.
+__pycache__/
+*.pyc
+*.o
+*.d
