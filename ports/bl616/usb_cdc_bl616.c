@@ -10,6 +10,7 @@
 // in max-packet-size chunks.
 
 #include "tdsh_bl616.h"
+#include "tang_osd_term.h"
 
 #include <string.h>
 
@@ -197,6 +198,12 @@ int tdsh_bl616_console_read_byte(void)
 
 int tdsh_bl616_console_write(const void *data, size_t length)
 {
+    /* Everything the shell prints passes through here, which makes this the one
+     * place the OSD terminal has to watch.  The feed sees the shell's own
+     * bytes -- a newline, not the carriage-return-newline inserted below for
+     * the USB host.  It is a no-op unless `osd term on` has been given. */
+    tang_osd_term_feed(data, length);
+
     const uint8_t *p = (const uint8_t *)data;
     uint8_t out[CDC_MAX_MPS];
     size_t  out_len = 0;

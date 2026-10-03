@@ -10,6 +10,7 @@
 // plus the `osd` command, which is the whole user interface to it.
 
 #include "tang_osd.h"
+#include "tang_osd_term.h"
 #include "tang_fpga_link.h"
 
 #include <stdint.h>
@@ -131,9 +132,12 @@ static void usage(void)
     tdsh_printf("usage: osd on | osd off | osd clear\r\n");
     tdsh_printf("       osd at <x> <y> <text...>\r\n");
     tdsh_printf("       osd menu <selected> <title> <item...>\r\n");
+    tdsh_printf("       osd term on | osd term off   -- mirror the console here\r\n");
     tdsh_printf("The page is %d columns by %d rows; column 0 always draws in\r\n",
                 TANG_OSD_COLS, TANG_OSD_ROWS);
     tdsh_printf("the core's cursor colour, so a menu marks its selection there.\r\n");
+    tdsh_printf("The terminal uses the first %d rows; the core's logo owns the last two.\r\n",
+                TANG_TERM_ROWS);
 }
 
 static int cmd_osd_at(int argc, char **argv)
@@ -250,6 +254,25 @@ static int cmd_osd(tdsh_session_t *session, int argc, char **argv)
             tdsh_printf("osd: clear failed\r\n");
             return 1;
         }
+        return 0;
+    }
+    if (strcmp(sub, "term") == 0) {
+        if (argc >= 3 && strcmp(argv[2], "on") == 0) {
+            if (tang_osd_term_set(true) != 0) {
+                tdsh_printf("osd: cannot start the terminal\r\n");
+                return 1;
+            }
+            tdsh_printf("osd: terminal on; this text is now also on the screen\r\n");
+            return 0;
+        }
+        if (argc >= 3 && strcmp(argv[2], "off") == 0) {
+            (void)tang_osd_term_set(false);
+            tdsh_printf("osd: terminal off; the game is back\r\n");
+            return 0;
+        }
+        tdsh_printf("osd: terminal %s, %u drops\r\n",
+                    tang_osd_term_enabled() ? "on" : "off",
+                    tang_osd_term_dropped());
         return 0;
     }
     if (strcmp(sub, "at") == 0) {

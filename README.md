@@ -30,6 +30,10 @@ is called out in the source where it is used.
   8x8 ASCII over the video. `osd on`, `osd off`, `osd clear`,
   `osd at <x> <y> <text...>`, and `osd menu <n> <title> <item...>` for a list
   with a marked row.
+- **`osd term on`** — mirror the session onto that page: a 32x25
+  terminal emulator between the console and the core, with a blinking cursor,
+  so the board's screen shows what you are doing in your terminal. `osd term
+  off` stops it and returns to the game. Input stays on the console.
 - **`tangflash <path>` / `tangput <size> <path>`** — reflash the BL616 itself
   from a file on the SD, with no BOOT button.
 
@@ -117,6 +121,8 @@ video fault; the script stops with a non-zero status instead.
   - `tang_fpga_link.h`, `tang_fpga_uart.c` — the UART link to the core: the
     frame transport, and `fpga` and `nesload` over it.
   - `tang_osd.h`, `tang_osd.c` — the core's on-screen text page, and `osd`.
+  - `tang_osd_term.h`, `tang_osd_term.c` — the console mirrored onto that page,
+    as a small terminal emulator, behind `osd term on`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
@@ -166,6 +172,15 @@ These were each measured on hardware, and each one cost a debugging session:
    it survives an `osd clear`, because clearing writes the character buffer
    while the logo comes from a separate table — so rows 25-26, columns 11-20
    are not usable for text.
+10. **The shell's terminal protocol is small enough to mirror.** Everything it
+    emits is `\r`, `\n`, `\033[2K`, `\033[2J`, `\033[H`, `\033[<n>C`,
+    `\033[<n>D` and SGR colours, and nothing else. `osd term on` runs a 32x25
+    emulator over that set — 25 rows because the core's logo owns the last two.
+    It treats `\r` as the start of the *line* rather than the row. That is the
+    one deliberate deviation from a real terminal, and it is there because the
+    line editor redraws with `\r\033[2K` and a reprint: on a 32-column page a
+    row-based `\r` would leave the tail of the previous render behind every
+    time it redrew a line wider than the page.
 
 ## Diagnostics
 
