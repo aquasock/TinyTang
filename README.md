@@ -34,6 +34,9 @@ is called out in the source where it is used.
   terminal emulator between the console and the core, with a blinking cursor,
   so the board's screen shows what you are doing in your terminal. `osd term
   off` stops it and returns to the game. Input stays on the console.
+- **`usbstat` / `usbwatch`** — read the USB OTG block (role, ID input, VBUS,
+  detected speed) and log it across a cable swap. Added to answer whether the
+  board gives us the connector's role; the answer is in fact 11.
 - **`tangflash <path>` / `tangput <size> <path>`** — reflash the BL616 itself
   from a file on the SD, with no BOOT button.
 
@@ -123,6 +126,8 @@ video fault; the script stops with a non-zero status instead.
   - `tang_osd.h`, `tang_osd.c` — the core's on-screen text page, and `osd`.
   - `tang_osd_term.h`, `tang_osd_term.c` — the console mirrored onto that page,
     as a small terminal emulator, behind `osd term on`.
+  - `tang_usbstat.c` — `usbstat` and `usbwatch`: read and log the USB OTG role
+    signals, which is how fact 11 was established.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
@@ -181,6 +186,21 @@ These were each measured on hardware, and each one cost a debugging session:
     line editor redraws with `\r\033[2K` and a reprint: on a 32-column page a
     row-based `\r` would leave the tail of the previous render behind every
     time it redrew a line wider than the page.
+11. **The USB OTG block reports no role signal we can use.** Reading `OTG_CSR`
+    (`0x20072080`) across a swap of the OTG cable from a PC to a keyboard, only
+    the speed field moved: `ID`, the controller's role, VBUS-valid and both
+    session-valid bits stayed constant, including with nothing attached at all.
+    Two explanations fit and the probe cannot separate them — the board may not
+    wire the connector's role to the BL616, or the OTG state machine may not be
+    running in a device-only build (the SDK's host bring-up enables OTG
+    interrupts and drives `OTG_CSR`; the device path does neither). A VBUS rail
+    shared with the power input, which the two-cable arrangement suggests,
+    would also make VBUS sensing useless here. `usbstat` reports the block and
+    `usbwatch` logs it across a swap.
+    The signal that does work is one we already have: CherryUSB delivers
+    `USBD_EVENT_CONFIGURED` on enumeration and `USBD_EVENT_DISCONNECTED` when
+    the host goes away, and `tdsh_bl616_console_connected()` exposes exactly
+    that. Any role switching should be built on it rather than on the ID pin.
 
 ## Diagnostics
 
