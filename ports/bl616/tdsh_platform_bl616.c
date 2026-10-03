@@ -259,6 +259,9 @@ int tdsh_bl616_init(const char *hostname)
     rc = tdsh_bl616_tang_flash_register();
     if (rc) return rc;
 
+    rc = tdsh_bl616_fpga_register();
+    if (rc) return rc;
+
     rc = tdsh_session_init(&s_session, "root", true);
     if (rc) return rc;
     s_session.terminal_caps = TDSH_TERM_CAP_ANSI | TDSH_TERM_CAP_COLOR;

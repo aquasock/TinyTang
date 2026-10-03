@@ -29,4 +29,7 @@ int  tdsh_bl616_fs_last_result(void);   /* FRESULT of the last mount attempt */
 int  tdsh_bl616_init(const char *hostname);
 int  tdsh_bl616_run(void);
 
+/* The BL616 <-> FPGA UART link and the ROM loader over it (tang_fpga_uart.c). */
+int  tdsh_bl616_fpga_register(void);
+
 #endif /* TDSH_BL616_H */

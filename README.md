@@ -21,6 +21,11 @@ is called out in the source where it is used.
   `rm`, `mkdir`, `cp`, `mv` all work on the card.
 - **`tangload <path>`** — program the FPGA with a core image from the SD over
   the board's JTAG. A core loads in a second or two.
+- **`fpga`** — ask the running core for its ID over the BL616's UART link. The
+  link's liveness proof, and the only way to tell a live core from a dead one
+  without watching the HDMI output.
+- **`nesload <path>`** — stream an iNES ROM into the running core and start it.
+  Castlevania boots off the card in about a second.
 - **`tangflash <path>` / `tangput <size> <path>`** — reflash the BL616 itself
   from a file on the SD, with no BOOT button.
 
@@ -52,6 +57,15 @@ ls /                       # the SD card, seen as the shell's root
 tangload /cores/console138k/pmodtang.bin    # boot the FPGA with that core
 ```
 
+Booting a cartridge takes three commands, in this order, because the FPGA
+loses its configuration when the board is power-cycled:
+
+```
+tangload /cores/console138k/nestang.bin     # put the core in
+fpga                                        # confirm it answers (expect: core 1)
+nesload /roms/castlevania.nes               # stream the ROM; the core starts
+```
+
 ## How it is put together
 
 - `main.cpp` — board bring-up, then the shell task.
@@ -65,6 +79,7 @@ tangload /cores/console138k/pmodtang.bin    # boot the FPGA with that core
   - `tdsh_console_stdio_bl616.c`, `tdsh_stdio_redirect.h` — the shell's
     `printf` family, redirected to the console.
   - `tdsh_tang_flash.c` — `tangput` and `tangflash`.
+  - `tang_fpga_uart.c` — the UART link to the core, and `nesload` over it.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
@@ -90,6 +105,20 @@ These were each measured on hardware, and each one cost a debugging session:
 6. **A soft reset lands in the vendor loader**, so a `tangflash` needs a
    power-cycle afterwards to run the new image. That is the same behaviour the
    previous firmware documented for its own updater.
+7. **The core's UART is the BL616's UART1: TX GPIO 28, RX GPIO 27, 2 Mbaud.**
+   Frames in both directions are `0xAA len_hi len_lo type payload[len-1]` —
+   the length is big-endian and counts the type byte, and a length high byte
+   of 8 or more drops the core's receiver back to hunting for the next magic
+   byte. The RX side must be drained from an interrupt: the BL616's 32-byte
+   RX FIFO cannot hold a 2 Mbaud burst between polls, and without that the
+   core's replies are silently never seen.
+8. **The OSD is a whole-picture layer, not a text mask, and it starts ON.**
+   `nes2hdmi.sv` selects it with `if (overlay) rgb <= overlay_color`, so a
+   cartridge loaded while it is on plays its music behind a black screen
+   carrying only the core's logo — which looks exactly like a video fault and
+   is not one. The loader must clear it (command `0x08`, payload 0) before
+   releasing the core. This cost a session to find, with the game running
+   audibly the whole time.
 
 ## Diagnostics
 
@@ -106,7 +135,9 @@ selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
   `~/.cache/tangcore-dev/sdk`), with `find_package(bouffalo_sdk)` support.
 - **RISC-V toolchain** (`riscv64-unknown-elf-*`), default
   `~/.cache/tangcore-dev/toolchain/bin`.
-- Python with `pyserial` for `tools/tinytang_flash.py`.
+- Python with `pyserial` for the tools in `tools/`:
+  `tinytang_flash.py` (reflash over USB), `tinytang_put.py` (put a file on the
+  card), `tinytang_run.py` (run a shell command and stream its output).
 
 ## Third-party
 
@@ -115,4 +146,9 @@ selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
   is nand2mario's GPIO JTAG programmer for Gowin GW5A/GW2A, taken from
   Tang-Control, used unmodified apart from its include list. Its glue in
   `tang_jtag_glue.h` documents what was supplied for it.
+- **The core-side UART protocol** is nand2mario's, read from the nestang
+  tree's `src/iosys/iosys_bl616.v`, which documents the frame format and the
+  command set in comments above its receiver. `ports/bl616/tang_fpga_uart.c`
+  implements the BL616 end of it; the timings and chunk size follow from the
+  core's own receiver and Tang-Control's NES loader.
 - **Bouffalo SDK** — the vendor SDK, for the chip support and FatFS.
