@@ -17,6 +17,15 @@ is called out in the source where it is used.
 
 - **TinyDesk Shell** on the BL616, over the USB CDC. Prompt:
   `root@tinytang:~#`. The full 25-command shell, redirection, scripts.
+- **`desktop`** — run **TinyDesk**, the desktop environment, on that same
+  console: overlapping draggable text-mode windows with a taskbar, a start
+  menu, and Files, Editor, System Monitor, Task Manager, Log, Settings,
+  Counter and About. The board renders it and streams ANSI down the CDC, so
+  the computer is only a display — there is no display hardware involved.
+  Quitting returns to the shell prompt. Two things are deliberately absent:
+  the Terminal window opens empty, because the shell bridge is the next piece,
+  and the network apps (Network, MQTT, Modbus, OTA) are left out because they
+  are built on POSIX sockets and mbedTLS.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
   `rm`, `mkdir`, `cp`, `mv` all work on the card.
 - **`tangload <path>`** — program the FPGA with a core image from the SD over
@@ -135,6 +144,11 @@ video fault; the script stops with a non-zero status instead.
   - `tang_usb_role.c` — `usbrole`: switch the OTG connector between the CDC
     console and a USB host, log each transition to `/usbrole.log` on the card,
     and probe host mode. How fact 12 was established.
+  - `td_desktop_bl616.c` — the TinyDesk port: the `td_hal_t` the desktop asks
+    for over this port's console calls, the sysinfo it reads, and the
+    `desktop` command. The filesystem needs no porting — TinyDesk's
+    `ports/common/td_fs_stdio.c` is written against the stdio and dirent shim
+    this port already provides over FatFS.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `third_party/tinydesk-shell` — the shell itself, as a submodule, compiled
   unchanged.
