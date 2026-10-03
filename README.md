@@ -66,6 +66,16 @@ fpga                                        # confirm it answers (expect: core 1
 nesload /roms/castlevania.nes               # stream the ROM; the core starts
 ```
 
+The `console138k` images are the right ones for this board, and that is worth
+stating because the nestang tree makes it easy to doubt. The Tang Console's
+FPGA is a GW5AST-138 — its JTAG IDCODE is `0x0001081b` — and the `nestang.bin`
+on the card is nand2mario's console138k build: 4,593,044 bytes, byte-identical
+to the artifact his tree's `build.tcl console138k ds2` target produces, whose
+place-and-route report names `GW5AST-LV138PG484AC1/I0`. The console60k image is
+2,321,194 bytes and does not belong here. Note that the 138K project is
+generated from the device name by `build.tcl` rather than checked in as a
+`.gprj`, so grepping for a project file will not find it.
+
 ## How it is put together
 
 - `main.cpp` — board bring-up, then the shell task.
