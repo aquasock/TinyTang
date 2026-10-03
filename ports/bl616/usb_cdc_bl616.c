@@ -46,7 +46,7 @@ static const uint8_t cdc_descriptor[] = {
     0x1a, USB_DESCRIPTOR_TYPE_STRING,  /* "TinyTang CDC" */
     'T', 0x00, 'i', 0x00, 'n', 0x00, 'y', 0x00, 'T', 0x00, 'a', 0x00, 'n', 0x00, 'g', 0x00,
     ' ', 0x00, 'C', 0x00, 'D', 0x00, 'C', 0x00,
-    0x10, USB_DESCRIPTOR_TYPE_STRING,  /* "0.1.3" */
+    0x0c, USB_DESCRIPTOR_TYPE_STRING,  /* "0.1.3" */
     '0', 0x00, '.', 0x00, '1', 0x00, '.', 0x00, '3', 0x00,
     0x00
 };

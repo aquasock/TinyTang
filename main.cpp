@@ -25,8 +25,6 @@ static void shell_task(void *arg)
 {
     (void)arg;
 
-    tdsh_bl616_console_init();
-
     // A missing SD card is not fatal: the shell still comes up, and says so
     // when the filesystem is asked for.
     (void)tdsh_bl616_fs_mount();
@@ -44,6 +42,18 @@ static void shell_task(void *arg)
 int main(void)
 {
     board_init();
+
+    // A boot banner on the SDK console (UART0).  Visible only if the board
+    // wires the BL616's UART to the debug port, but it costs nothing and it
+    // is the one signal available when the USB device is not enumerating.
+    printf("\r\nTinyTang: boot\r\n");
+
+    // USB comes up before the scheduler, the order the SDK's own device
+    // examples use: the stack registers its endpoints and its event handler
+    // here, and enumeration then proceeds independently of any task.
+    tdsh_bl616_console_init();
+
+    printf("TinyTang: usb stack initialised\r\n");
 
     xTaskCreate(shell_task, "shell", SHELL_TASK_STACK_WORDS, NULL,
                 SHELL_TASK_PRIORITY, NULL);
