@@ -79,6 +79,28 @@ The vendor SDK providing chip support, FatFS and the USB stack:
 
 - License: Apache-2.0
 
+## Bouffalo SDK device example (`ref/`)
+
+`ref/` holds the SDK's own CDC ACM device example, kept as the control in the
+bisection that produced `TOOL-001`, together with this project's FreeRTOS
+variant of it:
+
+- `ref/cdc_acm_template.c` — byte-identical to the SDK's
+  `examples/peripherals/usbdev/usbd_cdc_acm/cdc_acm_template.c`
+- `ref/ref_main.c` — byte-identical to that example's `main.c`
+- `ref/ref_rtos_main.c` — this project's variant of the same main, with
+  FreeRTOS running, answering whether FreeRTOS alone stops enumeration
+
+- License: Apache-2.0, from the SDK's root `LICENSE`. The SDK's example files
+  carry no per-file licence header of their own, and neither do these copies
+  — deliberately, because byte-identity with the SDK is what makes them a
+  control. Do not add headers to the two unmodified files.
+
+`usb_config.h` at this project's root is the SDK's file, modified, and retains
+its `SPDX-License-Identifier: Apache-2.0` and its `Copyright (c) 2022,
+sakumisu`. The `ref/` files are selected only by the `TINYTANG_REF` and
+`TINYTANG_RTOS` configurations (`TOOL-005`).
+
 ## colibri (CERN) — reference consulted, no code copied
 
 CERN's vendor-independent, fully verified, open-source VHDL common library,
