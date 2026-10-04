@@ -39,6 +39,11 @@ int tang_osd_register(void);
  * to hide it again.  Returns 0, or -1 if the link is down. */
 int tang_osd_set(bool on);
 
+/* Whether the OSD is shown, as this module last told the core.  The cartridge
+ * loader hides it through tang_osd_set(), so this stays true to what the core
+ * was actually told rather than to what someone assumed. */
+bool tang_osd_shown(void);
+
 /* Blank every cell. */
 int tang_osd_clear(void);
 

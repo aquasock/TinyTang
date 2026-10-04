@@ -336,6 +336,31 @@ int tdsh_bl616_run(void)
 /* The same loop, but it gives up when *stop goes true.  The desktop's
  * Terminal passes a flag: the shell there has to end when the desktop does,
  * while the console shell runs until the board is switched off. */
+/* Run the card's boot script, once, after the greeting and before the prompt.
+ *
+ * This is how the board is made to come up as something other than a prompt --
+ * the desktop, a cartridge, a test -- without reflashing it: the policy lives
+ * in a file on the card, and a card without one boots exactly as it always
+ * did.  It runs through the same shell it would if someone typed it, so it has
+ * the same commands and the same paths, and if it fails the prompt is still
+ * there to say why. */
+static void run_boot_script(void)
+{
+    static bool done = false;
+    if (done) {
+        return;
+    }
+    done = true;
+
+    FILE *probe = fopen("/sd/scripts/boot.tdsh", "r");
+    if (probe == NULL) {
+        return;
+    }
+    fclose(probe);
+
+    (void)tdsh_execute_line(&s_session, "tdsh run /scripts/boot.tdsh");
+}
+
 int tdsh_bl616_run_until(volatile const bool *stop)
 {
     static char line[TDSH_MAX_LINE + 2];
@@ -347,6 +372,7 @@ int tdsh_bl616_run_until(volatile const bool *stop)
         "\r\n\033[1;36mTinyTang\033[0m — TinyDesk Shell " TDSH_VERSION "\r\n"
         "A Tang core booted from the board. Type 'help' for commands.\r\n\r\n";
     (void)bl616_terminal_write_bytes(NULL, banner, sizeof(banner) - 1);
+    run_boot_script();
 
     for (;;) {
         if (stop && *stop) {

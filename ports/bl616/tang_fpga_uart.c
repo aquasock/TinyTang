@@ -55,6 +55,7 @@
 // not seen.
 
 #include "tdsh_bl616.h"
+#include "fpga_frames.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -82,16 +83,11 @@ int tdsh_printf(const char *fmt, ...);
 #define FPGA_UART_TX_PIN   GPIO_PIN_28
 #define FPGA_UART_RX_PIN   GPIO_PIN_27
 
-#define FPGA_FRAME_MAGIC   0xAAu
-
-/* The reference firmware reads the ROM in 1024-byte pieces; keep its size.
- * 1024 data bytes make a 1025-byte frame, comfortably under the ceiling. */
 #define FPGA_ROM_CHUNK     1024u
 
 /* Single-producer (ISR) / single-consumer (shell task) ring.  head is written
  * only by the ISR and tail only by the reader, so no lock is needed. */
 #define FPGA_RX_RING_SIZE  2048u
-#define FPGA_RESP_MAX      256u
 
 static struct bflb_device_s *s_uart;
 static bool                 s_uart_ready;
@@ -139,6 +135,30 @@ static bool rx_pop(uint8_t *out)
 void tang_fpga_drain(void)
 {
     s_rx_tail = s_rx_head;
+    fpga_frames_reset();     /* the bytes went away; so did the half-seen frame */
+}
+
+/* Move everything waiting in the byte ring into the frame queue.
+ *
+ * The decoding itself lives in fpga_frames.c: it is the trickiest logic in the
+ * link and the link is the hardest file here to test, because it needs a UART,
+ * an interrupt and a card.  Split out, it runs on a host. */
+static void rx_decode(void)
+{
+    taskENTER_CRITICAL();
+    uint8_t byte;
+    while (rx_pop(&byte)) {
+        fpga_frames_push(byte);
+    }
+    taskEXIT_CRITICAL();
+}
+
+void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2)
+{
+    rx_decode();
+    taskENTER_CRITICAL();
+    fpga_frames_joypad(joy1, joy2);
+    taskEXIT_CRITICAL();
 }
 
 /* The transmit lock.  A FreeRTOS mutex rather than a critical section:
@@ -241,58 +261,28 @@ int tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length)
 int tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
                    uint32_t timeout_ms)
 {
-    enum { RS_MAGIC, RS_LEN_HI, RS_LEN_LO, RS_TYPE, RS_PAYLOAD } state = RS_MAGIC;
-    uint8_t  body[FPGA_RESP_MAX];
-    uint16_t len = 0;
-    uint16_t got = 0;
-    uint8_t  type = 0;
-
     const uint32_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
 
     for (;;) {
-        uint8_t byte;
-        if (rx_pop(&byte)) {
-            switch (state) {
-            case RS_MAGIC:
-                if (byte == FPGA_FRAME_MAGIC) state = RS_LEN_HI;
-                break;
-            case RS_LEN_HI:
-                len = (uint16_t)(byte << 8);
-                state = (byte < 8) ? RS_LEN_LO : RS_MAGIC;
-                break;
-            case RS_LEN_LO:
-                len |= byte;
-                got = 0;
-                state = (len >= 1) ? RS_TYPE : RS_MAGIC;
-                break;
-            case RS_TYPE:
-                type = byte;
-                if (len == 1) {                     /* header-only frame */
-                    if (type == want_type) return 0;
-                    state = RS_MAGIC;
-                } else {
-                    state = RS_PAYLOAD;
-                }
-                break;
-            case RS_PAYLOAD:
-                if (got < sizeof(body)) body[got] = byte;
-                got++;
-                if (got == (uint16_t)(len - 1)) {
-                    if (type == want_type) {
-                        if (got > cap) return -1;
-                        memcpy(out, body, got);
-                        return (int)got;
-                    }
-                    state = RS_MAGIC;
-                }
-                break;
-            }
-        } else {
-            if ((int32_t)(bflb_mtimer_get_time_ms() - deadline) >= 0) {
-                return -1;
-            }
-            vTaskDelay(1);
+        rx_decode();
+
+        int rc;
+        taskENTER_CRITICAL();
+        rc = fpga_frames_take(want_type, out, cap);
+        taskEXIT_CRITICAL();
+
+        if (rc >= 0) {
+            return rc;
         }
+        /* A refusal is final: the frame was dropped, so waiting out the
+         * timeout for it would only delay the answer. */
+        if (rc == FPGA_FRAMES_REFUSED) {
+            return -1;
+        }
+        if ((int32_t)(bflb_mtimer_get_time_ms() - deadline) >= 0) {
+            return -1;
+        }
+        vTaskDelay(1);
     }
 }
 

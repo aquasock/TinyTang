@@ -1,0 +1,31 @@
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index 9f2bd94..68ea12c 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -150,8 +150,9 @@ wor [11:0] joy1_btns, joy2_btns;    // SNES layout (R L X A RT LT DN UP START SE
+                                     // Lower 8 bits are NES buttons
+ wire [11:0] joy_usb1, joy_usb2;
+ wire [11:0] hid1, hid2;             // From BL616
+-wire [11:0] joy1 = joy1_btns | hid1 | joy_usb1;
+-wire [11:0] joy2 = joy2_btns | hid2 | joy_usb2;
++// TinyTang: joy1/joy2 -- the game-facing combination -- are defined inside the
++// physical-board section below, where the OSD state is in scope, because the
++// physical pad is gated while the OSD is up.  See the note there.
+ 
+ // NES gamepad
+ wire [7:0]NES_gamepad_button_state;
+@@ -386,6 +387,14 @@ iosys_bl616 #(.COLOR_LOGO(15'b01100_00000_01000), .FREQ(21_492_000), .CORE_ID(1)
+     .rom_loading(loading), .rom_do(loader_do), .rom_do_valid(loader_do_valid)
+ );
+ 
++// TinyTang: while the OSD is up the physical pads belong to the OSD, not to the
++// game.  iosys is fed the raw pad above, so the host still sees every button
++// and can drive the desktop pointer; the hidden game sees nothing.  The BL616's
++// own injection (hid) is deliberately left ungated -- whether that drives the
++// game or the desktop is the firmware's decision, not this gate's.
++wire [11:0] joy1 = (overlay ? 12'd0 : (joy1_btns | joy_usb1)) | hid1;
++wire [11:0] joy2 = (overlay ? 12'd0 : (joy2_btns | joy_usb2)) | hid2;
++
+ // Controller input
+ `ifdef CONTROLLER_SNES
+ controller_snes joy1_snes (

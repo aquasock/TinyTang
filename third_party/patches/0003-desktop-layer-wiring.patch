@@ -1,0 +1,232 @@
+diff --git a/build.tcl b/build.tcl
+index d15ec3d..b82e045 100644
+--- a/build.tcl
++++ b/build.tcl
+@@ -113,6 +113,7 @@ if {$dev eq "nano20k"} {
+ add_file -type verilog "src/iosys/iosys_bl616.v"
+ add_file -type verilog "src/iosys/gowin_dpb_menu.v"
+ add_file -type verilog "src/iosys/textdisp.v"
++add_file -type verilog "src/iosys/textdisp_wide.sv"
+ add_file -type verilog "src/iosys/uart_fixed.v"
+ add_file -type verilog "src/apu.v"
+ add_file -type verilog "src/autofire.v"
+diff --git a/src/iosys/iosys_bl616.v b/src/iosys/iosys_bl616.v
+index d6cb81d..a4be48c 100644
+--- a/src/iosys/iosys_bl616.v
++++ b/src/iosys/iosys_bl616.v
+@@ -24,6 +24,17 @@ module iosys_bl616 #(
+     input [7:0] overlay_x,          // 0-255
+     input [7:0] overlay_y,          // 0-223
+     output [14:0] overlay_color,    // BGR5
++    // TinyTang: the desktop layer's write port and enable.  Additive -- a core
++    // without these commands ignores the frame types and nothing above here
++    // changes, which is what keeps stock hosts and nand2mario's other cores
++    // working.
++    output reg  [6:0]  wide_x,      // 0..79
++    output reg  [5:0]  wide_y,      // 0..44
++    output reg  [6:0]  wide_ch,
++    output reg  [14:0] wide_fg,
++    output reg  [14:0] wide_bg,
++    output reg         wide_we,
++    output reg         wide_on,
+     input [11:0] joy1,              // DS2/SNES joystick 1: (R L X A RT LT DN UP START SELECT Y B)
+     input [11:0] joy2,              // DS2/SNES joystick 2
+     output reg [15:0] hid1,         // USB HID joystick 1
+@@ -133,6 +144,14 @@ reg we;
+ reg [7:0] cursor_x;
+ reg [7:0] cursor_y;
+ 
++// TinyTang: the desktop layer's cursor and cell assembly.  The cursor is the
++// grid's, not the legacy page's, so the two never interfere.
++reg [6:0] wide_cx;
++reg [6:0] wide_cy;
++reg [2:0] wide_phase;            // byte within a 5-byte cell
++reg [7:0] wide_fgh;
++reg [7:0] wide_bgh;
++
+ reg [7:0] response_type;
+ reg response_req;
+ reg response_ack;
+@@ -194,9 +213,16 @@ always @(posedge clk) begin
+         we <= 0;
+         cursor_x <= 0;
+         cursor_y <= 0;
++        wide_cx <= 0;
++        wide_cy <= 0;
++        wide_phase <= 0;
++        wide_on <= 0;
+     end else begin
+         rom_do_valid <= 0;
+         we <= 0;
++        wide_we <= 0;
++        wide_x <= wide_cx;
++        wide_y <= wide_cy;
+         mgmt_write <= 0;
+         fdd_read_finish <= 0;
+         mgmt_rx <= 0;
+@@ -230,6 +256,11 @@ always @(posedge clk) begin
+                 else
+                     recv_state <= RECV_IDLE;
+                 data_cnt <= 0;
++                // TinyTang: a frame's first payload byte is always the first
++                // byte of a cell, so the desktop layer's phase starts here.
++                // Leaving it to carry over would let a short or malformed
++                // frame misalign every cell after it.
++                wide_phase <= 3'd0;
+             end
+             
+             RECV_PARAM: if (rx_valid) begin
+@@ -305,6 +336,52 @@ always @(posedge clk) begin
+                         kbd_data <= rx_data;
+                         kbd_data_valid <= 1;
+                     end
++                    // TinyTang: the desktop layer.  Three additive commands:
++                    //   0x13 x[7:0] y[7:0]      move the layer's write cursor
++                    //   0x14 <5 bytes per cell>  write cells from the cursor,
++                    //                           advancing across the grid
++                    //   0x15 x[7:0]              x[0]: enable the layer
++                    // A cell is ch, fg_hi, fg_lo, bg_hi, bg_lo, with the
++                    // colour 15-bit BGR5 in the low 15 bits of the pair.
++                    'h13: begin
++                        case (data_cnt)
++                            0: wide_cx <= rx_data[6:0];
++                            1: wide_cy <= rx_data[5:0];
++                            default: ;
++                        endcase
++                    end
++                    'h14: begin
++                        /* The phase is the byte's position within the cell.
++                         * It is reset when the frame starts (see RECV_CMD)
++                         * rather than inferred from data_cnt, which would
++                         * need a divider; every cell is five bytes, so a
++                         * frame leaves the phase back at zero anyway.
++                         *
++                         * It must be the phase for *this* byte, not the one
++                         * just computed.  Using the pre-update value shifts
++                         * the whole cell by one, which puts the glyph in the
++                         * foreground byte and scrambles the screen. */
++                        case (wide_phase)
++                            0: wide_ch  <= rx_data[6:0];
++                            1: wide_fgh <= rx_data;
++                            2: wide_fg  <= {wide_fgh[6:0], rx_data};
++                            3: wide_bgh <= rx_data;
++                            4: begin
++                                wide_bg <= {wide_bgh[6:0], rx_data};
++                                wide_we <= 1;
++                                // Advance, wrapping to the next row so a whole
++                                // screen can be painted as one run.
++                                if (wide_cx >= 7'd79) begin
++                                    wide_cx <= 0;
++                                    if (wide_cy < 6'd44) wide_cy <= wide_cy + 6'd1;
++                                end else
++                                    wide_cx <= wide_cx + 7'd1;
++                            end
++                            default: ;
++                        endcase
++                        wide_phase <= (wide_phase == 3'd4) ? 3'd0 : wide_phase + 3'd1;
++                    end
++                    'h15: wide_on <= rx_data[0];
+                     default: begin
+                         // unknown command: consume all data and return
+                     end
+diff --git a/src/nes2hdmi.sv b/src/nes2hdmi.sv
+index 2937307..ccedb25 100644
+--- a/src/nes2hdmi.sv
++++ b/src/nes2hdmi.sv
+@@ -20,6 +20,15 @@ module nes2hdmi (
+     output [7:0] overlay_y,
+     input [14:0] overlay_color, // BGR5
+ 
++    // TinyTang: the desktop layer's write port (main logic clock) and enable.
++    input        wide_we,
++    input [6:0]  wide_x,
++    input [5:0]  wide_y,
++    input [6:0]  wide_ch,
++    input [14:0] wide_fg,
++    input [14:0] wide_bg,
++    input        wide_on,
++
+ 	// video clocks
+ 	input clk_pixel,
+ 	input clk_5x_pixel,
+@@ -203,10 +212,40 @@ always @(posedge clk_pixel) begin
+ 
+ end
+ 
++// TinyTang: the desktop layer, presented at 2x across the whole raster.
++//
++// It is composited here rather than in the NES pixel domain, because it is
++// 640x360 and the picture the scaler above produces is 256x224: the layer
++// cannot live inside that.  When it is up it replaces the output entirely,
++// bars included, which is what "full screen" means for a desktop.
++wire [14:0] wide_color;
++
++textdisp_wide u_wide (
++    .clk(clk), .hclk(clk_pixel),
++    .we(wide_we), .wx(wide_x), .wy(wide_y),
++    .wch(wide_ch), .wfg(wide_fg), .wbg(wide_bg),
++    .cx(cx), .cy(cy), .color(wide_color)
++);
++
++// The enable is a register in the main logic clock; bring it across before it
++// decides anything in this one.
++reg wide_on_r, wide_on_rr;
++always @(posedge clk_pixel) begin
++    wide_on_r  <= wide_on;
++    wide_on_rr <= wide_on_r;
++end
++
+ // calc rgb value to hdmi
++//
++// The layer is shown when the overlay is asserted as well as enabled, so the
++// existing overlay control still hides it: `nesload` clears the overlay before
++// releasing a core, which is what hands the screen over to the game, and the
++// desktop is hidden by that same byte with nothing new to keep in step.
+ reg [23:0] NES_PALETTE [0:63];
+ always @(posedge clk_pixel) begin
+-    if (active) begin
++    if (wide_on_rr && overlay)
++        rgb <= {wide_color[4:0],3'b0,wide_color[9:5],3'b0,wide_color[14:10],3'b0};                 // BGR5 to RGB8
++    else if (active) begin
+         if (overlay)
+             rgb <= {overlay_color[4:0],3'b0,overlay_color[9:5],3'b0,overlay_color[14:10],3'b0};       // BGR5 to RGB8
+         else
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index 68ea12c..40ae0fa 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -361,6 +361,16 @@ wire [7:0] overlay_x;
+ wire [7:0]  overlay_y;
+ wire [14:0] overlay_color;      // BGR5
+ 
++// TinyTang: the desktop layer's write port and enable, from iosys to the
++// compositor inside nes2hdmi.
++wire [6:0]  wide_x;
++wire [5:0]  wide_y;
++wire [6:0]  wide_ch;
++wire [14:0] wide_fg;
++wire [14:0] wide_bg;
++wire        wide_we;
++wire        wide_on;
++
+ // HDMI output
+ nes2hdmi u_hdmi (     // purple: RGB=440064 (010001000_00000000_01100100), BGR5=01100_00000_01000
+     .clk(clk), .resetn(sys_resetn),
+@@ -368,6 +378,8 @@ nes2hdmi u_hdmi (     // purple: RGB=440064 (010001000_00000000_01100100), BGR5=
+     .scanline(scanline), .sample(sample >> 1),
+     .overlay(overlay), .overlay_x(overlay_x), .overlay_y(overlay_y),
+     .overlay_color(overlay_color),
++    .wide_we(wide_we), .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
++    .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_on(wide_on),
+     .clk_pixel(hclk), .clk_5x_pixel(hclk5),
+     .tmds_clk_n(tmds_clk_n), .tmds_clk_p(tmds_clk_p),
+     .tmds_d_n(tmds_d_n), .tmds_d_p(tmds_d_p)
+@@ -380,6 +392,8 @@ iosys_bl616 #(.COLOR_LOGO(15'b01100_00000_01000), .FREQ(21_492_000), .CORE_ID(1)
+     .clk(clk), .hclk(hclk), .resetn(sys_resetn),
+ 
+     .overlay(overlay), .overlay_x(overlay_x), .overlay_y(overlay_y), .overlay_color(overlay_color),
++    .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
++    .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
+     .joy1(joy1_btns | joy_usb1), .joy2(joy2_btns | joy_usb2),
+     .hid1(hid1), .hid2(hid2),
+     .uart_tx(UART_TXD), .uart_rx(UART_RXD),

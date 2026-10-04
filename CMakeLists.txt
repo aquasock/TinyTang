@@ -95,7 +95,7 @@ else()
         third_party/tinydesk/apps
         third_party/tinydesk/ports/common)
     sdk_add_compile_definitions(
-        -DTD_MAX_COLS=100 -DTD_MAX_ROWS=30
+        -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45
         -DTD_VT_SCROLLBACK=12 -DTD_MAX_WIDGETS=96)
 
     # The shell prints with printf; with CONFIG_NEWLIB off that resolves to the

@@ -10,6 +10,7 @@
 // plus the `osd` command, which is the whole user interface to it.
 
 #include "tang_osd.h"
+#include "tang_osd_desk.h"
 #include "tang_osd_term.h"
 #include "tang_fpga_link.h"
 
@@ -74,9 +75,13 @@ int tang_osd_set(bool on)
     return rc;
 }
 
-int tang_osd_put(uint8_t x, uint8_t y, const char *text, size_t length)
+bool tang_osd_shown(void)
 {
-    if (tang_fpga_link_open() != 0) {
+    return s_shown;
+}
+
+int tang_osd_put(uint8_t x, uint8_t y, const char *text, size_t length)
+{    if (tang_fpga_link_open() != 0) {
         return -1;
     }
     if (tang_osd_set(true) != 0) {
@@ -133,6 +138,7 @@ static void usage(void)
     tdsh_printf("       osd at <x> <y> <text...>\r\n");
     tdsh_printf("       osd menu <selected> <title> <item...>\r\n");
     tdsh_printf("       osd term on | osd term off   -- mirror the console here\r\n");
+    tdsh_printf("       osd desk on | osd desk off   -- TinyDesk on the extended layer\r\n");
     tdsh_printf("The page is %d columns by %d rows; column 0 always draws in\r\n",
                 TANG_OSD_COLS, TANG_OSD_ROWS);
     tdsh_printf("the core's cursor colour, so a menu marks its selection there.\r\n");
@@ -255,6 +261,12 @@ static int cmd_osd(tdsh_session_t *session, int argc, char **argv)
             return 1;
         }
         return 0;
+    }
+    /* The desktop layer is its own thing -- a different grid, per-cell colour,
+     * and the console tap rather than the page -- so it keeps its own file and
+     * only borrows the command name. */
+    if (strcmp(sub, "desk") == 0) {
+        return tang_osd_desk_command(argc, argv);
     }
     if (strcmp(sub, "term") == 0) {
         if (argc >= 3 && strcmp(argv[2], "on") == 0) {

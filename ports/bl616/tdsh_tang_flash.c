@@ -24,6 +24,7 @@
 // 0x84 that counts bytes after the 4 KiB header region.
 
 #include "tdsh_bl616.h"
+#include "tang_osd_desk.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -344,6 +345,12 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
     tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
     const bool ok = fpga_program(real);
     tdsh_printf("tangload: %s\r\n", ok ? "core loaded" : "failed");
+    if (ok) {
+        /* Reconfiguring the FPGA wipes anything the core was holding, the
+         * desktop layer included.  Tell it, or the layer stays gone with no
+         * sign of why. */
+        tang_osd_desk_core_reloaded();
+    }
     return ok ? 0 : 1;
 }
 

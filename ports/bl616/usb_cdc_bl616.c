@@ -10,6 +10,7 @@
 // in max-packet-size chunks.
 
 #include "tdsh_bl616.h"
+#include "tang_osd_desk.h"
 #include "tang_osd_term.h"
 
 #include <string.h>
@@ -204,12 +205,32 @@ int tdsh_bl616_console_write(const void *data, size_t length)
      * the USB host.  It is a no-op unless `osd term on` has been given. */
     tang_osd_term_feed(data, length);
 
+    /* The desktop layer watches the same bytes.  It is the same division of
+     * labour as the terminal mirror above: the console is one stream and both
+     * of them are views of it, so neither owns the tap. */
+    tang_osd_desk_feed(data, length);
+
     const uint8_t *p = (const uint8_t *)data;
     uint8_t out[CDC_MAX_MPS];
     size_t  out_len = 0;
     size_t  count = 0;
+    const bool skip_query = tang_osd_desk_enabled();
 
     for (size_t i = 0; i < length; i++) {
+        /* While the layer owns the display, the layer answers the desktop's
+         * size query -- it saw the bytes through the tap above.  A terminal on
+         * the console would answer too, and the desktop takes *any* cursor
+         * position report as a resize, so with both answering it would flip
+         * between 80x45 and the terminal's size once a second, a full repaint
+         * each time.  Keep the query off the wire.  The 0x1B guard keeps this
+         * from costing a comparison on every ordinary byte. */
+        if (skip_query && p[i] == 0x1Bu &&
+            length - i >= (size_t)TANG_DESK_SIZE_QUERY_LEN &&
+            memcmp(p + i, TANG_DESK_SIZE_QUERY, TANG_DESK_SIZE_QUERY_LEN) == 0) {
+            i += (size_t)TANG_DESK_SIZE_QUERY_LEN - 1;
+            continue;
+        }
+
         uint8_t c = p[i];
 
         if (c == '\n' && s_last_tx != '\r') {

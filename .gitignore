@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 *.o
 *.d
+
+# Agent tooling state; not part of the project.
+.codewhale/

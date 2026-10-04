@@ -47,6 +47,7 @@
 
 #include "tdsh.h"
 #include "tdsh_bl616.h"
+#include "tang_osd_desk.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -67,6 +68,23 @@ void td_bridge_bl616_stop(void);
 static int hal_read_byte(void *ctx)
 {
     (void)ctx;
+    /* The desktop layer answers first when it is drawing the screen.  It is a
+     * terminal emulator sized to the OSD, so it is what tells the desktop how
+     * big the desktop is -- by answering the size query with its own grid.
+     * Letting the USB console answer instead would size the desktop to whatever
+     * window happens to be open on someone's PC, or to nothing at all when no
+     * PC is attached.
+     *
+     * With a PC terminal attached, both the layer and the terminal can answer
+     * the query, and the desktop takes any cursor position report as a resize
+     * (`input.c`, final == 'R') -- so it would flip between 80x45 and the
+     * terminal's size once a second.  That is handled on the way out: the
+     * console writer keeps the query off the wire while the layer owns the
+     * display (see usb_cdc_bl616.c), so the layer is the only answer. */
+    const int desk = tang_osd_desk_read_byte();
+    if (desk >= 0) {
+        return desk;
+    }
     /* The console read is already non-blocking and returns -1 when empty,
      * which is exactly the contract the desktop asks for. */
     return tdsh_bl616_console_read_byte();

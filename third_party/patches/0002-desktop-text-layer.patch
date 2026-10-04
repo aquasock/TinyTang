@@ -1,0 +1,110 @@
+diff --git a/src/iosys/textdisp_wide.sv b/src/iosys/textdisp_wide.sv
+new file mode 100644
+index 0000000..021374c
+--- /dev/null
++++ b/src/iosys/textdisp_wide.sv
+@@ -0,0 +1,104 @@
++// TinyTang: the desktop text layer.
++//
++// 80 columns by 45 rows of 8x8 cells, each cell carrying its own foreground and
++// background colour.  It is what TinyDesk draws into, and it is a separate,
++// additive layer: the legacy 32x28 page in textdisp.v, the core's own menu and
++// every stock host are untouched by it.
++//
++// Geometry.  The layer is 640x360 in its own pixels and is presented at 2x to
++// fill a 1280x720 raster exactly, so one cell covers 16x16 output pixels:
++//
++//     cell   = (cx[10:4], cy[9:4])        0..79 by 0..44
++//     glyph  = row cy[3:1], column cx[3:1]
++//
++// i.e. output pixel (cx, cy) shows source pixel (cx>>1, cy>>1), which is the
++// cell that contains it at the glyph bit that includes it.  Both is the same
++// statement; the bit ranges are written out because that is what the hardware
++// does and the mapping is the whole contract.
++//
++// Clocks.  The cell store has a write port on `clk` (the main logic clock,
++// where the transport writes cells) and a read port on `hclk` (the pixel
++// clock, where the raster is generated).  That is the same dual-clock
++// arrangement the legacy page's BRAM uses, and it is why this is a plain
++// array rather than a generated IP: the array is what both simulation and
++// synthesis can see, so the design can be checked before it reaches hardware.
++//
++// Latency.  The colour path is three pixels deep.  The layer therefore lands
++// three output pixels to the right of where its addressing says, which is a
++// uniform shift of a full-screen image and invisible in practice.  The legacy
++// page has the same property and the core has always tolerated it.
++//
++// Colour.  fg and bg are 15-bit BGR5, the same encoding as the existing
++// `overlay_color`, so the compositor widens them the same way.
++
++`include "../assets/font.vh"
++
++module textdisp_wide #(
++    parameter integer COLS = 80,
++    parameter integer ROWS = 45
++) (
++    input  wire        clk,        // write port clock: the main logic clock
++    input  wire        hclk,       // scanout clock: the pixel clock
++
++    // Write port.  wx/wy outside the grid are dropped rather than allowed to
++    // wrap into another row.
++    input  wire        we,
++    input  wire [6:0]  wx,
++    input  wire [5:0]  wy,
++    input  wire [6:0]  wch,
++    input  wire [14:0] wfg,
++    input  wire [14:0] wbg,
++
++    // Scanout, in output pixels.
++    input  wire [10:0] cx,         // 0..1279
++    input  wire [9:0]  cy,         // 0..719
++    output reg  [14:0] color
++);
++
++    localparam integer CELLS = COLS * ROWS;
++
++    // {bg[14:0], fg[14:0], ch[6:0]}
++    reg [36:0] mem [0:CELLS-1];
++
++    wire write_ok = we && (wx < COLS) && (wy < ROWS);
++    wire [11:0] waddr = wy * COLS + wx;
++
++    /* The raster is not the visible area: its counters run to frame_width-1 and
++     * frame_height-1, which on this core are 1650 and 750, so most of every
++     * frame is off-screen.  Unclamped that reaches cell 3783 of a 3600-cell
++     * store -- a read past the end of the array for the whole of blanking.
++     * What is read there is never shown, but reading outside an array is not
++     * something to leave to the synthesiser's discretion, so off-screen reads
++     * address the first cell and are discarded by the compositor anyway. */
++    wire in_screen = (cx < 11'd1280) && (cy < 10'd720);
++    wire [11:0] raddr = in_screen ? (cy[9:4] * COLS + cx[10:4]) : 12'd0;
++
++    always @(posedge clk) begin
++        if (write_ok) mem[waddr] <= {wbg, wfg, wch};
++    end
++
++    // Stage 1: the cell, and the coordinate that addresses it.
++    reg [36:0] cell_r;
++    reg [10:0] cx1;
++    reg [9:0]  cy1;
++    // Stage 2: the glyph row for that cell, and its colours.
++    reg [7:0]  font_r;
++    reg [14:0] fg_r;
++    reg [14:0] bg_r;
++    reg [10:0] cx2;
++    // Stage 3: the pixel.
++
++    always @(posedge hclk) begin
++        cell_r <= mem[raddr];
++        cx1    <= cx;
++        cy1    <= cy;
++
++        font_r <= FONT[cell_r[6:0]][cy1[3:1]];
++        fg_r   <= cell_r[21:7];
++        bg_r   <= cell_r[36:22];
++        cx2    <= cx1;
++
++        color  <= font_r[cx2[3:1]] ? fg_r : bg_r;
++    end
++
++endmodule

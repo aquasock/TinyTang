@@ -35,13 +35,26 @@
 #define FPGA_CMD_OSD_TEXT   0x05u   /* characters, from the cursor   */
 #define FPGA_CMD_OVERLAY    0x08u   /* one byte; bit 0 shows/hides   */
 
+/* Desktop layer: 80 columns by 45 rows, per-cell colour.  Additive -- a core
+ * that does not implement these ignores the frame types, which is what keeps
+ * nand2mario's other cores and every stock host working.  The layer is shown
+ * only while the overlay above is asserted, so the existing overlay control
+ * hides it too. */
+#define FPGA_CMD_DESK_CURSOR 0x13u  /* x, y                          */
+#define FPGA_CMD_DESK_CELLS  0x14u  /* 5 bytes per cell, from cursor */
+#define FPGA_CMD_DESK_CTRL   0x15u  /* one byte; bit 0 enables       */
+
 /* Cartridge loading. */
 #define FPGA_CMD_SET_LOAD   0x06u   /* one byte; 0 starts the core   */
 #define FPGA_CMD_ROM_DATA   0x07u   /* ROM bytes                     */
 
-/* ------------------------------------------------- responses from the core */
+/* ------------------------------------------------- responses from the core
+ *
+ * The frame format and the response types live with the decoder that reads
+ * them (`fpga_frames.h`), so the protocol has one definition rather than two
+ * that can drift apart. */
 
-#define FPGA_RESP_CORE_ID   0x01u
+#include "fpga_frames.h"
 
 /* The core's receiver ceiling: the length high byte must be < 8. */
 #define FPGA_FRAME_MAX      2047u
@@ -79,5 +92,16 @@ int  tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length);
  * timeout or if the payload would not fit. */
 int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
                     uint32_t timeout_ms);
+
+/* The newest joypad the core has reported.
+ *
+ * The core sends this unprompted whenever the pad changes and at most every
+ * 20 ms, which makes it a change feed rather than a readable register -- so the
+ * link keeps the latest state and hands it out on demand.  It is sticky: a
+ * caller polling for a button held down sees it held, not one edge.
+ *
+ * This is not a `wait`: it never blocks and it never takes the transmit lock,
+ * so it is safe to call from a task that is also driving the pad. */
+void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2);
 
 #endif /* TANG_FPGA_LINK_H */

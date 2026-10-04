@@ -1,0 +1,58 @@
+#!/bin/tdsh
+# boot.tdsh — what the board does when it powers up.
+#
+# Copy this to /scripts/boot.tdsh on the card to have the Tang come up as
+# TinyDesk rather than as a prompt.  The firmware runs that one path at
+# startup, through the same shell, so everything here is ordinary shell and the
+# paths are the shell's.
+#
+# Nothing is reflashed to change what the board boots into: remove or rename
+# the file and it goes back to a plain prompt.  If a step here fails the prompt
+# still comes up afterwards, which is where the reason will be printed.
+#
+#     tools/tinytang_put.py scripts/boot.tdsh /scripts/boot.tdsh
+#
+# The cycle this sets up, all on the HDMI output:
+#
+#   tangload   put a core in, so there is a raster for the layer to sit over
+#   osd desk   enable the desktop layer and start the pointer
+#   desktop    run TinyDesk on it -- this blocks until it is quit
+#
+# The game comes back by launching a cartridge from the desktop, and the
+# desktop comes back with L on controller 1.
+
+# The core has to be the patched one.  The desktop layer is three commands the
+# stock nestang does not implement -- it consumes them as unknown frame types
+# and ignores them, which is exactly what keeps it working -- so loading
+# /cores/console138k/nestang.bin here would leave 'osd desk on' talking to a core
+# that cannot hear it, and the screen black with no error anywhere.
+# tools/tinytang_desk_deploy.sh puts this image on the card under this name.
+# Nothing below falls through to the desktop on a failure.  The desktop takes
+# the console, so starting it with no core, or with no layer, would leave a
+# black screen and no prompt -- a boot that looks broken and cannot be typed
+# at, which is the worst possible place to discover a wrong path.
+CORE=/cores/console138k/nestang-desk.bin
+
+if test -f "$CORE"
+    echo "boot: loading $CORE"
+    tangload "$CORE"
+    if $? != 0
+        echo "boot: the core did not load; leaving the prompt"
+        return 0
+    endif
+    fpga
+else
+    echo "boot: no core at $CORE; leaving the prompt"
+    return 0
+endif
+
+# The layer needs the overlay, which the desktop sets when it starts drawing.
+osd desk on
+if $? != 0
+    echo "boot: the desktop layer did not start; leaving the prompt"
+    return 0
+endif
+
+desktop
+
+echo "boot: the desktop exited; this is the prompt"
