@@ -102,6 +102,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
   name: "Phosphor audio loader"
   description: "The SD-card layout, playlist and metadata contract for the Phosphor core, and the handover and artwork rules its streaming depends on."
 
+- topic_id: PROV
+  name: "Provenance and attribution"
+  description: "The family lineage this project descends from, and the licence and notice obligations that follow from the code it inherits or vendors."
+
 - topic_id: TOOL
   name: "Toolchain behaviour"
   description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness, plus the provenance and licence of code vendored into this project."
@@ -180,6 +184,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where is the USB-enumeration bisection kept? | TOOL | TOOL-005 |
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
+| Who is upstream of this project, and in what order? | PROV | PROV-001 |
+| Does this project carry the licences and notices it owes? | PROV | PROV-002 |
 
 ---
 
@@ -258,6 +264,8 @@ PHOS-002: "Playlists accept VLC-style .m3u and UTF-8 .m3u8: at most 255 tracks, 
 PHOS-003: "Track metadata prefers FLAC ALBUM, ALBUMARTIST (over ARTIST), ARTIST and TITLE comments, then WAV RIFF LIST/INFO IPRD, IART and INAM, then playlist-name and #EXTINF fallbacks; display text is UTF-8 reduced to the core's ASCII font, unsupported code points becoming one '?'"
 PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata block plus the unchanged frames, so large PICTURE or PADDING blocks do not delay the first frame; gapless handover needs core capability bit 7 and the player's draining state 7, queued up to one PCM FIFO (about 0.4 s) ahead"
 PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
+PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, CERN's colibri as a reference, and nand2mario's memory module"
+PROV-002: "TinyTang ships no LICENSE and no THIRD_PARTY.md while descending from Apache-2.0 TangCore firmware, vendoring an Apache-2.0 programmer and consuming two MIT submodules; Tang-Phosphor's LICENSE plus THIRD_PARTY.md is the family's model to copy"
 ```
 
 ---
@@ -1204,6 +1212,35 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
   sources:
     - "Project statement recorded with the user, 2026-10-03"
   verification: "The lineage is visible in this tree and the inherited board layer has been exercised here. Tang-Control's hardware verification as a whole is the user's assertion and is not something this project's own runs can establish."
+
+- record_id: PROV-001
+  kind: EXTERNAL
+  topic_id: PROV
+  title: "The family lineage, as the user states it"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Stated by the user on 2026-10-03 as the official lineage. nand2mario's TangCore project is the origin: Tang-Phosphor and Tang-PSX were started from it. Tang-Control is a fork of that same repo, made to add peek and poke and the one-wire and two-wire debug arrangements. On top of that the family uses a DDR3 IP block, TinyDesk, CERN's colibri library as a reference, and nand2mario's memory module."
+  consequence: "This is the attribution chain to check against, and it is why the TCTL records look past Tang-Control to nand2mario rather than treating the fork as an origin. Two links are unresolved: no memory module credited to nand2mario was found in any project here, and colibri appears only as a practice reference in MiSTer-Noodles' core-log narrative, naming no commit and no licence text, so calling it an MIT project is not yet supported by anything on disk."
+  sources:
+    - "Project statement recorded with the user, 2026-10-03"
+    - "nand2mario/tangcore README.md: 'TangCore firmware is licensed under Apache 2.0. Each core maintains its original license - please check individual core directories for details.'"
+    - "Tang-Control README.md line 3: 'This repo is a fork of nand2mario's firmware-bl616' (https://github.com/nand2mario/tangcore)"
+  verification: "The TangCore origin and the Tang-Control fork are confirmed in the trees, and the split licence (firmware Apache-2.0, cores per-directory) is in nand2mario's README. The DDR3 block is confirmed as Gowin vendor IP, and TinyDesk as the MIT submodules. The memory module and colibri's licence were not found and are unconfirmed."
+
+- record_id: PROV-002
+  kind: TOOLCHAIN
+  topic_id: PROV
+  title: "This project carries no licence or third-party notice, and owes both"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "TinyTang has no LICENSE file and no THIRD_PARTY.md. It descends from TangCore's firmware through Tang-Control, and nand2mario's README licenses that firmware Apache-2.0; it vendors ports/bl616/tang_jtag_programmer.c, itself Apache-2.0 with a retained nand2mario copyright (TOOL-007); and it consumes two MIT submodules, tinydesk-shell and tinydesk (TDSH-001, TDESK-001). Apache-2.0 requires the licence text and the notices to travel with distribution, and MIT requires the notice. Only one file in the tree carries an SPDX tag, usb_config.h, and it is a vendor file. Tang-Phosphor is the family's model: a LICENSE plus a THIRD_PARTY.md naming each component, its commit, its author and its licence, and saying explicitly where a source was read but no code copied."
+  consequence: "An open obligation rather than a design question. The fix is a LICENSE (Apache-2.0, matching the firmware lineage this project descends from) and a THIRD_PARTY.md naming the TangCore firmware as the lineage for board knowledge, Tang-Control as the intermediate, the vendored programmer and openFPGALoader behind it, both TinyDesk submodules at their pinned commits, and the vendor SDK. The core UART protocol is the case to state explicitly: it was read from nestang's iosys_bl616.v as a specification and reimplemented, which is exactly what Tang-Phosphor means by 'no code copied'."
+  sources:
+    - "This project's tree: no LICENSE and no THIRD_PARTY.md, checked 2026-10-03"
+    - "nand2mario/tangcore README.md: the Apache-2.0 firmware licence"
+    - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model, read this session"
+    - "TOOL-007, TDSH-001 and TDESK-001: the vendored programmer and the two submodules"
+  verification: "The absence of both files was checked directly in the tree, and only usb_config.h carries an SPDX tag. The obligations follow from the licences named in the files themselves."
 ```
 
 ---
