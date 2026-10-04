@@ -37,6 +37,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "bflb_mtimer.h"
+#include "bflb_clock.h"
+#include "mem.h"          /* the SDK's heap: g_kmemheap, kfree_size() */
 
 #include "tinydesk/td.h"
 #include "td_apps.h"
@@ -179,6 +181,91 @@ void td_apps_register_all(void)
     td_session_init();
 }
 
+/* ----------------------------------- what System Monitor and Task Manager read */
+//
+// Both apps were blank because every member they read was left NULL.  None of
+// it needs new machinery: the allocator the SDK actually uses, and FreeRTOS,
+// already know both things.
+//
+// The heap is TLSF, not FreeRTOS's -- so xPortGetFreeHeapSize() does not even
+// exist in this build, which the linker was quick to point out.  The SDK's own
+// mem.h keeps the running free figure and the usable size, updating the former
+// on every allocation and free.  It keeps no low-water mark, so this tracks
+// one across its own samples: a minimum of the readings, not of every
+// allocation.
+//
+// There is one heap.  mem.h maps PMEM_HEAP to the same g_kmemheap unless the
+// chip is a BL618, so this board has no external RAM and the app is told so
+// with NULL rather than a zero.
+
+static uint32_t s_heap_min;
+
+static uint32_t heap_free(void)
+{
+    return kfree_size();
+}
+
+static uint32_t heap_min_free(void)
+{
+    const uint32_t now = kfree_size();
+    if (s_heap_min == 0 || now < s_heap_min) {
+        s_heap_min = now;
+    }
+    return s_heap_min;
+}
+
+static uint32_t heap_total(void)
+{
+    return (uint32_t)g_kmemheap.heapsize;
+}
+
+static int sys_task_count(void)     { return (int)uxTaskGetNumberOfTasks(); }
+
+static int sys_cpu_mhz(void)
+{
+    return (int)(bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) / 1000000u);
+}
+
+static char task_state_char(eTaskState state)
+{
+    switch (state) {
+    case eRunning:   return 'R';
+    case eReady:     return 'r';
+    case eBlocked:   return 'B';
+    case eSuspended: return 'S';
+    case eDeleted:   return 'D';
+    default:         return '?';
+    }
+}
+
+/* The task list comes from uxTaskGetSystemState(), which exists because
+ * configUSE_TRACE_FACILITY is 1.  The CPU share cannot: it needs
+ * configGENERATE_RUN_TIME_STATS, which is 0, and the struct documents -1 as
+ * "unknown" for exactly this case.  The stack figure is the high-water mark,
+ * which is a count of stack entries, not bytes. */
+static int sys_tasks(td_task_info_t *out, int max)
+{
+    static TaskStatus_t status[24];
+    const UBaseType_t room = (UBaseType_t)(sizeof(status) / sizeof(status[0]));
+
+    if (!out || max <= 0) {
+        return -1;
+    }
+    const UBaseType_t want = (max < (int)room) ? (UBaseType_t)max : room;
+    const UBaseType_t count = uxTaskGetSystemState(status, want, NULL);
+
+    for (UBaseType_t i = 0; i < count; i++) {
+        snprintf(out[i].name, sizeof(out[i].name), "%s",
+                 status[i].pcTaskName ? status[i].pcTaskName : "?");
+        out[i].state = task_state_char(status[i].eCurrentState);
+        out[i].priority = (uint8_t)status[i].uxCurrentPriority;
+        out[i].core = 0;                    /* one core */
+        out[i].stack_free = (uint32_t)status[i].usStackHighWaterMark * sizeof(StackType_t);
+        out[i].cpu_tenths = -1;             /* no run-time statistics */
+    }
+    return (int)count;
+}
+
 /* -------------------------------------------------------------- the entry */
 
 /* Runs the desktop until it quits.  Called from the shell command, so the
@@ -199,6 +286,16 @@ static void desktop_run(void)
     s_info.time_now = time_now;
     s_info.get_tz = get_tz;
     s_info.set_tz = set_tz;
+
+    /* What System Monitor and Task Manager read.  Without these both apps
+     * draw empty frames. */
+    s_info.free_heap = heap_free;
+    s_info.min_free_heap = heap_min_free;
+    s_info.total_heap = heap_total;
+    s_info.task_count = sys_task_count;
+    s_info.cpu_mhz = sys_cpu_mhz;
+    s_info.tasks = sys_tasks;
+
     s_info.extra = "Shell:     TinyDesk Shell " TDSH_VERSION;
     td_set_sysinfo(&s_info);
 
