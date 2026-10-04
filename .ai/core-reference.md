@@ -58,6 +58,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
   name: "Tang Console 138K board"
   description: "Board wiring, fitted parts, clocks, power inputs, and the FPGA pin assignments this firmware depends on."
 
+- topic_id: PMOD
+  name: "PMOD sockets and the tang.ini contract"
+  description: "The dock's two PMOD sockets, the seating-orientation rule, and the tang.ini contract that tells the core what is attached; the pin map and the personality registry are kept in Tang-Phosphor."
+
 - topic_id: BL6
   name: "BL616 microcontroller"
   description: "The board's companion MCU: peripheral base addresses, the USB OTG block, the allocator, and the always-on domain."
@@ -116,6 +120,9 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
 | What is the onboard USB debug bridge? | BRD | BRD-004 |
 | Does the board need a particular power input? | BRD | BRD-005 |
+| Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
+| How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
+| Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-003 |
 | Where are the USB OTG registers, and which bit is which? | BL6 | BL6-001 |
 | How much RAM does the BL616 have? | BL6 | BL6-002 |
 | How do I read free heap? | BL6 | BL6-003 |
@@ -181,6 +188,9 @@ BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NO
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
 BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB Debugger'), a separate USB path from the BL616's CDC"
 BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
+PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
+PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
+PMOD-003: "Socket control register 0x10: bit 0 renderer, bits 4-7 PMOD0 personality and 8-11 PMOD1, bits 12/13 upside-down; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2; 0x14 is scratch"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
 BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
 BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and heapsize; PMEM_HEAP is the same heap unless the chip is a BL618"
@@ -212,6 +222,7 @@ TCTL-007: "The retired host client offered ping, status, rxstats, caps, peek, po
 TCTL-008: "No-BOOT update: patch the boot header (body length at 0x84, CRC-32 of the first 252 bytes at 0xFC), send it as a firmware command over CDC, power-cycle, then confirm app_sha256"
 TCTL-009: "The RX task kept counters for bytes, joypad frames, FIFO overflows, FIFO high water, resync bytes, unknown frame types and longest poll gap; the rework adding interrupt-driven RX and a TX mutex fixed gamepad and OSD stutter"
 TCTL-010: "Helper scripts being retired: tangctl.py, liveuart.py, liveuart_draw.py, print_uart.py, jtag.py, tdi_compare.py, crc16.sh and fs.py, which converts a Gowin .fs to .bin"
+TCTL-011: "Tang-Control is the architecture of record for the Phosphor core and the cores after it, and is hardware-verified as a whole because this project was built from it; a record's own status still reports whether that specific fact was confirmed here"
 TDSH-001: "TinyDesk Shell v0.1.3 at 232a39f; uScript 1.1.1 with if/while/for/function, pipes, redirection; Linux and Windows host ports"
 TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
 TDESK-001: "TinyDesk pins tinydesk-shell at 232a39f, the same revision as this project's submodule; its port surface is td_hal_t: read_byte, write, millis, sleep_ms"
@@ -1069,6 +1080,55 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
     - "Tang-Control, docs/phosphor-loader.md: the artwork paragraph"
     - "Tang-Control, CMakeLists.txt: TJPGD_DIR into the SDK's lvgl/extra/libs/sjpg, and the LV_USE_SJPG definition"
   verification: "Read from the document and the build file. Not exercised here."
+
+- record_id: PMOD-001
+  kind: BOARD
+  topic_id: PMOD
+  title: "The dock's two PMOD sockets, and Sipeed's interleaved pin numbering"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The dock carries two PMOD sockets. PMOD1, beside the HDMI port, exposes PMOD1_IO0-IO7 on FPGA balls W19 W20 F19 F20 E22 D22 E21 D21, and PMOD0 exposes PMOD0_IO0-IO7 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33. Sipeed's IO numbering interleaves the socket rows: IO0, IO2, IO4 and IO6 are Digilent module pins 1-4 and IO1, IO3, IO5 and IO7 are pins 7-10, so a connector index is Sipeed's IO number and not the linear pin order. Turning a module over swaps pins 1-4 with pins 7-10 while GND stays on pins 5/11 and VCC on 6/12."
+  consequence: "This is the board half of the PMOD story, and it is kept in Tang-Phosphor's own reference, where the constraint file (src/boards/console138k_pmod.cst) and the personalities (src/pmod/) live; this project cites it rather than copying it, so the dock does not acquire a second, driftable source. It matters here only because the firmware chooses which core image to load, and a personality built into that image has to match what the user has seated."
+  sources:
+    - "Tang-Phosphor, .ai/core-reference.md, the 'Dock PMOD Sockets' record"
+    - "Tang-Phosphor, src/pmod/pmod_slot.sv: the socket and orientation comment"
+  verification: "Read from Tang-Phosphor's reference and pmod_slot.sv. Not measured on this bench; the underlying dock facts were confirmed during Tang-Phosphor's own OLED bring-up, which this project has not repeated."
+
+- record_id: PMOD-002
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "The tang.ini socket contract, and which project owns its parser"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "PMOD modules carry no identification pins, so physical seating cannot be detected and the gateware can only be told what is attached. Tang-Phosphor therefore makes /tang.ini at the SD-card root the contract between what is seated and what the core drives: flat keys under one [tang] section, pmod0 = <module> and pmod0_flip = yes or no, and the same for pmod1. A missing file, or a socket with no entry, leaves that socket released, so the absent file is the safe state. Unknown module names, a vga_j1 without its vga_j2 partner, and flip for a module that is not flip-safe are refused rather than guessed. Tang-Phosphor's reference assigns the parser to the firmware that owns the SD card and the transport, naming Tang-Control there, while the registry of supported personalities lives beside the RTL that implements it."
+  consequence: "That assignment lands here. Tang-Control is being retired into TinyTang, so the /tang.ini parser is inherited work in this project rather than in Tang-Phosphor, and a record elsewhere that still points at Tang-Control for it now points here. Nothing in this firmware reads /tang.ini today, which is safe only because no personality is selected unless the user writes one down."
+  sources:
+    - "Tang-Phosphor, .ai/core-reference.md, the 'PMOD configuration file (tang.ini)' record"
+  verification: "Read from Tang-Phosphor's reference. The contract is documented and not implemented here: this tree contains no /tang.ini parsing, and none was exercised."
+
+- record_id: PMOD-003
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "Register 0x10 is the socket control register the tang.ini parser would write"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "In Tang-Phosphor the PMOD socket selection is register 0x10: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1. Personality numbering is 0 none, 1 oledrgb, 2 vga J1 and 3 vga J2. Register 0x14 is scratch. Power-on defaults select the panel on PMOD0 and nothing on PMOD1, and the host is the only party that validates a declaration, because it is the only party that knows what the user wrote."
+  consequence: "This is the seam the tang.ini contract would write through, and so the register a TinyTang-side parser would target. Note the name collision: extended-protocol legacy frame type 0x10 (EXTCTL-001) is a transport opcode and not this register, and the two must not be conflated."
+  sources:
+    - "Tang-Phosphor, .ai/core-reference.md, the 0x10 socket control register record"
+  verification: "Read from Tang-Phosphor's reference. Not exercised here, and no register write of this kind exists in this tree."
+
+- record_id: TCTL-011
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control's standing: the architecture of record for Phosphor and later cores"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Stated by the user on 2026-10-03: Tang-Control is the architecture of record for the Phosphor core and for the cores that follow it, and it is hardware-verified as a whole because this project was built starting from it. The lineage is visible in this tree, where the board layer, the JTAG path, the SD gate, the UART1 contract and the flash layout all descend from Tang-Control."
+  consequence: "This is why the TCTL records are worth carrying past retirement, and why a board-layer question should be taken to Tang-Control rather than to nand2mario's stock firmware. It does not make any individual claim verified: a record's own status still reports whether that specific fact was confirmed on this hardware or only read from a source."
+  sources:
+    - "Project statement recorded with the user, 2026-10-03"
+  verification: "The lineage is visible in this tree and the inherited board layer has been exercised here. Tang-Control's hardware verification as a whole is the user's assertion and is not something this project's own runs can establish."
 ```
 
 ---
@@ -1095,6 +1155,7 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
 ## 7. Maintenance boundary
 
 - Keep external facts, their sources, and their verification status here.
+- Board faces shared with another project are cited, not copied. The PMOD socket pins, the seating rule and the personality registry live in Tang-Phosphor's `.ai/core-reference.md` beside the constraint file and the RTL that implement them; this file records only the part that bounds this firmware, so the same board does not acquire two sources that can drift.
 - Keep build results, failures, rationale, and chronology in `core-log.md`; cite a log entry number in `verification` instead of repeating it.
 - Do not add speculative records for topics that have not been looked up. An unanswered question stays out of this file until a source answers it.
 - When a record's source is superseded by a newer document or tool version, add a new record rather than editing the old statement.
