@@ -8,10 +8,15 @@
 #     tdsh run /scripts/boot-cart.tdsh
 #
 # Both paths default to the NES pair. To use another core or game, set the
-# variable in the session first — `tdsh run` passes no arguments to a script,
+# variable in the session first -- `tdsh run` passes no arguments to a script,
 # but the script inherits the session's variables:
 #
 #     ROM=/roms/other.nes; tdsh run /scripts/boot-cart.tdsh
+#
+# The core default is the patched image rather than the stock one, because on
+# this board the patched image is the NES core: it carries the keyboard link
+# and the desktop layer, and the stock one carries neither.  Loading the stock
+# core here would cost the keyboard its input until the next reboot.
 #
 # The probe between the two loads is the point of the script: streaming a ROM
 # into a core that is not listening is a second of UART traffic that vanishes
@@ -19,11 +24,21 @@
 # video fault.
 
 if "$CORE" == ""
-    CORE=/cores/console138k/nestang.bin
+    CORE=/cores/console138k/nestang-desk.bin
 endif
 if "$ROM" == ""
     ROM=/roms/castlevania.nes
 endif
+
+# Drop the layer before programming the core.
+#
+# A live overlay stays asserted over whatever the new core draws, and a core
+# that cannot draw the layer falls through to the legacy page: a black screen
+# with the core's logo on it, and the game running invisibly behind it.  That
+# is not a guess -- it is what happened, and it looked exactly like a ROM that
+# had failed to load.  'osd desk off' is what drops the overlay as well as the
+# layer, so it is the one command that clears the way.
+osd desk off
 
 echo "boot-cart: core  $CORE"
 echo "boot-cart: rom   $ROM"

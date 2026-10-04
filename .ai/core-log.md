@@ -101,3 +101,34 @@ The pointer still depends on the keyboard, so a real pointing device remains the
 - User Test: PASS
 
 ---
+## 4 COMMIT Unreleased 2026-10-04T15:17:30-07:00
+
+#### Coming From:
+
+Unreleased dc683cf
+
+#### Purpose:
+
+Make the two boot scripts safe to run from a live desktop, and stop a raw transfer from ever being aimed at a console that is not a shell.
+
+#### Outcome:
+
+Two faults were fixed and one was made impossible by construction. The scripts: `boot-cart.tdsh` and `boot.tdsh` now drop the desk layer before programming a core, because programming the FPGA from underneath a live overlay leaves the overlay asserted over whatever the new core draws, and a core that cannot draw the layer falls through to the legacy page -- a black screen with the core's logo on it and the game running invisibly behind it. That is exactly what the user saw when they ran `boot-cart.tdsh`: it looked like a ROM that had failed to load. `boot-cart.tdsh` also now defaults to `nestang-desk.bin` rather than the stock `nestang.bin`, since on this board the patched image is the NES core and the stock one carries neither the keyboard link nor the desktop layer, so the old default cost the keyboard its input until a reboot. The tool: `tools/tinytang_put.py` now refuses to send unless the console is at a shell prompt, checking for the desktop's own markers first. That guard exists because of what this cycle actually cost. A 131 KB ROM was sent to the console while the desktop was running, and raw bytes and keystrokes are the same thing on this wire, so the desktop received the file as typing into whichever window had focus rather than `tangput` receiving it as data; the symptom on the card was a root directory full of `new.txt` and `New folder` entries with binary data where filenames should be, and the file allocation table came apart with it. The card now mounts and still accepts writes, but its top-level directories -- `/cores`, `/scripts`, `/roms` -- are no longer reachable, so `boot.tdsh` cannot find its core and the board came up on a stock core instead: `fpga` reports core 0 where ours reports core 1, which is why the user saw a NES menu and no desktop. The repair is outside this repository: `fsck.vfat` on the card from a PC, conducted before any reformat, because the card holds cores that are not in this repository. Two things were verified before committing and one was not. The scripts hold their `if`/`endif` structure at 3/3 and 7/7, and the committed revision fails `bash -n` at the same kind of line, confirming that bash is simply the wrong checker for tdsh syntax rather than anything having been broken; `tools/tinytang_put.py` compiles. The fixes were deployed to the card successfully before the damage was understood, but they were never exercised, because the card had already come apart by the time the corrected scripts could be run -- hence the status below. Nothing about the keyboard, the typing path or the pointer mode is affected: those live in the FPGA patches, the keyboard's own firmware and the BL616 flash, none of which is on the card. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The card must be repaired on a PC with `fsck.vfat` before anything further is written to it, and the boot scripts' fixes then need the test they have not had: run `boot-cart.tdsh` from a live desktop and confirm the game appears rather than a black screen. The card's contents are reconstructible in part from this repository -- `nestang-desk.bin` and the scripts by rebuilding, the BL616 image likewise -- but the other cores under `/cores/console138k` are not carried here and must come from their own projects or from whatever `fsck` recovers. Also worth doing while the card is out: the guard in `tinytang_put.py` should be exercised on both paths, at a prompt and with the desktop running, since only its refusing case matters and that case has not been run.
+
+#### Files Modified:
+
+- scripts/boot-cart.tdsh
+- scripts/boot.tdsh
+- tools/tinytang_put.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

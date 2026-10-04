@@ -33,6 +33,17 @@
 # at, which is the worst possible place to discover a wrong path.
 CORE=/cores/console138k/nestang-desk.bin
 
+# Drop the layer before touching the core.
+#
+# Programming the FPGA from underneath a live overlay leaves the overlay
+# asserted over whatever the new core draws, and a core that cannot draw the
+# layer falls through to the legacy page: a black screen with the core's logo
+# on it, with the game running invisibly behind it.  That is what made a
+# cartridge launched this way look like a ROM that had not loaded.  Harmless at
+# power-up, where nothing is asserted yet, and necessary when either script is
+# run from a live desktop.
+osd desk off
+
 if test -f "$CORE"
     echo "boot: loading $CORE"
     tangload "$CORE"
