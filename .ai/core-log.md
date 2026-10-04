@@ -132,3 +132,32 @@ The card must be repaired on a PC with `fsck.vfat` before anything further is wr
 - User Test: NOT RUN
 
 ---
+## 5 COMMIT Unreleased 2026-10-04T15:35:00-07:00
+
+#### Coming From:
+
+Unreleased d60afe2
+
+#### Purpose:
+
+Record in the reference library the two facts this session learned that were not already in it, and audit the change to the core project folder.
+
+#### Outcome:
+
+Two records were added to `.ai/core-reference.md` and nothing else in the project folder was touched. `TOOL-009` records that the console's input is exclusive and that a raw upload's bytes are indistinguishable from typing, which is why `tangput` is only safe while the console is at a shell prompt; its consequence names the damage caused on 2026-10-04 -- a 131088-byte ROM sent while the desktop was running became a root directory of `new.txt` entries and damaged the allocation table badly enough that `/cores`, `/scripts` and `/roms` became unreachable and the board came up on a stock core -- and names `tools/tinytang_put.py`'s new `require_shell()` guard as the mechanism that replaces remembering. `TOOL-010` records that the patch applier stops recognising a patch once a later cycle edits the lines that patch added, since the reverse check wants those lines verbatim and the forward check wants them absent, and that the guarantee is therefore the reconstruction test against a fresh clone rather than the applier's heuristic. Both records follow the file's existing shape and sit after `TOOL-008` in ascending order. The audit found one claim in a draft of `TOOL-010` that had not been verified -- that reduced context cannot help -- and it was removed rather than left in, because it rested on a test of a different case. Worth recording plainly, since it bears on why this entry exists: the black screen the user hit was **already documented**, as `PROT-005` for the overlay's mechanism and `PROT-007` for a ROM stream into a core that is not listening, and the index at the top of the file asks the question in those words. The remedy applied in the previous cycle, `osd desk off`, is the command 0x08 clearing that `PROT-005` states. So the documentation was not the gap for that fault; consulting it was, and `TOOL-009` is the only record here whose subject was genuinely absent. The core-syntax audit required by this change was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and is twenty-seven lines of additions to `core-reference.md` alone with no deletions, every added record was checked against the existing field shape and family ordering, this entry was validated against the template, section order, prose, Status and numbering rules, and the project-control change is an addition to the reference rather than a rewrite of settled history.
+
+#### Next Steps:
+
+The card must still be repaired on a PC with `fsck.vfat` before anything further is written to it, and the boot scripts' overlay fix then needs the test it has not had. Independently, the habit this cycle exposed is worth acting on rather than noting: `.ai/core-reference.md` opens with an index of questions, and two entries answering one of those questions were never consulted before deriving the answer again from first principles. The next piece of work should start by reading that index for the question at hand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

@@ -995,6 +995,33 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
   verification: "Read from the SDK's own source headers at ~/.cache/tangcore-dev/sdk, and the FreeRTOS selection confirmed in proj.conf. The not-linked list was checked against this project's configuration and sources rather than the SDK's inventory."
 
+- record_id: TOOL-009
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The console's input is exclusive, and a raw upload's bytes are keystrokes"
+  status: VERIFIED
+  verified_date: 2026-10-04
+  statement: "tangput takes raw bytes from the same CDC stream the desktop reads its typed input from, and on that wire a file and a burst of typing are the same thing: nothing distinguishes them, because the console is one byte stream with no framing of its own. The desktop, when it is running, is the reader holding it. So a transfer is safe only while the console is at a shell prompt, and tangput itself cannot tell the difference - it will accept whatever arrives and write it."
+  consequence: "A file sent while the desktop is up is delivered to whichever window has focus instead of to tangput. Nothing reports an error and tangput never sees a short write, so the failure is silent until the card is looked at. Observed on 2026-10-04: a 131088-byte ROM sent this way produced a root directory of new.txt and New folder entries with binary data where filenames belong, and damaged the allocation table badly enough that /cores, /scripts and /roms became unreachable. The board then booted a stock core (fpga reports core 0; the patched image reports 1) and boot.tdsh could not find its core. The recovery is fsck.vfat from a PC, before any reformat. tools/tinytang_put.py now refuses to send unless it sees a shell prompt, checking for the desktop's own markers ([Start], Terminal - tdsh, or the alternate-screen sequence) first; the check belongs in the tool because the alternative is remembering, and this was done twice."
+  sources:
+    - "This project's tools/tinytang_put.py: require_shell() and DESKTOP_MARKERS"
+    - "This project's ports/bl616/tang_osd_desk.c: the desktop layer reads the console's input and forwards it to the desktop"
+    - "Observed on this board, 2026-10-04"
+  verification: "Observed directly: the damaged directory listing was read back from the board, the card stopped accepting writes with 'cannot create', and the same send succeeded once the desktop was exited. The guard's refusing path has not itself been exercised."
+
+- record_id: TOOL-010
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A patch is no longer recognised once later work edits the lines it added"
+  status: VERIFIED
+  verified_date: 2026-10-04
+  statement: "scripts/apply-nestang-patches.sh decides whether a carried patch is already applied by asking git to reverse-apply it. That works while the patch's surroundings move, and it stops working the moment a later cycle edits the lines the patch itself added, because the reverse check requires those lines to be present verbatim and the forward check requires them to be absent. Neither is true, so the patch can be neither applied nor recognised."
+  consequence: "This happened on the pointer-mode cycle, which rewrote an assign that patch 0004 had introduced, and it stopped the core build outright. The script now falls back to presuming a series is applied when the tree has local changes, while still failing hard on a clean tree where a non-applying patch is a genuine fault. The guarantee that the series is correct is therefore not this check but the reconstruction test: apply every patch in order to a fresh clone and compare the result byte-for-byte with the tree, which is what is run before each patch is committed."
+  sources:
+    - "This project's scripts/apply-nestang-patches.sh: the strict pass, the -C1 fallback, and the local-changes presumption"
+    - "third_party/patches/0004-keyboard-link.patch, whose added lines 0006 rewrote"
+  verification: "Bitten once and fixed: the build failed with 'does not apply cleanly' on patch 0004 while the same series applied cleanly to a fresh clone. The reconstruction test then passed for all six patches with the tree reproduced byte-for-byte."
+
 - record_id: TCTL-004
   kind: EXTERNAL
   topic_id: TCTL
