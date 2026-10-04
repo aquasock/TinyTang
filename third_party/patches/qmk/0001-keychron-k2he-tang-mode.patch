@@ -1,0 +1,155 @@
+diff --git a/keyboards/keychron/common/wireless/lpm.c b/keyboards/keychron/common/wireless/lpm.c
+index 5f4d622..5966c9c 100644
+--- a/keyboards/keychron/common/wireless/lpm.c
++++ b/keyboards/keychron/common/wireless/lpm.c
+@@ -336,6 +336,22 @@ void lpm_task(void) {
+     }
+ 
+     if (usb_power_connected()) {
++#ifdef TANG_MODE
++        /* TinyTang: USB is stopped deliberately and its data pins carry the
++         * keyboard link instead.  This branch is what defeated that.  Its test
++         * is `USBD1.state == USB_STOP`, which is exactly the state usbStop()
++         * leaves behind, and init_usb_driver() does not merely initialise --
++         * it ends with usbStart() and usbConnectBus(), so USB came back up,
++         * PA11/PA12 went back to being OTG alternate functions and the D+
++         * pull-up was switched on again.  A pin owned by the OTG core ignores
++         * every write to its output register, so from that moment the link
++         * could not drive its own line at all: it sat high and the Tang saw a
++         * keyboard that was either silent or not plugged in.  The symptom on a
++         * host is a full-speed device that never answers enumeration, because
++         * the peripheral is powered and connected but nothing services it.
++         * Leaving USB stopped is the entire point of Tang mode. */
++        return;
++#else
+         if (USBD1.state == USB_STOP) {
+             /* TODO: Do we need this? */
+             usb_event_queue_init();
+@@ -343,6 +359,7 @@ void lpm_task(void) {
+         }
+         /* No need to enter low power mode when USB power is connected */
+         return;
++#endif
+     }
+ 
+     switch (get_transport()) {
+diff --git a/keyboards/keychron/k2_he/board.h b/keyboards/keychron/k2_he/board.h
+index cb9151c..6574497 100644
+--- a/keyboards/keychron/k2_he/board.h
++++ b/keyboards/keychron/k2_he/board.h
+@@ -21,6 +21,31 @@
+ // clang-format off
+ 
+ /* Set GPIOA_SWDIO to INPUT & PIN_PUPDR_PULLUP to avoid FLOATING */
++
++/* TinyTang's keyboard link takes the USB data pins for itself.  PA12 (D+) is
++ * the keyboard's transmit line and PA11 (D-) is the Tang's return line, not
++ * yet used; both are ordinary GPIOs on the STM32F401, and the OTG
++ * peripheral's internal pull-up disappears with the peripheral, so nothing
++ * external has to be defeated.  TANG_MODE is a build flag rather than a
++ * runtime choice because this mode is applied at board init, before USB is
++ * started: taking the pins back from underneath a live USB peripheral is not
++ * something the firmware should attempt. */
++#ifdef TANG_MODE
++#    define K2HE_GPIOA_OTG_MODER  (PIN_MODE_OUTPUT(GPIOA_OTG_FS_DP) |      \
++                                   PIN_MODE_INPUT(GPIOA_OTG_FS_DM) |       \
++                                   PIN_MODE_INPUT(GPIOA_OTG_FS_ID))
++#    define K2HE_GPIOA_OTG_PUPDR  (PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DP) |   \
++                                   PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DM) |   \
++                                   PIN_PUPDR_FLOATING(GPIOA_OTG_FS_ID))
++#else
++#    define K2HE_GPIOA_OTG_MODER  (PIN_MODE_ALTERNATE(GPIOA_OTG_FS_ID) |   \
++                                   PIN_MODE_ALTERNATE(GPIOA_OTG_FS_DM) |   \
++                                   PIN_MODE_ALTERNATE(GPIOA_OTG_FS_DP))
++#    define K2HE_GPIOA_OTG_PUPDR  (PIN_PUPDR_FLOATING(GPIOA_OTG_FS_ID) |   \
++                                   PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DM) |   \
++                                   PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DP))
++#endif
++
+ #undef VAL_GPIOA_MODER
+ #define VAL_GPIOA_MODER             (PIN_MODE_INPUT(GPIOA_BUTTON) |         \
+                                      PIN_MODE_INPUT(GPIOA_PIN1) |           \
+@@ -32,9 +57,7 @@
+                                      PIN_MODE_ALTERNATE(GPIOA_L3GD20_SDI) | \
+                                      PIN_MODE_INPUT(GPIOA_PIN8) |           \
+                                      PIN_MODE_INPUT(GPIOA_VBUS_FS) |        \
+-                                     PIN_MODE_ALTERNATE(GPIOA_OTG_FS_ID) |  \
+-                                     PIN_MODE_ALTERNATE(GPIOA_OTG_FS_DM) |  \
+-                                     PIN_MODE_ALTERNATE(GPIOA_OTG_FS_DP) |  \
++                                     K2HE_GPIOA_OTG_MODER |                 \
+                                      PIN_MODE_INPUT(GPIOA_SWDIO) |          \
+                                      PIN_MODE_INPUT(GPIOA_SWCLK) |          \
+                                      PIN_MODE_INPUT(GPIOA_PIN15))
+@@ -50,9 +73,7 @@
+                                      PIN_PUPDR_PULLUP(GPIOA_L3GD20_SDI) |   \
+                                      PIN_PUPDR_PULLUP(GPIOA_PIN8) |         \
+                                      PIN_PUPDR_FLOATING(GPIOA_VBUS_FS) |    \
+-                                     PIN_PUPDR_FLOATING(GPIOA_OTG_FS_ID) |  \
+-                                     PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DM) |  \
+-                                     PIN_PUPDR_FLOATING(GPIOA_OTG_FS_DP) |  \
++                                     K2HE_GPIOA_OTG_PUPDR |                 \
+                                      PIN_PUPDR_PULLUP(GPIOA_SWDIO) |        \
+                                      PIN_PUPDR_PULLUP(GPIOA_SWCLK) |        \
+                                      PIN_PUPDR_PULLUP(GPIOA_PIN15))
+diff --git a/keyboards/keychron/k2_he/k2_he.c b/keyboards/keychron/k2_he/k2_he.c
+index 3ac31eb..bb0f58f 100644
+--- a/keyboards/keychron/k2_he/k2_he.c
++++ b/keyboards/keychron/k2_he/k2_he.c
+@@ -57,6 +57,22 @@ void keychron_task_kb(void) {
+ 
+ #ifdef LK_WIRELESS_ENABLE
+ bool lpm_is_kb_idle(void) {
++#ifdef TANG_MODE
++    /* TinyTang: this keyboard is not a keyboard here, it is the Tang's input
++     * device, and it has to answer every time the link is polled.  The stock
++     * test asks "has anyone touched me lately" and answers yes as soon as the
++     * power-on indicator finishes -- three seconds after boot -- and the
++     * wireless task then parks the CPU in lpm_standby(), which switches the
++     * clock to HSI, turns the HSE off and waits on __WFI().  The link is
++     * driven from the tail of the main loop, so it stopped running almost
++     * immediately after starting, leaving the transmit line idling high: from
++     * the Tang that is indistinguishable from a keyboard that was never
++     * plugged in, and nothing about it looks like a fault from this side.
++     * Tang firmware never idles; the link is the reason the keyboard is
++     * powered at all. */
++    return false;
++#else
+     return power_on_indicator_timer == 0 && !backlight_indicator_is_active();
++#endif
+ }
+ #endif
+diff --git a/tmk_core/protocol/chibios/usb_main.c b/tmk_core/protocol/chibios/usb_main.c
+index 60426c2..3748b4f 100644
+--- a/tmk_core/protocol/chibios/usb_main.c
++++ b/tmk_core/protocol/chibios/usb_main.c
+@@ -390,6 +390,22 @@ void update_usb_report_interval(USBDriver *usbp, uint8_t interval) {
+ #endif
+ 
+ void init_usb_driver(USBDriver *usbp) {
++#ifdef TANG_MODE
++    /* TinyTang: the keyboard's USB data pins carry the link instead, so USB
++     * must not come up at all.  This function is the single place that does
++     * come up -- it ends in usbStart() and usbConnectBus() -- and it is called
++     * from QMK's USB thread shortly after boot, which is after
++     * keyboard_post_init_user() has already taken PA11/PA12 as GPIOs for the
++     * link.  Starting USB here silently handed them back to the OTG core, and
++     * a pin owned by the OTG core ignores every write to its output register,
++     * so the link sent a short burst and then went quiet for good.
++     *
++     * From the Tang that looked like a hundred or so frames followed by
++     * silence: a healthy-looking start and no diagnosis.  Nothing downstream
++     * of this needs USB -- the link is the keyboard's only host. */
++    (void)usbp;
++    return;
++#else
+     for (int i = 0; i < USB_ENDPOINT_IN_COUNT; i++) {
+         usb_endpoint_in_init(&usb_endpoints_in[i]);
+         usb_endpoint_in_start(&usb_endpoints_in[i]);
+@@ -413,6 +429,7 @@ void init_usb_driver(USBDriver *usbp) {
+     wait_ms(50);
+     usbStart(usbp, &usbcfg);
+     usbConnectBus(usbp);
++#endif
+ }
+ 
+ __attribute__((weak)) void restart_usb_driver(USBDriver *usbp) {

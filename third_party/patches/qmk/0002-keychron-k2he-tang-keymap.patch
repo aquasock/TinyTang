@@ -1,0 +1,409 @@
+diff --git a/keyboards/keychron/k2_he/ansi/keymaps/tang/keymap.c b/keyboards/keychron/k2_he/ansi/keymaps/tang/keymap.c
+new file mode 100644
+index 0000000..aa1cd14
+--- /dev/null
++++ b/keyboards/keychron/k2_he/ansi/keymaps/tang/keymap.c
+@@ -0,0 +1,97 @@
++/* SPDX-License-Identifier: GPL-3.0-only
++ *
++ * Tang keymap for the Keychron K2 HE.
++ *
++ * The layout is the board's stock one; what makes this keymap different is
++ * that it emits TinyTang's keyboard-link frames on PA12 instead of presenting
++ * a USB keyboard.  Build it with:
++ *
++ *   make keychron/k2_he/ansi:tang
++ *
++ * and flash the resulting .bin.  While this firmware is running the keyboard
++ * is not a USB keyboard at all, so to use it on a PC again either flash the
++ * stock firmware back, or hold the key configured by BOOTMAGIC at plug-in to
++ * enter the STM32's DFU bootloader, which is the chip's own and does not
++ * depend on anything in this firmware.
++ */
++
++#include QMK_KEYBOARD_H
++#include "keychron_common.h"
++#include "tang_link.h"
++
++enum layers {
++    MAC_BASE,
++    MAC_FN,
++    WIN_BASE,
++    WIN_FN,
++};
++
++#define FN_MAC MO(MAC_FN)
++#define FN_WIN MO(WIN_FN)
++
++// clang-format off
++const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
++    [MAC_BASE] = LAYOUT_ansi_84(
++        KC_ESC,   KC_BRID,  KC_BRIU,  KC_MCTRL, KC_LNPAD, UG_VALD,  UG_VALU,  KC_MPRV,  KC_MPLY,  KC_MNXT,  KC_MUTE,  KC_VOLD,  KC_VOLU,  KC_SNAP,  KC_DEL,   UG_NEXT,
++        KC_GRV,   KC_1,     KC_2,     KC_3,     KC_4,     KC_5,     KC_6,     KC_7,     KC_8,     KC_9,     KC_0,     KC_MINS,  KC_EQL,   KC_BSPC,            KC_PGUP,
++        KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
++        KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
++        KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,    KC_END,
++        KC_LCTL,  KC_LOPTN, KC_LCMMD,                               KC_SPC,                                 KC_RCMMD, FN_MAC,   KC_RCTL,  KC_LEFT,  KC_DOWN,  KC_RGHT),
++
++    [MAC_FN] = LAYOUT_ansi_84(
++        _______,  KC_F1,    KC_F2,    KC_F3,    KC_F4,    KC_F5,    KC_F6,    KC_F7,    KC_F8,    KC_F9,    KC_F10,   KC_F11,   KC_F12,   _______,  _______,  UG_TOGG,
++        _______,  BT_HST1,  BT_HST2,  BT_HST3,  P2P4G,    _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
++        UG_TOGG,  UG_NEXT,  UG_VALU,  UG_HUEU,  UG_SATU,  UG_SPDU,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
++        _______,  UG_PREV,  UG_VALD,  UG_HUED,  UG_SATD,  UG_SPDD,  _______,  _______,  _______,  _______,  _______,  _______,            _______,            _______,
++        _______,            _______,  _______,  _______,  _______,  BAT_LVL,  _______,  _______,  _______,  _______,  _______,            _______,  _______,  _______,
++        _______,  _______,  _______,                                _______,                                _______,  _______,  _______,  _______,  _______,  _______),
++
++    [WIN_BASE] = LAYOUT_ansi_84(
++        KC_ESC,   KC_F1,    KC_F2,    KC_F3,    KC_F4,    KC_F5,    KC_F6,    KC_F7,    KC_F8,    KC_F9,    KC_F10,   KC_F11,   KC_F12,   KC_PSCR,  KC_DEL,   UG_NEXT,
++        KC_GRV,   KC_1,     KC_2,     KC_3,     KC_4,     KC_5,     KC_6,     KC_7,     KC_8,     KC_9,     KC_0,     KC_MINS,  KC_EQL,   KC_BSPC,            KC_PGUP,
++        KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
++        KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
++        KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,    KC_END,
++        KC_LCTL,  KC_LGUI,  KC_LALT,                                KC_SPC,                                 KC_RALT,  FN_WIN,   KC_RCTL,  KC_LEFT,  KC_DOWN,  KC_RGHT),
++
++    [WIN_FN] = LAYOUT_ansi_84(
++        _______,  KC_BRID,  KC_BRIU,  KC_TASK,  KC_FILE,  UG_VALD,  UG_VALU,  KC_MPRV,  KC_MPLY,  KC_MNXT,  KC_MUTE,  KC_VOLD,  KC_VOLU,  _______,  _______,  UG_TOGG,
++        _______,  BT_HST1,  BT_HST2,  BT_HST3,  P2P4G,    _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
++        UG_TOGG,  UG_NEXT,  UG_VALU,  UG_HUEU,  UG_SATU,  UG_SPDU,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
++        _______,  UG_PREV,  UG_VALD,  UG_HUED,  UG_SATD,  UG_SPDD,  _______,  _______,  _______,  _______,  _______,  _______,            _______,            _______,
++        _______,            _______,  _______,  _______,  _______,  BAT_LVL,  _______,  _______,  _______,  _______,  _______,            _______,  _______,  _______,
++        _______,  _______,  _______,                                _______,                                _______,  _______,  _______,  _______,  _______,  _______)
++};
++// clang-format on
++
++void keyboard_post_init_user(void) {
++    tang_link_init();
++}
++
++void housekeeping_task_user(void) {
++    /* Survival beacon, ahead of everything else and made of nothing but raw
++     * register writes: no QMK, no ChibiOS, no DWT, in particular nothing that
++     * can block.  Two questions are open and this answers both at once --
++     * whether this loop is really running, and whether PA12 is really this
++     * firmware's to drive.  A pin owned by the USB core ignores writes to its
++     * output register, so a beacon that does not appear means one of those two
++     * is false, and one that does means both are true and whatever is still
++     * wrong is upstream of here.
++     *
++     * It runs only until the link has sent its first frame, so a working link
++     * pays for it for a single call and no frame is ever corrupted by it. */
++    if (tang_link_frames_sent() == 0) {
++        static uint32_t beacon_next;
++        const uint32_t  now = timer_read32();
++        if ((int32_t)(now - beacon_next) >= 0) {
++            beacon_next = now + 125; /* 4 Hz: slow enough to count by eye */
++            /* PA12 forced to a plain output here, so the beacon does not
++             * depend on board init or on the link's own init having kept it. */
++            *(volatile uint32_t *)0x40020000u =
++                (*(volatile uint32_t *)0x40020000u & ~(3u << 24)) | (1u << 24);
++            *(volatile uint32_t *)0x40020014u ^= (1u << 12);
++        }
++    }
++    tang_link_task();
++}
+diff --git a/keyboards/keychron/k2_he/ansi/keymaps/tang/rules.mk b/keyboards/keychron/k2_he/ansi/keymaps/tang/rules.mk
+new file mode 100644
+index 0000000..60e2677
+--- /dev/null
++++ b/keyboards/keychron/k2_he/ansi/keymaps/tang/rules.mk
+@@ -0,0 +1,25 @@
++# SPDX-License-Identifier: GPL-3.0-only
++#
++# Tang keymap for the Keychron K2 HE.
++#
++# TANG_MODE makes keyboards/keychron/k2_he/board.h leave PA11/PA12 as GPIO
++# instead of wiring them to the OTG peripheral, which is what lets this
++# firmware drive the Tang's keyboard link on the keyboard's own USB D+ line.
++# It is a build flag rather than a runtime choice because the pin mode is
++# applied at ChibiOS board init, before USB is started: taking the pins back
++# from underneath a live USB peripheral is not something this firmware should
++# attempt.
++#
++OPT_DEFS += -DTANG_MODE
++
++# QMK compiles only keymap.c from a keymap directory by default; the link
++# itself lives in its own file.
++SRC += tang_link.c
++
++# NKRO is left alone.  Disabling it here breaks this QMK branch's
++# quantum/action_util.c, which references kb_report_changed only when NKRO is
++# enabled.  It does not matter to the link: the link carries the eight-byte
++# boot keyboard report, and QMK maintains that report -- the one keyboard_report
++# points at -- whether or not NKRO is also sending a second format.  Reading it
++# is therefore correct in both builds, and with six slots it covers anything a
++# person types.
+diff --git a/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.c b/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.c
+new file mode 100644
+index 0000000..66ab8be
+--- /dev/null
++++ b/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.c
+@@ -0,0 +1,228 @@
++/* SPDX-License-Identifier: GPL-3.0-only
++ *
++ * TinyTang keyboard link -- keyboard end.  See tang_link.h for the frame and
++ * the reason the baud is 281250.
++ */
++
++#include QMK_KEYBOARD_H
++#include "report.h"
++#include "tang_link.h"
++
++/* PA12, the keyboard's USB D+ line, taken as GPIO by board.h under TANG_MODE. */
++#define TANG_TX_LINE PAL_LINE(GPIOA, 12)
++
++/* 72 MHz / 256 cycles = 281250 baud, exactly.  The bit period comes from the
++ * DWT cycle counter rather than a counted loop: 256 core cycles is exactly one
++ * bit, and the counter is independent of code generation, optimisation level
++ * and flash wait states, none of which a hand-counted loop is.  TANG_DELAY_ITERS
++ * survives only as a fallback for the case where DWT does not run. */
++#define TANG_CYCLES_PER_BIT 256
++
++#ifndef TANG_DELAY_ITERS
++#    define TANG_DELAY_ITERS 20
++#endif
++
++#define TANG_DEMCR    (*(volatile uint32_t *)0xE000EDFCu)
++#define TANG_DWT_CTRL (*(volatile uint32_t *)0xE0001000u)
++#define TANG_DWT_CNT  (*(volatile uint32_t *)0xE0001004u)
++
++static bool s_dwt_ok = false;
++
++/* Resend even when nothing changed, so a frame lost to an interrupt still
++ * gets replaced promptly.  A boot keyboard's whole state is eight bytes, so
++ * the cost of redundancy is small. */
++#ifndef TANG_KEEPALIVE_MS
++#    define TANG_KEEPALIVE_MS 20
++#endif
++
++#define TANG_START 0xA5u
++#define TANG_LEN   8u
++
++static uint32_t s_frames     = 0;
++static uint32_t s_heartbeat  = 0;
++static bool     s_heartbeat_l = false;
++static uint32_t s_last_send  = 0;
++static uint8_t  s_last_mods  = 0xFFu;   /* impossible value: first frame always sends */
++static uint8_t  s_last_keys[6] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu};
++
++/* Spin until the cycle counter reaches an absolute target.
++ *
++ * The previous version waited a bit *after* each write, which made every bit
++ * period the wait plus however long the write and the code around it took.
++ * Counting the compiled loop: the wait lands at 256..262 cycles, because that
++ * is the granularity of its own check, and the work around it -- shifting the
++ * bit out, the conditional store to BSRR, the s_dwt_ok test, re-reading the
++ * counter -- costs about thirteen more.  A bit was therefore ~270-275 cycles,
++ * five to seven percent long.  That is past what a UART tolerates: this
++ * design's own receiver survives four percent and fails at six, measured.
++ *
++ * It fails in a particularly quiet way.  The start bit's edge is always seen,
++ * so the line looks busy and the edge counters climb, but the sampling drifts
++ * far enough that the stop bit is read low and the byte is discarded without
++ * incrementing anything.  Edges, no frames, no malformed-frame counters.
++ *
++ * Boundaries computed up front absorb that overhead instead of adding to it.
++ * The residual jitter is the check granularity, about seven cycles, and it
++ * does not accumulate across a byte. */
++static inline void tang_wait_until(uint32_t target) {
++    while ((int32_t)(TANG_DWT_CNT - target) < 0) {
++    }
++}
++
++static void tang_tx_byte(uint8_t b) {
++    if (!s_dwt_ok) {
++        /* No cycle counter, so nothing here can hold a UART's few percent.
++         * This path only has to terminate -- waiting on TANG_DWT_CNT would
++         * spin forever -- and the heartbeat already says why it is being
++         * used, at a rate chosen to be visible rather than accurate. */
++        palClearLine(TANG_TX_LINE);             /* start */
++        for (uint8_t i = 0; i < 8; i++) {
++            if (b & (1u << i)) {
++                palSetLine(TANG_TX_LINE);
++            } else {
++                palClearLine(TANG_TX_LINE);
++            }
++            for (volatile uint32_t n = 0; n < TANG_DELAY_ITERS; n++) {
++                __asm__ volatile("nop");
++            }
++        }
++        palSetLine(TANG_TX_LINE);               /* stop */
++        for (volatile uint32_t n = 0; n < TANG_DELAY_ITERS; n++) {
++            __asm__ volatile("nop");
++        }
++        return;
++    }
++
++    uint32_t t = TANG_DWT_CNT + TANG_CYCLES_PER_BIT;
++    palClearLine(TANG_TX_LINE);                 /* start bit */
++    for (uint8_t i = 0; i < 8; i++) {           /* 8 data bits, LSB first */
++        tang_wait_until(t);
++        if (b & (1u << i)) {
++            palSetLine(TANG_TX_LINE);
++        } else {
++            palClearLine(TANG_TX_LINE);
++        }
++        t += TANG_CYCLES_PER_BIT;
++    }
++    tang_wait_until(t);
++    palSetLine(TANG_TX_LINE);                   /* stop bit */
++    tang_wait_until(t + TANG_CYCLES_PER_BIT);
++}
++
++static void tang_send_frame(const uint8_t payload[TANG_LEN]) {
++    uint8_t sum = TANG_START + (uint8_t)TANG_LEN;
++    for (uint8_t i = 0; i < TANG_LEN; i++) {
++        sum += payload[i];
++    }
++
++    /* The pin is re-asserted here rather than trusted from init.  Taking the
++     * pins back from a USB peripheral that restarts is not something one
++     * write at boot can guarantee -- and this firmware's wireless stack can
++     * restart USB on its own -- while a pin owned by the OTG core ignores
++     * every write to its output register.  From the Tang's side that is
++     * indistinguishable from a keyboard that has gone silent, which is the
++     * exact failure being chased, so the ownership is claimed again on the
++     * way into every frame.
++     *
++     * Interrupts are left alone across the frame.  One frame is 110 bit
++     * times, about 390 us, and a kernel lock spanning that long is neither
++     * needed nor safe: the worst a SysTick landing inside the frame does is
++     * delay one bit, and both the frame's own checksum and the 20 ms
++     * keepalive cover that. */
++    palSetLineMode(TANG_TX_LINE, PAL_MODE_OUTPUT_PUSHPULL);
++    tang_tx_byte(TANG_START);
++    tang_tx_byte(TANG_LEN);
++    for (uint8_t i = 0; i < TANG_LEN; i++) {
++        tang_tx_byte(payload[i]);
++    }
++    tang_tx_byte(sum);
++
++    s_frames++;
++}
++
++void tang_link_init(void) {
++    /* Stop the USB peripheral before taking its pins.  board.h leaves PA11 and
++     * PA12 as GPIO under TANG_MODE, but QMK always initialises USB and
++     * ChibiOS's USB driver configures the USB pins itself, so without this the
++     * peripheral can reclaim them and every write to PA12 goes nowhere.  That
++     * is the difference between a keyboard that transmits and one that looks
++     * completely silent from the Tang's side. */
++    usbStop(&USBD1);
++
++    palSetLineMode(TANG_TX_LINE, PAL_MODE_OUTPUT_PUSHPULL);
++    palSetLine(TANG_TX_LINE);                   /* UART idle is high */
++
++    /* Enable the DWT cycle counter and confirm it advances.  If it does not,
++     * the counted loop below is used instead: without that check a dead
++     * counter would spin forever inside the transmit routine. */
++    TANG_DEMCR |= (1u << 24);                   /* TRCENA */
++    TANG_DWT_CNT = 0;
++    TANG_DWT_CTRL |= 1u;                        /* CYCCNTENA */
++    const uint32_t before = TANG_DWT_CNT;
++    for (volatile uint32_t i = 0; i < 200; i++) {
++    }
++    s_dwt_ok = (TANG_DWT_CNT != before);
++}
++
++void tang_link_task(void) {
++    if (keyboard_report == NULL) {
++        return;
++    }
++
++    /* This firmware is Tang-only and the link carries the eight-byte boot
++     * keyboard report, so the six-key path is forced.  That matters because
++     * this branch keeps two report structures and sends whichever NKRO
++     * selects: with NKRO active it is nkro_report that gets populated and
++     * keyboard_report->keys[] stays empty, which would leave the link carrying
++     * frames that always say no key is pressed. */
++    keymap_config.nkro = false;
++
++    uint8_t payload[TANG_LEN];
++    payload[0] = keyboard_report->mods;
++    payload[1] = 0;
++    for (uint8_t i = 0; i < 6; i++) {
++        payload[i + 2] = keyboard_report->keys[i];
++    }
++
++    bool changed = (payload[0] != s_last_mods);
++    for (uint8_t i = 0; i < 6; i++) {
++        if (payload[i + 2] != s_last_keys[i]) {
++            changed = true;
++        }
++    }
++
++    const uint32_t now = timer_read32();
++    if (!changed && timer_elapsed32(s_last_send) < TANG_KEEPALIVE_MS) {
++        /* The heartbeat is now a failure signal rather than a permanent one.
++         * A free-running blink corrupts the link: it parks the line low
++         * between frames, which reads as a continuous start bit, and every
++         * pulse is a glitch in a protocol that needs a clean idle-high.  So
++         * it runs only when DWT did not come up, because then the counted
++         * fallback cannot hold a UART's two-to-three percent and no frame
++         * would parse anyway.  The Tang counts edges, so a slow blink means
++         * "timing unavailable", and a blink that stops means the frames are
++         * the real thing. */
++        if (!s_dwt_ok && timer_elapsed32(s_heartbeat) >= 250) {
++            s_heartbeat   = now;
++            s_heartbeat_l = !s_heartbeat_l;
++            if (s_heartbeat_l) {
++                palSetLine(TANG_TX_LINE);
++            } else {
++                palClearLine(TANG_TX_LINE);
++            }
++        }
++        return;
++    }
++
++    s_last_mods = payload[0];
++    for (uint8_t i = 0; i < 6; i++) {
++        s_last_keys[i] = payload[i + 2];
++    }
++    s_last_send = now;
++
++    tang_send_frame(payload);
++}
++
++uint32_t tang_link_frames_sent(void) {
++    return s_frames;
++}
+diff --git a/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.h b/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.h
+new file mode 100644
+index 0000000..9959902
+--- /dev/null
++++ b/keyboards/keychron/k2_he/ansi/keymaps/tang/tang_link.h
+@@ -0,0 +1,35 @@
++/* SPDX-License-Identifier: GPL-3.0-only
++ *
++ * TinyTang keyboard link -- keyboard end.
++ *
++ * Emits the frame that Tang-Phosphor's src/input/keylink_rx.sv accepts:
++ *
++ *   A5  LEN  payload[LEN]  SUM
++ *
++ * with LEN 8 and the payload the HID boot keyboard report this firmware
++ * already maintains: modifiers, a reserved byte, then six keycodes.
++ * SUM is the 8-bit sum of every preceding byte.
++ *
++ * The wire is the keyboard's own USB D+ line, PA12, which is an ordinary
++ * GPIO here because board.h leaves it as an alternate-function OTG pin only
++ * when TANG_MODE is not defined.  The Tang's usb1_dp reads this line and its
++ * usb1_dn drives PA11, which this build currently leaves alone.
++ *
++ * The baud is 281250 because both ends divide it exactly: the STM32F401 runs
++ * at 72 MHz here, so 256 cycles per bit, and the Tang's clk_pixel is
++ * 74.25 MHz, so 264.  No standard baud rate divides both.
++ */
++
++#pragma once
++
++#include <stdint.h>
++
++/* Configure PA12 and put the line in its idle state.  Call once, after init. */
++void tang_link_init(void);
++
++/* Send a frame when the report changed, or periodically as a keepalive.
++ * Designed to be called from housekeeping_task_user(). */
++void tang_link_task(void);
++
++/* Number of frames transmitted, for the debug/console path. */
++uint32_t tang_link_frames_sent(void);

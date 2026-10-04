@@ -1,0 +1,1399 @@
+diff --git a/build.tcl b/build.tcl
+index b82e045..c7443c5 100644
+--- a/build.tcl
++++ b/build.tcl
+@@ -38,7 +38,7 @@ if {$dev eq "nano20k"} {
+     add_file -type verilog "src/plla/gowin_pll_hdmi.v"
+     add_file -type verilog "src/plla/gowin_pll_nes.v"
+     add_file -type verilog "src/plla/pll_12.v"
+-    add_file -type verilog "src/usb_hid_host.v"
++    add_file -type verilog "src/keylink_rx.sv"
+     add_file -type sdc "src/nestang.sdc"
+     set_option -output_base_name nestang_${dev}_${controller}
+ } elseif {$dev eq "mega60k"} {
+@@ -92,7 +92,7 @@ if {$dev eq "nano20k"} {
+     add_file -type verilog "src/plla/gowin_pll_hdmi.v"
+     add_file -type verilog "src/plla/gowin_pll_nes.v"
+     add_file -type verilog "src/plla/pll_12.v"
+-    add_file -type verilog "src/usb_hid_host.v"
++    add_file -type verilog "src/keylink_rx.sv"
+     add_file -type sdc "src/nestang.sdc"
+     set_option -output_base_name nestang_${dev}_${controller}
+ } elseif {$dev eq "console138k"} {
+@@ -103,7 +103,7 @@ if {$dev eq "nano20k"} {
+     add_file -type verilog "src/pll/gowin_pll_hdmi.v"
+     add_file -type verilog "src/pll/gowin_pll_nes.v"
+     add_file -type verilog "src/pll/pll_12.v"
+-    add_file -type verilog "src/usb_hid_host.v"
++    add_file -type verilog "src/keylink_rx.sv"
+     add_file -type sdc "src/nestang.sdc"
+     set_option -output_base_name nestang_${dev}_${controller}
+ } else {
+diff --git a/src/boards/console.cst b/src/boards/console.cst
+index a50c66c..f7b4cde 100644
+--- a/src/boards/console.cst
++++ b/src/boards/console.cst
+@@ -52,14 +52,21 @@ IO_LOC  "ds_cs2"  W20;		// PMOD1_IO1
+ IO_PORT "ds_cs2" PULL_MODE=NONE IO_TYPE=LVCMOS33;
+ 
+ // USB1 and USB2 (usb1 is on the left)
++// TinyTang: these are host data lines, and the board provides no pull of its
++// own here, so an empty socket leaves the pin floating -- which on an FPGA
++// input means it oscillates, and the receiver's edge counter then watches a
++// port with nothing in it manufacture traffic.  A pull-down is what a USB host
++// port is meant to have (15K, USB 2.0 section 7.1.1.1) and it is what the
++// primer25k board file already asks for on the same pins.  With it, an empty
++// socket reads low and quiet, and a keyboard's D+ pull-up still wins easily.
+ IO_LOC  "usb1_dp" H13;
+-IO_PORT "usb1_dp" IO_TYPE=LVCMOS33;
++IO_PORT "usb1_dp" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+ IO_LOC  "usb1_dn" G13;
+-IO_PORT "usb1_dn" IO_TYPE=LVCMOS33;
++IO_PORT "usb1_dn" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+ IO_LOC  "usb2_dp" M15;
+-IO_PORT "usb2_dp" IO_TYPE=LVCMOS33;
++IO_PORT "usb2_dp" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+ IO_LOC  "usb2_dn" M16;
+-IO_PORT "usb2_dn" IO_TYPE=LVCMOS33;
++IO_PORT "usb2_dn" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+ 
+ // LED on pmod0
+ IO_LOC  "led[0]" B22;   // PMOD0_IO7
+diff --git a/src/keylink_rx.sv b/src/keylink_rx.sv
+new file mode 100644
+index 0000000..2610a3e
+--- /dev/null
++++ b/src/keylink_rx.sv
+@@ -0,0 +1,257 @@
++// SPDX-License-Identifier: GPL-3.0-only
++//
++// TinyTang keyboard link -- receiver.
++//
++// TinyTang's keyboard input does not use USB.  The front USB-A port is two
++// FPGA pins wired to the connector and nothing else (BRD-003), and the
++// keyboard on the other end is an STM32F401 whose USB data pins are ordinary
++// GPIOs whose mode the firmware chooses -- Keychron's k2_he board.h puts PA11
++// and PA12 in PIN_MODE_ALTERNATE for the OTG peripheral.  Both ends can
++// therefore speak a protocol of our choosing on those two wires, and this is
++// the FPGA end of it.
++//
++// It is a fixed-baud UART, one direction per wire, with no addressing and no
++// polling discipline imposed by anything but us.  The baud is 750 kbaud
++// because both ends divide it exactly: clk_pixel is 74.25 MHz, so 99 cycles
++// per bit, and the keyboard's STM32F401 runs at 72 MHz, so 96.  No standard
++// baud rate divides both, which is only possible because we own both ends.
++//
++// Wire assignment:
++//   usb1_dp  (D+)  keyboard PA12 -> FPGA    keyboard to Tang
++//   usb1_dn  (D-)  FPGA -> keyboard PA11    Tang to keyboard, not used yet
++//
++// Frame, sent as consecutive 8N1 bytes:
++//
++//   A5  LEN  payload[LEN]  SUM
++//
++// LEN is 8 for the only payload defined so far, which is the HID boot
++// keyboard report the keyboard already builds internally, so forwarding it
++// costs the keyboard side almost nothing:
++//
++//   payload[0]   modifiers   (bit 0 LCtrl ... bit 7 RGUI)
++//   payload[1]   reserved, always 0
++//   payload[2:7] up to six concurrent keycodes, 0 = no key
++//
++// SUM is the 8-bit sum of every preceding byte of the frame, start and length
++// included.  A frame that ends early, declares the wrong length, or fails SUM
++// is dropped and counted, and the receiver resynchronises on the next A5.
++//
++// Nothing here is USB: no packets, no tokens, no CRC5 or CRC16, no frames per
++// millisecond, and no polling interval imposed by a host controller.  The
++// report rate is whatever the keyboard chooses to send.
++//
++// The UART receiver is written here rather than taken from
++// `src/iosys/uart_fixed.v`: that file instantiates a parameter-check module
++// with a string argument, which Verilator cannot elaborate
++// (`Pin not found: '__pinNumber1'`), which is why nothing in the tree uses it
++// and why the project's own tests never compile it.  A receiver this small is
++// better self-contained and simulatable than inherited and untestable.
++
++module keylink_rx #(
++    parameter integer CLK_HZ      = 74_250_000,
++    parameter integer BAUD        = 750_000,
++    parameter [7:0]   START_BYTE  = 8'hA5,
++    parameter integer KEYS        = 6,
++    // Payload size the receiver will accept: 1 modifier + 1 reserved + KEYS.
++    parameter integer PAYLOAD_LEN = 8
++) (
++    input  logic        clk,
++    input  logic        resetn,
++
++    // The keyboard's line, straight from the pin.
++    input  logic        rx,
++
++    // Latest accepted report.  Held until the next one arrives.
++    output logic [7:0]  o_modifiers,
++    output logic [7:0]  o_keys [KEYS],
++    // One-cycle pulse when a frame passed its checksum and was latched.
++    output logic        o_valid,
++
++    // Diagnostics, in the style the other transports use.
++    output logic [31:0] o_frames,
++    output logic [31:0] o_bad_checksum,
++    output logic [31:0] o_bad_length,
++    output logic [31:0] o_truncated
++);
++
++    localparam integer CPB = CLK_HZ / BAUD;   // clocks per bit, exact by design
++
++    // ------------------------------------------------------------- UART rx
++    // Two-stage synchroniser: rx is a pin, asynchronous to clk_pixel.
++    logic [1:0] rx_sync;
++    always_ff @(posedge clk) begin
++        if (!resetn) rx_sync <= 2'b11;
++        else         rx_sync <= {rx_sync[0], rx};
++    end
++
++    localparam [1:0] U_IDLE = 2'd0, U_DATA = 2'd1, U_STOP = 2'd2;
++
++    logic [1:0]  u_state;
++    logic [31:0] u_cnt;
++    logic [2:0]  u_bit;
++    logic [7:0]  u_shift;
++    logic        rx_ready;
++    logic [7:0]  rx_byte;
++    logic [31:0] idle_cnt;
++    logic        rx_idle;
++
++    always_ff @(posedge clk) begin
++        if (!resetn) begin
++            u_state  <= U_IDLE;
++            u_cnt    <= 32'd0;
++            u_bit    <= 3'd0;
++            u_shift  <= 8'd0;
++            rx_ready <= 1'b0;
++            rx_byte  <= 8'd0;
++            idle_cnt <= 32'd0;
++        end else begin
++            rx_ready <= 1'b0;
++
++            // Idle detection: four bit times with no activity means the sender
++            // has stopped mid-frame, which is how a torn frame is noticed.
++            if (u_state != U_IDLE) idle_cnt <= 32'd0;
++            else                   idle_cnt <= idle_cnt + 32'd1;
++
++            case (u_state)
++                U_IDLE: begin
++                    if (rx_sync[1] == 1'b0) begin   // falling edge = start bit
++                        // Skip the start bit and land mid-bit-0: half a bit to
++                        // confirm the start, a full bit to clear it.  Sampling
++                        // at CPB/2 alone reads the start bit as data bit 0.
++                        u_cnt   <= CPB + (CPB / 2);
++                        u_bit   <= 3'd0;
++                        u_state <= U_DATA;
++                    end
++                end
++
++                U_DATA: begin
++                    if (u_cnt == 32'd0) begin
++                        u_shift[u_bit] <= rx_sync[1];
++                        // Reload with CPB-1, not CPB: the reload cycle is
++                        // already one of the CPB, so CPB here makes the bit
++                        // period CPB+1 and the sampling drifts a clock per
++                        // bit until the stop check lands in the next byte.
++                        u_cnt          <= CPB - 1;
++                        if (u_bit == 3'd7) u_state <= U_STOP;
++                        else               u_bit   <= u_bit + 3'd1;
++                    end else begin
++                        u_cnt <= u_cnt - 32'd1;
++                    end
++                end
++
++                U_STOP: begin
++                    if (u_cnt == 32'd0) begin
++                        // A high stop bit is the only framing check available;
++                        // a low one means we sampled noise, not a byte.
++                        if (rx_sync[1] == 1'b1) begin
++                            rx_byte  <= u_shift;
++                            rx_ready <= 1'b1;
++                        end
++                        u_state <= U_IDLE;
++                    end else begin
++                        u_cnt <= u_cnt - 32'd1;
++                    end
++                end
++
++                default: u_state <= U_IDLE;
++            endcase
++        end
++    end
++
++    assign rx_idle = (idle_cnt >= (4 * CPB)) && (u_state == U_IDLE);
++
++    // ------------------------------------------------------- frame receiver
++    localparam [1:0] S_START = 2'd0;
++    localparam [1:0] S_LEN   = 2'd1;
++    localparam [1:0] S_PAYLD = 2'd2;
++    localparam [1:0] S_SUM   = 2'd3;
++
++    localparam integer IDX_W = $clog2(PAYLOAD_LEN);
++
++    logic [1:0]       state;
++    logic [7:0]       sum;
++    logic [7:0]       len;
++    logic [IDX_W-1:0] index;
++    logic [7:0]       payload [PAYLOAD_LEN];
++    logic             started;   // seen a start byte since the last resynchronise
++
++    always_ff @(posedge clk) begin
++        if (!resetn) begin
++            state          <= S_START;
++            sum            <= 8'd0;
++            len            <= 8'd0;
++            index          <= '0;
++            started        <= 1'b0;
++            o_modifiers    <= 8'd0;
++            o_valid        <= 1'b0;
++            o_frames       <= 32'd0;
++            o_bad_checksum <= 32'd0;
++            o_bad_length   <= 32'd0;
++            o_truncated    <= 32'd0;
++            for (int i = 0; i < KEYS; i++) o_keys[i] <= 8'd0;
++        end else begin
++            o_valid <= 1'b0;
++
++            // A frame that stopped part way is not coming back: resynchronise
++            // rather than sit waiting for bytes that will never arrive.
++            if (started && rx_idle) begin
++                state       <= S_START;
++                started     <= 1'b0;
++                o_truncated <= o_truncated + 32'd1;
++            end else if (rx_ready) begin
++                case (state)
++                    S_START: begin
++                        if (rx_byte == START_BYTE) begin
++                            sum     <= rx_byte;
++                            started <= 1'b1;
++                            state   <= S_LEN;
++                        end
++                    end
++
++                    S_LEN: begin
++                        sum <= sum + rx_byte;
++                        len <= rx_byte;
++                        if (rx_byte != PAYLOAD_LEN[7:0]) begin
++                            o_bad_length <= o_bad_length + 32'd1;
++                            started      <= 1'b0;
++                            state        <= S_START;
++                        end else begin
++                            index <= '0;
++                            state <= S_PAYLD;
++                        end
++                    end
++
++                    S_PAYLD: begin
++                        sum            <= sum + rx_byte;
++                        payload[index] <= rx_byte;
++                        if (index == IDX_W'(PAYLOAD_LEN - 1)) begin
++                            state <= S_SUM;
++                        end else begin
++                            index <= index + 1'b1;
++                        end
++                    end
++
++                    S_SUM: begin
++                        state   <= S_START;
++                        started <= 1'b0;
++                        if (rx_byte == sum) begin
++                            o_modifiers <= payload[0];
++                            for (int i = 0; i < KEYS; i++)
++                                o_keys[i] <= payload[2 + i];
++                            o_valid  <= 1'b1;
++                            o_frames <= o_frames + 32'd1;
++                        end else begin
++                            o_bad_checksum <= o_bad_checksum + 32'd1;
++                        end
++                    end
++
++                    default: begin
++                        state   <= S_START;
++                        started <= 1'b0;
++                    end
++                endcase
++            end
++        end
++    end
++
++endmodule
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index 40ae0fa..90f1f9d 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -141,7 +141,6 @@ reg         rv_new_req;
+ wire [7:0] joy_rx[0:1], joy_rx2[0:1];     // 6 RX bytes for all button/axis state
+ wire [7:0] usb_btn, usb_btn2;
+ wire usb_btn_x, usb_btn_y, usb_btn_x2, usb_btn_y2;
+-wire usb_conerr, usb_conerr2;
+ wire auto_a, auto_b, auto_a2, auto_b2;
+ 
+ 
+@@ -433,29 +432,89 @@ controller_ds2 joy2_ds2 (
+ `endif
+ 
+ `ifdef USB1
+-wire clk12;
+-wire pll_lock_12;
+-wire usb_conerr;
+-wire [1:0] usb_type;
+-pll_12 pll12(.clkin(sys_clk), .clkout0(clk12), .lock(pll_lock_12));
+-usb_hid_host usb_hid_host (
+-    .usbclk(clk12), .usbrst_n(pll_lock_12),
+-    .usb_dm(usb1_dn), .usb_dp(usb1_dp),
+-    .game_snes(joy_usb1), .typ(usb_type), .conerr(usb_conerr)
++// TinyTang: port 1 carries the keyboard link instead of a low-speed USB host.
++// The keyboard runs Tang firmware that drives its own USB D+ line as a GPIO
++// UART, and this reads it.  Both need usb1_dp, so the stock host is displaced
++// rather than kept; port 2 below is untouched.  sys_clk is 50 MHz here, so
++// 281250 baud divides to 177 clocks, 0.44% from exact, while the keyboard's
++// end is exact -- a UART tolerates two to three percent.
++wire [7:0]  link_mods;
++wire [7:0]  link_keys [6];
++wire        link_valid;
++wire [31:0] link_frames;
++wire [31:0] link_bad;
++wire [31:0] link_trunc;
++
++keylink_rx #(.CLK_HZ(50_000_000), .BAUD(281_250)) keyboard_link (
++    .clk(sys_clk), .resetn(sys_resetn), .rx(usb1_dp),
++    .o_modifiers(link_mods), .o_keys(link_keys), .o_valid(link_valid),
++    .o_frames(link_frames), .o_bad_checksum(link_bad), .o_truncated(link_trunc)
+ );
++
++// Both arrow directions and the two buttons are mapped.  The arrow keycodes
++// go to the SNES-layout directions, which is what the pointer reads for
++// movement.
++//
++// Enter and Esc go to A and B rather than to Start and Select, and that is not
++// a detail: the desktop's pointer is built out of xterm mouse reports, and
++// tang_pad_step() only ever looks at TANG_PAD_A and TANG_PAD_B, the two bits
++// the core's own menu uses as "choose".  Start and Select are gamepad bits
++// that nothing on the pointer path inspects, so mapping the keys there made
++// them do nothing at all -- no error, no effect, just silence.  As A and B they
++// become the left and right mouse buttons, which is what a pointer-only
++// desktop can actually act on.
++function [11:0] link_key_to_pad;
++    input [7:0] k;
++    begin
++        case (k)
++            8'h52:   link_key_to_pad = 12'b0000_0001_0000;  // Up    -> bit 4
++            8'h51:   link_key_to_pad = 12'b0000_0010_0000;  // Down  -> bit 5
++            8'h50:   link_key_to_pad = 12'b0000_0100_0000;  // Left  -> bit 6
++            8'h4F:   link_key_to_pad = 12'b0000_1000_0000;  // Right -> bit 7
++            8'h28:   link_key_to_pad = 12'b0001_0000_0000;  // Enter -> A, left click
++            8'h29:   link_key_to_pad = 12'b0000_0000_0001;  // Esc   -> B, right click
++            default: link_key_to_pad = 12'b0000_0000_0000;
++        endcase
++    end
++endfunction
++
++// joy_usb1 is what the core reports upward to the BL616, so the desktop sees
++// these keys without any firmware change; the game path gates joy_usb1 while
++// the overlay is up, which is the behaviour we want.
++assign joy_usb1 = link_key_to_pad(link_keys[0]) | link_key_to_pad(link_keys[1])
++                | link_key_to_pad(link_keys[2]) | link_key_to_pad(link_keys[3])
++                | link_key_to_pad(link_keys[4]) | link_key_to_pad(link_keys[5]);
+ `else
+ assign joy_usb1 = 12'b0;
+ `endif
+ 
+ `ifdef USB2
+-wire usb_conerr2;
+-wire [1:0] usb_type2;
+-usb_hid_host usb_hid_host2 (
+-    .usbclk(clk12), .usbrst_n(pll_lock_12),
+-    .usb_dm(usb2_dn), .usb_dp(usb2_dp),
+-    .game_snes(joy_usb2), .typ(usb_type2), .conerr(usb_conerr2)
++// Port 2 carries a second keyboard-link receiver.  Wiring both ports removes
++// the guess about which physical socket is usb1: whichever one the keyboard is
++// in, its arrows reach the core.  Port 2's low-speed host is displaced for the
++// same reason port 1's was, that both need the pin.
++wire [7:0]  link2_mods;
++wire [7:0]  link2_keys [6];
++wire        link2_valid;
++wire [31:0] link2_bad;
++wire [31:0] link2_trunc;
++
++keylink_rx #(.CLK_HZ(50_000_000), .BAUD(281_250)) keyboard_link2 (
++    .clk(sys_clk), .resetn(sys_resetn), .rx(usb2_dp),
++    .o_modifiers(link2_mods), .o_keys(link2_keys), .o_valid(link2_valid),
++    .o_frames(), .o_bad_checksum(link2_bad), .o_truncated(link2_trunc)
+ );
+-assign led = ~{joy_usb2[1:0], usb_type2, usb_conerr2, usb_type, usb_conerr};
++
++assign joy_usb2 = link_key_to_pad(link2_keys[0]) | link_key_to_pad(link2_keys[1])
++                | link_key_to_pad(link2_keys[2]) | link_key_to_pad(link2_keys[3])
++                | link_key_to_pad(link2_keys[4]) | link_key_to_pad(link2_keys[5]);
++
++// The panel header used to show the low-speed USB hosts' type and error pins.
++// Both hosts are gone from both sockets now, so what is left to show is that
++// the keyboard link is alive: one lamp lights while frames are being accepted,
++// and is dark when the link is not running.  Taken from the receiver's own
++// frame count, so it costs nothing extra to generate.
++assign led = ~{6'b0, link_frames[5], link_frames[0]};
+ `else
+ assign joy_usb2 = 12'b0;
+ `endif
+@@ -483,9 +542,6 @@ assign joypad2_data[0] = joypad_bits2[0];
+ 
+ `endif
+ 
+-//assign led = ~{~UART_RXD, loader_done};
+-//assign led = ~{~UART_RXD, usb_conerr, loader_done};
+-
+ reg [23:0] led_cnt;
+ always @(posedge clk) led_cnt <= led_cnt + 1;
+ //assign led = {led_cnt[23], led_cnt[22]};
+diff --git a/src/usb_hid_host.v b/src/usb_hid_host.v
+deleted file mode 100644
+index 60e075a..0000000
+--- a/src/usb_hid_host.v
++++ /dev/null
+@@ -1,399 +0,0 @@
+-// Usb_hid_host: A compact USB HID host core.
+-//
+-// nand2mario, 8/2023, based on work by hi631
+-// 
+-// This should support keyboard, mouse and gamepad input out of the box, over low-speed 
+-// USB (1.5Mbps). Just connect D+, D-, VBUS (5V) and GND, and two 15K resistors between 
+-// D+ and GND, D- and GND. Then provide a 12Mhz clock through usbclk.
+-//
+-// See https://github.com/nand2mario/usb_hid_host
+-// 
+-// 3/22/2025: add LB and RB buttons, and SNES layout output `game_snes`
+-
+-module usb_hid_host (
+-    input  usbclk,		            // 12MHz clock
+-    input  usbrst_n,	            // reset
+-    inout  usb_dm, usb_dp,          // USB D- and D+
+-
+-    output reg [1:0] typ,           // device type. 0: no device, 1: keyboard, 2: mouse, 3: gamepad
+-    output reg report,              // pulse after report received from device. 
+-                                    // key_*, mouse_*, game_* valid depending on typ
+-    output conerr,                  // connection or protocol error
+-
+-    // keyboard
+-    output reg [7:0] key_modifiers,
+-    output reg [7:0] key1, key2, key3, key4,
+-
+-    // mouse
+-    output reg [7:0] mouse_btn,     // {5'bx, middle, right, left}
+-    output reg signed [7:0] mouse_dx,      // signed 8-bit, cleared after `report` pulse
+-    output reg signed [7:0] mouse_dy,      // signed 8-bit, cleared after `report` pulse
+-
+-    // gamepad 
+-    output [11:0] game_snes,        // SNES layout buttons (R L X A RT LT DN UP START SELECT Y B)
+-    output reg game_l, game_r, game_u, game_d,  // left right up down
+-    output reg game_a, game_b, game_x, game_y, game_sel, game_sta,  // buttons 
+-    output reg game_lb, game_rb,
+-
+-    // debug
+-    output [63:0] dbg_hid_report	// last HID report
+-);
+-
+-wire data_rdy;          // data ready
+-wire data_strobe;       // data strobe for each byte
+-wire [7:0] ukpdat;		// actual data
+-reg [7:0] regs [7];     // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
+-wire save;			    // save dat[b] to output register r
+-wire [3:0] save_r;      // which register to save to
+-wire [3:0] save_b;      // dat[b]
+-wire connected;
+-reg retry;              // retry because we did not detect a HID device
+-
+-assign game_snes = {game_rb, game_lb, game_x, game_a, game_r, game_l, game_d, game_u, game_sta, game_sel, game_y, game_b};
+-
+-ukp ukp(
+-    .usbrst_n(usbrst_n & ~retry), .usbclk(usbclk),
+-    .usb_dp(usb_dp), .usb_dm(usb_dm), .usb_oe(),
+-    .ukprdy(data_rdy), .ukpstb(data_strobe), .ukpdat(ukpdat), .save(save), .save_r(save_r), .save_b(save_b),
+-    .connected(connected), .conerr(conerr));
+-
+-reg  [3:0] rcvct;		// counter for recv data
+-reg  data_strobe_r, data_rdy_r;	// delayed data_strobe and data_rdy
+-reg  [7:0] dat[8];		// data in last response
+-assign dbg_hid_report = {dat[7], dat[6], dat[5], dat[4], dat[3], dat[2], dat[1], dat[0]};
+-// assign dbg_regs = regs;
+-
+-// Gamepad types, see response_recognition below
+-// localparam D_GENERIC = 0;
+-// localparam D_GAMEPAD = 1;			
+-// localparam D_DS2_ADAPTER = 2;
+-// reg [3:0] dev = D_GENERIC;			// device type recognized through VID/PID
+-// assign dbg_dev = dev;
+-
+-reg valid = 0;		    // whether current gamepad report is valid
+-
+-always @(posedge usbclk) begin : process_in_data
+-    data_rdy_r <= data_rdy; data_strobe_r <= data_strobe;
+-    report <= 0;                    // ensure pulse
+-    if (report == 1) begin
+-        // clear mouse movement for later
+-        mouse_dx <= 0; mouse_dy <= 0;
+-    end
+-    if(~data_rdy) rcvct <= 0;
+-    else begin
+-        if(data_strobe && ~data_strobe_r) begin  // rising edge of ukp data strobe
+-            dat[rcvct] <= ukpdat;
+-
+-            if (typ == 1) begin     // keyboard
+-                case (rcvct)
+-                0: key_modifiers <= ukpdat;
+-                2: key1 <= ukpdat;
+-                3: key2 <= ukpdat;
+-                4: key3 <= ukpdat;
+-                5: key4 <= ukpdat;
+-                endcase
+-            end else if (typ == 2) begin    // mouse
+-                case (rcvct)
+-                0: mouse_btn <= ukpdat;
+-                1: mouse_dx <= ukpdat;
+-                2: mouse_dy <= ukpdat;
+-                endcase
+-            end else if (typ == 3) begin    // gamepad
+-                // A typical report layout:
+-                // - d[3] is X axis (0: left, 255: right)
+-                // - d[4] is Y axis
+-                // - d[5][7:4] is buttons YBAX
+-                // - d[6][5:4] is buttons START,SELECT
+-                // - d[6][1:0] is buttons LB,RB
+-                // Variations:
+-                // - Some gamepads uses d[0] and d[1] for X and Y axis.
+-                // - Some transmits a different set when d[0][1:0] is 2 (a dualshock adapater)
+-                case (rcvct)
+-                0: begin
+-                    if (ukpdat[1:0] != 2'b10) begin
+-                        // for DualShock2 adapter, 2'b10 marks an irrelevant record
+-                        valid <= 1;
+-                        // game_l <= 0; game_r <= 0; game_u <= 0; game_d <= 0;
+-                    end else
+-                        valid <= 0;
+-                    if (ukpdat==8'h00) {game_l, game_r} <= 2'b10;
+-                    if (ukpdat==8'h7f) {game_l, game_r} <= 2'b00;
+-                    if (ukpdat==8'hff) {game_l, game_r} <= 2'b01;
+-                end
+-                1: begin
+-                    if (ukpdat==8'h00) {game_u, game_d} <= 2'b10;
+-                    if (ukpdat==8'h7f) {game_u, game_d} <= 2'b00;
+-                    if (ukpdat==8'hff) {game_u, game_d} <= 2'b01;
+-                end
+-                // 3: if (valid) begin 
+-                //     if (ukpdat[7:6]==2'b00) {game_l, game_r} <= 2'b10;
+-                //     if (ukpdat[7:6]==2'b11) {game_l, game_r} <= 2'b01;
+-                // end
+-                // 4: if (valid) begin 
+-                //     if (ukpdat[7:6]==2'b00) {game_u, game_d} <= 2'b10;
+-                //     if (ukpdat[7:6]==2'b11) {game_u, game_d} <= 2'b01;
+-                // end
+-                5: if (valid) begin
+-                    game_x <= ukpdat[4];
+-                    game_a <= ukpdat[5];
+-                    game_b <= ukpdat[6];
+-                    game_y <= ukpdat[7];
+-                end
+-                6: if (valid) begin
+-                    game_sel <= ukpdat[4];
+-                    game_sta <= ukpdat[5];
+-                    game_lb <= ukpdat[0];
+-                    game_rb <= ukpdat[1];
+-                end
+-                endcase
+-                // TODO: add any special handling if needed 
+-                // (using the detected controller type in 'dev')                
+-            end
+-            rcvct <= rcvct + 1;
+-        end
+-    end
+-    if(~data_rdy && data_rdy_r && typ != 0)    // falling edge of ukp data ready
+-        report <= 1;
+-    if (conerr) begin                          // clear everything on connection error
+-        game_l <= 0; game_r <= 0; game_u <= 0; game_d <= 0;
+-        game_a <= 0; game_b <= 0; game_x <= 0; game_y <= 0;
+-        game_sel <= 0; game_sta <= 0;
+-        game_lb <= 0; game_rb <= 0;
+-    end
+-end
+-
+-reg save_delayed;
+-reg connected_r;
+-always @(posedge usbclk) begin : response_recognition
+-    save_delayed <= save;
+-    retry <= 0;
+-    if (save) begin
+-        regs[save_r] <= dat[save_b];
+-    end else if (save_delayed && ~save && save_r == 6) begin     
+-        // falling edge of save for bInterfaceProtocol
+-        if (regs[4] == 3) begin  // bInterfaceClass. 3: HID, other: non-HID
+-            if (regs[5] == 1)    // bInterfaceSubClass. 1: Boot device
+-                typ <= regs[6] == 1 ? 1 : 2;     // bInterfaceProtocol. 1: keyboard, 2: mouse
+-            else
+-                typ <= 3;       // gamepad
+-        end else
+-            retry <= 1;  // not a HID device, wait a while (200ms) and retry
+-    end
+-    connected_r <= connected;
+-    if (~connected & connected_r) typ <= 0;   // clear device type on disconnect
+-end
+-
+-endmodule
+-
+-module ukp(
+-    input usbrst_n,
+-    input usbclk,				// 12MHz clock
+-    inout usb_dp, usb_dm,		// D+, D-
+-    output usb_oe,
+-    output reg ukprdy, 			// data frame is outputing
+-    output ukpstb,				// strobe for a byte within the frame
+-    output reg [7:0] ukpdat,	// output data when ukpstb=1
+-    output reg save,			// save: regs[save_r] <= dat[save_b]
+-    output reg [3:0] save_r, save_b,
+-    output reg connected,
+-    output conerr
+-);
+-
+-    parameter S_OPCODE = 0;
+-    parameter S_LDI0 = 1;
+-    parameter S_LDI1 = 2;
+-    parameter S_B0 = 3;
+-    parameter S_B1 = 4;
+-    parameter S_B2 = 5;
+-    parameter S_S0 = 6;
+-    parameter S_S1 = 7;
+-    parameter S_S2 = 8;
+-    parameter S_TOGGLE0 = 9;
+-    parameter S_TOGGLE1 = 10;
+-
+-    wire [3:0] inst;
+-    reg  [3:0] insth;
+-    wire sample;						// 1: an IN sample is available
+-    // reg connected = 0;
+-    reg inst_ready = 0, up = 0, um = 0, cond = 0, nak = 0, dmis = 0;
+-    reg ug, ugw, nrzon;					// ug=1: output enabled, 0: hi-Z
+-    reg bank = 0, record1 = 0;
+-    reg [1:0] mbit = 0;					// 1: out4/outb is transmitting
+-    reg [3:0] state = 0, stated;
+-    reg [7:0] wk = 0;					// W register
+-    reg [7:0] sb = 0;					// out value
+-    reg [3:0] sadr;						// out4/outb write ptr
+-    reg [13:0] pc = 0, wpc;				// program counter, wpc = next pc
+-    reg [2:0] timing = 0;				// T register (0~7)
+-    reg [3:0] lb4 = 0, lb4w;
+-    reg [13:0] interval = 0;
+-    reg [6:0] bitadr = 0;				// 0~127
+-    reg [7:0] data = 0;					// received data
+-    reg [2:0] nrztxct, nrzrxct;			// NRZI trans/recv count for bit stuffing
+-    wire interval_cy = interval == 12001;
+-    wire next = ~(state == S_OPCODE & (
+-        inst ==2 & dmi |								// start
+-        (inst==4 || inst==5) & timing != 0 |			// out0/hiz
+-        inst ==13 & (~sample | (dpi | dmi) & wk != 1) |	// in 
+-        inst ==14 & ~interval_cy						// wait
+-    ));
+-    wire branch = state == S_B1 & cond;
+-    wire retpc  = state == S_OPCODE && inst==7  ? 1 : 0;
+-    wire jmppc  = state == S_OPCODE && inst==15 ? 1 : 0;
+-    wire dbit   = sb[7-sadr[2:0]];
+-    wire record;
+-    reg  dmid;
+-    reg [23:0] conct;
+-    assign conerr = conct[23] || ~usbrst_n;
+-
+-    usb_hid_host_rom ukprom(.clk(usbclk), .adr(pc), .data(inst));
+-
+-    always @(posedge usbclk) begin
+-        if(~usbrst_n) begin 
+-            pc <= 0; connected <= 0; cond <= 0; inst_ready <= 0; state <= S_OPCODE; timing <= 0; 
+-            mbit <= 0; bitadr <= 0; nak <= 1; ug <= 0;
+-            save <= 0;
+-        end else begin
+-            dpi <= usb_dp; dmi <= usb_dm;
+-            save <= 0;		// ensure pulse
+-            if (inst_ready) begin
+-                // Instruction decoding
+-                case(state)
+-                    S_OPCODE: begin
+-                        insth <= inst;
+-                        if(inst==1) state <= S_LDI0;						// op=ldi
+-                        if(inst==3) begin sadr <= 3; state <= S_S0; end		// op=out4
+-                        if(inst==4) begin ug <= 9; up <= 0; um <= 0; end
+-                        if(inst==5) begin ug <= 0; end
+-                        if(inst==6) begin sadr <= 7; state <= S_S0; end		// op=outb
+-                        if (inst[3:2]==2'b10) begin							// op=10xx(BZ,BC,BNAK,DJNZ)
+-                            state <= S_B0;
+-                            case (inst[1:0])
+-                                2'b00: cond <= ~dmi;
+-                                2'b01: cond <= connected;
+-                                2'b10: cond <= nak;
+-                                2'b11: cond <= wk != 1;
+-                            endcase
+-                        end
+-                        if(inst==11 | inst==13 & sample) wk <= wk - 8'd1;	// op=DJNZ,IN
+-                        if(inst==15) begin state <= S_B2; cond <= 1; end	// op=jmp
+-                        if(inst==12) state <= S_TOGGLE0;
+-                    end
+-                    // Instructions with operands
+-                    // ldi
+-                    S_LDI0: begin	wk[3:0] <= inst; state <= S_LDI1;	end
+-                    S_LDI1: begin	wk[7:4] <= inst; state <= S_OPCODE; end
+-                    // branch/jmp
+-                    S_B2: begin lb4w <= inst; state <= S_B0; end
+-                    S_B0: begin lb4  <= inst; state <= S_B1; end
+-                    S_B1: state <= S_OPCODE;
+-                    // out
+-                    S_S0: begin sb[3:0] <= inst; state <= S_S1; end
+-                    S_S1: begin sb[7:4] <= inst; state <= S_S2; mbit <= 1; end
+-                    // toggle and save
+-                    S_TOGGLE0: begin 
+-                        if (inst == 15) connected <= ~connected;// toggle
+-                        else save_r <= inst;                    // save
+-                        state <= S_TOGGLE1;
+-                      end
+-                    S_TOGGLE1: begin
+-                        if (inst != 15) begin
+-                            save_b <= inst;
+-                            save <= 1;
+-                        end
+-                        state <= S_OPCODE;
+-                    end
+-                endcase
+-                // pc control
+-                if (mbit==0) begin 
+-                    if(jmppc) wpc <= pc + 4;
+-                    if (next | branch | retpc) begin
+-                        if(retpc) pc <= wpc;					// ret
+-                        else if(branch)
+-                            if(insth==15)						// jmp
+-                                pc <= { inst, lb4, lb4w, 2'b00 };
+-                            else								// branch
+-                                pc <= { 4'b0000, inst, lb4, 2'b00 };
+-                        else	pc <= pc + 1;					// next
+-                        inst_ready <= 0;
+-                    end
+-                end
+-            end
+-            else inst_ready <= 1;
+-            // bit transmission (out4/outb)
+-            if (mbit==1 && timing == 0) begin
+-                if(ug==0) nrztxct <= 0;
+-                else
+-                    if(dbit) nrztxct <= nrztxct + 1;
+-                    else     nrztxct <= 0;
+-                if(insth == 4'd6) begin
+-                    if(nrztxct!=6) begin up <= dbit ?  up : ~up; um <= dbit ? ~up :  up; end
+-                    else           begin up <= ~up; um <= up; nrztxct <= 0; end
+-                end else begin
+-                    up <=  sb[{1'b1,sadr[1:0]}]; um <= sb[sadr[2:0]];
+-                end
+-                ug <= 1'b1; 
+-                if(nrztxct!=6) sadr <= sadr - 4'd1;
+-                if(sadr==0) begin mbit <= 0; state <= S_OPCODE; end
+-            end
+-            // start instruction
+-            dmid <= dmi;
+-            if (inst_ready & state == S_OPCODE & inst == 4'b0010) begin // op=start 
+-                bitadr <= 0; nak <= 1; nrzrxct <= 0;
+-            end else 
+-                if(ug==0 && dmi!=dmid) timing <= 1;
+-                else                   timing <= timing + 1;
+-            // IN instruction
+-            if (sample) begin
+-                if (bitadr == 8) nak <= dmi;
+-                if(nrzrxct!=6) begin
+-                    data[6:0] <= data[7:1]; 
+-                    data[7] <= dmis ~^ dmi;		    // ~^/^~ is XNOR, testing bit equality
+-                    bitadr <= bitadr + 1; nrzon <= 0;
+-                end else nrzon <= 1;
+-                dmis <= dmi;
+-                if(dmis ~^ dmi) nrzrxct <= nrzrxct + 1;
+-                else           nrzrxct <= 0;
+-                if (~dmi && ~dpi) ukprdy <= 0;      // SE0: packet is finished. Mouses send length 4 reports.
+-            end
+-            if (ug==0) begin
+-                if(bitadr==24) ukprdy <= 1;			// ignore first 3 bytes
+-                if(bitadr==88) ukprdy <= 0;			// output next 8 bytes
+-            end
+-            if ((bitadr>11 & bitadr[2:0] == 3'b000) & (timing == 2)) ukpdat <= data;
+-            // Timing
+-            interval <= interval_cy ? 0 : interval + 1;
+-            record1 <= record;
+-            if (~record & record1) bank <= ~bank;
+-            // Connection status & WDT
+-            ukprdyd <= ukprdy;
+-            nakd <= nak;
+-            if (ukprdy && ~ukprdyd || inst_ready && state == S_OPCODE && inst == 4'b0010) 
+-                conct <= 0;     // reset watchdog on data received or START instruction
+-            else begin 
+-                if(conct[23:22]!=2'b11) conct <= conct + 1;
+-                else begin pc <= 0; conct <= 0; end		// !! WDT ON
+-            end 
+-        end
+-    end
+-
+-    assign usb_dp = ug ? up : 1'bZ;
+-    assign usb_dm = ug ? um : 1'bZ;
+-    assign usb_oe = ug;
+-    assign sample = inst_ready & state == S_OPCODE & inst == 4'b1101 & timing == 4; // IN
+-    assign record = connected & ~nak;
+-    assign ukpstb = ~nrzon & ukprdy & (bitadr[2:0] == 3'b100) & (timing == 2);
+-    reg    dpi, dmi; 
+-    reg    ukprdyd;
+-    reg    nakd;
+-endmodule
+-
+-module usb_hid_host_rom(clk, adr, data);
+-	input clk;
+-	input [13:0] adr;
+-	output [3:0] data;
+-	reg [3:0] data; 
+-	reg [3:0] mem [536];
+-	initial $readmemh("usb_hid_host_rom.hex", mem);
+-	always @(posedge clk) data <= mem[adr];
+-endmodule
+diff --git a/src/usb_hid_host_rom.hex b/src/usb_hid_host_rom.hex
+deleted file mode 100644
+index 712064a..0000000
+--- a/src/usb_hid_host_rom.hex
++++ /dev/null
+@@ -1,536 +0,0 @@
+-1
+-9
+-0
+-0
+-e
+-9
+-a
+-2
+-8
+-0
+-0
+-1
+-8
+-c
+-0
+-0
+-e
+-b
+-4
+-0
+-f
+-4
+-3
+-0
+-f
+-8
+-4
+-0
+-5
+-f
+-2
+-7
+-0
+-0
+-0
+-0
+-f
+-7
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-9
+-0
+-f
+-3
+-8
+-0
+-5
+-0
+-0
+-0
+-f
+-7
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-e
+-0
+-c
+-4
+-6
+-c
+-5
+-7
+-f
+-3
+-8
+-0
+-5
+-0
+-f
+-7
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-4
+-1
+-c
+-6
+-0
+-f
+-3
+-8
+-0
+-5
+-f
+-4
+-3
+-0
+-f
+-6
+-5
+-0
+-5
+-f
+-2
+-7
+-0
+-0
+-0
+-0
+-f
+-7
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-d
+-1
+-f
+-3
+-8
+-0
+-5
+-e
+-f
+-4
+-6
+-0
+-5
+-f
+-2
+-7
+-0
+-0
+-f
+-b
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-4
+-2
+-f
+-3
+-8
+-0
+-5
+-c
+-f
+-f
+-f
+-0
+-0
+-0
+-8
+-2
+-3
+-3
+-3
+-0
+-5
+-b
+-1
+-0
+-e
+-f
+-f
+-7
+-0
+-5
+-f
+-2
+-7
+-0
+-a
+-0
+-0
+-f
+-3
+-8
+-0
+-5
+-f
+-0
+-0
+-0
+-c
+-f
+-f
+-f
+-0
+-0
+-0
+-0
+-4
+-1
+-a
+-0
+-e
+-b
+-5
+-3
+-5
+-1
+-8
+-2
+-e
+-3
+-3
+-0
+-5
+-b
+-7
+-3
+-e
+-7
+-0
+-0
+-6
+-0
+-8
+-6
+-d
+-2
+-6
+-0
+-0
+-6
+-0
+-1
+-3
+-3
+-0
+-6
+-0
+-8
+-6
+-3
+-c
+-6
+-0
+-8
+-6
+-6
+-0
+-6
+-0
+-0
+-6
+-1
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-2
+-1
+-6
+-0
+-0
+-6
+-0
+-e
+-6
+-4
+-f
+-3
+-3
+-0
+-7
+-0
+-6
+-0
+-8
+-6
+-d
+-2
+-6
+-0
+-0
+-6
+-0
+-1
+-3
+-3
+-0
+-6
+-0
+-8
+-6
+-3
+-c
+-6
+-0
+-8
+-6
+-6
+-0
+-6
+-0
+-0
+-6
+-2
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-8
+-1
+-6
+-0
+-0
+-6
+-2
+-a
+-6
+-4
+-5
+-3
+-3
+-0
+-7
+-0
+-6
+-0
+-8
+-6
+-d
+-2
+-6
+-0
+-0
+-6
+-0
+-1
+-3
+-3
+-0
+-6
+-0
+-8
+-6
+-3
+-c
+-6
+-0
+-0
+-6
+-5
+-0
+-6
+-1
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-b
+-e
+-6
+-5
+-2
+-3
+-3
+-0
+-7
+-0
+-6
+-0
+-8
+-6
+-d
+-2
+-6
+-1
+-0
+-6
+-8
+-e
+-3
+-3
+-0
+-6
+-0
+-8
+-6
+-3
+-c
+-6
+-0
+-0
+-6
+-9
+-0
+-6
+-1
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-0
+-0
+-6
+-7
+-2
+-6
+-5
+-2
+-3
+-3
+-0
+-7
+-0
+-1
+-8
+-6
+-2
+-d
+-0
+-0
+-0
+-1
+-2
+-0
+-0
+-8
+-4
+-7
+-b
+-5
+-7
+-7
+-0
+-6
+-0
+-8
+-6
+-9
+-6
+-6
+-0
+-0
+-6
+-0
+-1
+-3
+-3
+-0
+-7
+-6
+-0
+-8
+-6
+-9
+-6
+-6
+-1
+-0
+-6
+-8
+-e
+-3
+-3
+-0
+-7
+-6
+-0
+-8
+-6
+-9
+-6
+-6
+-1
+-8
+-6
+-8
+-5
+-3
+-3
+-0
+-7
+-6
+-0
+-8
+-6
+-2
+-d
+-3
+-3
+-0
+-7
+-0
+-0

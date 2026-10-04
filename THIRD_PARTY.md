@@ -79,6 +79,50 @@ No nestang code is copied into this repository. The protocol was read as a
 specification and the BL616 side written independently against it. The readings
 are recorded as `PROT-001` and `PROT-002`.
 
+## nestang core patch set (vendored modifications, carried as patches)
+
+The FPGA core this project runs is nand2mario's nestang, modified in place and
+carried as patches rather than as a fork, so the checkout underneath stays
+reconstructible from upstream:
+
+- Project: https://github.com/nand2mario/nestang
+- Base commit: `c2450818e1f0c858e13c5dd16746ee5221a5c760` ("upgrade iosys")
+- License: GPL-3.0 (`COPYING` at that commit)
+- Patches: `third_party/patches/0001` through `0004`, applied by
+  `scripts/apply-nestang-patches.sh`
+
+The patches are modifications to GPL-3.0 sources, so the patch files reproduce
+lines of GPL-3.0 code and that licence governs those lines. Two files they add
+are this project's own work and say so in their headers: `src/keylink_rx.sv`
+(the keyboard-link receiver) is marked `SPDX-License-Identifier: GPL-3.0-only`,
+which is the licence a addition to a GPL-3.0 core should carry. `0004` also
+removes `src/usb_hid_host.v` and its ROM image from the build: the low-speed USB
+hosts they implemented are displaced on both front ports by the keyboard link,
+so the module is no longer instantiated anywhere.
+
+## Keychron QMK firmware (Tang keyboard link, carried as patches)
+
+The keyboard end of the link is a Keychron K2 HE running a modified QMK, built
+from Keychron's fork of QMK and not vendored here — only the changes are:
+
+- Project: https://github.com/Keychron/qmk_firmware
+- Branch: `2025q3`, base commit `c5d998442710b38650903937249144a0cd728ebe`
+- License: GPL-2.0 (`LICENSE`); individual files carry their own notices, and
+  `tmk_core/protocol/chibios/usb_main.c` is marked
+  `SPDX-License-Identifier: GPL-3.0-or-later OR Apache-2.0`. The Keychron board
+  files these patches modify descend from Keychron's GPL-3.0-only tree
+- Patches: `third_party/patches/qmk/`, applied by
+  `scripts/apply-qmk-tang-patches.sh`
+- Added files: `keyboards/keychron/k2_he/ansi/keymaps/tang/`, written for this
+  project and marked `SPDX-License-Identifier: GPL-3.0-only`
+
+As above, the patch files reproduce lines of GPL-licensed sources and those
+lines keep their licence. Nothing of QMK is built into this repository or into
+this firmware: the patches exist so the keyboard firmware can be rebuilt, and
+the resulting image runs on the keyboard, not on the Tang. The keyboard is
+not a USB keyboard while that image is on it, which the patches' README states
+along with both ways back to stock behaviour.
+
 ## Bouffalo SDK
 
 The vendor SDK providing chip support, FatFS and the USB stack:
