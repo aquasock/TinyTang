@@ -124,6 +124,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which FPGA is on this board, and how is it identified on the wire? | DEV | DEV-001 |
 | Which core image belongs on this board? | DEV | DEV-002 |
 | Does the FPGA keep its core across a power cycle? | DEV | DEV-003 |
+| Does this project run AE350 RISC-V code, and how does it get there? | DEV | DEV-004 |
 | Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
 | Why does the SD card fail to mount? | BRD | BRD-002 |
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
@@ -208,6 +209,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as ID=0001081b on every tangload"
 DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
 DEV-003: "The FPGA keeps no configuration across a power cycle, so a core has to be reloaded with tangload on every boot before a ROM will run"
+DEV-004: "A core bitstream can carry AE350 RISC-V software: the program is compiled to a hex file and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and arrives with tangload; the firmware loads whole images and never AE350 code as an artifact of its own"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
@@ -335,6 +337,20 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's session behaviour: a core appeared only after tangload on every boot"
     - "BRD-001: the JTAG pins the load drives"
   verification: "Exercised on this board across many power cycles; each began with an unconfigured FPGA until tangload ran. Not tested against a hypothetical on-board reconfiguration path, because none was found."
+
+- record_id: DEV-004
+  kind: DEVICE
+  topic_id: DEV
+  title: "A core bitstream can carry AE350 RISC-V software, and tangload is how it reaches the board"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The GW5AST contains an AE350 hard RISC-V core, and a design may run software on it. That software is not a separate artifact at load time: it is compiled, written to a hex file, and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and travels with it. Tang-Phosphor's AE350 images are built that way - scripts/build-ae350-ddr3.sh builds the boot ROM from software/ae350 alongside the gateware, and src/ae350/ae350_boot_rom.sv takes its INIT_FILE as ae350_boot.hex and fills the ROM from it at elaboration."
+  consequence: "Deploying a core is therefore also how AE350 software reaches this board, and this project does run it: phosphortang.bin decodes audio on the AE350 (PHOS-001), so its RISC-V program arrived here inside that image by way of tangload. The boundary that matters is worth stating because it is easy to state wrongly in either direction - this firmware loads whole bitstreams and never loads AE350 code as an artifact of its own, yet the RISC-V code it runs is there because of what it loads. A description that omits the AE350 understates what the board is doing; one that says the firmware loads AE350 code implies a load path that does not exist."
+  sources:
+    - "Tang-Phosphor, src/ae350/ae350_boot_rom.sv: the INIT_FILE parameter defaulting to 'ae350_boot.hex' and the initial $readmemh(INIT_FILE, rom) that fills the ROM"
+    - "Tang-Phosphor, scripts/build-ae350-ddr3.sh: 'Build the AE350 + DDR3 image: the boot ROM (software/ae350), the Gowin DDR3 IP ...'"
+    - "Tang-Phosphor, src/ae350/ae350_subsystem.sv: the ae350_boot_rom instantiation"
+  verification: "Read from Tang-Phosphor's AE350 design this session: the ROM init file, the $readmemh, and the build script that produces it. Not exercised on this bench, and no AE350 software was built here."
 
 - record_id: BRD-001
   kind: BOARD
