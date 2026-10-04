@@ -90,6 +90,14 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
   name: "TinyDesk (external project)"
   description: "The desktop environment embedded in this firmware: its port surface, memory model, app set, and host contracts."
 
+- topic_id: EXTCTL
+  name: "Extended FPGA control protocol"
+  description: "The versioned 0x10 register channel, the 0x12 validated block write, and the 0x11 stop-and-credit stream, as defined by the Tang-Control family."
+
+- topic_id: PHOS
+  name: "Phosphor audio loader"
+  description: "The SD-card layout, playlist and metadata contract for the Phosphor core, and the handover and artwork rules its streaming depends on."
+
 - topic_id: TOOL
   name: "Toolchain behaviour"
   description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness."
@@ -130,6 +138,23 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why can't a modern keyboard work on the USB-A ports? | NEST | NEST-001, NEST-002 |
 | How does Tang-Control draw and navigate its OSD? | TCTL | TCTL-001 |
 | How does Tang-Control configure the OTG connector? | TCTL | TCTL-002 |
+| What is Tang-Control's device identity, and is it stock firmware? | TCTL | TCTL-004 |
+| What are 1-wire and 2-wire, and which port is the CDC? | TCTL | TCTL-005 |
+| Which cores exist, and where do their images live? | TCTL | TCTL-006 |
+| What commands did the retired host client offer? | TCTL | TCTL-007 |
+| How was the BL616 reflashed without a BOOT button? | TCTL | TCTL-008 |
+| What diagnostic counters did the RX path keep? | TCTL | TCTL-009 |
+| Which helper scripts existed, and what did each do? | TCTL | TCTL-010 |
+| What is the versioned register protocol over the core UART? | EXTCTL | EXTCTL-001 |
+| What is the validated block write? | EXTCTL | EXTCTL-002 |
+| What is the stop-and-credit stream, and how does it back-pressure? | EXTCTL | EXTCTL-003 |
+| Do peek and poke work with nand2mario's cores? | EXTCTL | EXTCTL-004 |
+| How must a request/response transaction be serialised on the shared link? | EXTCTL | EXTCTL-005 |
+| Where do audio files go, and which formats play? | PHOS | PHOS-001 |
+| What playlist syntax and limits apply? | PHOS | PHOS-002 |
+| How is track metadata chosen, and how is non-ASCII text handled? | PHOS | PHOS-003 |
+| How is a FLAC track sent, and how do tracks join without a gap? | PHOS | PHOS-004 |
+| How does the Phosphor core receive cover art? | PHOS | PHOS-005 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-001 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-001, TDESK-003 |
@@ -180,6 +205,13 @@ NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard output
 TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
 TCTL-002: "Tang-Control's default makes the OTG connector a USB host; TANG_USB_CDC_CONSOLE, supported only on console138k, makes it a CDC console instead"
 TCTL-003: "Tang-Control documents the low-speed host's 15K pull-downs and its DS2-adapter support, and normalises extended baud rates to 2 Mbps before JTAG"
+TCTL-004: "Tang-Control is a fork of nand2mario's firmware-bl616; its CDC command console and the transport protocols behind it are additions on a feature branch, and its USB identity is 0xFFFF:0x6160"
+TCTL-005: "Three wiring modes: one-wire user (normal core use), one-wire diag (JTAG and UART straight to the FPGA through the FT2232 debug cable), two-wire debug (power plus the CDC cable in the board's bottom-left USB-C port)"
+TCTL-006: "Cores: 1 NES/nestang.bin, 2 SNES/snestang.bin, 3 GBA/gbatang.bin, 4 MegaDrive/mdtang.bin, 5 SMS/smstang.bin, 6 PC-XT/pctang.bin, 0x50 Phosphor/phosphortang.bin; an image is looked for at cores/<board>/<name> then cores/<name>"
+TCTL-007: "The retired host client offered ping, status, rxstats, caps, peek, poke, baud, stream, bench, put, get, ls, rm, mkdir and firmware; there is no rename"
+TCTL-008: "No-BOOT update: patch the boot header (body length at 0x84, CRC-32 of the first 252 bytes at 0xFC), send it as a firmware command over CDC, power-cycle, then confirm app_sha256"
+TCTL-009: "The RX task kept counters for bytes, joypad frames, FIFO overflows, FIFO high water, resync bytes, unknown frame types and longest poll gap; the rework adding interrupt-driven RX and a TX mutex fixed gamepad and OSD stutter"
+TCTL-010: "Helper scripts being retired: tangctl.py, liveuart.py, liveuart_draw.py, print_uart.py, jtag.py, tdi_compare.py, crc16.sh and fs.py, which converts a Gowin .fs to .bin"
 TDSH-001: "TinyDesk Shell v0.1.3 at 232a39f; uScript 1.1.1 with if/while/for/function, pipes, redirection; Linux and Windows host ports"
 TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
 TDESK-001: "TinyDesk pins tinydesk-shell at 232a39f, the same revision as this project's submodule; its port surface is td_hal_t: read_byte, write, millis, sleep_ms"
@@ -195,6 +227,16 @@ TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeR
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
 TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
+EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
+EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
+EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
+EXTCTL-004: "Only the Phosphor core implements the extended protocol; nestang's iosys consumes an unknown frame type and ignores it, so caps, peek, poke and baud need a Phosphor core loaded"
+EXTCTL-005: "Hold the shared link across a whole request and its response, not just the transmit bytes; protecting only the send lets another packet overtake the outstanding reply"
+PHOS-001: "Phosphor: the core image sits at cores/console138k/phosphortang.bin and audio under music/; single files decode on the AE350 through Rockbox codecs, while playlists are WAV and FLAC only"
+PHOS-002: "Playlists accept VLC-style .m3u and UTF-8 .m3u8: at most 255 tracks, 512-byte source lines, 255-byte resolved paths, paths relative to the playlist, and rejection of URLs, HLS, nested playlists, missing files and unsupported formats"
+PHOS-003: "Track metadata prefers FLAC ALBUM, ALBUMARTIST (over ARTIST), ARTIST and TITLE comments, then WAV RIFF LIST/INFO IPRD, IART and INAM, then playlist-name and #EXTINF fallbacks; display text is UTF-8 reduced to the core's ASCII font, unsupported code points becoming one '?'"
+PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata block plus the unchanged frames, so large PICTURE or PADDING blocks do not delay the first frame; gapless handover needs core capability bit 7 and the player's draining state 7, queued up to one PCM FIFO (about 0.4 s) ahead"
+PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
 ```
 
 ---
@@ -805,6 +847,228 @@ TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is 
     - "nestang, build.tcl: the console138k branch and its set_device line"
     - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: the Device element"
   verification: "Read from the build files; the 138K artifact is 4,593,044 bytes against the 60K image's 2,321,194, and the loaded image runs on this board."
+
+- record_id: TCTL-004
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control is a fork of nand2mario's firmware, and its USB identity is 0xFFFF:0x6160"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control is a fork of nand2mario's firmware-bl616, the stock TangCore firmware for this board. Its CDC command console and the transport protocols behind it - the extended debug channel, the stream protocol and no-BOOT firmware update - are additions on its feature/usb-cdc-file-transfer branch, not stock behaviour. It identifies itself to the host as USB vendor 0xFFFF, product 0x6160."
+  consequence: "A host client keyed to 0xFFFF:0x6160 will not find TinyTang, which presents 0xFFFF:0x5454. Command names this project inherited, such as tangput and tangflash, come from that console and deliberately match it. The stock firmware it forks has neither the console nor the transports, so its capabilities are not a floor TinyTang was standing on."
+  sources:
+    - "Tang-Control, README.md: 'This repo is a fork of nand2mario's firmware-bl616' and the list of what the fork adds over stock"
+    - "Tang-Control, scripts/tangctl.py: USB_VID = 0xFFFF, USB_PID = 0x6160"
+  verification: "Read from the README and the client. Tang-Control was never run by this project; the record is a statement about that firmware, not about ours."
+
+- record_id: TCTL-005
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The three wiring modes, and which connector carries the CDC"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control names three wiring arrangements. One-wire user mode runs TangCore normally. One-wire diag mode gives JTAG to the FPGA and the UART straight to the FPGA, for core load and execute, reached through the FT2232 debug cable. Two-wire debug mode connects the power cable and the CDC cable together, giving CDC file management, JTAG programming through a Pico 2, and no-BOOT BL616 flashing. The CDC arrives on the board's bottom-left USB-C port. Its client prints this explanation when it finds an FT2232 instead of a CDC device."
+  consequence: "This is the vocabulary behind every '1-wire' and '2-wire' remark in this project's history, including the several sessions where the console was missing because the host was on the wrong path. When ffff:5454 is absent and 0403:6010 is present, the host is on the debug path, which is the one-wire arrangement."
+  sources:
+    - "Tang-Control, README.md: the three mode diagrams and their captions"
+    - "Tang-Control, scripts/tangctl.py: the find_port() hint naming the FT2232, one-wire mode, and the bottom-left USB-C port for the CDC"
+  verification: "Read from the README and the client. The FT2232 half is independently confirmed by BRD-004, which observed that device on this workstation while the CDC was absent."
+
+- record_id: TCTL-006
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The TangCore core inventory and where an image is looked for"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "TangCore's core table is: id 1 NES, directory nes, image nestang.bin; id 2 SNES, snes, snestang.bin; id 3 Game Boy Advance, gba, gbatang.bin; id 4 MegaDrive or Genesis, genesis, mdtang.bin; id 5 Sega Master System, sms, smstang.bin; id 6 IBM PC/XT, pc, pctang.bin; and id 0x50 Phosphor, music, phosphortang.bin. An image is looked for first at cores/<board>/<name> and then at cores/<name>, taking the first that exists and is non-empty."
+  consequence: "This is the naming every core image on the card follows, and why /cores/console138k/ is the directory that matters here. It also explains the core IDs the UART reports: nestang answers 1."
+  sources:
+    - "Tang-Control, core/cores.cpp: init_core_list() and find_core_for_board()"
+  verification: "Confirmed against this board's own card: ls /cores/console138k lists nestang.bin, snestang.bin, gbatang.bin, mdtang.bin, smstang.bin, pctang.bin and phosphortang.bin among others, matching the table's names."
+
+- record_id: TCTL-007
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The retired host client's command surface"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "tangctl.py offers ping, status, rxstats with an optional reset, caps, peek, poke, baud, stream, bench, put, get, ls, rm, mkdir and firmware, run over the CDC as line commands with raw byte phases for transfers. caps, peek, poke and baud need a Phosphor core. There is no rename: rename is get, put under the new name, then rm. The firmware command patches and installs a BL616 image and the client waits for the device to disappear and return."
+  consequence: "This is the capability being retired, and the list to consult when deciding what TinyTang should grow next. Two of these already have equivalents here - put and the firmware install, as tangput and tangflash - and the rest do not: TinyTang has a shell rather than a command protocol, so a client of this shape cannot talk to it unchanged."
+  sources:
+    - "Tang-Control, README.md: the tangctl.py command table and the note that rename does not exist"
+    - "Tang-Control, scripts/tangctl.py: the command implementations"
+  verification: "Read from the README and the client. None of these commands were exercised on hardware by this project."
+
+- record_id: TCTL-008
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The no-BOOT firmware update procedure, in full"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "A build intended for installation has its boot header rewritten before transfer: the body length is written little-endian at 0x84 as the file size less 0x1000, and a CRC-32 of the first 252 bytes is written little-endian at 0xFC. The patched image is then sent over CDC with the firmware command, and the board is power-cycled afterwards, because the BL616 resets into its vendor loader and TangCore only returns on power-on. The client verifies the transfer by reading back the application's SHA-256 and comparing it with the local build, and it requires the transfer to sustain at least a megabyte per second while doing so."
+  consequence: "This is the same header layout this project validates in FLS-001, now with the procedure and the verification step that surround it. The power-cycle requirement matches this project's experience exactly. Note that tangflash here does not patch a header: it expects an image already carrying a valid one."
+  sources:
+    - "Tang-Control, README.md: the inline header-patching script and the two-case flashing section"
+    - "Tang-Control, scripts/tangctl.py: FW_APP_MAX_SIZE, FW_BOOT_HEADER_SIZE, FW_HEADER_REGION, check_boot_image(), read_status(), CRC_VERIFY_MIN_BYTES_PER_SECOND"
+  verification: "Read from the README and the client. The header layout it depends on is confirmed independently by FLS-001."
+
+- record_id: TCTL-009
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The FPGA UART receive path's design, and the counters it kept"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control reworked the FPGA UART receive path to interrupt-driven RX with a TX mutex, reporting that this fixed gamepad and OSD stutter. Its receive task maintains counters for bytes drained, complete joypad frames, hardware FIFO overflows, the most bytes found waiting when the task woke, bytes skipped while searching for 0xAA, frames dropped for an unrecognised type, and the longest interval between polls. Its client exposes them through an rxstats command and can reset them."
+  consequence: "This project reached the same conclusion independently - tang_fpga_uart.c drains the RX ring from an interrupt because the 32-byte FIFO cannot hold a burst at 2 Mbaud - and the counter set is worth adopting: resync_bytes and fifo_overflows are the two that would have diagnosed the framing and rate problems faster than the logs did."
+  sources:
+    - "Tang-Control, utils/utils.h: struct fpga_rx_stats and fpga_rx_get_stats/fpga_rx_reset_stats"
+    - "Tang-Control, README.md: 'FPGA UART RX rework - interrupt-driven RX + a TX mutex (fixes gamepad/OSD stutter)'"
+  verification: "Read from the header and the README. This project's own ISR-drained ring is confirmed working by every UART operation it performs; the counters are not implemented here."
+
+- record_id: TCTL-010
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The helper scripts that are being retired"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Alongside the client, Tang-Control carries liveuart.py and liveuart_draw.py to decode and visualise BL616 to FPGA UART traffic, print_uart.py for a raw dump, jtag.py with tdi_compare.py and crc16.sh as JTAG programming verification helpers, and fs.py to convert a Gowin .fs bitstream to the .bin this board loads."
+  consequence: "liveuart is the most directly useful of these: it is a decoder for the exact protocol PROT-001 describes, and its visualiser would make the joypad and OSD traffic visible in a way neither project's text logs do. fs.py matters because this board consumes .bin, not .fs."
+  sources:
+    - "Tang-Control, README.md: the debug scripts section"
+    - "Tang-Control, scripts/: the file listing"
+  verification: "Read from the README and the directory listing. None of these scripts was run by this project."
+
+- record_id: EXTCTL-001
+  kind: EXTERNAL
+  topic_id: EXTCTL
+  title: "The versioned 0x10 register channel: layout, opcodes and statuses"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Legacy frame type 0x10 carries a versioned request and response channel. Requests are 15 bytes including the command byte: version 1, opcode, a 16-bit sequence, a 32-bit address, a 32-bit data field, and a CRC-16. Responses are 16 bytes including the command byte: version, the request's opcode with bit 7 set, a status byte, the sequence, the address copied from the request, a 32-bit data field, and a CRC-16. Opcodes are 0x00 capability query, 0x01 32-bit read, 0x02 32-bit write and 0x03 negotiated baud change; block writes use opcode 0x04 over frame type 0x12. Statuses are 0 success, 1 unsupported version, 2 unsupported opcode and 3 bad CRC. Capability bits are read32, write32, streaming, negotiated baud and validated block writes. Every field is big-endian, and the CRC is CRC-16/CCITT-FALSE - polynomial 0x1021, initial value 0xFFFF, no reflection, no final XOR - taken over the command byte and every payload byte before the CRC."
+  consequence: "No part of this exists in the stock firmware or in nand2mario's cores; see EXTCTL-004. It is recorded here because it is the register-access contract of the Tang-Control family, and because an implementation of it is the only thing that would give TinyTang peek and poke."
+  sources:
+    - "Tang-Control, docs/extended-control-protocol.md: the version 1 request and response tables and the capability list"
+    - "Tang-Control, utils/fpga_debug.h: FPGA_EXT_VERSION, FPGA_EXT_COMMAND, the opcode and capability enumerations, and the fpga_debug_result structure"
+    - "Tang-Control, utils/fpga_ext_frame.h: fpga_ext_crc16_byte() and fpga_ext_packet_crc()"
+  verification: "Read from the protocol document and the two headers. Not exercised: this project has no Phosphor core loaded and no implementation of the channel."
+
+- record_id: EXTCTL-002
+  kind: EXTERNAL
+  topic_id: EXTCTL
+  title: "Frame type 0x12: a validated multi-word write"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Frame type 0x12 writes between 1 and 64 consecutive 32-bit registers in one transaction. Its frame length is 12 plus 4 times the count, including the command byte, and its payload is version 1, opcode 0x04, a 16-bit sequence, a word-aligned first address, a count byte, the register values in address order, and a CRC-16 over the command byte and every preceding payload byte. The FPGA applies none of the words unless the CRC, version, opcode, count, frame length and alignment are all valid, and then writes them in address order. The reply is an ordinary 0x10 response whose opcode field is 0x84 and whose data field carries the word count; status 2 reports an invalid opcode, count, length or alignment."
+  consequence: "This is the mechanism for updating a block of registers atomically, which is what a display bank commit needs. The absolute rule that nothing is applied unless everything validates is the part worth carrying forward: a partially applied register block would be a rendering fault with no error to point at."
+  sources:
+    - "Tang-Control, docs/extended-control-protocol.md: the block-write section"
+    - "Tang-Control, utils/fpga_debug.h: FPGA_BLOCK_COMMAND 0x12 and FPGA_EXT_BLOCK_MAX_WORDS 64"
+    - "Tang-Control, utils/fpga_ext_frame.h: FPGA_EXT_BLOCK_HEADER_LENGTH and fpga_ext_block_payload()"
+  verification: "Read from the document and the headers. Not exercised here."
+
+- record_id: EXTCTL-003
+  kind: EXTERNAL
+  topic_id: EXTCTL
+  title: "Frame type 0x11: a stop-and-credit byte stream"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Frame type 0x11 carries a byte stream with explicit flow control. A request payload is version, flags, a stream ID, a 32-bit byte offset, a 16-bit data length, the data, and a CRC-16. Flags are start 0x01, data 0x02, end 0x04 and cancel 0x08; data frames carry at most 1024 bytes. After consuming each frame the FPGA replies with a status, the echoed flags and stream ID, the next expected byte offset, a receive credit value and a CRC-16. The sender does not transmit the next frame until that acknowledgement arrives. Start resets the expected offset to zero, and end and cancel carry no data."
+  consequence: "This is how a host feeds a core that cannot keep up, without extra wiring: the core's own acknowledgement provides back-pressure. It is the mechanism a file-streaming command needs, and note that the acknowledgement carries the next expected offset, so a lost or reordered frame is detectable rather than silently absorbed."
+  sources:
+    - "Tang-Control, docs/extended-control-protocol.md: the stream frames section"
+    - "Tang-Control, README.md: the stream and bench commands, and utils/fpga_stream.cpp and fpga_file_stream.cpp as their implementation"
+  verification: "Read from the document and the README. Not exercised here."
+
+- record_id: EXTCTL-004
+  kind: EXTERNAL
+  topic_id: EXTCTL
+  title: "Only the Phosphor core implements the extended protocol"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control states that caps, peek, poke and baud require a Phosphor core loaded, because the extended 0x10 protocol is implemented only by that core. Its README lists this among its gotchas. For comparison, this project's nestang tree handles frame types 0x01 through 0x0d and sends every other type to a default branch that consumes the payload and returns without action."
+  consequence: "The register-access channel is not a property of the board's UART; it is a property of the FPGA design. TinyTang loads nand2mario's cores, which do not implement it, so peek and poke are unavailable here regardless of BL616 firmware - and would become available by loading a Tang-Control-family core rather than by writing anything in TinyTang."
+  sources:
+    - "Tang-Control, README.md: gotcha 2, 'caps/peek/poke/baud need a Phosphor core loaded'"
+    - "nestang, src/iosys/iosys_bl616.v: the RECV_PARAM case covering 3 through 0x0c and the default branch that consumes unknown commands"
+  verification: "The nestang half is read directly in this project's tree. The Phosphor half is Tang-Control's own statement and was not reproduced here."
+
+- record_id: EXTCTL-005
+  kind: EXTERNAL
+  topic_id: EXTCTL
+  title: "A transaction must hold the shared link across its response"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control's debug header states the rule directly: serialise complete request and response transactions across every protocol that shares the FPGA UART, and hold the lock until the matching response arrives. It notes that protecting only the transmit bytes permits another packet to overtake the outstanding response. Its implementation drains any stale response before sending, assigns a sequence number from 1 upward and never 0, and matches version, opcode, sequence and address before accepting a reply."
+  consequence: "This project's transport releases its lock between sending and waiting, which is safe today only because a single command waits for a response while every other sender is fire-and-forget, and because the response parser discards non-matching frames. That is a property of the current callers rather than of the transport, so it is written down here before someone adds a second responder. The sequence and match-before-accept rules are also worth adopting if the register channel is ever implemented."
+  sources:
+    - "Tang-Control, utils/fpga_debug.h: the comment above fpga_link_acquire()"
+    - "Tang-Control, utils/fpga_debug.cpp: transaction_locked(), next_sequence, and the drain of response_ready before each send"
+  verification: "Read from the header and the implementation. This project's own lock discipline is as described, which is why the rule is recorded rather than assumed satisfied."
+
+- record_id: PHOS-001
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "The Phosphor audio loader: layout, codecs and scope"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control provides the filesystem and playlist layer for the Phosphor core. The core image goes at cores/console138k/phosphortang.bin and audio and playlists under music/. Phosphor appears in the main menu with the submenu header 'Phosphor - Audio Player'. Single-file playback decodes on the AE350 using Rockbox's codecs, taking the format from the file's contents rather than its name and covering MP3, WAV, FLAC, MP2, Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA. Playlists remain limited to WAV and FLAC."
+  consequence: "This is the contract a music player on this board would follow, and it is the one place where the AE350 soft core does the work rather than the fabric. It also explains what music/ and phosphortang.bin are doing on the card this project runs from."
+  sources:
+    - "Tang-Control, docs/phosphor-loader.md: the SD-card layout and codec sections"
+    - "Tang-Control, core/tangpsx.cpp and core/phosphor.cpp: the loader and menu implementations"
+  verification: "Read from the loader document. Not exercised here; the card does carry a music/ directory and phosphortang.bin, which is consistent but not a test."
+
+- record_id: PHOS-002
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "The playlist profile: syntax, normalisation and hard limits"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Both .m3u and UTF-8 .m3u8 are accepted in the VLC extended form - an optional #EXTM3U line, #EXTINF with a duration and title, then the track path. Entries may mix WAV and FLAC and extension matching is case-insensitive. Track paths resolve relative to the playlist's own directory; forward and backward slashes, dot components and bounded parent components are normalised without allowing a path to escape the filesystem root; repeated paths stay repeated. Blank lines, comments, LF or CRLF endings and an optional UTF-8 byte-order mark are accepted. A playlist holds at most 255 tracks, a source line is limited to 512 bytes and a resolved path to 255 bytes. URLs, HLS playlists, nested playlists, missing files and unsupported formats are rejected before playback begins. #EXTINF supplies display metadata only: advancement follows the player's reported state, never the tagged duration."
+  consequence: "A bounded, pre-validated playlist is what lets the loader start playing without discovering a problem mid-track. The rule that #EXTINF never drives advancement is the one most likely to be got wrong by a reimplementation."
+  sources:
+    - "Tang-Control, docs/phosphor-loader.md: the VLC M3U compatibility profile section"
+    - "Tang-Control, core/m3u_playlist.cpp and tests/m3u_playlist_test.cpp"
+  verification: "Read from the document and the implementation's test coverage. Not exercised here."
+
+- record_id: PHOS-003
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "Metadata precedence, and how display text is reduced to ASCII"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "A track's displayed album, artist and title prefer FLAC comments - ALBUM, then ALBUMARTIST with ARTIST as its fallback, then ARTIST, then TITLE - falling back to the playlist name and #EXTINF text. WAV files use the RIFF LIST/INFO fields IPRD, IART and INAM when present. The panel shows exactly those three values. Display text is decoded as UTF-8 and reduced to the core's bounded ASCII font: typographic quotes, apostrophes, dashes, non-breaking spaces and ellipses are normalised to readable ASCII, and any other unsupported code point becomes a single question mark."
+  consequence: "The one-to-one substitution rule matters: an unsupported code point must not change the character count, because the FPGA's text layout is positional. This is the same problem this project faces in its own text page, where the font is a fixed 128-entry bitmap table."
+  sources:
+    - "Tang-Control, docs/phosphor-loader.md: the metadata and artwork paragraph"
+    - "Tang-Control, core/phosphor_metadata.cpp and tests/phosphor_metadata_test.cpp"
+  verification: "Read from the document and the test coverage. Not exercised here."
+
+- record_id: PHOS-004
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "How a FLAC track is sent, and how tracks join without a gap"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "A native FLAC track is transmitted as the fLaC marker, then STREAMINFO marked as the last metadata block, then the unchanged audio frames. The core skips every other metadata block, so large PICTURE or PADDING blocks do not delay a track's first frame over the UART, while the display side still reads them from the SD file. Each playlist entry is its own stream session. When the core advertises gapless append in capability bit 7, the loader starts the next entry as soon as the player reports its draining state - state 7 - rather than waiting for the FIFO to empty, and the core plays the new session's first sample on the sample period after the previous track's last, so same-rate tracks are sample-contiguous. The last entry still waits for completion, and older cores fall back to a completion handover."
+  consequence: "Two separable ideas worth carrying forward: reordering a container's metadata so the payload can start sooner, which applies to any streaming format, and using a capability bit to decide between a fast handover and a safe one, which is how a new protocol stays compatible with an older core."
+  sources:
+    - "Tang-Control, docs/phosphor-loader.md: the FLAC and gapless paragraphs"
+    - "Tang-Control, README.md: capability bit 7 as gapless append in the extended protocol's documented set"
+  verification: "Read from the document. Not exercised here."
+
+- record_id: PHOS-005
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "Cover art: baseline JPEG, 92x92 RGB332, committed atomically"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Album art is taken from a FLAC front-cover PICTURE block when present and otherwise from a placeholder. Baseline JPEG covers are centre-fitted to 92x92 pixels in RGB332 on the BL616 and uploaded to an inactive FPGA bank before a single atomic artwork commit. Metadata and artwork work runs independently of the audio stream. The relevant registers named in the document are the audible-stream register 0xa4, and playback is driven by the FPGA's own player state."
+  consequence: "This is why Tang-Control's build pulls in the SDK's TJpgDec sources and sets LV_USE_SJPG: the decoder is the only part of LVGL it uses. A reimplementation would need a baseline JPEG decoder and would still have to respect the inactive-bank-then-commit rule."
+  sources:
+    - "Tang-Control, docs/phosphor-loader.md: the artwork paragraph"
+    - "Tang-Control, CMakeLists.txt: TJPGD_DIR into the SDK's lvgl/extra/libs/sjpg, and the LV_USE_SJPG definition"
+  verification: "Read from the document and the build file. Not exercised here."
 ```
 
 ---
