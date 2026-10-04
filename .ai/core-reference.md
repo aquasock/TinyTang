@@ -267,7 +267,7 @@ PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata bloc
 PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being retired"
 PROV-002: "TinyTang carries a LICENSE (Apache-2.0, matching the TangCore firmware lineage) and a THIRD_PARTY.md naming TangCore, Tang-Control, the vendored Gowin JTAG programmer and openFPGALoader, both MIT TinyDesk submodules, nestang's iosys_bl616.v read as a specification but not copied, the Bouffalo SDK, and colibri"
-PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv, licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT; held here as a reference with no code copied"
+PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv pinned to upstream 3fa78412; read the port when working in SystemVerilog since it ships an AGENTS.md and targets Verilator and free tooling, but treat the original as the authority; licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT, with no code copied here"
 ```
 
 ---
@@ -1247,17 +1247,18 @@ PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHD
 - record_id: PROV-003
   kind: EXTERNAL
   topic_id: PROV
-  title: "colibri: CERN's VHDL common library, held here as a reference"
+  title: "colibri: CERN's VHDL common library, and the SystemVerilog port of it"
   status: VERIFIED
   verified_date: 2026-10-03
-  statement: "colibri is CERN's open-source, vendor-independent, fully verified VHDL common library, developed by the EP department to standardise FPGA designs across the organisation and released publicly in 2026. It lives at gitlab.cern.ch/colibri/colibri, mirrored at gitlab.com/colibri-cern/colibri, with an unofficial and explicitly CERN-disendorsed SystemVerilog port at github.com/kavierim/colibri-sv. The licence is CERN-OHL-W-2.0, the weakly reciprocal CERN Open Hardware Licence, not MIT; the port's NOTICE declares itself a modification of the library's Covered Source made under section 3 of that licence."
-  consequence: "Recorded because future agents will reference it, and so they know the terms before reusing anything. No colibri code is in this tree, so nothing is owed today, but the weak reciprocity applies from the first copied module, and CERN-OHL-W-2.0 is not interchangeable with the Apache-2.0 and MIT licences this project otherwise runs on. It is listed in THIRD_PARTY.md under references consulted, on the same read-not-copied footing as nestang's UART protocol."
+  statement: "colibri is CERN's open-source, vendor-independent, fully verified VHDL common library, developed by the EP department to standardise FPGA designs across the organisation and released publicly in 2026. It lives at gitlab.cern.ch/colibri/colibri, mirrored at gitlab.com/colibri-cern/colibri. For SystemVerilog work there is an unofficial port at github.com/kavierim/colibri-sv, which CERN has not endorsed and which pins itself to upstream commit 3fa784121ccea86d9e65b2e0dc08d2a3327f5f2f on colibri-cern/colibri. That port is written for Verilator and free EDA tooling and ships an AGENTS.md, a CONVENTIONS.md, docs with a module template and playbooks, sim testbenches, fv/ formal material, a sysml/ requirements model, Python behavioural models, and a Yosys ASIC smoke script; it is new and small, with two stars and a last push of 2026-09-30. The licence is CERN-OHL-W-2.0, the weakly reciprocal CERN Open Hardware Licence, not MIT, held in LICENSES/; the port's NOTICE declares itself a modification of the library's Covered Source made under section 3 of that licence."
+  consequence: "Read the port, not the VHDL, when working on this project: it is in the language this family writes, it targets the free toolchain already in use here (Verilator, Yosys, the OSS CAD Suite), and it is the only one of the two aimed at agents at all - it ships an AGENTS.md and a conventions document. The original stays the authority on intent and currency, because the port is unofficial and pinned, so it lags upstream and carries one translator's choices. The licence covers both and is unchanged by any of this: no colibri code is in this tree, nothing is owed today, and the weak reciprocity applies from the first copied module - including from the port, which is itself Covered Source modified under section 3. CERN-OHL-W-2.0 is not interchangeable with the Apache-2.0 and MIT licences this project otherwise runs on."
   sources:
     - "CERN colibri project: https://gitlab.cern.ch/colibri/colibri (mirror https://gitlab.com/colibri-cern/colibri)"
+    - "kavierim/colibri-sv: README.md, AGENTS.md, and its pinned upstream line naming commit 3fa784121ccea86d9e65b2e0dc08d2a3327f5f2f"
     - "kavierim/colibri-sv: LICENSES/CERN-OHL-W-2.0.txt and NOTICE, the port's own licence declaration"
     - "CERN EP department announcement and the FPGA Developers' Forum material on colibri, 2024-2026"
     - "Project statement recorded with the user, 2026-10-03: that future agents will reference it"
-  verification: "The licence was read from the port's LICENSES/ directory and NOTICE file, and the project and mirror locations were confirmed to exist. The library itself is not present in this tree: no colibri source is vendored here."
+  verification: "The licence and the upstream pin were read from the port's own NOTICE, LICENSES/ directory and AGENTS.md, and the project, mirror and port were all confirmed to exist. The library is not present in this tree: no colibri source is vendored here."
 ```
 
 ---

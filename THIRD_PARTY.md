@@ -85,11 +85,22 @@ CERN's vendor-independent, fully verified, open-source VHDL common library,
 and an unofficial SystemVerilog port of it. Kept here as a design and
 verification reference for work on this project.
 
-- Project: https://gitlab.cern.ch/colibri/colibri
+- Original, and the authority: https://gitlab.cern.ch/colibri/colibri
   (mirror: https://gitlab.com/colibri-cern/colibri)
-- SystemVerilog port: https://github.com/kavierim/colibri-sv (unofficial, not
-  endorsed by CERN)
+- SystemVerilog port, and the practical surface here:
+  https://github.com/kavierim/colibri-sv — unofficial, not endorsed by CERN,
+  and pinned to the original at commit
+  `3fa784121ccea86d9e65b2e0dc08d2a3327f5f2f`
 - License: CERN-OHL-W-2.0, weakly reciprocal
 
-No colibri code is copied into this repository. Its reciprocity applies from
-the moment any of it is, so read the licence before reusing a module here.
+Read the port when the work is in SystemVerilog. It targets Verilator and free
+EDA tooling, which is what this family builds with, and it is the only one of
+the two written for agents at all: it ships an `AGENTS.md`, a `CONVENTIONS.md`,
+docs with a module template and playbooks, testbenches, formal material and a
+SysML v2 requirements model. Treat the VHDL original as the authority on intent
+and currency — the port is unofficial and pinned, so it lags upstream and
+carries one translator's choices, and it is new and small.
+
+No colibri code is copied into this repository. The reciprocity applies from
+the moment any of it is, including from the port, which is itself Covered
+Source modified under section 3 of the licence.
