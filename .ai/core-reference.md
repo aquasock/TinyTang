@@ -104,7 +104,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 
 - topic_id: TOOL
   name: "Toolchain behaviour"
-  description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness."
+  description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness, plus the provenance and licence of code vendored into this project."
 ```
 
 ---
@@ -115,6 +115,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 |---|---|---|
 | Which FPGA is on this board, and how is it identified on the wire? | DEV | DEV-001 |
 | Which core image belongs on this board? | DEV | DEV-002 |
+| Does the FPGA keep its core across a power cycle? | DEV | DEV-003 |
 | Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
 | Why does the SD card fail to mount? | BRD | BRD-002 |
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
@@ -142,6 +143,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What is the layout of the core's on-screen text page? | PROT | PROT-004 |
 | Why does the screen go black when the OSD is on? | PROT | PROT-005 |
 | How could a controller navigate a menu? | PROT | PROT-006 |
+| Why can a ROM load end in a black screen with no error? | PROT | PROT-007 |
 | Why can't a modern keyboard work on the USB-A ports? | NEST | NEST-001, NEST-002 |
 | How does Tang-Control draw and navigate its OSD? | TCTL | TCTL-001 |
 | How does Tang-Control configure the OTG connector? | TCTL | TCTL-002 |
@@ -175,6 +177,9 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which IDCODEs does the Gowin programmer accept? | TOOL | TOOL-002 |
 | What versions are the build made from? | TOOL | TOOL-003 |
 | Why must a bitstream be device-specific? | TOOL | TOOL-004 |
+| Where is the USB-enumeration bisection kept? | TOOL | TOOL-005 |
+| Which host tools exist, and what do they need? | TOOL | TOOL-006 |
+| What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 
 ---
 
@@ -183,6 +188,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 ```yaml
 DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as ID=0001081b on every tangload"
 DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
+DEV-003: "The FPGA keeps no configuration across a power cycle, so a core has to be reloaded with tangload on every boot before a ROM will run"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
@@ -210,6 +216,7 @@ PROT-003: "BL616 UART1, TX GPIO 28, RX GPIO 27, 2,000,000 baud, 8N1"
 PROT-004: "The text page is 32 columns by 28 rows of 8x8 cells from a full ASCII font (FONT[0:127][0:7]); column 0 draws in the cursor colour; the core's logo sits at LOGO_X 92, LOGO_Y 201"
 PROT-005: "overlay selects the whole picture at the mixer (nes2hdmi.sv: if (overlay) rgb <= overlay_color), and a core comes out of reset with it on"
 PROT-006: "The core sends its joypad state as response 0x03 every 20 ms when it changes, unconditionally, whether or not anyone asked"
+PROT-007: "A ROM stream into a core that is not running is discarded with no error on either side and surfaces as a black screen; the fpga ID probe between the loads is the only detection"
 NEST-001: "nestang's FPGA USB host is low-speed only, 1.5 Mbps, on two GPIO wires with external 15K pull-downs and a 12 MHz clock; its signalling engine is a 1072-byte ROM program"
 NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard outputs key_modifiers and key1..key4 are unconnected, so a keyboard enumerates and is discarded"
 TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
@@ -238,6 +245,9 @@ TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeR
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
 TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
+TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib.conf and proj.rtos.conf plus ref/, selected by TINYTANG_MIN, TINYTANG_RTOS, TINYTANG_NONEWLIB, TINYTANG_REF, TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL"
+TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
+TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -282,6 +292,19 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
     - "nestang, build.tcl console138k branch: set_device GW5AST-LV138PG484AC1/I0 -device_version B, plus src/boards/console138k.v"
     - "nestang commit 976c326 'add console 138k build files', 2025-03-29"
   verification: "MD5 of the card's image compared against the built artifact; sizes compared against the console60k image. The card's copy is dated 2025-05-02, matching the TangCore 0.9 release the card was built from."
+
+- record_id: DEV-003
+  kind: DEVICE
+  topic_id: DEV
+  title: "The FPGA keeps no configuration across a power cycle, so a core is reloaded every boot"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Nothing on this board reconfigures the GW5AST-138 on power-up: the fabric comes up empty and the BL616 has to program a core image over JTAG. On this bench a core was never present after a power cycle until tangload ran, and the load was what brought the HDMI output and the UART link to life."
+  consequence: "Any procedure that spans a power cycle must reload the core, which is why a cartridge takes three commands in order - tangload to put the core in, fpga to confirm it answers, nesload to stream the ROM - rather than assuming a core is there. It also means there is no persisted fabric state to reason about at boot."
+  sources:
+    - "This project's session behaviour: a core appeared only after tangload on every boot"
+    - "BRD-001: the JTAG pins the load drives"
+  verification: "Exercised on this board across many power cycles; each began with an unconfigured FPGA until tangload ran. Not tested against a hypothetical on-board reconfiguration path, because none was found."
 
 - record_id: BRD-001
   kind: BOARD
@@ -593,6 +616,19 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
     - "Tang-Control, ui/menu_manager.cpp: the joy1 bit tests and the column-0 marker writes"
   verification: "Read from both sources. The frames demonstrably arrive: the transport's frame parser has to skip them to stay synchronised."
 
+- record_id: PROT-007
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "Streaming a ROM into a core that is not listening fails silently"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The ROM stream is one-way: the BL616 sends command 0x07 frames and the core consumes them, so with no core running - or with one running but its overlay still up - that second of UART traffic is discarded and nothing reports an error on either side. Nothing fails and nothing times out, and the visible result is a black screen that cannot be told from a video fault. The fpga probe between the two loads is what makes it detectable: it asks the core for its ID with command 0x01, proving something is answering before the ROM is committed. scripts/boot-cart.tdsh runs that check between its loads and exits non-zero when it fails."
+  consequence: "The probe is not decoration but the only error detection in the cartridge path, so any reimplementation of the load sequence should keep a check between programming the core and streaming the ROM. Without it the failure surfaces later as an unexplained black screen."
+  sources:
+    - "This project's scripts/boot-cart.tdsh: the sequence and the check between the two loads"
+    - "PROT-002: command 0x07 for ROM data and 0x01 for the core ID"
+  verification: "Exercised on this board. scripts/boot-cart.tdsh has been run on its happy path and on its guard path (TDSH-001), and the black-screen-with-audio symptom was seen before the overlay clearing of PROT-005."
+
 - record_id: NEST-001
   kind: EXTERNAL
   topic_id: NEST
@@ -858,6 +894,45 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
     - "nestang, build.tcl: the console138k branch and its set_device line"
     - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: the Device element"
   verification: "Read from the build files; the 138K artifact is 4,593,044 bytes against the 60K image's 2,321,194, and the loaded image runs on this board."
+
+- record_id: TOOL-005
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The USB-enumeration bisection is kept in-tree, selected by environment variable"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The configurations used to isolate TOOL-001 survive as three SDK config files - proj.min.conf, proj.nonewlib.conf and proj.rtos.conf - alongside the SDK's own device example vendored under ref/ as cdc_acm_template.c, ref_main.c and ref_rtos_main.c and built from inside this project. CMakeLists.txt picks them from the environment: TINYTANG_MIN, TINYTANG_RTOS and TINYTANG_NONEWLIB choose a config file, TINYTANG_REF selects the reference build, and TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL add compile definitions that strip the firmware to a USB-only, no-filesystem or no-shell build. The README describes the three config files as the ones that produced TOOL-001's result."
+  consequence: "The negative results in TOOL-001 have a reproducible witness rather than a recollection: setting an environment variable and rebuilding re-runs the bisection. Anyone removing these files or guards should know they are the evidence for why CONFIG_CHERRYUSB_HOST is set and CONFIG_NEWLIB is not."
+  sources:
+    - "This project's CMakeLists.txt: the TINYTANG_* guards and the config selection"
+    - "This project's proj.min.conf, proj.nonewlib.conf, proj.rtos.conf and ref/"
+  verification: "The files and the guards are present in the tree and were read directly. That these particular configs produced TOOL-001's result is this project's own account, not something re-run here."
+
+- record_id: TOOL-006
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "This project's host-side tools, and what they need"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Three Python scripts in tools/ do the host-side work and all need pyserial: tinytang_flash.py writes a firmware image to the BL616 over the CDC with no BOOT button involved, tinytang_put.py puts a file onto the SD card, and tinytang_run.py runs a shell command on the board and streams its output. This is the live set; the retired Tang-Control helpers are recorded separately in TCTL-010. A build machine therefore needs Python with pyserial in addition to the SDK and the RISC-V toolchain of TOOL-003."
+  consequence: "These are the only supported ways to reflash the board and to place files on the card. tinytang_flash.py needs the CDC port free and a power cycle afterwards (FLS-001), and a live screen session holds the port."
+  sources:
+    - "This project's tools/: tinytang_flash.py, tinytang_put.py, tinytang_run.py"
+    - "This project's README.md: 'Python with pyserial for the tools in tools/'"
+  verification: "All three were used against this board: the firmware was flashed, files were put on the card, and shell commands were run and their output captured."
+
+- record_id: TOOL-007
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The vendored Gowin JTAG programmer is Apache-2.0, from nand2mario via Tang-Control"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "ports/bl616/tang_jtag_programmer.c is nand2mario's bit-banged GPIO JTAG programmer for Gowin GW5A and GW2A, (c) 2025.2, licensed Apache-2.0, itself based in part on openFPGALoader by Gwenhael Goavec-Merou. It was taken from Tang-Control's fpga/programmer.cpp and used unmodified apart from its include list. ports/bl616/tang_jtag_glue.h supplies what it expected from its own tree - the console, the card file, the GPIO device handle, and stubs for the FPGA UART bookkeeping - and documents that provenance."
+  consequence: "This is working code inherited from the previous firmware rather than reimplemented, so a claim that only board knowledge was carried over is not quite right: the programmer is a translation unit. Its licence is Apache-2.0 and travels with the file, which is a different licence from the MIT TinyDesk shell submodules (TDSH-001, TDESK-001)."
+  sources:
+    - "This project's ports/bl616/tang_jtag_programmer.c: the Apache-2.0 header, the 2025.2 nand2mario copyright and the openFPGALoader attribution"
+    - "This project's ports/bl616/tang_jtag_glue.h: the provenance comment"
+  verification: "Read from the file header and the glue header in the tree. The programmer is exercised on every tangload, which reports ID=0001081b (DEV-001)."
 
 - record_id: TCTL-004
   kind: EXTERNAL
