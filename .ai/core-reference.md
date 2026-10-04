@@ -186,6 +186,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-002 |
+| Where is colibri, and what are its terms? | PROV | PROV-003 |
 
 ---
 
@@ -264,8 +265,9 @@ PHOS-002: "Playlists accept VLC-style .m3u and UTF-8 .m3u8: at most 255 tracks, 
 PHOS-003: "Track metadata prefers FLAC ALBUM, ALBUMARTIST (over ARTIST), ARTIST and TITLE comments, then WAV RIFF LIST/INFO IPRD, IART and INAM, then playlist-name and #EXTINF fallbacks; display text is UTF-8 reduced to the core's ASCII font, unsupported code points becoming one '?'"
 PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata block plus the unchanged frames, so large PICTURE or PADDING blocks do not delay the first frame; gapless handover needs core capability bit 7 and the player's draining state 7, queued up to one PCM FIFO (about 0.4 s) ahead"
 PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
-PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, CERN's colibri as a reference, and nand2mario's memory module"
-PROV-002: "TinyTang ships no LICENSE and no THIRD_PARTY.md while descending from Apache-2.0 TangCore firmware, vendoring an Apache-2.0 programmer and consuming two MIT submodules; Tang-Phosphor's LICENSE plus THIRD_PARTY.md is the family's model to copy"
+PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being retired"
+PROV-002: "TinyTang carries a LICENSE (Apache-2.0, matching the TangCore firmware lineage) and a THIRD_PARTY.md naming TangCore, Tang-Control, the vendored Gowin JTAG programmer and openFPGALoader, both MIT TinyDesk submodules, nestang's iosys_bl616.v read as a specification but not copied, the Bouffalo SDK, and colibri"
+PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv, licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT; held here as a reference with no code copied"
 ```
 
 ---
@@ -1219,28 +1221,43 @@ PROV-002: "TinyTang ships no LICENSE and no THIRD_PARTY.md while descending from
   title: "The family lineage, as the user states it"
   status: SOURCED
   verified_date: 2026-10-03
-  statement: "Stated by the user on 2026-10-03 as the official lineage. nand2mario's TangCore project is the origin: Tang-Phosphor and Tang-PSX were started from it. Tang-Control is a fork of that same repo, made to add peek and poke and the one-wire and two-wire debug arrangements. On top of that the family uses a DDR3 IP block, TinyDesk, CERN's colibri library as a reference, and nand2mario's memory module."
-  consequence: "This is the attribution chain to check against, and it is why the TCTL records look past Tang-Control to nand2mario rather than treating the fork as an origin. Two links are unresolved: no memory module credited to nand2mario was found in any project here, and colibri appears only as a practice reference in MiSTer-Noodles' core-log narrative, naming no commit and no licence text, so calling it an MIT project is not yet supported by anything on disk."
+  statement: "Stated by the user on 2026-10-03 as the official lineage. nand2mario's TangCore project is the origin: Tang-Phosphor and Tang-PSX were started from it. Tang-Control is a fork of that same repo, made to add peek and poke and the one-wire and two-wire debug arrangements. On top of that the family uses a DDR3 IP block, TinyDesk, CERN's colibri library as a reference, and what the user first recalled as nand2mario's memory module."
+  consequence: "This is the attribution chain to check against, and it is why the TCTL records look past Tang-Control to nand2mario rather than treating the fork as an origin. Both open links were closed the same day: the remembered memory module is nand2mario's bit-banged GPIO JTAG programmer, already vendored here and recorded as TOOL-007, not memory code; and colibri's licence is CERN-OHL-W-2.0, not MIT (PROV-003). Tang-PSX is also being retired, which leaves Tang-Phosphor as the surviving core project and turns Tang-PSX's own reference into something to harvest rather than to cite."
   sources:
     - "Project statement recorded with the user, 2026-10-03"
     - "nand2mario/tangcore README.md: 'TangCore firmware is licensed under Apache 2.0. Each core maintains its original license - please check individual core directories for details.'"
     - "Tang-Control README.md line 3: 'This repo is a fork of nand2mario's firmware-bl616' (https://github.com/nand2mario/tangcore)"
-  verification: "The TangCore origin and the Tang-Control fork are confirmed in the trees, and the split licence (firmware Apache-2.0, cores per-directory) is in nand2mario's README. The DDR3 block is confirmed as Gowin vendor IP, and TinyDesk as the MIT submodules. The memory module and colibri's licence were not found and are unconfirmed."
+  verification: "The TangCore origin and the Tang-Control fork are confirmed in the trees, and the split licence (firmware Apache-2.0, cores per-directory) is in nand2mario's README. The DDR3 configuration is Apache-2.0 values from Sipeed's TangMega-138K-example design while the generated controller is Gowin EDA vendor IP, and TinyDesk is the two MIT submodules. The memory module resolved to the JTAG programmer by the user's correction of 2026-10-03, and colibri's licence was read from the port's own NOTICE and LICENSES/ directory."
 
 - record_id: PROV-002
   kind: TOOLCHAIN
   topic_id: PROV
-  title: "This project carries no licence or third-party notice, and owes both"
+  title: "The licence and third-party notice, and what they cover"
   status: VERIFIED
   verified_date: 2026-10-03
-  statement: "TinyTang has no LICENSE file and no THIRD_PARTY.md. It descends from TangCore's firmware through Tang-Control, and nand2mario's README licenses that firmware Apache-2.0; it vendors ports/bl616/tang_jtag_programmer.c, itself Apache-2.0 with a retained nand2mario copyright (TOOL-007); and it consumes two MIT submodules, tinydesk-shell and tinydesk (TDSH-001, TDESK-001). Apache-2.0 requires the licence text and the notices to travel with distribution, and MIT requires the notice. Only one file in the tree carries an SPDX tag, usb_config.h, and it is a vendor file. Tang-Phosphor is the family's model: a LICENSE plus a THIRD_PARTY.md naming each component, its commit, its author and its licence, and saying explicitly where a source was read but no code copied."
-  consequence: "An open obligation rather than a design question. The fix is a LICENSE (Apache-2.0, matching the firmware lineage this project descends from) and a THIRD_PARTY.md naming the TangCore firmware as the lineage for board knowledge, Tang-Control as the intermediate, the vendored programmer and openFPGALoader behind it, both TinyDesk submodules at their pinned commits, and the vendor SDK. The core UART protocol is the case to state explicitly: it was read from nestang's iosys_bl616.v as a specification and reimplemented, which is exactly what Tang-Phosphor means by 'no code copied'."
+  statement: "TinyTang carries a LICENSE and a THIRD_PARTY.md at the repository root, both added on 2026-10-03. The licence is Apache-2.0, which is the right one because this project descends from TangCore's Apache-2.0 firmware by way of Tang-Control. THIRD_PARTY.md names TangCore's firmware as the lineage for the board knowledge, Tang-Control as the intermediate, the vendored Gowin JTAG programmer with its retained nand2mario copyright and openFPGALoader behind it, both TinyDesk submodules at their pinned MIT commits, nestang's iosys_bl616.v read as a specification but not copied (GPL-3.0), the Bouffalo SDK (Apache-2.0), and colibri (PROV-003). Before this the tree held neither file and only usb_config.h carried an SPDX tag, and that is a vendor file."
+  consequence: "The obligation this project had is discharged. The one claim in THIRD_PARTY.md that has to stay true is the one about the core UART protocol: it was read from a GPL-3.0 source as a specification and reimplemented, and that is the sentence that keeps a GPL-3.0 reading from becoming an unlicensed copy. Any file vendored from here on needs a line in that document and a record here."
   sources:
-    - "This project's tree: no LICENSE and no THIRD_PARTY.md, checked 2026-10-03"
+    - "This project's LICENSE and THIRD_PARTY.md, added 2026-10-03"
     - "nand2mario/tangcore README.md: the Apache-2.0 firmware licence"
-    - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model, read this session"
+    - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model followed"
     - "TOOL-007, TDSH-001 and TDESK-001: the vendored programmer and the two submodules"
-  verification: "The absence of both files was checked directly in the tree, and only usb_config.h carries an SPDX tag. The obligations follow from the licences named in the files themselves."
+  verification: "Both files exist in the tree, and each entry in THIRD_PARTY.md was written from a licence read directly: tangcore's README, the programmer's own header, Tang-Control's LICENSE, the two submodules' VERSION and commit, the SDK's LICENSE, and colibri's NOTICE and LICENSES/."
+
+- record_id: PROV-003
+  kind: EXTERNAL
+  topic_id: PROV
+  title: "colibri: CERN's VHDL common library, held here as a reference"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "colibri is CERN's open-source, vendor-independent, fully verified VHDL common library, developed by the EP department to standardise FPGA designs across the organisation and released publicly in 2026. It lives at gitlab.cern.ch/colibri/colibri, mirrored at gitlab.com/colibri-cern/colibri, with an unofficial and explicitly CERN-disendorsed SystemVerilog port at github.com/kavierim/colibri-sv. The licence is CERN-OHL-W-2.0, the weakly reciprocal CERN Open Hardware Licence, not MIT; the port's NOTICE declares itself a modification of the library's Covered Source made under section 3 of that licence."
+  consequence: "Recorded because future agents will reference it, and so they know the terms before reusing anything. No colibri code is in this tree, so nothing is owed today, but the weak reciprocity applies from the first copied module, and CERN-OHL-W-2.0 is not interchangeable with the Apache-2.0 and MIT licences this project otherwise runs on. It is listed in THIRD_PARTY.md under references consulted, on the same read-not-copied footing as nestang's UART protocol."
+  sources:
+    - "CERN colibri project: https://gitlab.cern.ch/colibri/colibri (mirror https://gitlab.com/colibri-cern/colibri)"
+    - "kavierim/colibri-sv: LICENSES/CERN-OHL-W-2.0.txt and NOTICE, the port's own licence declaration"
+    - "CERN EP department announcement and the FPGA Developers' Forum material on colibri, 2024-2026"
+    - "Project statement recorded with the user, 2026-10-03: that future agents will reference it"
+  verification: "The licence was read from the port's LICENSES/ directory and NOTICE file, and the project and mirror locations were confirmed to exist. The library itself is not present in this tree: no colibri source is vendored here."
 ```
 
 ---
