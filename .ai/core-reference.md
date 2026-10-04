@@ -1,0 +1,841 @@
+# TINYTANG TECHNICAL REFERENCE
+
+> **Project:** TinyTang
+> **Purpose:** The authoritative lookup for externally defined facts this project depends on: the board's wiring and fitted parts, the BL616's registers and memory, the interface contract of the FPGA cores we boot, the contracts of the external projects we embed, and the behaviour of the vendor tools.
+> **Authority:** Per `.ai/core.md`, consult this file before looking anything up online. A record is authoritative to the extent of its `status` and cited `sources`. When a better or newer source is found online, add or supersede a record and notify the user.
+
+This file records what an outside source (a datasheet, schematic, vendor SDK, vendor tool, or external repository) says, plus hardware observations that confirm or refute it. It does not record project history, build results, or discussion; those belong in `core-log.md`. It does not record project design choices unless an external fact forces them.
+
+Three of the records here are negative results — facts about what this hardware *cannot* do. They are recorded because each cost a session to establish and each would otherwise be re-litigated: see USB-002, USB-003, and NEST-002.
+
+---
+
+## 1. AI operating rules
+
+```yaml
+schema_version: 1
+
+record_kinds:
+  - DEVICE      # FPGA silicon: part, revision, identification
+  - BOARD       # Tang Console 138K board: pins, parts, clocks, wiring, power
+  - SOC         # BL616 microcontroller: address map, USB block, power domains
+  - USB         # USB behaviour on this board: roles, VBUS, speeds, stack lifecycle
+  - FLASH       # BL616 flash layout and boot image format
+  - PROTOCOL    # the BL616 <-> loaded FPGA core UART contract
+  - EXTERNAL    # interface contracts owned by other projects
+  - TOOLCHAIN   # Bouffalo SDK, CherryUSB, Gowin EDA, RISC-V toolchain
+
+statuses:
+  VERIFIED:   "Primary source cited AND confirmed on this project's hardware or tools."
+  SOURCED:    "Primary source cited; not yet confirmed on this project's hardware or tools."
+  INFERRED:   "Derived from secondary sources, reverse inspection, or consistent observation; no primary source. Flag before relying on it."
+  SUPERSEDED: "Replaced by the record named in superseded_by."
+
+rules:
+  - "One fact or one tightly coupled fact group per record."
+  - "Every record cites at least one source with enough detail to re-check it: repository path plus commit, file, symbol, register name, or tool version."
+  - "Separate what the source says (statement) from what it means for this project (consequence)."
+  - "Diagnostic or implementation limits chosen by this project are never recorded as standard or device limits."
+  - "Do not rewrite a settled record's statement. Correct it by adding a new record and marking the old one SUPERSEDED with superseded_by."
+  - "An INFERRED record must say how it was inferred, in verification."
+  - "A negative result is a fact. Record what the hardware cannot do with the same rigour as what it can, and say how many attempts established it."
+  - "When an online lookup was needed because this file had no answer, add the finding here with the existing syntax, then notify the user if the source is newer or more valid than a record already here."
+  - "Use technical names (GW5AST-138, BL616, CDC, OTG). The user's conversational names are not used in this file."
+```
+
+---
+
+## 2. Topic catalog
+
+Topic IDs are the `record_id` prefix. An entry reserves a name; it does not claim coverage.
+
+```yaml
+- topic_id: DEV
+  name: "GW5AST-138 FPGA device"
+  description: "The FPGA fitted to the Tang Console 138K: identification and the bitstreams built for it."
+
+- topic_id: BRD
+  name: "Tang Console 138K board"
+  description: "Board wiring, fitted parts, clocks, power inputs, and the FPGA pin assignments this firmware depends on."
+
+- topic_id: BL6
+  name: "BL616 microcontroller"
+  description: "The board's companion MCU: peripheral base addresses, the USB OTG block, the allocator, and the always-on domain."
+
+- topic_id: USB
+  name: "USB behaviour on this board"
+  description: "What the BL616's USB port does and does not do here: roles, VBUS, negotiated speeds, and the lifecycle of the stacks."
+
+- topic_id: FLS
+  name: "BL616 flash layout and boot image"
+  description: "Where the application lives, how a boot header is validated, and what a soft reset leaves behind."
+
+- topic_id: PROT
+  name: "BL616 to FPGA core UART contract"
+  description: "The frame format and command set a loaded Tang core expects on the board's UART1, and the on-screen text page it exposes."
+
+- topic_id: NEST
+  name: "nestang (external project)"
+  description: "nand2mario's NES core for Tang boards: its FPGA-side USB host, its board targets, and the outputs it leaves unconnected."
+
+- topic_id: TCTL
+  name: "Tang-Control (external project)"
+  description: "The reference BL616 firmware for this board: how it drives the OSD, and how it configures the OTG connector."
+
+- topic_id: TDSH
+  name: "TinyDesk Shell (external project)"
+  description: "The shell this firmware runs: version, scripting language, and the terminal control sequences it emits."
+
+- topic_id: TDESK
+  name: "TinyDesk (external project)"
+  description: "The desktop environment embedded in this firmware: its port surface, memory model, app set, and host contracts."
+
+- topic_id: TOOL
+  name: "Toolchain behaviour"
+  description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness."
+```
+
+---
+
+## 3. Active routing
+
+| Question | Consult first | Fast records |
+|---|---|---|
+| Which FPGA is on this board, and how is it identified on the wire? | DEV | DEV-001 |
+| Which core image belongs on this board? | DEV | DEV-002 |
+| Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
+| Why does the SD card fail to mount? | BRD | BRD-002 |
+| Where do the two USB-A controller ports go? | BRD | BRD-003 |
+| What is the onboard USB debug bridge? | BRD | BRD-004 |
+| Does the board need a particular power input? | BRD | BRD-005 |
+| Where are the USB OTG registers, and which bit is which? | BL6 | BL6-001 |
+| How much RAM does the BL616 have? | BL6 | BL6-002 |
+| How do I read free heap? | BL6 | BL6-003 |
+| Why do xPortGetFreeHeapSize() and friends fail to link? | BL6 | BL6-004 |
+| Is there any real-time clock? | BL6 | BL6-005 |
+| How do I read the CPU clock? | BL6 | BL6-006 |
+| What speed does the console negotiate? | USB | USB-001 |
+| Can the OTG block tell me what is on the other end of the cable? | USB | USB-002 |
+| Can the OTG connector power a keyboard? | USB | USB-003 |
+| Is it safe to re-register the console's endpoints? | USB | USB-004 |
+| Why is there no host deinit, and what must be done by hand? | USB | USB-005 |
+| How do I tell whether a host is attached? | USB | USB-006 |
+| Where does the application live in flash, and what does a soft reset do? | FLS | FLS-001 |
+| What is the frame format a loaded core expects? | PROT | PROT-001 |
+| Which commands does a loaded core understand? | PROT | PROT-002 |
+| Which UART and rate reach a loaded core? | PROT | PROT-003 |
+| What is the layout of the core's on-screen text page? | PROT | PROT-004 |
+| Why does the screen go black when the OSD is on? | PROT | PROT-005 |
+| How could a controller navigate a menu? | PROT | PROT-006 |
+| Why can't a modern keyboard work on the USB-A ports? | NEST | NEST-001, NEST-002 |
+| How does Tang-Control draw and navigate its OSD? | TCTL | TCTL-001 |
+| How does Tang-Control configure the OTG connector? | TCTL | TCTL-002 |
+| Which shell revision is this, and what can a script do? | TDSH | TDSH-001 |
+| Which sequences must a console mirror understand? | TDSH | TDSH-002 |
+| What does TinyDesk need from a port? | TDESK | TDESK-001, TDESK-003 |
+| How much RAM does the desktop need? | TDESK | TDESK-002 |
+| Why does the Terminal window say "No shell backend in this build."? | TDESK | TDESK-004 |
+| How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
+| Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
+| Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
+| Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
+| Why is CONFIG_CHERRYUSB_HOST set with a device-only firmware? | TOOL | TOOL-001 |
+| Which IDCODEs does the Gowin programmer accept? | TOOL | TOOL-002 |
+| What versions are the build made from? | TOOL | TOOL-003 |
+| Why must a bitstream be device-specific? | TOOL | TOOL-004 |
+
+---
+
+## 4. Fast lookup index
+
+```yaml
+DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as ID=0001081b on every tangload"
+DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
+BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
+BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
+BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
+BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB Debugger'), a separate USB path from the BL616's CDC"
+BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
+BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
+BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
+BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and heapsize; PMEM_HEAP is the same heap unless the chip is a BL618"
+BL6-004: "xPortGetFreeHeapSize() and xPortGetMinimumEverFreeHeapSize() do not exist in this build; using them fails at link time"
+BL6-005: "There is an HBN always-on RTC counter (HBN_Enable_RTC_Counter, HBN_Get_RTC_Timer_Val) with a selectable 32 kHz source: a counter, not a calendar, and no battery"
+BL6-006: "bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) returns the CPU clock"
+USB-001: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps (lsusb -t); CONFIG_USB_HS sets CDC_MAX_MPS 512, which is legal only at HS"
+USB-002: "No role signal follows the cable: OTG_CSR's ID bit tracks the forced configuration (PDS IDDIG), not the connector"
+USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing comes out, in both DRVBUS_POL polarities, and a device that reacts to power stayed dark for 60 s"
+USB-004: "usbd_add_endpoint() assigns by endpoint index, not by appending, and usbd_deinitialize() resets intf_offset and calls usb_dc_deinit(), so tdsh_bl616_console_init() is safe to call again"
+USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-only, and usb_hc_low_level_init() has no counterpart, so the port must be returned to device mode by hand"
+USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
+FLS-001: "Application at 0x40000, staging at 0x100000, commit runs from .tcm_code with interrupts off; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
+PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
+PROT-002: "Commands: 01 core ID, 02 config string, 03 joypad (core to BL616), 04 cursor, 05 text, 06 loading state, 07 ROM data, 08 overlay, 09 HID, 0a/0b floppy, 0c PS/2"
+PROT-003: "BL616 UART1, TX GPIO 28, RX GPIO 27, 2,000,000 baud, 8N1"
+PROT-004: "The text page is 32 columns by 28 rows of 8x8 cells from a full ASCII font (FONT[0:127][0:7]); column 0 draws in the cursor colour; the core's logo sits at LOGO_X 92, LOGO_Y 201"
+PROT-005: "overlay selects the whole picture at the mixer (nes2hdmi.sv: if (overlay) rgb <= overlay_color), and a core comes out of reset with it on"
+PROT-006: "The core sends its joypad state as response 0x03 every 20 ms when it changes, unconditionally, whether or not anyone asked"
+NEST-001: "nestang's FPGA USB host is low-speed only, 1.5 Mbps, on two GPIO wires with external 15K pull-downs and a 12 MHz clock; its signalling engine is a 1072-byte ROM program"
+NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard outputs key_modifiers and key1..key4 are unconnected, so a keyboard enumerates and is discarded"
+TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
+TCTL-002: "Tang-Control's default makes the OTG connector a USB host; TANG_USB_CDC_CONSOLE, supported only on console138k, makes it a CDC console instead"
+TCTL-003: "Tang-Control documents the low-speed host's 15K pull-downs and its DS2-adapter support, and normalises extended baud rates to 2 Mbps before JTAG"
+TDSH-001: "TinyDesk Shell v0.1.3 at 232a39f; uScript 1.1.1 with if/while/for/function, pipes, redirection; Linux and Windows host ports"
+TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
+TDESK-001: "TinyDesk pins tinydesk-shell at 232a39f, the same revision as this project's submodule; its port surface is td_hal_t: read_byte, write, millis, sleep_ms"
+TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
+TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
+TDESK-004: "The Terminal app draws 'No shell backend in this build.' exactly when s_backend is NULL; td_terminal_set_backend() supplies it"
+TDESK-005: "A Terminal backend is td_term_backend_t: start, read, write, user, set_user; the ESP32-C6 reference runs the shell in a task over two FreeRTOS stream buffers"
+TDESK-006: "The Editor saves with Ctrl+S; the host HAL clears IXON so it arrives, and a board port has no termios, so the user's terminal eats it as XOFF and freezes the display"
+TDESK-007: "td_run() returns after td_quit(); td_shutdown() restores the terminal"
+TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock.c and proto/td_tls.c: POSIX sockets, esp_timer.h, and mbedTLS with esp_crt_bundle.h"
+TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
+TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
+TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
+TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
+TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
+```
+
+---
+
+## 5. Records
+
+```yaml
+- record_id: DEV-001
+  kind: DEVICE
+  topic_id: DEV
+  title: "The board's FPGA is a GW5AST-138, identified by JTAG IDCODE 0x0001081b"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The Tang Console 138K carries a GW5AST-138. Its JTAG IDCODE is 0x0001081b, and the acknowledged IDCODE constant for that part is IDCODE_GWAST_138."
+  consequence: "Any bitstream loaded by tangload must be built for GW5AST-138B. The programmer checks the detected IDCODE against its table of known parts, and every load here reports ID=0001081b."
+  sources:
+    - "Tang-Control, fpga/programmer.cpp: #define IDCODE_GWAST_138 0x0001081b (local checkout, /run/media/vash/GIT/Tang-Control)"
+    - "Tang-Control, fpga/programmer.cpp: the accepted-IDCODE test in fpga_program()"
+  verification: "Reported by the programmer on every tangload run against this board, for example 'Writing 4593044 bytes...ID=0001081b'. Consistent across the whole session."
+
+- record_id: DEV-002
+  kind: DEVICE
+  topic_id: DEV
+  title: "cores/console138k/nestang.bin is nand2mario's generated console138k artifact"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The NES core on the card is 4,593,044 bytes with MD5 808b1f14b19d2d2db670ba95b8fa9ebf, byte-identical to the artifact produced by the nestang tree's console138k target. The place-and-route report for that build names GW5AST-138, device version B, part GW5AST-LV138PG484AC1/I0. The console60k image is 2,321,194 bytes."
+  consequence: "The image is the right one for this board; there is no 60K/138K ambiguity to resolve. Note that the 138K project is generated from the device name by build.tcl rather than checked in as a .gprj, so searching for a project file will not find it."
+  sources:
+    - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: Device id GW5AST-138B, partNumber GW5AST-LV138PG484AC1/I0 (local checkout /run/media/vash/GIT/tangcore/nestang)"
+    - "nestang, impl/pnr/nestang_console138k_ds2.rpt.txt: Device GW5AST-138, Device Version B"
+    - "nestang, build.tcl console138k branch: set_device GW5AST-LV138PG484AC1/I0 -device_version B, plus src/boards/console138k.v"
+    - "nestang commit 976c326 'add console 138k build files', 2025-03-29"
+  verification: "MD5 of the card's image compared against the built artifact; sizes compared against the console60k image. The card's copy is dated 2025-05-02, matching the TangCore 0.9 release the card was built from."
+
+- record_id: BRD-001
+  kind: BOARD
+  topic_id: BRD
+  title: "BL616 to FPGA JTAG pins are GPIO 0 through 3"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The board's JTAG link from the BL616 to the FPGA uses TMS = GPIO 0, TCK = GPIO 1, TDO = GPIO 2, TDI = GPIO 3."
+  consequence: "ports/bl616/tang_jtag_glue.h defines these four, and the vendored Gowin programmer drives them for its fast bit-bang path. Every core load depends on this mapping."
+  sources:
+    - "Tang-Control, utils/init.cpp: the GPIO_HIGH_Z register writes annotated reg_gpio_tms/tck/tdo/tdi"
+    - "This project's ports/bl616/tang_jtag_glue.h, reproduced from the working build's preprocessed source"
+  verification: "tangload programs the FPGA successfully and repeatedly on this board."
+
+- record_id: BRD-002
+  kind: BOARD
+  topic_id: BRD
+  title: "The SD card is power-gated behind GPIO 16, held high"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The card does not come up unless GPIO 16 is driven high. Without it f_mount returns FR_NOT_READY (3). The SDK's dev-board SD init does not touch that pin."
+  consequence: "ports/bl616/tdsh_fs_bl616.c drives GPIO 16 before mounting; sdh_power_enable() is the only board-specific line in the mount path."
+  sources:
+    - "Tang-Control, utils/init.cpp: 'Set GPIO 1 (physical pin 15) to high to enable SDMMC' followed by bflb_gpio_set(gpio_dev, GPIO_PIN_16)"
+  verification: "Measured on this board: FRESULT 3 before, 0 after. The shell reads and writes the card."
+
+- record_id: BRD-003
+  kind: BOARD
+  topic_id: BRD
+  title: "The two USB-A controller ports are FPGA pins, not BL616 pins"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The Tang Console's two USB-A ports reach the FPGA on four pins, all IO_TYPE=LVCMOS33: usb1_dp H13 and usb1_dn G13 (the left port), usb2_dp M15 and usb2_dn M16. There is no PHY or transceiver on them."
+  consequence: "Nothing the BL616's firmware does can change those ports. They are driven by the FPGA design loaded into the fabric, which is why the keyboard question is a core question and not a firmware one."
+  sources:
+    - "nestang, src/boards/console.cst: 'USB1 and USB2 (usb1 is on the left)' with the four IO_LOC/IO_PORT lines"
+    - "nestang, src/nestang_top.sv: usb_hid_host and usb_hid_host2 instantiated on usb1_dn/dp and usb2_dn/dp under ifdef USB1/USB2"
+  verification: "Read from the constraint file and the instantiation, and consistent with the observed behaviour of the ports under nestang."
+
+- record_id: BRD-004
+  kind: BOARD
+  topic_id: BRD
+  title: "The onboard debug bridge is a SIPEED FT2232, a separate USB path"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The board carries an onboard debug bridge enumerating as 0403:6010 FT2232C/D/H Dual UART/FIFO, manufacturer SIPEED, product 'USB Debugger', two vendor-class interfaces. It is a distinct USB device from the BL616's CDC, and it appears on the host only when the host is connected to that path."
+  consequence: "Its presence in lsusb and the absence of ffff:5454 is the signature of the host being on the debug path rather than the BL616's OTG connector, which is a useful diagnostic when the console is unexpectedly missing."
+  sources:
+    - "Observed in lsusb on this workstation: 'Bus 001 Device NNN: ID 0403:6010 Future Technology Devices International, Ltd FT2232C/D/H Dual UART/FIFO IC', with sysfs manufacturer SIPEED and product USB Debugger"
+  verification: "Seen directly during a port-mode change that removed the BL616 from the bus."
+
+- record_id: BRD-005
+  kind: BOARD
+  topic_id: BRD
+  title: "The board has two power inputs and runs on either"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The Tang Console has a dedicated USB power input in addition to the OTG connector, and the board runs from either supply. The user's power-cycle procedure is to unplug both and restore power first, then the OTG cable."
+  consequence: "Host mode on the OTG connector would not need to power the board, and the power cycle needed after a tangflash is a physical one rather than a reset. Playback of this fact should not be assumed beyond that."
+  sources:
+    - "User report, 2026-10-03: 'my tang has both the power and otg USB cable plugged in. they both supply power and the tang can run on either'"
+  verification: "Not instrumented. Consistent with the board surviving removals and reinsertions of the OTG cable with the console session intact, but the power routing was not measured."
+
+- record_id: BL6-001
+  kind: SOC
+  topic_id: BL6
+  title: "USB register block addresses and the bits that describe the port's role"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The BL616's USB register block is at USB_BASE 0x20072000. OTG_CSR is at +0x80 and carries USB_ID_HOV_POV (bit 21), USB_CROLE_HOV_POV (bit 20), USB_SPD_TYP_HOV_POV (bits 23:22), USB_VBUS_VLD_HOV (19), USB_A_SESS_VLD (18), USB_B_SESS_VLD_POV (17), USB_A_BUS_DROP_HOV (5) and USB_A_BUS_REQ_HOV (4). The power-domain USB control register is at BFLB_PDS_BASE 0x2000E000 + 0x500, carrying PDS_REG_USB_IDDIG (bit 5) and PDS_REG_USB_DRVBUS_POL (bit 4)."
+  consequence: "ports/bl616/tang_usbstat.c reads OTG_CSR and usb_ctl to report these; ports/bl616/tang_usb_role.c writes A_BUS_DROP, A_BUS_REQ, IDDIG and DRVBUS_POL. OTG_ISR is deliberately not read: its bits include pulse-or-value flags the running stack may depend on."
+  sources:
+    - "Bouffalo SDK, drivers/lhal/include/hardware/usb_v2_reg.h: the 0x80 : OTG_CSR block and USB_OTG_CSR_OFFSET 0x80"
+    - "Bouffalo SDK, drivers/lhal/src/bflb_usb_v2.c (lines 10-31): the local defines BFLB_USB_BASE, BFLB_PDS_BASE, PDS_USB_CTL_OFFSET, PDS_REG_USB_DRVBUS_POL, PDS_REG_USB_IDDIG"
+    - "Bouffalo SDK, drivers/lhal/config/bl616/bl616_memorymap.h: USB_BASE 0x20072000"
+  verification: "Read on this board: usbstat prints OTG_CSR 0x00be0020 in device mode and 0x000e0010 in host mode, and usb_ctl 0x00000023 in device mode and 0x00000003 with IDDIG cleared in host mode. The bit interpretations match those values."
+
+- record_id: BL6-002
+  kind: SOC
+  topic_id: BL6
+  title: "The BL616 has 320 KB of OCRAM and this board fits no external RAM"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The BL616's on-chip OCRAM is 320 KB at base 0x20FC0000. A PSRAM window is declared in the memory map, but the SDK's mem.h maps PMEM_HEAP to the same internal heap unless the chip is a BL618, so on this part there is a single heap."
+  consequence: "The desktop's 100x30 geometry was chosen to fit: 24,008 bytes per screen buffer against a 320 KB budget. The desktop port reports no external RAM to System Monitor rather than a zero."
+  sources:
+    - "Bouffalo SDK, drivers/lhal/config/bl616/bl616_memorymap.h: BL616_OCRAM_BASE 0x20FC0000, BL616_OCRAM_END + 320 * 1024"
+    - "Bouffalo SDK, components/mm/mem.h: '#if defined(CONFIG_PSRAM) && defined(BL616) // only for bl618' guards PMEM_HEAP"
+  verification: "Read from the SDK headers. The build's linker output is consistent: g_kmemheap at 0x62fcb63c with a heap region of about 251 KB, and no separate PSRAM heap in use."
+
+- record_id: BL6-003
+  kind: SOC
+  topic_id: BL6
+  title: "The allocator is TLSF, and its free figure is queryable"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The SDK's allocator is TLSF, exposed through components/mm/mem.h as 'struct mem_heap_s { void *priv; void *heapstart; size_t heapsize; size_t free_bytes; }' with the global g_kmemheap and the functions kfree_size() and pfree_size(). bflb_tlsf.c updates free_bytes on every allocation, free and realloc, and sets heapsize to the region size less tlsf_size()."
+  consequence: "ports/bl616/td_desktop_bl616.c supplies System Monitor's heap readings from kfree_size() and g_kmemheap.heapsize. It tracks its own low-water mark, because the SDK keeps none; that is a minimum of its own samples, not of every allocation."
+  sources:
+    - "Bouffalo SDK, components/mm/mem.h: the struct, the externs, and kfree_size"
+    - "Bouffalo SDK, components/mm/tlsf/bflb_tlsf.c: heap->heapsize = heapsize - tlsf_size(); heap->free_bytes adjustments in bflb_malloc/bflb_free/bflb_realloc"
+    - "Bouffalo SDK, components/mm/mem.c: kfree_size() returns g_kmemheap.free_bytes"
+  verification: "Read from the SDK. The API resolves and links, so it exists in this build, but the values it returns have not been read on hardware - System Monitor was reported blank before this was added and its result was not separately confirmed afterward."
+
+- record_id: BL6-004
+  kind: SOC
+  topic_id: BL6
+  title: "FreeRTOS's own heap queries do not exist in this build"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "xPortGetFreeHeapSize() and xPortGetMinimumEverFreeHeapSize() are declared in FreeRTOS's portable.h and defined in heap_1.c and heap_5.c, but are not present in this firmware: the SDK allocates through TLSF, and the FreeRTOS heap implementations are not linked."
+  consequence: "Reaching for the familiar FreeRTOS heap API fails at link time, not at runtime. Use mem.h's kfree_size() and g_kmemheap instead; see BL6-003."
+  sources:
+    - "Link error on this project's build: 'undefined reference to xPortGetFreeHeapSize' and '... xPortGetMinimumEverFreeHeapSize' from ports/bl616/td_desktop_bl616.c"
+    - "Bouffalo SDK, components/os/freertos/include/portable.h and portable/MemMang/heap_5.c: the declarations and heap_5 definitions"
+  verification: "Observed directly as a build failure, then resolved by switching to mem.h."
+
+- record_id: BL6-005
+  kind: SOC
+  topic_id: BL6
+  title: "An always-on RTC counter exists, but it is a counter, not a clock"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The BL616's HBN (always-on) domain provides HBN_Enable_RTC_Counter(), HBN_Clear_RTC_Counter(), HBN_Set_RTC_Timer() and HBN_Get_RTC_Timer_Val(), the last reading HBN_RTC_TIME_H with a latch. The 32 kHz source is selectable among HBN_32K_RC (internal RC), HBN_32K_XTAL (external crystal) and HBN_32K_DIG. There is no calendar and no battery."
+  consequence: "It can measure elapsed time independently of the CPU clock and would plausibly survive a soft reset, but a wall clock still has to be told the time once per power-up. This project currently reports no clock and the taskbar says so. Whether this board fits a 32.768 kHz crystal is not established."
+  sources:
+    - "Bouffalo SDK, drivers/soc/bl616/std/include/bl616_hbn.h: the RTC counter and timer prototypes, and the HBN_32K_* type definitions"
+    - "Bouffalo SDK, drivers/soc/bl616/std/src/bl616_hbn.c line 1781: the implementation of HBN_Get_RTC_Timer_Val"
+  verification: "Read from the SDK, including the implementation. Not exercised on hardware: no command reads the counter yet."
+
+- record_id: BL6-006
+  kind: SOC
+  topic_id: BL6
+  title: "The CPU clock is readable through bflb_clk_get_system_clock"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) returns the CPU clock in Hz; BFLB_SYSTEM_CPU_CLK is defined as 1."
+  consequence: "ports/bl616/td_desktop_bl616.c converts it to MHz for System Monitor's CPU figure."
+  sources:
+    - "Bouffalo SDK, drivers/lhal/include/bflb_clock.h: '#define BFLB_SYSTEM_CPU_CLK 1' and 'uint32_t bflb_clk_get_system_clock(uint8_t type)'"
+  verification: "Resolves and links in this build. The value it returns has not been read on hardware."
+
+- record_id: USB-001
+  kind: USB
+  topic_id: USB
+  title: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The firmware's CDC device enumerates at High Speed. The kernel reports the two CDC interfaces at 480M, and the build sets CONFIG_USB_HS, which makes CDC_MAX_MPS 512 - a bulk packet size legal only at High Speed."
+  consequence: "Frame rate and transfer size for anything streamed over the console (the desktop's ANSI output, tool uploads) are bounded by USB and not by the serial framing. The desktop's redraws over this link are far cheaper than they would be over a UART."
+  sources:
+    - "lsusb -t on this workstation: 'Port 004: Dev NNN, If 0, Class=Communications, Driver=cdc_acm, 480M' and the paired CDC Data interface, also 480M"
+    - "Bouffalo SDK, components/usb/cherryusb/CMakeLists.txt: if(CONFIG_USB_HS) sdk_add_compile_definitions(-DCONFIG_USB_HS)"
+    - "This project's ports/bl616/usb_cdc_bl616.c: '#ifdef CONFIG_USB_HS #define CDC_MAX_MPS 512'"
+  verification: "Measured on the wire with lsusb, not inferred from configuration."
+
+- record_id: USB-002
+  kind: USB
+  topic_id: USB
+  title: "No role signal follows the cable; the ID bit tracks forced configuration"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Across a swap of the OTG cable from a PC to a keyboard and back, including a period with nothing attached, OTG_CSR's USB_ID_HOV_POV, USB_CROLE_HOV_POV, USB_VBUS_VLD_HOV, USB_A_SESS_VLD and USB_B_SESS_VLD_POV never changed. Only the speed field moved, from high to full and back, which tracks the link rather than the attachment. In device mode USB_ID reads 1 and in host mode it reads 0, following the PDS_REG_USB_IDDIG bit that the host bring-up clears."
+  consequence: "Role detection cannot be built on the OTG block's status. Use the device stack's own enumeration events instead - see USB-006. Ports/bl616/tang_usbwatch.c and tang_usbstat.c are the instruments."
+  sources:
+    - "This project's /usbrole.log, produced by usbwatch 0.1.3: 'go_host', 'probe start, budget 60s', then the same csr=000e0010 pds=00000003 repeated, then 'probe result: host: nothing enumerated in 60s'"
+    - "Bouffalo SDK, drivers/lhal/src/bflb_usb_v2.c usb_hc_low_level_init(): 'enable device-A for host' by clearing PDS_REG_USB_IDDIG"
+  verification: "Measured on this board by moving the cable with a probe running, twice; the second run added the DRVBUS_POL phase and the timestamps."
+
+- record_id: USB-003
+  kind: USB
+  topic_id: USB
+  title: "The OTG connector does not source VBUS, so it cannot host"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "With the port switched to host, the SDK's host bring-up runs and requests power - OTG_CSR ends with USB_A_BUS_REQ_HOV set and USB_A_BUS_DROP_HOV clear - but no power appears on the connector. A device that visibly reacts to power stayed dark through a full 60-second window, and the OTG status never changed. Flipping PDS_REG_USB_DRVBUS_POL, which the SDK defines and never writes anywhere, made no difference. It is not a rail that is always live either: in device mode, with no PC attached, a device gets nothing, which is correct for a peripheral and shows the port's VBUS is switched rather than shared with the board's supply."
+  consequence: "No keyboard, gamepad or storage device can be hosted on this connector. The role switching in ports/bl616/tang_usb_role.c works; there is no hardware behind the host half. The practical workaround for powering a device would be a self-powered hub in the port, which is untested."
+  sources:
+    - "This project's /usbrole.log: 'phase 1: DRVBUS_POL=0, csr=000e0010 pds=00000003', 'phase 2: DRVBUS_POL=1, pds=00000013', 'probe result: host: nothing enumerated in 60s'"
+    - "Bouffalo SDK, drivers/lhal/src/bflb_usb_v2.c usb_hc_low_level_init(): the drop-then-request VBUS sequence"
+    - "nestang, src/nestang_top.sv comment on the console138k usage: the Console has onboard SD and FPGA-side controller ports"
+  verification: "Two hardware runs with the cable moved by the user, plus a separate test in device mode with no host attached. The DRVBUS_POL flip is proven to have executed by the pds value in the log."
+
+- record_id: USB-004
+  kind: USB
+  topic_id: USB
+  title: "The console's endpoints can be re-registered safely"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "usbd_add_endpoint() assigns into the endpoint arrays by index rather than appending, so registering the same endpoint twice overwrites rather than duplicating. usbd_deinitialize() sets g_usbd_core.intf_offset = 0 and calls usb_dc_deinit(). usbd_initialize() is just usb_dc_init()."
+  consequence: "tdsh_bl616_console_init() is safe to call again after a deinit, which is what makes the way back from host mode a plain re-init in ports/bl616/tang_usb_role.c."
+  sources:
+    - "Bouffalo SDK, components/usb/cherryusb/core/usbd_core.c: usbd_add_endpoint(), usbd_deinitialize(), usbd_initialize()"
+  verification: "Read in the SDK before relying on it, then exercised: the device-to-host-to-device sequence ran and the device stack came back up. It did not produce a working console on its own - that required USB-005's fix - so this record establishes that re-registration is legal, not that the round trip works unaided."
+
+- record_id: USB-005
+  kind: USB
+  topic_id: USB
+  title: "There is no host deinit; the port must be returned to device mode by hand"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The SDK provides usb_hc_low_level_init(), which initialises the PHY, attaches USBH_IRQHandler to interrupt 37, clears PDS_REG_USB_IDDIG to force A-device, and drives USB_A_BUS_DROP_HOV then USB_A_BUS_REQ_HOV to request VBUS. It provides no counterpart. usbh_deinitialize() is only usbh_hub_deinitialize(), a software teardown, so those register settings survive it."
+  consequence: "Bringing the device stack back up after a host session succeeds but leaves the port insisting it is a host, and no host ever enumerates the board. ports/bl616/tang_usb_role.c's port_back_to_device() restores the three bits explicitly: set A_BUS_DROP, clear A_BUS_REQ, set IDDIG."
+  sources:
+    - "Bouffalo SDK, drivers/lhal/src/bflb_usb_v2.c: usb_hc_low_level_init() and the absence of any matching deinit"
+    - "Bouffalo SDK, components/usb/cherryusb/core/usbh_core.c: usbh_deinitialize() calling usbh_hub_deinitialize()"
+  verification: "Established the hard way: a host session left the board dark on USB even with the cable in a PC, and recovered only on a power cycle. The bit-restoring fix is in the source and the sequence now returns cleanly, though the fix itself was not separately re-measured after the port-mode change that followed."
+
+- record_id: USB-006
+  kind: USB
+  topic_id: USB
+  title: "CherryUSB's configured/disconnected events are the usable host-present signal"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The device stack's usbd_event_handler() receives USBD_EVENT_CONFIGURED when a host has enumerated the device and configured it, and USBD_EVENT_DISCONNECTED when the host goes away."
+  consequence: "This is the signal any role switching should be built on, given USB-002. ports/bl616/usb_cdc_bl616.c already turns them into s_configured, which tdsh_bl616_console_connected() exposes."
+  sources:
+    - "This project's ports/bl616/usb_cdc_bl616.c: usbd_event_handler(), setting and clearing s_configured"
+  verification: "In use for the whole session: the configured flag is what the console's writes are gated on and what the OSD watch reports through."
+
+- record_id: FLS-001
+  kind: FLASH
+  topic_id: FLS
+  title: "Application at 0x40000, staging at 0x100000, and a soft reset lands in the vendor loader"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The application occupies flash from 0x40000 with a maximum of 0x80000 bytes. A new image is staged in an erased region at 0x100000, verified against the file, and only then copied into the application slot. The copy must run from .tcm_code with interrupts disabled, because once the first application sector is erased no instruction may be fetched from the application's XIP flash. The boot header carries magic at 0x00, 0x08 and 0x64, a CRC-32 of the first 252 bytes at 0xFC, and a body length at 0x84 counting bytes after the 4 KiB header region. A soft reset lands in the vendor loader."
+  consequence: "tangflash validates the header and the file's length against it before erasing anything, and the user power-cycles afterwards. The vendor loader below 0x40000 is never touched."
+  sources:
+    - "Tang-Control, utils/firmware_update.cpp: FW_APP_BASE, FW_STAGING_BASE, the sector helpers and the erase/write/verify loops"
+    - "This project's ports/bl616/tdsh_tang_flash.c: the constants and check_boot_header()"
+  verification: "tangflash has been run roughly a dozen times this session, each time followed by a power cycle and a working console."
+
+- record_id: PROT-001
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "Frame format between the BL616 and a loaded core"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Frames in both directions are 0xAA, a 16-bit length high byte first, a length low byte, a type byte, then payload. The length counts the type byte, so a frame carrying n bytes of data has length n+1. A frame whose length high byte is 8 or more drops the receiver back to hunting for the next 0xAA."
+  consequence: "ports/bl616/tang_fpga_link.h documents this and FPGA_FRAME_MAX is 2047; tang_fpga_frame() refuses longer frames rather than sending them. The reference firmware's fpga_tx_header() writes len >> 8 first, confirming the byte order."
+  sources:
+    - "nestang, src/iosys/iosys_bl616.v: the protocol comment block above the receiver, and the RECV_IDLE/RECV_LEN1/RECV_LEN2 state machine with its 'max frame length 2047' check"
+    - "Tang-Control, utils/utils.cpp: fpga_tx_header() writing 0xAA, len >> 8, len & 0xFF, cmd"
+  verification: "Implemented and working: the core-ID probe, the cartridge stream and the OSD writes all use it."
+
+- record_id: PROT-002
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The command set a loaded core understands"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Commands to the core: 0x01 get core ID, 0x02 get core config string, 0x03 set core config, 0x04 move the OSD cursor to x,y, 0x05 display a string from the cursor, 0x06 set loading state, 0x07 load data to the ROM path, 0x08 overlay on/off, 0x09 send USB joystick state, 0x0a send a floppy sector, 0x0b write a disk management register, 0x0c send a PS/2 scancode, 0x0d debug printf. Responses from the core: 0x01 core ID, 0x02 config string, 0x03 joypad state every 20 ms, 0x04 a floppy sector write, 0x05 a floppy sector read."
+  consequence: "ports/bl616 covers 0x01, 0x04, 0x05, 0x06, 0x07 and 0x08, which is what the core-ID probe, the cartridge loader and the OSD need. Not implemented: the floppy, PS/2 and HID paths, which belong to other cores."
+  sources:
+    - "nestang, src/iosys/iosys_bl616.v: the command list in the header comment and the case statements in RECV_PARAM"
+  verification: "Six of these commands are exercised on hardware: the core answers 0x01, casts a 131,088-byte ROM through 0x07, and draws through 0x04, 0x05 and 0x08."
+
+- record_id: PROT-003
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The core link is UART1 at 2 Mbaud"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The BL616 reaches a loaded core on UART1, transmit GPIO 28 and receive GPIO 27, at 2,000,000 baud, 8N1. The core side is iosys_bl616's async receiver and transmitter, both parameterised with BAUD_RATE 2_000_000."
+  consequence: "ports/bl616/tang_fpga_uart.c configures exactly this RP2350-free arrangement: GPIO 28 as UART1_TX, GPIO 27 as UART1_RX, and the RX side drained from an interrupt because the BL616's 32-byte FIFO cannot hold a burst at this rate."
+  sources:
+    - "Tang-Control, utils/init.cpp: bflb_gpio_uart_init for GPIO_PIN_28 as UART1_TX and GPIO_PIN_27 as UART1_RX in the non-Primer, non-Nano branch"
+    - "nestang, src/iosys/iosys_bl616.v: 'localparam BAUD_RATE = 2_000_000' and the async_receiver/async_transmitter instantiations"
+  verification: "fpga reports 'core 1 answering on UART1 at 2000000 baud'; a 131,088-byte ROM streams without a dropped byte."
+
+- record_id: PROT-004
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The core's on-screen text page: 32 by 28 cells of 8x8"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "A loaded core carries a text layer of 32 columns by 28 rows of 8x8 cells, drawn from a full ASCII bitmap font declared as FONT[0:127][0:7]. Each glyph is eight bytes, one per row, with the low bit the leftmost column; the eighth row is blank for most glyphs. Column 0 of every row draws in the cursor colour rather than the text colour, and cannot be switched off. The core draws its own logo into the same layer at LOGO_X 92 and LOGO_Y 201, 72 by 14 pixels, and it survives a clear because clearing writes the character buffer while the logo comes from a separate table."
+  consequence: "ports/bl616/tang_osd.c clips text at the row end and its menu uses column 0 for the selection marker, which is the only highlight the page offers. ports/bl616/tang_osd_term.c stops at 25 rows to keep the scroll region clear of the logo, which occupies rows 25 and 26 across columns 11 to 20."
+  sources:
+    - "nestang, src/iosys/textdisp.v: the module comment '32x28 text display in 8x8 font', the LOGO_X/LOGO_Y constants, and the is_cursor and logo comparisons in the pixel logic"
+    - "nestang, src/assets/font.vh: 'localparam [7:0] FONT[0:127][0:7]'"
+    - "nestang, src/iosys/iosys_bl616.v: the comment on command 0x05, 'display string from cursor', and the cursor_x < 32 test"
+  verification: "The user confirmed the page, the menu marker and the blinking cursor on hardware. The glyph table was decoded and checked: 'A', '0', '/', '_' and '.' render as expected."
+
+- record_id: PROT-005
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The overlay is a whole-picture layer, and a core starts with it on"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The overlay is not a per-pixel text mask: the HDMI mixer selects it wholesale with 'if (overlay) rgb <= overlay_color'. A core comes out of reset with the overlay asserted, since iosys_bl616 declares 'reg overlay_reg = 1'."
+  consequence: "A cartridge loaded without clearing the overlay plays its music behind a black screen carrying only the core's logo, which reads as a video fault and is not one. This cost a session to find, with the game audible the whole time. ports/bl616/tang_fpga_uart.c sends command 0x08 with 0 before releasing the core, through tang_osd_set() so the module's idea of the state stays true."
+  sources:
+    - "nestang, src/hdmi2/nes2hdmi.sv line 210: 'if (overlay) rgb <= {overlay_color...}'"
+    - "nestang, src/iosys/iosys_bl616.v: 'reg overlay_reg = 1; assign overlay = overlay_reg;' and the command 0x08 handling"
+  verification: "Observed: the game ran with music and no picture until the overlay was cleared, then the intro screen appeared. Confirmed by the user."
+
+- record_id: PROT-006
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The core reports its joypad state unprompted every 20 ms"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "iosys_bl616 sends response 0x03 unprompted, with a frame length of 5, whenever the joypad state changes and at most every 20 ms: joy1 high byte, joy1 low byte, joy2 high byte, joy2 low byte. It does this whether or not the BL616 asked for anything. Tang-Control's menu is navigated by literal bit tests on that word - joy1 & 0x10 is up, 0x20 is down, 0x100 or 0x1 is choose - and its selection marker is a '>' written to column 0 of the active row."
+  consequence: "A controller-driven menu needs no core change and no encoder: read the frame and redraw the marker. This project currently parses response 0x03 only to keep the reader in sync and discards it, so the capability is available and unbuilt. osd menu <n> is the seam it would drive."
+  sources:
+    - "nestang, src/iosys/iosys_bl616.v: the SEND_IDLE branch selecting SEND_JOYPAD on change with JOY_UPDATE_INTERVAL, and resp_frame_len <= 5"
+    - "Tang-Control, ui/menu_manager.cpp: the joy1 bit tests and the column-0 marker writes"
+  verification: "Read from both sources. The frames demonstrably arrive: the transport's frame parser has to skip them to stay synchronised."
+
+- record_id: NEST-001
+  kind: EXTERNAL
+  topic_id: NEST
+  title: "nestang's FPGA-side USB host is low-speed only, with its protocol in a ROM"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The USB host in the FPGA fabric supports low-speed USB (1.5 Mbps) only. It expects D+, D-, VBUS and GND with two external 15K pull-downs, and a 12 MHz clock on usbclk. There is no full-speed or high-speed handling in the design. Its low-level signalling engine is not pure logic: usb_hid_host.v instantiates usb_hid_host_rom and fetches instructions from a 1072-byte program loaded by $readmemh."
+  consequence: "No full-speed or high-speed device can be used on the board's USB-A ports, whatever firmware is written, and raising the host's speed class would mean rewriting that ROM program as well as re-checking the electrical layer. Instruments: see NEST-002 for what the host does with what it reads."
+  sources:
+    - "nestang, src/usb_hid_host.v: the module comment 'This should support keyboard, mouse and gamepad input out of the box, over low-speed USB (1.5Mbps). Just connect D+, D-, VBUS (5V) and GND, and two 15K resistors between D+ and GND, D- and GND. Then provide a 12Mhz clock through usbclk.'"
+    - "nestang, src/usb_hid_host.v: 'usb_hid_host_rom ukprom(.clk(usbclk), .adr(pc), .data(inst))' and the S_OPCODE/branch/jmppc decode"
+    - "nestang, src/pll/pll_12.v and its instantiation feeding usbclk"
+  verification: "Read from the source. Consistent with the observed device type classification in the same file, which checks bInterfaceClass == 3 and bInterfaceSubClass == 1 for keyboard and mouse and calls anything else a gamepad."
+
+- record_id: NEST-002
+  kind: EXTERNAL
+  topic_id: NEST
+  title: "nestang wires only the gamepad output, so keyboard input is discarded"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "usb_hid_host.v parses full keyboard reports, producing key_modifiers and key1 through key4 when a device identifies as a boot keyboard. In nestang_top.sv only .game_snes is connected; the keyboard outputs are left unconnected, and a search of the top level and iosys_bl616 for those signals finds nothing. The device type goes only to the LED."
+  consequence: "A keyboard plugged into a USB-A port enumerates and is read, and every keystroke is then dropped. No keyboard can reach this firmware through those ports regardless of its speed. Adding the ability would mean a protocol extension and a rebuilt core, which this project has deliberately avoided."
+  sources:
+    - "nestang, src/nestang_top.sv: the usb_hid_host instantiation with only .usbclk, .usbrst_n, .usb_dm, .usb_dp, .game_snes, .typ and .conerr connected"
+    - "nestang, src/usb_hid_host.v: the typ == 1 keyboard report layout with key_modifiers and key1..key4"
+  verification: "Read from the source: a search for key1, key2, key_modifiers and 'keyboard' across nestang_top.sv and iosys_bl616.v returns nothing."
+
+- record_id: TCTL-001
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control draws and navigates its OSD from the BL616"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control's OSD is entirely the BL616's work. overlay_cursor(x, y) and overlay_printf() are protocol commands 0x04 and 0x05. Navigation is a bit test on the joypad state the FPGA relays. Its file chooser, menu manager and on-screen console all draw this way, and the console's line editor prints an underscore as its caret and reads keys from key_buf[4], filled by a HID parser."
+  consequence: "The OSD contract is fully reproducible from this project, which is what ports/bl616/tang_osd.c and tang_osd_term.c do. Tang-Control's menu and the menu this project draws independently converged on the same column-0 marker idiom."
+  sources:
+    - "Tang-Control, ui/menu_manager.cpp: overlay_cursor(0, options[active]) then overlay_printf('>')"
+    - "Tang-Control, ui/console.cpp: the command console, the '_ ' caret, and key_input() over key_buf"
+    - "Tang-Control, main.cpp: the receiver parsing response 0x03 into joy1_state and joy2_state"
+  verification: "Read from the source, and the equivalents in this project were then built and confirmed on hardware by the user. Tang-Control itself was not run."
+
+- record_id: TCTL-002
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control treats the OTG connector's role as a build-time choice"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control's CMake offers TANG_USB_CDC_CONSOLE, described as 'Use the Console 138K DEBUG/OTG port as a CDC console', defaulting OFF and permitted only when the board is console138k. With it off, main.cpp calls usbh_initialize(), fatfs_usbh_driver_register() and usb_gamepad_init(); with it on, usb_cdc_console_init() instead. The accompanying comment reads: 'The Console 138K retail board has onboard SD and FPGA-side controller ports, so dedicate the BL616 OTG connector to a PC-facing debug link.'"
+  consequence: "The reference firmware does not attempt runtime role detection, and its own comment characterises this connector as a PC-facing debug link. That is consistent with USB-003's finding and is the strongest prior evidence that the connector is device-only by design."
+  sources:
+    - "Tang-Control, CMakeLists.txt: the TANG_USB_CDC_CONSOLE option, its console138k-only guard, and the conditional CONFIG_CHERRYUSB_DEVICE settings"
+    - "Tang-Control, main.cpp: the #ifdef TANG_USB_CDC_CONSOLE branch choosing between usb_cdc_console_init() and usbh_initialize()"
+  verification: "Read from the source. Not exercised: this project never ran Tang-Control's host build."
+
+- record_id: TCTL-003
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control normalises the core link's baud before JTAG"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Before programming a core, Tang-Control checks the FPGA UART's baud and returns both ends to 2 Mbps if an extended session had negotiated faster, using fpga_debug_set_baud then fpga_uart_set_baud. It also comments that all boards other than the Console pair use a 26 MHz crystal and scale the rate accordingly."
+  consequence: "Its JTAG path assumes the core link is at 2 Mbps when it starts, which is the rate this project leaves it at. The 26 MHz scaling does not apply here: this board is a Console."
+  sources:
+    - "Tang-Control, fpga/programmer.cpp: the baud normalisation at the top of fpga_program()"
+    - "Tang-Control, utils/init.cpp: the TANG_CONSOLE60K/TANG_CONSOLE138K branch selecting 2000000, and the else branch scaling by 40/26"
+  verification: "Read from the source only. This project's tang_jtag_glue.h keeps the same constant behaviour as stubs."
+
+- record_id: TDSH-001
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "TinyDesk Shell v0.1.3, and the scripting language it provides"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The shell is TinyDesk Shell v0.1.3 at commit 232a39fa3375f2c8eb2560cdc69440f7095f8a25, consumed here as the third_party/tinydesk-shell submodule. Its portable core is C11 and MIT licensed. The script language, uScript 1.1.1, provides variables, quoting, command substitution, arithmetic, if/elseif/else/endif, while/endwhile, for/endfor, functions with return statuses, pipes up to eight stages, and redirection. tdsh run passes no arguments to a script; a script inherits the caller's variables. It also ships POSIX and Windows host ports."
+  consequence: "scripts/boot-cart.tdsh is written in this language and needed nothing beyond if, $?, and two variables. Its four shell commands are registered through tdsh_register_commands()."
+  sources:
+    - "third_party/tinydesk-shell/docs/SCRIPTING.md: the language reference, the run forms, and the limits table"
+    - "third_party/tinydesk-shell/VERSION and .git (v0.1.3, 232a39f)"
+  verification: "The shell runs on this board; boot-cart.tdsh has been run repeatedly, on its happy path and on its guard path."
+
+- record_id: TDSH-002
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "The shell's terminal output is a small, closed set of sequences"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The line editor and builtins emit: carriage return, line feed, ESC [ 2 K to erase a line, ESC [ 2 J and ESC [ H to clear and home, ESC [ <n> C and ESC [ <n> D to move the cursor, and SGR colour sequences. The editor redraws a line by emitting CR, erase-line, then the prompt and buffer, then a cursor-left by the number of characters past the cursor. Nothing else is emitted."
+  consequence: "A console mirror needs to understand only that set, which is what makes ports/bl616/tang_osd_term.c small. It treats CR as the start of the logical line rather than the row, because on a 32-column page a row-based CR would leave the tail of the previous render behind on every keystroke of a wrapped line."
+  sources:
+    - "third_party/tinydesk-shell/src/core/tdsh_terminal.c: redraw(), and the ESC [ C / ESC [ D writes in the arrow-key handling"
+    - "third_party/tinydesk-shell/src/core/tdsh_builtin.c: the clear builtin's ESC [ H ESC [ 2 J"
+  verification: "The mirror was built against this set and the user confirmed the result on the core's screen."
+
+- record_id: TDESK-001
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "TinyDesk's port surface is four functions, and it pins the same shell revision"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "TinyDesk is a terminal desktop: it draws overlapping text-mode windows with ANSI escape sequences, reads the keyboard and mouse back from the terminal, and has no display hardware. Its whole port surface is td_hal_t, four function pointers - read_byte returning the next byte or -1 without blocking, write returning the number of bytes accepted, millis, and sleep_ms - plus a context pointer. It consumes tinydesk-shell as a submodule at 232a39fa, the same revision this project uses, and its core is portable C11."
+  consequence: "The port in ports/bl616/td_desktop_bl616.c is mostly a table of pointers over console calls this project already had. There is no second copy of the shell to keep in step."
+  sources:
+    - "third_party/tinydesk/include/tinydesk/td_hal.h: the td_hal_t definition and the comment 'This is the only thing a port has to provide.'"
+    - "third_party/tinydesk/README.md: the terminal-desktop description and the four-functions claim"
+    - "third_party/tinydesk/.gitmodules: submodule third_party/tdsh at 232a39fa3375f2c8eb2560cdc69440f7095f8a25"
+  verification: "Built into this firmware and running: the desktop draws, opens windows, and its Terminal runs the shell."
+
+- record_id: TDESK-002
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "Screen memory is columns times rows times eight bytes, doubled"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "td_config.h sizes every static pool. Each screen buffer costs TD_MAX_COLS x TD_MAX_ROWS x 8 bytes and there are two of them. The PC defaults are 400 by 150; the ESP-IDF builds set smaller limits, with one ESP32-C6 variant using 256x96 and another 80x25 with TD_VT_SCROLLBACK 12 and TD_MAX_WIDGETS 96. The smallest usable desktop is 40 by 12."
+  consequence: "100x30 costs 24,008 bytes per screen buffer against the BL616's 320 KB, measured in the link map as s_front and s_back. The geometry must divide evenly and the terminal's reported size is clamped to it."
+  sources:
+    - "third_party/tinydesk/include/tinydesk/td_config.h: the TD_MAX_COLS/TD_MAX_ROWS comment and the pool definitions"
+    - "third_party/tinydesk/ports/esp32c6/components/tinydesk/CMakeLists.txt: the two TD_SCREEN_LIMITS settings"
+  verification: "The linker reports s_front and s_back at 0x5dc8 = 24,008 bytes each, which is 100x30x8 exactly."
+
+- record_id: TDESK-003
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "TinyDesk's filesystem is written against stdio and deploys unmodified"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "TinyDesk's Files and Editor reach the disk through a td_fs_ops_t vtable supplied by ports/common/td_fs_stdio.c, which is implemented on top of stdio, dirent.h and sys/stat.h. The ESP-IDF port uses the same file through its VFS. Its root string is copied at construction, and all paths are formed below it."
+  consequence: "This project already provides that API over FatFS as a newlib syscall layer, so td_fs_stdio.c compiles here unchanged - no filesystem port was written. This was the piece expected to be the bulk of the work and it turned out to be free."
+  sources:
+    - "third_party/tinydesk/ports/common/td_fs_stdio.c: the file comment 'td_fs_ops_t on top of the C library and <dirent.h>. Used by the desktop hosts and by the ESP-IDF port (its VFS provides the same calls for LittleFS).'"
+    - "This project's ports/bl616/tdsh_fs_bl616.c: _open_r, _read_r, _write_r, _lseek_r, _stat_r, _fstat_r, _unlink_r, _mkdir_r, _rename_r, and opendir/readdir/closedir over FatFS"
+  verification: "The user confirmed the file created from the shell with touch and echo appears in the desktop's Files window, and that editing and saving it in the Editor reaches the card."
+
+- record_id: TDESK-004
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "The Terminal app requires a td_term_backend_t and says so when it has none"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The Terminal app draws 'No shell backend in this build.' and a second line naming td_terminal_set_backend() exactly when its static s_backend pointer is NULL. With a backend installed it starts it on first draw, forwards keystrokes through backend->write, polls backend->read into its terminal emulator each tick, resizes the emulator to the window, and offers scrollback."
+  consequence: "That message is a precise indicator, not a fault: it means the port has not installed a backend. ports/bl616/td_desktop_bl616.c installs one from td_bridge_bl616.c."
+  sources:
+    - "third_party/tinydesk/apps/terminal.c: on_draw()'s 'if (!s_backend)' branch, and the start/read/write calls in the tick and key paths"
+    - "third_party/tinydesk/apps/td_apps.h: 'void td_terminal_set_backend(const td_term_backend_t *backend);'"
+  verification: "Seen on hardware before the bridge existed, and gone after it was installed."
+
+- record_id: TDESK-005
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "A Terminal backend is start/read/write/user, and the reference runs the shell in a task"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "td_term_backend_t has name, start(ctx, cols, rows), read(ctx, buf, cap), write(ctx, buf, len), user(ctx) and set_user(ctx, user), with resize optional. The ESP32-C6 implementation starts a shell in its own FreeRTOS task whose stdin and stdout are a funopen stream over two stream buffers: keys go in through write, output comes back through read, and a break check pulls Ctrl+C out of the input buffer for long-running commands."
+  consequence: "ports/bl616/td_bridge_bl616.c follows this shape with plain rings rather than stream buffers, since this build has no stream-buffer configuration, and adds a shutdown path the reference does not need: the inner shell must be ended when the desktop exits, or it would read the console alongside the outer one."
+  sources:
+    - "third_party/tinydesk/ports/esp32c6/main/tdsh_bridge_esp.c: the whole file, including the stream buffer sizes and the shell task"
+    - "third_party/tinydesk/ports/common/tdsh_bridge.h: the host backend's interface"
+  verification: "Built and running: tdsh run /scripts/boot-cart.tdsh typed into the Terminal window boots a core and starts a cartridge, and the shell's logging appears in the vterm."
+
+- record_id: TDESK-006
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "The Editor saves with Ctrl+S, which a board port cannot guarantee arrives"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The Editor's key handler saves on Ctrl+S, closes on Ctrl+W or Ctrl+Q or Esc, and offers Save|Discard|Cancel when closing with unsaved changes. On a host, the HAL puts the local terminal into raw mode and clears IXON before starting, with a comment noting that ISIG is cleared so Ctrl+C arrives as 0x03."
+  consequence: "A board port cannot do that: there is no termios on the BL616, so software flow control on the user's terminal is untouched. With IXON on, Ctrl+S is swallowed as XOFF and stops the display, which reads exactly like a hang; Ctrl+Q restores it. The Editor's other save path through Ctrl+W avoids it. Ctrl+A is also screen's command prefix, so select-all does not arrive under screen."
+  sources:
+    - "third_party/tinydesk/apps/editor.c: the ctrl test and the 's' case, and the unsaved-changes message box"
+    - "third_party/tinydesk/ports/posix/hal_posix.c: 'raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON)' and 'raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG); /* Ctrl+C arrives as 0x03 */'"
+    - "third_party/tinydesk/src/input.c: the 0x01 to 0x1A mapping to a key with TD_MOD_CTRL"
+  verification: "Observed on hardware: Ctrl+S appeared to freeze the desktop and saved nothing; Ctrl+W saved successfully. The IXON explanation is from the source, not from an instrumented measurement of the terminal."
+
+- record_id: TDESK-007
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "td_run() returns after td_quit(); System Monitor and Task Manager read sysinfo"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The documented sequence is td_init(&hal), td_run(), td_shutdown(), and td_run() returns after td_quit(); the System menu's last item calls td_quit(). td_shutdown() restores the terminal. System Monitor reads free_heap, min_free_heap, total_heap, task_count and cpu_mhz; Task Manager reads tasks(out, max) filling name, state, priority, core, stack_free and cpu_tenths, with -1 documented as 'unknown'."
+  consequence: "The desktop can be launched from a shell command and the prompt returns when the user quits it, which is how ports/bl616/td_desktop_bl616.c's desktop command is built. Leaving those sysinfo members NULL is what left both apps drawing empty frames; both are now supplied."
+  sources:
+    - "third_party/tinydesk/include/tinydesk/td.h: 'td_run(); // returns after td_quit()'"
+    - "third_party/tinydesk/include/tinydesk/td_sysinfo.h: the heap, task and cpu_mhz members and the td_task_info_t definition"
+    - "third_party/tinydesk/src/wm.c: the td_quit() call on the System menu's last item"
+  verification: "Quitting the desktop returns 'desktop: exited' and the shell prompt, confirmed by the user. The heap and task members were added after both apps were reported blank; their effect was not separately re-confirmed."
+
+- record_id: TDESK-008
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "Four apps cannot be built here: they need sockets and mbedTLS"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Network, MQTT, Modbus and Software Update, together with their shared proto/ layer, are built on proto/td_sock.c and proto/td_tls.c: the first includes netdb.h, sys/socket.h, arpa/inet.h and esp_timer.h; the second includes mbedtls/net_sockets.h and esp_crt_bundle.h. Nothing resembling that stack exists on the BL616."
+  consequence: "This project compiles a subset of apps and supplies its own td_apps_register_all(), which registers Terminal, Files, Editor, System Monitor, Task Manager, Log Viewer, Settings, Counter and About, plus the clock and the session. apps/apps.c, mqtt.c, modbus.c, network.c and update.c are left out of the build."
+  sources:
+    - "third_party/tinydesk/proto/td_sock.c and td_tls.c: the includes"
+    - "third_party/tinydesk/apps/apps.c: td_apps_register_all() and td_proto_service_start()"
+  verification: "The build fails without this exclusion and succeeds with it; the excluded apps have no entry point that would work here in any case."
+
+- record_id: TDESK-009
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "The desktop's app set, as named in the start menu"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Each app registers a td_app_t of name and icon: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager and Terminal. Date & time is not a start-menu app: it is opened by clicking the taskbar clock, and the desktop itself - taskbar, start menu, window management and desktop icons - is core. Desktop icons come from the current user's Desktop folder, and a right-click on a .tdsh file offers Run, which opens the Terminal and runs the script."
+  consequence: "Nine menu entries plus the clock. For the root user the desktop folder resolves below the filesystem root, which here is /sd, so the shell reaches it as /root/Desktop."
+  sources:
+    - "third_party/tinydesk/apps/*.c: the s_app definitions and td_app_register() calls"
+    - "third_party/tinydesk/apps/session.c: compute_paths(), giving root the home '<root>/root'"
+    - "third_party/tinydesk-shell/docs/SCRIPTING.md: 'TinyDesk desktop: right-click, Run, opens the Terminal window and runs tdsh run'"
+  verification: "The user worked through the desktop and found the filesystem, the Editor, the Terminal and window management working. The desktop-icon path was not separately exercised."
+
+- record_id: TOOL-001
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "CONFIG_CHERRYUSB_HOST is required to enumerate; CONFIG_NEWLIB prevents it"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "With FreeRTOS enabled and only the device stack built, the CDC never enumerates on this board; enabling CONFIG_CHERRYUSB_HOST, which brings in the FreeRTOS OSAL, is what fixes it. Separately, the SDK's newlib port stops the device enumerating, with or without its FatFS file layer."
+  consequence: "Both settings in proj.conf look wrong for a device-only firmware and are deliberate. The shell's stdio is therefore implemented over FatFS in ports/bl616 rather than taken from newlib."
+  sources:
+    - "Bouffalo SDK, components/usb/cherryusb/CMakeLists.txt: the host branch adding osal/usb_osal_freertos.c"
+    - "This project's proj.conf: the comments recording the bisection that isolated both facts"
+  verification: "Established by bisection on this board earlier in the project, and recorded in proj.conf; reconfirmed by the firmware running throughout this session."
+
+- record_id: TOOL-002
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The Gowin programmer's accepted IDCODEs"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The vendored programmer accepts five parts: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b and GW2A-18 0x0000081b. Anything else is reported as an unknown board and programming stops."
+  consequence: "This is a second, independent way to confirm which silicon is on the bench, alongside the bitstream's own device declaration. It also means a load into the wrong board fails loudly rather than silently misconfiguring."
+  sources:
+    - "Tang-Control, fpga/programmer.cpp: IDCODE_GW5A_25, IDCODE_GW5AT_60, IDCODE_GWAST_138, IDCODE_GW5AT_138, IDCODE_GW2A_18, and the test in fpga_program()"
+  verification: "The board reports 0x0001081b, which is the GWAST-138 entry and the only one that matches."
+
+- record_id: TOOL-003
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "Build versions in use"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The firmware is built against the Bouffalo SDK reporting PROJECT_SDK_VERSION 2.0.0, with the T-Head RISC-V GCC 10.2.0 toolchain for riscv64-unknown-elf, driven by CMake and the SDK's project.build. The FPGA images are built elsewhere, with Gowin EDA, and are consumed here as finished bitstreams."
+  consequence: "The SDK lives at ~/.cache/tangcore-dev/sdk and the toolchain at ~/.cache/tangcore-dev/toolchain by default, both overridable in the environment. Nothing in this project builds FPGA logic; the Gowin toolchain is not invoked here."
+  sources:
+    - "This project's build/generated/sdk_version.h: PROJECT_SDK_VERSION \"2.0.0\""
+    - "This project's Makefile: BL_SDK_BASE and TOOLCHAIN_BIN defaults"
+    - "Build output: the toolchain path resolving to riscv64-unknown-elf/10.2.0"
+  verification: "Read from the build tree. The Gowin version is not established here; it belongs to the core images, not to this firmware."
+
+- record_id: TOOL-004
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A Gowin bitstream names its device, so images are not interchangeable"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "A Gowin project binds the device at generation time. nestang's build.tcl takes a device name and calls set_device accordingly, and for console138k that is GW5AST-LV138PG484AC1/I0 with device version B, using the 138K-specific PLL sources. The corresponding synthesis project records Device id GW5AST-138B."
+  consequence: "The 60K and 138K console images are not interchangeable, and the difference is visible in the artifact rather than only in a build script. Comparing a bitstream's size and its project declaration is a reliable way to tell which device it is for."
+  sources:
+    - "nestang, build.tcl: the console138k branch and its set_device line"
+    - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: the Device element"
+  verification: "Read from the build files; the 138K artifact is 4,593,044 bytes against the 60K image's 2,321,194, and the loaded image runs on this board."
+```
+
+---
+
+## 6. Record template
+
+```yaml
+- record_id: <TOPIC>-<NNN>
+  kind: DEVICE | BOARD | SOC | USB | FLASH | PROTOCOL | EXTERNAL | TOOLCHAIN
+  topic_id: <TOPIC>
+  title: "Short noun phrase"
+  status: VERIFIED | SOURCED | INFERRED | SUPERSEDED
+  verified_date: YYYY-MM-DD
+  statement: "What the source says, with exact values and units"
+  consequence: "What it means for this project, or where it is implemented"
+  sources:
+    - "Document or repository, revision/commit/path/symbol, URL"
+  verification: "How and when it was confirmed, or why it is not yet confirmed"
+  superseded_by: "<record_id>"   # only on a SUPERSEDED record
+```
+
+---
+
+## 7. Maintenance boundary
+
+- Keep external facts, their sources, and their verification status here.
+- Keep build results, failures, rationale, and chronology in `core-log.md`; cite a log entry number in `verification` instead of repeating it.
+- Do not add speculative records for topics that have not been looked up. An unanswered question stays out of this file until a source answers it.
+- When a record's source is superseded by a newer document or tool version, add a new record rather than editing the old statement.
+- A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
+
+```yaml
+last_reviewed: 2026-10-03
+```
