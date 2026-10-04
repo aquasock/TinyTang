@@ -1,0 +1,82 @@
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index 205a44a..347e0a0 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -245,10 +245,54 @@ wire [31:0] status;
+ // inside a hunk's context makes them stop applying.  Nothing here is near one.
+ wire [7:0]  link_kbd_mods;
+ wire [47:0] link_kbd_keys;
++
++// Pointer mode.  Declared here, ahead of its users, because both the withheld-
++// key test below and the pad-word gate further down need it.
++//
++// Right-alt because it is a modifier no ordinary typing needs, and because the
++// report already carries it: the keyboard end sends its modifier byte and the
++// receiver hands it up as link_mods, so no new plumbing is involved.  HID puts
++// right-alt at bit 6 (left-alt is bit 2).
++//
++// Why a modifier at all: the arrows are wanted twice -- as a pointer on the
++// desktop and as arrow keys in a window -- and never at the same time, since
++// scrolling across the desktop while typing in the Terminal is unusable.
++// Held, this keyboard is a pointer; released, it is only a keyboard.
++wire link_pointer_mode = link_mods[6];
++
++// Which keys the pointer is currently using, so they can be withheld from the
++// typing path while it uses them.
++//
++// Gating only the pad word was not enough, and the reason is worth keeping:
++// those six keycodes reach the desktop twice, once as pad bits by this core
++// and once inside the report above.  Suppressing one left the other, so in
++// pointer mode an arrow moved the pointer *and* typed an arrow -- the same
++// double duty, just from the other side.  The core is where the mode is
++// decided, so the core is where the decision has to be applied to both.
++//
++// Zero means "no key" in a boot report, so dropping one here is exactly what
++// the keyboard would have sent had the key never been pressed.
++function [7:0] link_withhold_if_pointer;
++    input [7:0] k;
++    begin
++        if (link_pointer_mode &&
++            (k == 8'h52 || k == 8'h51 || k == 8'h50 || k == 8'h4F ||
++             k == 8'h28 || k == 8'h29)) begin
++            link_withhold_if_pointer = 8'd0;
++        end else begin
++            link_withhold_if_pointer = k;
++        end
++    end
++endfunction
++
+ `ifdef USB1
+ assign link_kbd_mods = link_mods;
+-assign link_kbd_keys = {link_keys[5], link_keys[4], link_keys[3],
+-                        link_keys[2], link_keys[1], link_keys[0]};
++assign link_kbd_keys = {link_withhold_if_pointer(link_keys[5]),
++                        link_withhold_if_pointer(link_keys[4]),
++                        link_withhold_if_pointer(link_keys[3]),
++                        link_withhold_if_pointer(link_keys[2]),
++                        link_withhold_if_pointer(link_keys[1]),
++                        link_withhold_if_pointer(link_keys[0])};
+ `else
+ assign link_kbd_mods = 8'd0;
+ assign link_kbd_keys = 48'd0;
+@@ -503,9 +547,17 @@ endfunction
+ // joy_usb1 is what the core reports upward to the BL616, so the desktop sees
+ // these keys without any firmware change; the game path gates joy_usb1 while
+ // the overlay is up, which is the behaviour we want.
+-assign joy_usb1 = link_key_to_pad(link_keys[0]) | link_key_to_pad(link_keys[1])
+-                | link_key_to_pad(link_keys[2]) | link_key_to_pad(link_keys[3])
+-                | link_key_to_pad(link_keys[4]) | link_key_to_pad(link_keys[5]);
++//
++// The pad half of pointer mode: with the modifier down the arrows and the two
++// buttons become the pointer, and with it up this word is zero and the
++// keyboard only types.  See link_pointer_mode above for why the mode exists,
++// and link_withhold_if_pointer() for the other half -- both are needed, since
++// these keycodes reach the desktop twice.
++assign joy_usb1 = link_pointer_mode
++                ? (link_key_to_pad(link_keys[0]) | link_key_to_pad(link_keys[1])
++                 | link_key_to_pad(link_keys[2]) | link_key_to_pad(link_keys[3])
++                 | link_key_to_pad(link_keys[4]) | link_key_to_pad(link_keys[5]))
++                : 12'b0;
+ `else
+ assign joy_usb1 = 12'b0;
+ `endif

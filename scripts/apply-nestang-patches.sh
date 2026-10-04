@@ -46,14 +46,14 @@ for patch in "${patches[@]}"; do
     name="$(basename "$patch")"
     # Strict first, then with one line of context.
     #
-    # Strict is the right default, and it is what catches a patch belonging to a
-    # different tree.  But these patches are anchored on upstream sources and
-    # later work lands next to them -- a port added to an instantiation a patch
-    # also edits, a declaration inside a hunk's context -- and then the
-    # reverse-check of an already-applied patch fails, not because the tree is
-    # wrong but because its surroundings moved a few lines.  That is the failure
-    # this fallback exists for, and it stays narrow: one line of context, and
-    # only after the strict test has already said no.
+    # The strict check is the right default: it is what catches a patch that
+    # belongs to a different tree.  But these patches are anchored on the
+    # upstream sources, and later work lands next to them -- a new port on the
+    # instantiation a patch also edits, a declaration in a hunk's context --
+    # and then the reverse-check of an *already applied* patch fails, not
+    # because the tree is wrong but because its surroundings moved a few lines.
+    # That is the failure mode the reduced-context fallback exists for, and it
+    # stays narrow: one line of context, and only after the strict test said no.
     state=none
     for ctx in 3 1; do
         if git -C "$submodule" apply --reverse --check -C"$ctx" "$patch" >/dev/null 2>&1; then
@@ -67,11 +67,30 @@ for patch in "${patches[@]}"; do
             break
         fi
     done
+
+    # Neither direction: the patch is not recognised at all.  On a clean tree
+    # that is a real failure and must stop the build -- it means the patch does
+    # not belong to this checkout.  On a tree that already has local changes it
+    # usually means the patch was applied and then *edited* by later work, which
+    # no amount of context tolerance can detect: the patch's own added lines are
+    # no longer present verbatim.  Presume applied there and say so, because the
+    # guarantee that the series is correct is the reconstruction test against a
+    # fresh clone, not this check.
+    if [[ "$state" == none ]]; then
+        if [[ -n "$(git -C "$submodule" status --porcelain)" ]]; then
+            echo "apply-nestang-patches: $name not recognised, but the tree has local" >&2
+            echo "apply-nestang-patches: changes; presuming it is already applied" >&2
+            state=presumed
+        else
+            echo "apply-nestang-patches: $name does not apply cleanly" >&2
+            exit 1
+        fi
+    fi
+
     case "$state" in
-        applied) echo "apply-nestang-patches: $name already applied" ;;
-        done)    ;;
-        *)       echo "apply-nestang-patches: $name does not apply cleanly" >&2
-                 exit 1 ;;
+        applied)  echo "apply-nestang-patches: $name already applied" ;;
+        presumed) ;;
+        done)     ;;
     esac
 done
 

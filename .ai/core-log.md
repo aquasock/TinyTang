@@ -71,3 +71,33 @@ The keyboard link now carries a full boot report but the desktop consumes it as 
 - User Test: PASS
 
 ---
+## 3 COMMIT Unreleased 2026-10-04T14:57:01-07:00
+
+#### Coming From:
+
+Unreleased a42460a
+
+#### Purpose:
+
+Stop the keyboard's arrow keys doing two jobs at once, so the same six keycodes are either a pointer or ordinary keys and never both.
+
+#### Outcome:
+
+The keyboard now has two modes and a modifier between them. With right-alt held, the arrows and Enter/Esc are the desktop's pointer and its two mouse buttons; released, they are only keystrokes and the keyboard types normally. The user confirms both modes behave. The change is core-only, which matters for the loop as much as for the code: it deployed as an upload and a `tangload` with no reflash and no power cycle. The reason a modifier was needed at all is that the arrows are genuinely wanted as two things -- a pointer on the desktop and arrow keys inside a window -- and the first attempt at the keyboard link had them doing both simultaneously, so scrolling across the desktop while typing in the Terminal was impossible; that was the fighting the user reported and the reason this cycle existed. The first attempt at the fix was wrong and is worth recording, because the mistake was a half-solution that looked complete: gating the pad word on the modifier stopped the pointer half but not the key half, since those six keycodes reach the desktop twice -- once as pad bits built by this core and once inside the HID report relayed upward -- so in pointer mode an arrow moved the pointer and typed an arrow. The core now also withholds those six usage codes from the report while the mode is held, zeroing them, which in a boot report is indistinguishable from a key never pressed. Both halves therefore live where the mode is decided, which is the only place that can keep them consistent. The deployed image is `nestang-desk.bin` (4606154 bytes, MD5 `191537528e67911993c6fd40173057f0`); the build reports timing MET with the worst slack a hold of 0.143 ns and the worst setup +1.064 ns, and 9 percent logic, 5 percent registers and 13 percent BSRAM, so neither the link nor the typing path nor this mode cost anything material in area. Two pre-existing conditions are recorded rather than fixed: the 0.143 ns hold margin is thin enough that a future change could turn it into a violation without any warning in the source, and the tool warns that `sys_clk` is not on a dedicated clock route. The patch applier needed a second repair, and the reason is structural: this cycle modified lines that patch 0004 had added, so 0004 could be neither applied nor reverse-applied and no context tolerance could detect it, because the patch's own added lines are no longer present verbatim. The applier now presumes the series applied in a tree with local changes, and still fails hard in a clean tree where a non-applying patch is a real fault; the reconstruction test against a fresh clone remains the actual guarantee that the series is correct, and it passed for all six patches with the tree reproduced byte-for-byte. One rejected approach is worth keeping: a USB mouse was considered for the second front port and abandoned, because the stock low-speed host in this core speaks only low-speed USB while a modern mouse is full-speed, and the user stopped it before any work was done; the mouse, if it happens, will follow the keyboard's route -- device firmware driving its own data line as a UART -- not a USB host. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The pointer still depends on the keyboard, so a real pointing device remains the open item, and the decision already taken is that it follows the keyboard's route rather than a USB host -- which needs the mouse's own firmware and cannot start until its MCU and a build target for it are known. Smaller and independent: right-alt is consumed as the mode switch and is not forwarded as a key, so AltGr characters are unreachable, and function keys have no path because the desktop consumes input as terminal bytes. Nothing else is pending on this cycle.
+
+#### Files Modified:
+
+- scripts/apply-nestang-patches.sh
+- third_party/patches/0006-pointer-mode.patch
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
