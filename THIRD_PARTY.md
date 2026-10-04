@@ -77,7 +77,28 @@ are recorded as `PROT-001` and `PROT-002`.
 
 The vendor SDK providing chip support, FatFS and the USB stack:
 
-- License: Apache-2.0
+- License: Apache-2.0 for the SDK's own code
+
+The SDK bundles third-party components under their own licences, and the ones
+this firmware links are named here rather than folded into the line above —
+because a bundle's licence does not cover what is bundled inside it:
+
+- **FreeRTOS Kernel V10.4.6** — MIT — Copyright (C) 2021 Amazon.com, Inc. or
+  its affiliates. Selected by `CONFIG_FREERTOS` in `proj.conf`; it is the
+  scheduler the shell's worker primitive runs on. MIT requires the notice and
+  its permission text to travel with copies and with substantial portions of
+  the software, which is what this firmware's binary is
+- **CherryUSB** — Apache-2.0 — Copyright (C) 2006 Bertrik Sikken, (c) 2016
+  Intel Corporation, (c) 2022, sakumisu. This is the device CDC console the
+  user sees, and with it the FreeRTOS OSAL that hosts it
+  (`osal/usb_osal_freertos.c`)
+- **FatFs R0.15 w/patch3** — Copyright (C) 2022, ChaN. Its condition is
+  narrower than the two above: a redistribution of *source* must retain the
+  notice and its condition. This project ships no FatFS source — it builds
+  against the SDK's — but the filesystem the shell sees is FatFS
+
+Not linked into this firmware, and therefore not named: the SDK's LVGL,
+TJpgDec, mbedTLS, littlefs and multimedia codecs.
 
 ## Bouffalo SDK device example (`ref/`)
 

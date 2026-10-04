@@ -188,6 +188,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where is the USB-enumeration bisection kept? | TOOL | TOOL-005 |
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
+| Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-008 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-002 |
 | Where is colibri, and what are its terms? | PROV | PROV-003 |
@@ -265,6 +266,7 @@ TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is 
 TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib.conf and proj.rtos.conf plus ref/, selected by TINYTANG_MIN, TINYTANG_RTOS, TINYTANG_NONEWLIB, TINYTANG_REF, TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL"
 TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
 TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
+TOOL-008: "Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -959,6 +961,21 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's ports/bl616/tang_jtag_programmer.c: the Apache-2.0 header, the 2025.2 nand2mario copyright and the openFPGALoader attribution"
     - "This project's ports/bl616/tang_jtag_glue.h: the provenance comment"
   verification: "Read from the file header and the glue header in the tree. The programmer is exercised on every tangload, which reports ID=0001081b (DEV-001)."
+
+- record_id: TOOL-008
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The SDK components this firmware actually links, and their licences"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The Bouffalo SDK is Apache-2.0 for its own code but bundles third-party components under their own licences, and three of those are linked into this firmware. FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates, selected by CONFIG_FREERTOS in proj.conf. CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu, which is the device CDC console and the FreeRTOS OSAL hosting it. And FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition obliges only a redistribution of source to retain its notice. Not linked into this firmware: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
+  consequence: "This is the part PROV-002's list does not reach: naming the SDK is not naming what the SDK carries, and FreeRTOS's MIT text has to travel with copies and substantial portions, which is what this firmware's binary is. THIRD_PARTY.md now names all three. Anyone enabling a further SDK component - mbedTLS for the network apps, LVGL for graphics - inherits that component's licence at the moment they enable it."
+  sources:
+    - "Bouffalo SDK components/os/freertos/tasks.c: 'FreeRTOS Kernel V10.4.6 / Copyright (C) 2021 Amazon.com, Inc. or its affiliates. / SPDX-License-Identifier: MIT'"
+    - "Bouffalo SDK components/usb/cherryusb/core/usbd_core.c: the Apache-2.0 SPDX line and the three copyright holders"
+    - "Bouffalo SDK components/fs/fatfs/ff.c: 'FatFs - Generic FAT Filesystem Module R0.15 w/patch3' and ChaN's condition"
+    - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
+  verification: "Read from the SDK's own source headers at ~/.cache/tangcore-dev/sdk, and the FreeRTOS selection confirmed in proj.conf. The not-linked list was checked against this project's configuration and sources rather than the SDK's inventory."
 
 - record_id: TCTL-004
   kind: EXTERNAL
