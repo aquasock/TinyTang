@@ -190,3 +190,32 @@ None.
 - User Test: PASS
 
 ---
+## 7 COMMIT Unreleased 2026-10-04T16:17:45-07:00
+
+#### Coming From:
+
+Unreleased 8cdb6c0
+
+#### Purpose:
+
+Make TOOL-009 and TOOL-010 reachable from the reference's own lookup path, which they were not.
+
+#### Outcome:
+
+The Active routing table and the Fast lookup index were audited against the records and exactly two of the eighty were unreachable: `TOOL-009`, the console's exclusivity and the raw-upload hazard, and `TOOL-010`, the patch applier's recognition limit. Both were added in an earlier cycle but neither was wired into the two places `core.md` sends an agent first, so the Fast lookup index ran `TOOL-008` straight into `EXTCTL-001` and the routing table carried no question that led to either -- nothing like "is it safe to send a file to the board". That matters because the index is the reference's whole interface, and the record a reader most needs before touching the card was the one it could not find. The fix adds two routing rows, "Is it safe to send a file to the board, or is the desktop holding the console?" and "Why does the patch applier stop recognising a patch?", and two fast-lookup lines summarising the same records, all following the existing table and one-line shapes and inserted in topic order after `TOOL-008`. The audit that found the gap was rerun after the change and reports no orphans among the eighty records. Worth recording as the reason this cycle exists: the gap was found by walking into it, when a session sent files at TinyDesk's Terminal believing it was the plain console -- the hazard `TOOL-009` states, and one the reference's index could not have warned about because it did not list the record. The core-syntax audit required by the change to this file was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and is four added lines to `core-reference.md` with no deletions, and the two added lines were checked against the records they summarise.
+
+#### Next Steps:
+
+The Castlevania cart-boot script, `scripts/castlevania.tdsh`, is written in the tree but is not committed and is not on the card, so its own cycle -- deploy, then confirm it boots the ROM from the desktop -- is still open. That cycle is blocked on reaching the card safely: the board boots into TinyDesk while `/scripts/boot.tdsh` is present, so the console is reached either by exiting the desktop or by renaming that file and rebooting, after which the script goes over with `tools/tinytang_put.py` and is run. The card's own state after the second incident has not been inspected, and inspecting it needs either the microSD reader or that confirmed console.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
