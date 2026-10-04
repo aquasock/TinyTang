@@ -37,6 +37,11 @@
 /* Response types worth naming. */
 #define FPGA_RESP_CORE_ID 0x01u
 #define FPGA_RESP_JOYPAD  0x03u
+/* The keyboard link's report: the HID boot layout, modifier byte then six
+ * usage codes, byte for byte.  The core sends it when it changes, the same way
+ * and for the same reason it sends the pad -- the report is state, and the
+ * desktop wants the newest state rather than a queue of transitions. */
+#define FPGA_RESP_KEYBOARD 0x08u
 
 /* How many frames and how much of each are kept.  A waiter's own reply plus a
  * few unprompted joypad reports is the realistic worst case. */
@@ -75,5 +80,23 @@ void fpga_frames_joypad(uint16_t *joy1, uint16_t *joy2);
 
 /* True once a joypad report has ever been seen. */
 bool fpga_frames_joypad_seen(void);
+
+/* The newest keyboard report the core has sent, in HID boot layout: eight
+ * bytes, modifier then reserved then six usage codes.  Bytes are copied, not
+ * a pointer, because the cache can be updated by the next frame at any time.
+ *
+ * Returns true when a report arrived since the previous call.  That is not the
+ * same as the contents having changed, and the difference is the whole point:
+ * the core resends an unchanged report as a heartbeat, so "a report arrived"
+ * is what tells the reader the link is alive, while "the contents changed"
+ * would be false the entire time a key is held.
+ *
+ * Kept rather than queued for the same reason as the pad: the core reports
+ * state, and a key held down must read as held.  Takes no frame from the
+ * queue, so it cannot starve a waiter. */
+bool fpga_frames_keyboard(uint8_t out[8]);
+
+/* True once a keyboard report has ever been seen. */
+bool fpga_frames_keyboard_seen(void);
 
 #endif /* FPGA_FRAMES_H */

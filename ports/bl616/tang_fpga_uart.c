@@ -161,6 +161,14 @@ void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2)
     taskEXIT_CRITICAL();
 }
 
+bool tang_fpga_keyboard(uint8_t out[8])
+{
+    rx_decode();
+    taskENTER_CRITICAL();
+    const bool fresh = fpga_frames_keyboard(out);
+    taskEXIT_CRITICAL();
+    return fresh;
+}
 /* The transmit lock.  A FreeRTOS mutex rather than a critical section:
  * interrupts stay enabled, because the RX interrupt is what keeps the core's
  * replies from overflowing the 32-byte FIFO. */

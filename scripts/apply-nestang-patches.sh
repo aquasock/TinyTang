@@ -44,15 +44,35 @@ fi
 
 for patch in "${patches[@]}"; do
     name="$(basename "$patch")"
-    if git -C "$submodule" apply --reverse --check "$patch" >/dev/null 2>&1; then
-        echo "apply-nestang-patches: $name already applied"
-    elif git -C "$submodule" apply --check "$patch" >/dev/null 2>&1; then
-        git -C "$submodule" apply "$patch"
-        echo "apply-nestang-patches: applied $name"
-    else
-        echo "apply-nestang-patches: $name does not apply cleanly" >&2
-        exit 1
-    fi
+    # Strict first, then with one line of context.
+    #
+    # Strict is the right default, and it is what catches a patch belonging to a
+    # different tree.  But these patches are anchored on upstream sources and
+    # later work lands next to them -- a port added to an instantiation a patch
+    # also edits, a declaration inside a hunk's context -- and then the
+    # reverse-check of an already-applied patch fails, not because the tree is
+    # wrong but because its surroundings moved a few lines.  That is the failure
+    # this fallback exists for, and it stays narrow: one line of context, and
+    # only after the strict test has already said no.
+    state=none
+    for ctx in 3 1; do
+        if git -C "$submodule" apply --reverse --check -C"$ctx" "$patch" >/dev/null 2>&1; then
+            state=applied
+            break
+        fi
+        if git -C "$submodule" apply --check -C"$ctx" "$patch" >/dev/null 2>&1; then
+            git -C "$submodule" apply -C"$ctx" "$patch"
+            echo "apply-nestang-patches: applied $name"
+            state=done
+            break
+        fi
+    done
+    case "$state" in
+        applied) echo "apply-nestang-patches: $name already applied" ;;
+        done)    ;;
+        *)       echo "apply-nestang-patches: $name does not apply cleanly" >&2
+                 exit 1 ;;
+    esac
 done
 
 exit 0

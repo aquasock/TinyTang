@@ -104,4 +104,18 @@ int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
  * so it is safe to call from a task that is also driving the pad. */
 void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2);
 
+/* The newest keyboard report the core has sent, in HID boot layout: modifier
+ * byte, reserved byte, then six usage codes.
+ *
+ * Returns true when a report arrived since the previous call, which is how the
+ * caller tells a held key from a dead link: the core resends an unchanged
+ * report as a heartbeat, so "a report arrived" stays true while a key is held
+ * and goes false when the link stops.
+ *
+ * Sticky, like the pad above and for the same reason: the core reports state,
+ * so a key held down reads as held rather than as one edge.  Never blocks and
+ * never takes the transmit lock, so it is safe from the same task that drives
+ * the pointer. */
+bool tang_fpga_keyboard(uint8_t out[8]);
+
 #endif /* TANG_FPGA_LINK_H */

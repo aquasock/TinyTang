@@ -28,6 +28,12 @@ static uint8_t  s_type;
 static uint16_t s_joy1, s_joy2;
 static bool     s_joy_seen;
 
+/* The newest keyboard report, in the same spirit as the pad above: held rather
+ * than queued, because a key held down has to read as held. */
+static uint8_t s_kbd[8];
+static bool    s_kbd_seen;
+static bool    s_kbd_new;
+
 void fpga_frames_reset(void)
 {
     s_state = RS_MAGIC;
@@ -98,6 +104,13 @@ void fpga_frames_push(uint8_t byte)
                 s_joy2 = (uint16_t)((s_body[2] << 8) | s_body[3]);
                 s_joy_seen = true;
             }
+            /* The keyboard report gets the same treatment, and for the same
+             * reason: it is state, and a later frame must not overtake it. */
+            if (s_type == FPGA_RESP_KEYBOARD && s_got >= 8) {
+                memcpy(s_kbd, s_body, sizeof(s_kbd));
+                s_kbd_seen = true;
+                s_kbd_new = true;
+            }
             push_frame(s_type, s_body, s_got);
             s_state = RS_MAGIC;
         }
@@ -157,4 +170,32 @@ void fpga_frames_joypad(uint16_t *joy1, uint16_t *joy2)
 bool fpga_frames_joypad_seen(void)
 {
     return s_joy_seen;
+}
+
+bool fpga_frames_keyboard(uint8_t out[8])
+{
+    /* Cached keyboard frames are redundant next to the state, and they would
+     * otherwise crowd out a reply someone is waiting for. */
+    unsigned w = 0;
+    for (unsigned i = 0; i < s_q_count; i++) {
+        if (s_q[i].type == FPGA_RESP_KEYBOARD) {
+            continue;
+        }
+        s_q[w++] = s_q[i];
+    }
+    s_q_count = w;
+
+    memcpy(out, s_kbd, 8);
+
+    /* Read and clear: the caller is asking "has anything arrived since I last
+     * looked", and leaving it set would make every later call claim liveness
+     * on the strength of one frame. */
+    const bool was_new = s_kbd_new;
+    s_kbd_new = false;
+    return was_new;
+}
+
+bool fpga_frames_keyboard_seen(void)
+{
+    return s_kbd_seen;
 }

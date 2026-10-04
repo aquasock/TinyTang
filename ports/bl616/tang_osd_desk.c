@@ -8,6 +8,7 @@
 #include "tang_osd.h"
 #include "tang_fpga_link.h"
 #include "tang_pad.h"
+#include "tang_key.h"
 
 /* The console writer matches this string byte for byte to keep the query off
  * the wire, so its length is part of the contract, not a detail. */
@@ -47,6 +48,7 @@ int tdsh_printf(const char *fmt, ...);
 static char         s_in[DESK_IN_MAX];
 static volatile int s_in_head, s_in_tail;
 static tang_pad_t   s_pad;
+static tang_key_t   s_kbd;
 
 static td_vterm_t  s_vt;
 static td_vcell_t  s_shadow[TANG_DESK_ROWS][TANG_DESK_COLS];
@@ -337,6 +339,25 @@ static void desk_poll(void)
         if (n > 0) {
             desk_in_push(seq, n);
         }
+
+        /* Then the keyboard, if the core has one.  After the pointer, so that
+         * a keystroke and a pointer move arriving in the same poll keep the
+         * order they happened in -- which matters for a click that opens a
+         * window followed by typing into it.
+         *
+         * The report is the HID boot layout, so it goes to the translation
+         * unchanged: byte 0 is the modifier, byte 1 is the reserved byte a boot
+         * report carries, and bytes 2..7 are the usage codes. */
+        uint8_t rep[8];
+        const bool fresh = tang_fpga_keyboard(rep);
+        char typed[32];
+        const uint32_t now_ms =
+            (uint32_t)xTaskGetTickCount() * (1000u / (uint32_t)configTICK_RATE_HZ);
+        const int tn = tang_key_step(&s_kbd, rep[0], &rep[2], fresh, now_ms,
+                                     typed, sizeof(typed));
+        if (tn > 0) {
+            desk_in_push(typed, tn);
+        }
     } else {
         /* While the desktop is hidden the pad belongs to the game.  Tracking it
          * keeps L's edge from being missed, but a pointer nobody can see should
@@ -417,6 +438,7 @@ int tang_osd_desk_set(bool on)
     palette_init();
     s_in_head = s_in_tail = 0;
     tang_pad_reset(&s_pad, TANG_DESK_COLS, TANG_DESK_ROWS);
+    tang_key_reset(&s_kbd);
     td_vterm_init(&s_vt, TANG_DESK_COLS, TANG_DESK_ROWS);
     s_vt.reply = desk_reply;
     s_vt.reply_user = NULL;
