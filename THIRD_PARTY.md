@@ -1,6 +1,10 @@
 # Third-party components
 
-TinyTang is licensed under Apache-2.0; the text is in `LICENSE`.
+TinyTang's own code is MIT; the text is in `LICENSE`. One vendored file is
+Apache-2.0, and the entry for it below says so — where that happens, that
+file's licence governs it and MIT governs everything else. Reproducing both
+licences is deliberate: an Apache-2.0 file inside an MIT project keeps its own
+terms, and the pointer in its header has to resolve to something true.
 
 The components below are inherited, vendored, or consulted. Where a source was
 read as a specification rather than copied, that is said plainly, because that
@@ -33,12 +37,14 @@ The intermediate project, retired in favour of TinyTang:
 
 `ports/bl616/tang_jtag_programmer.c` is nand2mario's bit-banged GPIO JTAG
 programmer for Gowin GW5A and GW2A, taken from Tang-Control's
-`fpga/programmer.cpp`. Used unmodified apart from its include list;
+`fpga/programmer.cpp`. Used unmodified apart from its include list and one
+added comment saying where its licence text lives in this tree;
 `ports/bl616/tang_jtag_glue.h` supplies what it expected from its own tree and
 documents this provenance.
 
 - Copyright: (c) 2025.2, nand2mario
-- License: Apache-2.0
+- License: Apache-2.0, reproduced at `LICENSES/Apache-2.0.txt`. This is the only
+  file in the tree under a licence other than MIT
 - Based in part on openFPGALoader by Gwenhael Goavec-Merou,
   https://github.com/trabucayre/openFPGALoader, also Apache-2.0
 

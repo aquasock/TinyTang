@@ -2,7 +2,8 @@
 //
 // ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 bit-banged
 // GPIO JTAG programmer for the Gowin GW5A/GW2A, taken from Tang-Control's
-// fpga/programmer.cpp and used here unmodified apart from the include list.
+// fpga/programmer.cpp and used here unmodified apart from the include list and
+// one added comment saying where its licence text lives in this tree.
 // This header supplies everything it expected from its own tree: the console
 // it reports through, the card file it reads, the GPIO device handle, and
 // stubs for the FPGA UART bookkeeping, which TinyTang does not have yet.

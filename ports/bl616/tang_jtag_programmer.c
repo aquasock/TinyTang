@@ -7,6 +7,12 @@
  * LICENSE file in the root directory of this source tree. 
  *
  * Based in part on openFPGALoader by Gwenhael Goavec-Merou
+ *
+ * Vendored into TinyTang. The file above refers to the tree this was written
+ * in, whose root LICENSE is Apache-2.0; in this tree the Apache-2.0 text is at
+ * LICENSES/Apache-2.0.txt and the root LICENSE is MIT, covering TinyTang's own
+ * code. This comment is the vendoring change and is the only edit made to this
+ * header. Added 2026-10-03.
  */
 
 #include "tang_jtag_glue.h"
