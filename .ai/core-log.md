@@ -161,3 +161,32 @@ None.
 - User Test: N/A
 
 ---
+## 6 COMMIT Unreleased 2026-10-04T15:49:39-07:00
+
+#### Coming From:
+
+Unreleased b99264d
+
+#### Purpose:
+
+Restore TinyDesk's on-card boot chain after the SD card's root directory was destroyed, and requalify the shell, the desktop and the NES cartridge boot on the board.
+
+#### Outcome:
+
+The card's filesystem was intact and only its root directory was destroyed, so the repair was a userspace reset rather than a recovery tool: the card was absent when the previous session closed, and when it returned its root held twenty-seven `new.txt` and `New folder` entries with binary data where filenames belong, while a twenty-megabyte write-and-read roundtrip on the same card was clean and reclaimed its space on deletion. A `fsck.vfat` could not be run from this host -- the session is uid 1000, is not in the `disk` group, and `sudo` is blocked by the no-new-privs flag, so the block device is not writable -- so the root was cleared in userspace and `/cores/console138k`, `/scripts` and `/roms` were recreated with `nestang-desk.bin` (4606154 bytes, MD5 `191537528e67911993c6fd40173057f0`), `boot.tdsh`, `boot-cart.tdsh` and `castlevania.nes` (131088 bytes). About 4.6 MB of orphaned clusters stay marked allocated until a `fsck.vfat` is run from a PC, which is harmless on the 29 GB volume and is the only residue of the damage. The BL616 firmware was rebuilt from clean (`make clean` then `make CHIP=bl616 BOARD=bl616dk`, all 203 objects) and the build passed, but the image is not byte-reproducible: it differs from the previously flashed build in exactly six bytes, the embedded `__DATE__` and `__TIME__` strings, so an image on the board can be confirmed only by its code and never by its hash. The patched core written to the card is byte-identical to the documented known-good, and the patch series `0001` through `0006` resolves on the `nestang` checkout with the applier idempotent, its before and after tree hashes equal; the core itself was not re-synthesised. On hardware the board booted `boot.tdsh` into TinyDesk, the desktop drew its start menu and application list over the CDC, the Terminal window opened onto the `root@tinytang:~#` prompt, and `tdsh run /scripts/boot-cart.tdsh` reported `tangload: core loaded`, `fpga: core 1 answering on UART1 at 2000000 baud`, `nesload: 131088 bytes in; the core is running` and `boot-cart: up`; the user reports Castlevania is playing on the HDMI, which is the result the previous cycle left open. The BL616 on the board was not reflashed, because no firmware source has changed since cycle 2 reflashed it and a rebuild would differ only in that same date stamp. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The remaining piece of the project's stated end state is the Tang-Phosphor core, which is not on the card and comes from its own project. Two smaller items are open: the card's orphaned clusters should be reclaimed with `fsck.vfat` from a PC when convenient, and the boot scripts' overlay fix and `tinytang_put.py`'s `require_shell()` guard still carry the tests they were left with in cycles 4 and 5, which this requalification did not exercise.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
