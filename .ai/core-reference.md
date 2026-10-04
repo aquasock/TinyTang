@@ -106,6 +106,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
   name: "Provenance and attribution"
   description: "The family lineage this project descends from, and the licence and notice obligations that follow from the code it inherits or vendors."
 
+- topic_id: PSX
+  name: "Tang-PSX (external project)"
+  description: "Facts harvested from Tang-PSX's reference before its retirement: the device revision and resources, the FPGA end of the core link, the module's JTAG and UART header, the dock's SDRAM, and the measured core-state behaviour of the transport."
+
 - topic_id: TOOL
   name: "Toolchain behaviour"
   description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness, plus the provenance and licence of code vendored into this project."
@@ -187,6 +191,12 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-002 |
 | Where is colibri, and what are its terms? | PROV | PROV-003 |
+| Which silicon revision is this board, and which revision is the core image? | PSX | PSX-001 |
+| How much logic and block RAM does the device have? | PSX | PSX-002 |
+| Which FPGA pins carry the core UART, and where is the board's clock? | PSX | PSX-003 |
+| What is on the FPGA module's JTAG and UART header? | PSX | PSX-004 |
+| What memory is on this board? | PSX | PSX-005 |
+| How do I tell whether a core is loaded, and what is a core ID? | PSX | PSX-006 |
 
 ---
 
@@ -268,6 +278,12 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being retired"
 PROV-002: "TinyTang carries a LICENSE (Apache-2.0, matching the TangCore firmware lineage) and a THIRD_PARTY.md naming TangCore, Tang-Control, the vendored Gowin JTAG programmer and openFPGALoader, both MIT TinyDesk submodules, nestang's iosys_bl616.v read as a specification but not copied, the Bouffalo SDK, and colibri"
 PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv pinned to upstream 3fa78412; read the port when working in SystemVerilog since it ships an AGENTS.md and targets Verilator and free tooling, but treat the original as the authority; licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT, with no code copied here"
+PSX-001: "This board is GW5AST-138 revision C (package mark 2518CA0N), while the console138k core image it loads is built for revision B and works anyway"
+PSX-002: "GW5AST-138: 138,240 LUTs, 139,095 registers, 340 BSRAM blocks of 18 Kbit, about 765 KB"
+PSX-003: "50 MHz oscillator on FPGA pin V22; the BL616 control UART reaches the FPGA on V14 (FPGA RX) and U15 (FPGA TX), LVCMOS33 - the other end of the link PROT-003 describes from the BL616 side"
+PSX-004: "Module connector U1201, 8-pin JST SH: 1 5V0 via diode (~4.4 V), 2 TMS T13, 3 TDO U13, 4 TCK V12, 5 TDI R13, 6 RX V14, 7 TX U15, 8 GND; the JTAG nets are shared with the BL616, so an external adapter must be released during a tangload, pins 6 and 7 stay unconnected, and pin 1 must not reach a 3.3 V adapter"
+PSX-005: "Dock SDRAM is Winbond W9825G6KH-6, 32 MB x16 at 166 MHz, on connectors J9 and J10, separate from the SOM's 1 GiB x32 DDR3; neither is the BL616's memory, which is 320 KB of on-chip OCRAM (BL6-002)"
+PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID (0x01 nestang, 0x50 Phosphor, 0x51 Gate 1), not by core_running, which reads no while a core answers; uploads are refused while a core runs; the link is 2 Mbaud with a 5 Mbaud fast mode and needs an iosys clock at least 8x the baud"
 ```
 
 ---
@@ -1259,6 +1275,85 @@ PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHD
     - "CERN EP department announcement and the FPGA Developers' Forum material on colibri, 2024-2026"
     - "Project statement recorded with the user, 2026-10-03: that future agents will reference it"
   verification: "The licence and the upstream pin were read from the port's own NOTICE, LICENSES/ directory and AGENTS.md, and the project, mirror and port were all confirmed to exist. The library is not present in this tree: no colibri source is vendored here."
+
+- record_id: PSX-001
+  kind: DEVICE
+  topic_id: PSX
+  title: "This board's FPGA is revision C, while the core image it runs is revision B"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Sipeed identifies the device revision from the fifth character of the second marking line on the package. The installed part is marked GW5AST-LV138PG484AC1/I0, 2518CA0N, TS0E44.00, so it is revision C, and Gowin targets it as GW5AST-138C. The core image this project loads, nand2mario's console138k artifact, is built for revision B (DEV-002)."
+  consequence: "A revision-B bitstream is what actually runs here and it works: the cartridge boots and the UART link answers. Worth knowing rather than assuming, because revision is what Gowin keys IP generation on and Tang-PSX regenerated all of its IP for revision C. Nothing in this firmware builds gateware, so the choice belongs to whoever builds the core images; this record exists so that a core which fails to configure is not blamed on the loader first."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md record DEV-001, harvested before that project's retirement"
+    - "Sipeed wiki, How to Identify Device Version, as cited by TangMega-138K-example ddr_memory/README.md, commit 06e7d8b118d345915ab6f257b7c22226f81575cd"
+  verification: "Read from Tang-PSX's reference, which verified it from a user photograph of the package on 2026-09-28. Not re-measured here; this project's own evidence is indirect, that a revision-B console138k image configures and runs on this board."
+
+- record_id: PSX-002
+  kind: DEVICE
+  topic_id: PSX
+  title: "GW5AST-138 logic and block-RAM resources"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The device provides 138,240 LUTs, 139,095 registers and 340 BSRAM blocks. Each block is 18 Kbit, about 765 KB in total."
+  consequence: "This project builds no gateware, so the figures bound only what can be asked of the cores it loads: on-chip block RAM cannot hold a PSX-class machine's working set, which is why the cores on this card depend on DDR3 or the dock's SDRAM rather than on BSRAM."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md record DEV-002, harvested before that project's retirement"
+    - "Gowin EDA 1.9.11.03 place-and-route resource report for GW5AST-LV138PG484AC1/I0"
+  verification: "Read from Tang-PSX's reference, which took it from Gowin's device totals. Not re-read from a datasheet here."
+
+- record_id: PSX-003
+  kind: BOARD
+  topic_id: PSX
+  title: "The FPGA end of the core UART link, and the board's 50 MHz clock"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "A 50 MHz oscillator drives FPGA pin V22 at LVCMOS33. The BL616 control UART reaches the FPGA on V14 (FPGA receive) and U15 (FPGA transmit), also LVCMOS33."
+  consequence: "This is the far end of the link PROT-003 describes from the BL616 side, TX GPIO 28 and RX GPIO 27 at 2 Mbaud. When the link goes silent either end can be at fault, and these are the pins to probe on the FPGA side; the 50 MHz clock is the reference the Tang-Control-derived transports time themselves against."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md record BRD-003, harvested before that project's retirement"
+    - "litex-boards commit e4307929c38a, litex_boards/platforms/sipeed_tang_console.py (clk50, serial)"
+    - "Sipeed TangMega-138K-example commit 06e7d8b, ddr3_1v4_hs.cst (clk, uart_tx, uart_rx)"
+  verification: "Read from Tang-PSX's reference. Not probed here; this project's evidence is indirect, in that its own transport over these pins works."
+
+- record_id: PSX-004
+  kind: BOARD
+  topic_id: PSX
+  title: "The module's 8-pin JTAG and UART header, U1201"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The Tang Mega 138K module's 8-pin JST SH connector U1201 carries, by pin: 1 5V0 through diode D13, 2 TMS (T13), 3 TDO (U13), 4 TCK (V12), 5 TDI (R13), 6 RX into the FPGA (V14), 7 TX out of the FPGA (U15), 8 GND. On these docks the same JTAG nets run straight to the BL616 debugger, with a 0-ohm resistor on TDO. Pin 1 measures about 4.4 V."
+  consequence: "Three rules follow, and together they explain the debugging arrangements this project inherited. An external JTAG adapter shares TCK, TMS and TDI with the BL616, which drives them while it loads a core, so the adapter must be released or unplugged during a tangload. Pins 6 and 7 must stay unconnected, because they are the core UART link. Pin 1 must not reach a 3.3 V adapter. It is also the configuration JTAG, not the AE350's debug JTAG. A Raspberry Pi Pico 2 running lonehog/JTAGprobe under OpenOCD found the TAP (IDCODE 0x0001081B) where openFPGALoader 0.13.1 did not, because its cmsisdap driver needs CMSIS-DAP v1 HID and the probe speaks v2."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md record BRD-006, harvested before that project's retirement"
+    - "Sipeed tang_mega_138k_30353_Schematics.pdf, sheet JTAG Connector, U1201"
+  verification: "Read from Tang-PSX's reference, where it was confirmed by unloaded voltage readings on the connector and by a working OpenOCD connection. Not re-measured here."
+
+- record_id: PSX-005
+  kind: BOARD
+  topic_id: PSX
+  title: "The dock's SDRAM add-on, and which memory belongs to whom"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The dock exposes two 40-pin SDRAM connectors, J9 and J10, each able to carry one 16-bit SDR SDRAM; the add-on module is a Winbond W9825G6KH-6, 256 Mbit (32 MB) x16, 166 MHz grade, 3.3 V I/O, with CLK on connector pin 20. Separately the SOM fits two Hynix H5TQ4G63EFR-RDC x16 DDR3 devices forming a 1 GiB x32 array on a shared address and command bus."
+  consequence: "Recorded because the memory question keeps coming up: the RAMs on this bench are distinct and only one belongs to the firmware. The BL616 has 320 KB of on-chip OCRAM and no external RAM (BL6-002); the FPGA has the DDR3 array and optionally these SDRAM modules on the dock. Nothing in this firmware touches either FPGA-side memory."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md records SDR-001 and BRD-001, harvested before that project's retirement"
+    - "litex-boards commit e4307929c38a, sipeed_tang_console.py: sdram0/1_connector and the W9825G6KH6 module selection"
+  verification: "Read from Tang-PSX's reference, which confirmed the part by photograph only. Which connectors are populated on this bench, and the connector pin mapping, are not verified."
+
+- record_id: PSX-006
+  kind: EXTERNAL
+  topic_id: PSX
+  title: "Reading a loaded core's state, and the core ID's low byte"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-PSX's measurements of the Tang-Control transport: with a core loaded and answering, the status line reported active_core 81 (0x51) together with core_running: no, and at the main menu active_core was 0. So the reliable indicator of a loaded core is active_core, and it holds the low byte of the core's own CORE_ID, because the legacy core-ID response carries only that byte. Uploads were refused while a core was running, and cores are looked for at cores/<board>/ then cores/, with console138k as the board name. The link runs at 2,000,000 baud with a 5,000,000 fast mode, and the iosys clock must be at least eight times the baud rate."
+  consequence: "Two things worth carrying. The low byte explains every core ID seen on this card - 0x01 nestang, 0x50 Phosphor, 0x51 Gate 1 - and it is exactly what this project's fpga probe reads back. And the eight-times rule is a precondition on the core, not on the loader, so it belongs to whoever builds a core image rather than to this firmware. Tang-PSX's TCTL records and this project's EXTCTL and TCTL records already cover the protocol and the search path; this record adds the state reading and the id byte."
+  sources:
+    - "Tang-PSX, .ai/core-reference.md records TCTL-001, TCTL-002 and TCTL-003, harvested before that project's retirement"
+    - "Tang-Control commit 26e975bef22b: utils/fpga_debug.h and scripts/tangctl.py"
+  verification: "Read from Tang-PSX's reference, where the status lines were observed repeatedly while a core answered. This project's own fpga probe returning core 1 for nestang is consistent with the low-byte rule, but is not a measurement of the byte."
 ```
 
 ---
@@ -1286,6 +1381,7 @@ PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHD
 
 - Keep external facts, their sources, and their verification status here.
 - Board faces shared with another project are cited, not copied. The PMOD socket pins, the seating rule and the personality registry live in Tang-Phosphor's `.ai/core-reference.md` beside the constraint file and the RTL that implement them; this file records only the part that bounds this firmware, so the same board does not acquire two sources that can drift.
+- The exception is a project being retired: Tang-PSX's reference is gone from the family's reach once that repo is, so the records that bear on this firmware were copied here as PSX-001 through PSX-006 rather than cited. Copying is right when the original is going away, and only then.
 - Keep build results, failures, rationale, and chronology in `core-log.md`; cite a log entry number in `verification` instead of repeating it.
 - Do not add speculative records for topics that have not been looked up. An unanswered question stays out of this file until a source answers it.
 - When a record's source is superseded by a newer document or tool version, add a new record rather than editing the old statement.
