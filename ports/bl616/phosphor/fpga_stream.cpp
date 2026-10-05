@@ -25,8 +25,6 @@ constexpr size_t RESPONSE_PAYLOAD_LENGTH = 13;
 // Version, flags, id, offset and length, the data, then the CRC.
 uint8_t frame[HEADER_LENGTH + FPGA_STREAM_MAX_DATA + 2];
 
-fpga_stream_timing timing;
-
 uint16_t read_be16(const uint8_t *data)
 {
     return static_cast<uint16_t>((static_cast<uint16_t>(data[0]) << 8) | data[1]);
@@ -89,10 +87,7 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
                         fpga_ext_packet_crc(FPGA_STREAM_COMMAND, frame, body));
 
     bool received = false;
-    const uint64_t send_start = bflb_mtimer_get_time_us();
-    const int sent = tang_fpga_frame(FPGA_STREAM_COMMAND, frame, body + 2);
-    const uint64_t ack_start = bflb_mtimer_get_time_us();
-    if (sent == 0) {
+    if (tang_fpga_frame(FPGA_STREAM_COMMAND, frame, body + 2) == 0) {
         const uint64_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
         for (;;) {
             const uint64_t now = bflb_mtimer_get_time_ms();
@@ -111,10 +106,6 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
             }
         }
     }
-    timing.frames++;
-    timing.baud = tang_fpga_baud();
-    timing.send_us += ack_start - send_start;
-    timing.ack_us += bflb_mtimer_get_time_us() - ack_start;
     // Keep the shared link locked through the matching response: the FPGA
     // transport has one response channel and cannot accept an unrelated
     // request while this stream frame is outstanding.
@@ -123,16 +114,4 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
     // other sender for the length of a track.
     taskYIELD();
     return received;
-}
-
-void fpga_stream_timing_reset(void)
-{
-    timing = {};
-}
-
-void fpga_stream_timing_get(fpga_stream_timing *out)
-{
-    if (out != nullptr) {
-        *out = timing;
-    }
 }

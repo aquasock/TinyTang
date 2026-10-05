@@ -57,9 +57,16 @@ is called out in the source where it is used.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
 - **`phosphor caps | peek | poke | play | stats`** drives a loaded
   Tang-Phosphor core over its extended protocol (register access on frame
-  type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play` streams a
-  WAV or FLAC from the card and waits for the player to finish; Ctrl-C stops
-  it. Run `osd desk off` before loading Phosphor, which has no desktop layer.
+  type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
+  plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
+  Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
+  resident Rockbox player `/ae350/resident.tpi` onto the core's AE350 and
+  streaming the file to it, then waits for the track to finish; Ctrl-C stops
+  the wait, and `nowait` returns as soon as the file is sent. Load the core
+  with `/cores/console138k/phosphortang.bin` after `osd desk off`, since it has
+  no desktop layer. The merged core has no WAV or FLAC decoder in the fabric:
+  its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is the only
+  way to play a file.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
@@ -224,7 +231,8 @@ STM32's own DFU bootloader.
   - `td_desktop_bl616.c` — the TinyDesk port and the `desktop` command.
   - `td_bridge_bl616.c` — the shell inside TinyDesk's Terminal window.
   - `phosphor/` — the Tang-Phosphor host side, ported from Tang-Control: the
-    extended-protocol transport and the `phosphor` command.
+    extended-protocol transport, the resident AE350 player loader, and the
+    `phosphor` command.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every
@@ -239,6 +247,10 @@ STM32's own DFU bootloader.
 - `tools/` — host tools:
   - `make_test_wav.py` — writes a deterministic 4-second test tone for the
     Phosphor player.
+  - `make_codec_corpus.sh`, `phosphor_format_sweep.py` — regenerate
+    Tang-Phosphor's twelve-format test corpus with ffmpeg, then play it on the
+    board and check every file's samples, underruns and rate against the
+    figures Tang-Phosphor qualified (its entry 43).
   - `tinytang_put.py`, `tinytang_run.py`, `tinytang_flash.py` — put a file on
     the card, run a command, reflash the BL616. `tinytang_put.py` refuses to
     send unless the console is at a shell prompt (fact 15).

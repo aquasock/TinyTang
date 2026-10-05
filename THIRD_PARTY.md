@@ -35,8 +35,9 @@ The intermediate project, retired in favour of TinyTang:
 
 The Tang-Phosphor host side is ported from Tang-Control into
 `ports/bl616/phosphor/`: `fpga_ext_frame.h` and `flac_stream_prefix.h` copied
-unchanged, and `fpga_debug`, `fpga_stream` and `fpga_file_stream` ported with
-only their link plumbing changed, each saying so in its header. The host tests
+unchanged, `fpga_debug`, `fpga_stream` and `fpga_file_stream` ported with only
+their link plumbing changed, and `ae350_play` with its card path changed and a
+settle delay added after the AE350 restart, each saying so in its header. The host tests
 `tools/tests/fpga_ext_frame_test.cpp` and `flac_stream_prefix_test.cpp` are
 copied unchanged. All are Apache-2.0, as this project is.
 

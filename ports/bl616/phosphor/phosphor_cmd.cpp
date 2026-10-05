@@ -1,16 +1,18 @@
-// TinyTang: the `phosphor` shell command -- the first slice of driving the
-// Tang-Phosphor core from this firmware.
+// TinyTang: the `phosphor` shell command, which drives the Tang-Phosphor core
+// from this firmware.
 //
 // Phosphor speaks Tang-Control's extended protocol (EXTCTL-001..005): register
 // reads and writes over frame type 0x10, and files streamed over 0x11.  The
 // transport underneath is ported from Tang-Control (fpga_debug, fpga_stream,
-// fpga_file_stream); this file is only the shell's view of it.  A WAV or FLAC
-// track is played the way Tang-Control's loader plays a playlist entry: stream
-// the file, then poll the player's state until it reports the track complete.
+// fpga_file_stream, ae350_play); this file is only the shell's view of it.
+// `play` hands a file to the resident Rockbox player on the AE350, which takes
+// every supported format, as Tang-Control plays a single file.  It is the only
+// way to play: the merged core's FPGA player is a raw-PCM sink (pcm_sink.sv)
+// with no WAV or FLAC parser of its own, fed by the AE350, so sending it a file
+// directly plays the file's bytes as samples at whatever rate was last set.
 
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 extern "C" {
 #include "FreeRTOS.h"
@@ -24,22 +26,27 @@ int tdsh_printf(const char *fmt, ...);
 int tang_phosphor_register(void);
 }
 
+#include "ae350_play.h"
 #include "fpga_debug.h"
 #include "fpga_file_stream.h"
-#include "fpga_stream.h"
 
 namespace {
 
 // Phosphor's player registers (Tang-Control core/phosphor.cpp).
 constexpr uint32_t PHOSPHOR_AUDIO_STATUS = 0x0000005c;
+constexpr uint32_t PHOSPHOR_SAMPLES_PLAYED = 0x00000068;
+constexpr uint32_t PHOSPHOR_UNDERRUNS = 0x0000006c;
+constexpr uint32_t PHOSPHOR_HDMI_AUDIO_RATE = 0x00000070;
+constexpr uint32_t AE350_LOADER_STATE = 0x00004020;    // state 7:0, completed runs 31:16
+constexpr uint32_t AE350_LOADER_RESULT = 0x0000402c;   // the program's result word
 constexpr uint8_t PHOSPHOR_STATE_COMPLETE = 4;
 constexpr uint8_t PHOSPHOR_STATE_ERROR = 5;
 constexpr uint8_t PHOSPHOR_STATE_CANCELLED = 6;
 
-// Once the last byte is accepted the core still holds up to one PCM FIFO of
-// audio (about 0.4 s), so completion follows the stream closely; Tang-Control
-// gives it five seconds.
-constexpr uint32_t PLAYER_COMPLETE_TIMEOUT_MS = 5000;
+// How long the player may go without playing a sample before a wait gives up.
+constexpr uint32_t PLAYER_STALL_TIMEOUT_MS = 5000;
+// How long the AE350 may take to decode before its first sample plays.
+constexpr uint32_t AE350_START_TIMEOUT_MS = 30000;
 
 bool parse_u32(const char *text, uint32_t *out)
 {
@@ -67,13 +74,6 @@ bool ctrl_c(void *)
         }
     }
     return false;
-}
-
-bool ends_with(const char *text, const char *suffix)
-{
-    const size_t n = strlen(text);
-    const size_t m = strlen(suffix);
-    return n >= m && strcasecmp(text + n - m, suffix) == 0;
 }
 
 int cmd_caps(void)
@@ -131,87 +131,152 @@ int cmd_poke(const char *address_text, const char *value_text)
     return r.status == 0 ? 0 : 1;
 }
 
-int cmd_play(tdsh_session_t *session, const char *path)
+// The desk layer sends its cell frames over the same link, and the core has
+// no layer to draw them on: with it running they would only take bandwidth
+// from the audio.  Shared by both ways of playing a file.
+bool resolve_for_playback(tdsh_session_t *session, const char *path, char *real,
+                          size_t real_size)
 {
-    // The desk layer sends its cell frames over the same link, and the core
-    // has no layer to draw them on: with it running they would only take
-    // bandwidth from the audio.
     if (tang_osd_desk_enabled()) {
         tdsh_printf("phosphor: the desk layer is on; run 'osd desk off' first\r\n");
-        return 1;
+        return false;
     }
-    char real[TDSH_MAX_REAL_PATH];
     char logical[TDSH_MAX_PATH];
-    if (tdsh_path_to_real(session, path, real, sizeof(real), logical,
-                          sizeof(logical)) != 0) {
+    if (tdsh_path_to_real(session, path, real, real_size, logical, sizeof(logical)) != 0) {
         tdsh_printf("phosphor: bad path %s\r\n", path);
-        return 1;
+        return false;
     }
+    return true;
+}
 
-    fpga_file_stream_options options;
-    options.stream_id = fpga_file_stream_reserve_id();
-    options.reduce_flac_metadata = ends_with(path, ".flac");
-
-    tdsh_printf("phosphor: streaming %s as stream %u (Ctrl-C stops)\r\n", path,
-                static_cast<unsigned>(options.stream_id));
-    fpga_stream_timing_reset();
-    const fpga_file_stream_result s = fpga_file_stream(real, ctrl_c, nullptr, options);
-    fpga_stream_timing t;
-    fpga_stream_timing_get(&t);
-    tdsh_printf("phosphor: %s: %lu bytes in %lu ms, CRC-32 0x%08lx",
-                fpga_file_stream_status_text(s.status),
-                static_cast<unsigned long>(s.bytes),
-                static_cast<unsigned long>(s.elapsed_ms),
-                static_cast<unsigned long>(s.crc32));
-    if (s.status != fpga_file_stream_status::OK) {
-        tdsh_printf(", fs %d, transport %u\r\n", static_cast<int>(s.filesystem_status),
-                    static_cast<unsigned>(s.transport_status));
-        return 1;
+bool read_reg(uint32_t address, uint32_t *value)
+{
+    fpga_debug_result r;
+    if (!fpga_debug_request(FPGA_EXT_READ32, address, 0, &r) || r.status != 0) {
+        return false;
     }
-    tdsh_printf("\r\n");
-    tdsh_printf("phosphor: %lu frames at %lu baud: send %lu ms, ack wait %lu ms, "
-                "card read %lu ms\r\n",
-                static_cast<unsigned long>(t.frames),
-                static_cast<unsigned long>(t.baud),
-                static_cast<unsigned long>(t.send_us / 1000),
-                static_cast<unsigned long>(t.ack_us / 1000),
-                static_cast<unsigned long>(fpga_file_stream_read_us() / 1000));
+    *value = r.data;
+    return true;
+}
 
-    // Tang-Control's wait_for_player_complete, without the pause handling a
-    // shell command has no way to request.
+// Wait for an AE350 track to finish.
+//
+// The player register can still say "complete" from the previous track until
+// this one starts playing, so completion alone proves nothing here.  What does
+// is the loader's run count (0x4020, bits 31:16): ae350_play_file restarts the
+// loader, which zeroes it, and the single-shot player returns -- bumping it --
+// only after it has queued all of its audio.  So the track is done when the run
+// count has moved and the player then reports complete.  Decoding happens
+// before any sample plays, so the first sample is given longer than the stall
+// rule allows between samples.
+int wait_for_ae350_player(void)
+{
     const uint64_t started = bflb_mtimer_get_time_ms();
+    uint32_t last_samples = 0;
+    bool have_last = false;
+    bool playing = false;
+    uint64_t last_progress = started;
+    uint64_t returned_at = 0;
     for (;;) {
         if (ctrl_c(nullptr)) {
             tdsh_printf("phosphor: stopped while the core was still playing\r\n");
             return 1;
         }
-        fpga_debug_result r;
-        if (!fpga_debug_request(FPGA_EXT_READ32, PHOSPHOR_AUDIO_STATUS, 0, &r) ||
-            r.status != 0) {
+        uint32_t loader;
+        uint32_t status;
+        uint32_t samples;
+        if (!read_reg(AE350_LOADER_STATE, &loader) ||
+            !read_reg(PHOSPHOR_AUDIO_STATUS, &status) ||
+            !read_reg(PHOSPHOR_SAMPLES_PLAYED, &samples)) {
             tdsh_printf("phosphor: the player status did not answer\r\n");
             return 1;
         }
-        const uint8_t state = static_cast<uint8_t>(r.data & 0x0f);
-        if (state == PHOSPHOR_STATE_COMPLETE) {
-            tdsh_printf("phosphor: playback complete\r\n");
+        const uint64_t now = bflb_mtimer_get_time_ms();
+        const uint8_t loader_state = static_cast<uint8_t>(loader & 0xff);
+        if (loader_state >= 0x81) {
+            uint32_t result = 0;
+            (void)read_reg(AE350_LOADER_RESULT, &result);
+            tdsh_printf("phosphor: the AE350 loader stopped with state 0x%02x "
+                        "(result 0x%08lx)\r\n", static_cast<unsigned>(loader_state),
+                        static_cast<unsigned long>(result));
+            return 1;
+        }
+        if (have_last && samples != last_samples) {
+            playing = true;
+            last_progress = now;
+        }
+        last_samples = samples;
+        have_last = true;
+
+        const uint8_t state = static_cast<uint8_t>(status & 0x0f);
+        const bool returned = (loader >> 16) != 0;
+        if (returned && returned_at == 0) {
+            returned_at = now;
+        }
+        if (returned && state == PHOSPHOR_STATE_COMPLETE) {
+            uint32_t underruns = 0;
+            uint32_t rate = 0;
+            uint32_t result = 0;
+            (void)read_reg(PHOSPHOR_UNDERRUNS, &underruns);
+            (void)read_reg(PHOSPHOR_HDMI_AUDIO_RATE, &rate);
+            (void)read_reg(AE350_LOADER_RESULT, &result);
+            tdsh_printf("phosphor: playback complete: %lu samples, %lu underruns, %lu Hz "
+                        "(player result 0x%08lx)\r\n",
+                        static_cast<unsigned long>(samples),
+                        static_cast<unsigned long>(underruns),
+                        static_cast<unsigned long>(rate),
+                        static_cast<unsigned long>(result));
             return 0;
         }
-        if (state == PHOSPHOR_STATE_ERROR) {
+        if (state == PHOSPHOR_STATE_ERROR && returned) {
             tdsh_printf("phosphor: the decoder reported error %u\r\n",
-                        static_cast<unsigned>((r.data >> 6) & 0xff));
+                        static_cast<unsigned>((status >> 6) & 0xff));
             return 1;
         }
-        if (state == PHOSPHOR_STATE_CANCELLED) {
-            tdsh_printf("phosphor: the core cancelled playback\r\n");
+        if (returned && now - returned_at > PLAYER_STALL_TIMEOUT_MS) {
+            uint32_t result = 0;
+            (void)read_reg(AE350_LOADER_RESULT, &result);
+            tdsh_printf("phosphor: the player returned (result 0x%08lx) but playback "
+                        "did not complete (state %u)\r\n",
+                        static_cast<unsigned long>(result), static_cast<unsigned>(state));
             return 1;
         }
-        if (bflb_mtimer_get_time_ms() - started > PLAYER_COMPLETE_TIMEOUT_MS) {
-            tdsh_printf("phosphor: playback did not complete (state %u)\r\n",
-                        static_cast<unsigned>(state));
+        if (!playing && !returned && now - started > AE350_START_TIMEOUT_MS) {
+            tdsh_printf("phosphor: the AE350 did not start playing (loader 0x%08lx)\r\n",
+                        static_cast<unsigned long>(loader));
             return 1;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        if (playing && !returned && now - last_progress > PLAYER_STALL_TIMEOUT_MS) {
+            tdsh_printf("phosphor: playback stalled at %lu samples\r\n",
+                        static_cast<unsigned long>(samples));
+            return 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
+}
+
+// Through the resident AE350 Rockbox player: every supported format, the way
+// Tang-Control plays a single file.
+int cmd_play(tdsh_session_t *session, const char *path, bool wait)
+{
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_for_playback(session, path, real, sizeof(real))) {
+        return 1;
+    }
+    tdsh_printf("phosphor: playing %s on the AE350 (Ctrl-C stops once it is playing)\r\n",
+                path);
+    const uint64_t started = bflb_mtimer_get_time_ms();
+    const char *error = nullptr;
+    if (!ae350_play_file(real, &error)) {
+        tdsh_printf("phosphor: %s\r\n", error != nullptr ? error : "playback failed");
+        return 1;
+    }
+    tdsh_printf("phosphor: player and file sent in %lu ms\r\n",
+                static_cast<unsigned long>(bflb_mtimer_get_time_ms() - started));
+    // `nowait` leaves the link alone while the AE350 decodes, as Tang-Control's
+    // own single-file play does, for telling a decode problem apart from one
+    // caused by reading the player's registers while it runs.
+    return wait ? wait_for_ae350_player() : 0;
 }
 
 int cmd_stats(void)
@@ -228,8 +293,8 @@ int cmd_stats(void)
 
 int usage(void)
 {
-    tdsh_printf("usage: phosphor caps | peek <addr> | poke <addr> <value> | "
-                "play <file.wav|file.flac> | stats\r\n");
+    tdsh_printf("usage: phosphor caps | peek <addr> | poke <addr> <value> | stats\r\n"
+                "       phosphor play <file> [nowait]  any format, on the AE350 Rockbox player\r\n");
     return 1;
 }
 
@@ -249,7 +314,10 @@ int cmd_phosphor(tdsh_session_t *session, int argc, char **argv)
         return cmd_poke(argv[2], argv[3]);
     }
     if (strcmp(sub, "play") == 0 && argc == 3) {
-        return cmd_play(session, argv[2]);
+        return cmd_play(session, argv[2], true);
+    }
+    if (strcmp(sub, "play") == 0 && argc == 4 && strcmp(argv[3], "nowait") == 0) {
+        return cmd_play(session, argv[2], false);
     }
     if (strcmp(sub, "stats") == 0 && argc == 2) {
         return cmd_stats();

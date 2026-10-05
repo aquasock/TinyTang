@@ -622,3 +622,42 @@ The user is to decide how far the Phosphor effort goes past this first step. Ste
 - User Test: PASS
 
 ---
+## 20 COMMIT Unreleased 2026-10-05T02:36:08-07:00
+
+#### Coming From:
+
+Unreleased dcb282e
+
+#### Purpose:
+
+Play every format Tang-Phosphor supports through its resident AE350 Rockbox player, and requalify all twelve against the figures that project recorded.
+
+#### Outcome:
+
+All twelve formats play from TinyTang with every sample count equal to Tang-Phosphor entry 43's: `441000` for WAV, MP3, Ogg Vorbis, AAC, ALAC, WavPack and TTA, `444240` for FLAC (that entry's own unexplained divergence), `440735` MP2, `442368` AC-3 and WMA, and `479688` Opus at 48 kHz, each with zero underruns and its own output rate, and the rate switching both ways between 44.1 and 48 kHz; the user confirmed the pitch by ear. Tang-Control's `ae350_play` is ported into `ports/bl616/phosphor/`, and `phosphor play <file>` now restarts the AE350's loader, sends `/ae350/resident.tpi`, streams the file and waits for the track, with `nowait` returning once the file is sent. Two faults in that path were found and fixed here. A restart through `0x43f0` takes effect about a millisecond after the write, so polling for WAIT straight away saw the state left by the previous track and sent the player into a CPU about to be reset, which failed back-to-back plays; the port waits 20 ms first, its one deliberate change from Tang-Control's sequence. And the player register still read complete from the previous track, so completion is now taken only after the loader's run count, zeroed by the restart, has moved. This cycle also corrects entry 19: the path it called the FPGA's own decoder is not one. The merged core's FPGA player is `pcm_sink`, a raw-PCM sink taking its rate from the AE350, so step 1's WAV played correctly only because it is PCM after a 44-byte header that played as 11 samples -- 441011, not 441000 -- and played at 48 kHz once Opus had set that rate, which the user heard; `phosphor stream` was removed with it, as was the timing instrumentation that only it used, and this is recorded as `PHOS-006`. The player itself hung on hardware before its first decode. The image Tang-Phosphor's current tree builds (863748 bytes, CRC `3d762d13`, reproduced byte for byte) receives the file and stops, with the AE350 jumping to address 0; padding its empty input by 0 or 32 bytes hangs every time and by 16 or 48 bytes plays every time with the code unchanged, and instrumenting it to find the faulting step moved the code and hid the hang, so the cause is not found. Polling was ruled out by a run that touched the link only at the end. At the user's direction the workaround is in Tang-Phosphor's `software/rbhost/Makefile`, which now reserves the 16 bytes, recorded in its entry 69 and here as `PHOS-007`; the player it builds (863764 bytes, CRC `ef1502ed`) has the qualified layout and is the one the sweep passed with. The user believes the hang was a one-off; the evidence is that it is deterministic for a given layout, and the record says so. The corpus comes from the new `tools/make_codec_corpus.sh`, which regenerates entry 43's ten encoded files from the same tone with ffmpeg's bitexact flags placed on the output -- on the input they left Ogg's stream serial random -- and copies the surviving `test.wma` and `test.opus`; and `tools/phosphor_format_sweep.py` plays it behind the console guard and checks each file. The firmware is `dcb282e-dirty.5f90aba`, 327440 bytes, MD5 `b46c933c0fd14103dd1eaf03682aaaf5`, confirmed by `platform`; on the card are the player at `/ae350/resident.tpi` and the twelve files under `/music`. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds `PHOS-006` and `PHOS-007` with their routing rows and index lines and this entry, with no deletions, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The user is to decide on the remaining Phosphor steps, and step 3 has changed shape: playlists on the merged core must go through the AE350, since its FPGA player cannot decode, and the gapless handover of `PHOS-004` belongs to the deployment core. The player hang's cause is open in Tang-Phosphor, whose entry 69 names the first step towards it. `tools/tinytang_run.py` still lacks the console guard its siblings have.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/fpga_file_stream.cpp
+- ports/bl616/phosphor/fpga_file_stream.h
+- ports/bl616/phosphor/fpga_stream.cpp
+- ports/bl616/phosphor/fpga_stream.h
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- tools/make_codec_corpus.sh
+- tools/phosphor_format_sweep.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -28,7 +28,6 @@ extern "C" {
 namespace {
 
 volatile bool busy;
-uint64_t read_us;
 uint16_t next_stream_id = 1;
 uint8_t stream_buffer[FPGA_STREAM_MAX_DATA];
 
@@ -106,7 +105,6 @@ fpga_file_stream_result fpga_file_stream(const char *path,
         summary.status = fpga_file_stream_status::BUSY;
         return summary;
     }
-    read_us = 0;
 
     FIL file;
     bool file_open = false;
@@ -196,10 +194,8 @@ fpga_file_stream_result fpga_file_stream(const char *path,
                 wanted = options.length - offset;
             }
         }
-        const uint64_t read_start = bflb_mtimer_get_time_us();
         summary.filesystem_status =
             f_read(&file, stream_buffer, wanted, &count);
-        read_us += bflb_mtimer_get_time_us() - read_start;
         if (summary.filesystem_status != FR_OK) {
             summary.status = fpga_file_stream_status::READ_FAILED;
             break;
@@ -268,9 +264,4 @@ const char *fpga_file_stream_status_text(fpga_file_stream_status status)
         case fpga_file_stream_status::RESTORE_BAUD_FAILED: return "baud restore failed";
     }
     return "unknown error";
-}
-
-uint64_t fpga_file_stream_read_us(void)
-{
-    return read_us;
 }

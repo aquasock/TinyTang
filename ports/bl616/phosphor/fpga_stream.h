@@ -30,15 +30,3 @@ struct fpga_stream_result {
 bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
                       const uint8_t *data, uint16_t length,
                       fpga_stream_result *result, uint32_t timeout_ms = 1000);
-
-// Where a stream's time goes, for `phosphor play`: frames sent, microseconds
-// spent writing them to the UART, and microseconds spent waiting for the
-// acknowledgement.  Reset by the caller.
-struct fpga_stream_timing {
-    uint32_t frames;
-    uint32_t baud;          // the link rate the last frame went out at
-    uint64_t send_us;
-    uint64_t ack_us;
-};
-void fpga_stream_timing_reset(void);
-void fpga_stream_timing_get(fpga_stream_timing *out);

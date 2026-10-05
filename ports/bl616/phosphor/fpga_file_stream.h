@@ -56,5 +56,3 @@ fpga_file_stream_result fpga_file_stream(
     void *cancel_context = nullptr,
     const fpga_file_stream_options &options = {});
 const char *fpga_file_stream_status_text(fpga_file_stream_status status);
-// Microseconds the last stream spent in f_read, for `phosphor play`.
-uint64_t fpga_file_stream_read_us(void);

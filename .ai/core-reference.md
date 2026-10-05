@@ -177,6 +177,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How is track metadata chosen, and how is non-ASCII text handled? | PHOS | PHOS-003 |
 | How is a FLAC track sent, and how do tracks join without a gap? | PHOS | PHOS-004 |
 | How does the Phosphor core receive cover art? | PHOS | PHOS-005 |
+| Does the merged Phosphor core decode WAV or FLAC in the FPGA? | PHOS | PHOS-006 |
+| Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-001 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-001, TDESK-003 |
@@ -296,6 +298,8 @@ PHOS-002: "Playlists accept VLC-style .m3u and UTF-8 .m3u8: at most 255 tracks, 
 PHOS-003: "Track metadata prefers FLAC ALBUM, ALBUMARTIST (over ARTIST), ARTIST and TITLE comments, then WAV RIFF LIST/INFO IPRD, IART and INAM, then playlist-name and #EXTINF fallbacks; display text is UTF-8 reduced to the core's ASCII font, unsupported code points becoming one '?'"
 PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata block plus the unchanged frames, so large PICTURE or PADDING blocks do not delay the first frame; gapless handover needs core capability bit 7 and the player's draining state 7, queued up to one PCM FIFO (about 0.4 s) ahead"
 PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
+PHOS-006: "The merged Phosphor core's FPGA player is pcm_sink, a raw-PCM sink with no WAV or FLAC parser; it takes its rate from the AE350's last play_rate, latched at stream start, so a file streamed straight to it plays its bytes as samples at that rate, and every file must go through the resident AE350 player"
+PHOS-007: "A resident AE350 player hangs at the start of its first decode depending on its image layout: a null jump, RAM-bridge ERROR responses from address 0 and no return; the streamed player needs 16 bytes where an input would go (0 and 32 hang, 16 and 48 play), which Tang-Phosphor's Makefile now reserves; the cause is not found"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
 PROV-004: "TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
@@ -1362,6 +1366,33 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Tang-Control, docs/phosphor-loader.md: the artwork paragraph"
     - "Tang-Control, CMakeLists.txt: TJPGD_DIR into the SDK's lvgl/extra/libs/sjpg, and the LV_USE_SJPG definition"
   verification: "Read from the document and the build file. Not exercised here."
+
+- record_id: PHOS-006
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "The merged core's FPGA player is a raw-PCM sink, so every file goes through the AE350"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "In Tang-Phosphor's merged image (src/tang_phosphor_top.sv) the audio player is pcm_sink, which plays incoming bytes as signed 16-bit stereo samples and parses no container: the AE350 strips the WAV header itself before playing (platform_ae350.c, play_output). Its rate is play_rate, the AE350's last AE350_PLAY_RATE write, latched at stream start. Register 0xc0 (cpu_mode) routes the BL616's stream either to the AE350 (1) or straight to pcm_sink (0), and the core comes up with it at 0."
+  consequence: "A WAV streamed with cpu_mode 0 sounds right only by accident -- it is raw PCM after a 44-byte header that plays as 11 samples (441011 for a 441000-sample file) -- and at the wrong pitch once the AE350 has set another rate: on 2026-10-05 a 44.1 kHz WAV played at 48 kHz straight after a 48 kHz Opus file. So TinyTang plays every file through the resident AE350 player and has no direct-stream command. The FPGA-native FLAC decoding and gapless handover of PHOS-004 belong to Tang-Phosphor's deployment core, not to this image; playlists on the merged core would also have to go through the AE350."
+  sources:
+    - "Tang-Phosphor a22ec9c, src/tang_phosphor_top.sv: the pcm_sink instance, play_rate(cpu_play_rate), and the cpu_mode multiplexers on register 0xc0"
+    - "Tang-Phosphor a22ec9c, src/audio/pcm_sink.sv: rate <= play_rate at stream start"
+    - "Tang-Phosphor a22ec9c, software/rbhost/host/platform_ae350.c: play_output() skipping the 0x2e-byte WAV header"
+  verification: "Seen on this board on 2026-10-05: 441011 samples for the 1764044-byte test WAV streamed with cpu_mode 0, and the pitch change the user heard after Opus; through the AE350 the same file plays 441000 samples at 44.1 kHz after Opus at 48 kHz, which the user confirmed by ear."
+
+- record_id: PHOS-007
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "The resident AE350 player hangs before its first decode in some image layouts"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Tang-Phosphor commit 1b313fe let a streamed player be built with no embedded input, which shifted everything after the input 16 bytes from the layout qualified in its entry 43. Built that way (863748 bytes, CRC 3d762d13) the player receives the whole file -- its log reads 'stream rx <size> first <magic>' -- and then never logs again: the loader stays in RUN, the RAM bridge counts ERROR responses with the first at address 0x00000000, and the bridge trace shows line fills at the top of the stack, then a fill at address 0, then fetches from the program entry at 0x40000000. With the code unchanged, 0 and 32 bytes of padding hang on every run and 16 and 48 bytes play on every run, so the trigger is the image layout and not the empty input entry. Instrumenting the player to find the faulting step moves its code and the hang disappears, even with the data layout matched to 32 bytes, and working runs also record ERROR responses from address 0."
+  consequence: "Tang-Phosphor's software/rbhost/Makefile now reserves 16 bytes where a streamed player's input would go, restoring the layout qualified on hardware; that player (863764 bytes, CRC ef1502ed) passes the twelve-format sweep. It is a workaround, and any change to the player can move the layout and bring the hang back. The signature to recognise it by is the log stopping after 'stream rx' with the loader still in RUN (0x4020), a nonzero bridge error count (0x40b4) and a first error address of 0 (0x40c0). Finding the cause would start from a trap handler recording mcause, mepc and mtval in the program result words, since today a fault wedges the AE350 silently."
+  sources:
+    - "Tang-Phosphor 1b313fe, software/rbhost/Makefile: the stream-mode input change"
+    - "Tang-Phosphor src/ae350/ae350_exts_regs.sv: the loader state, log, bridge counter and bridge trace registers read here"
+  verification: "Reproduced on this board on 2026-10-05 over TinyTang's phosphor command: the unpadded player hung on three runs and a 32-byte-padded one on one; 16- and 48-byte-padded players played on every run, and the Makefile-built player passed the full sweep. The cause was not found."
 
 - record_id: PMOD-001
   kind: BOARD
