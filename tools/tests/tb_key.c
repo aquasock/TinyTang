@@ -208,6 +208,43 @@ int main(void)
     const int nn = tang_key_step(&k, 0, none, true, 1000, out, sizeof(out));
     check_int("idle report types nothing", nn, 0);
 
+    /* F12 is reserved for switching the screen: it never types and never
+     * becomes the repeating key. */
+    tang_key_reset(&k);
+    press(&k, 0, 0x45, 0, 1000, out, sizeof(out));
+    check_str("F12 types nothing", out, "");
+    press(&k, 0, 0x45, 0, 2000, out, sizeof(out));
+    check_str("F12 held does not repeat", out, "");
+    {
+        const uint8_t f12[6] = { 0x04, 0x45, 0, 0, 0, 0 };
+        const uint8_t a_only[6] = { 0x04, 0, 0, 0, 0, 0 };
+        check_int("toggle seen in a report", tang_key_toggle_down(f12), 1);
+        check_int("toggle absent from a report", tang_key_toggle_down(a_only), 0);
+    }
+
+    /* Pressing F12 while a key repeats must not steal the repeat: the held
+     * key goes on repeating, because F12 is not a key to the typing path. */
+    tang_key_reset(&k);
+    press(&k, 0, 0x04, 0, 0, out, sizeof(out));
+    check_str("F12 test: a typed", out, "a");
+    press(&k, 0, 0x04, 0x45, 600, out, sizeof(out));
+    check_str("F12 test: a keeps repeating with F12 down", out, "a");
+
+    /* Absorbed while the core had the screen: a key still held when TinyDesk
+     * comes back is neither a fresh press nor a repeat. */
+    tang_key_reset(&k);
+    {
+        const uint8_t held[6] = { 0x52, 0, 0, 0, 0, 0 };   /* Up, held in a game */
+        tang_key_absorb(&k, 0, held);
+    }
+    press(&k, 0, 0x52, 0, 1000, out, sizeof(out));
+    check_str("absorbed key: not a press on return", out, "");
+    press(&k, 0, 0x52, 0, 1700, out, sizeof(out));
+    check_str("absorbed key: does not repeat", out, "");
+    release(&k, 1800, out, sizeof(out));
+    press(&k, 0, 0x52, 0, 1900, out, sizeof(out));
+    check_str("absorbed key: pressed again types", out, "\x1b[A");
+
     printf("tb_key: %d checks, %d failures\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }

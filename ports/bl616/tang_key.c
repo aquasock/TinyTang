@@ -129,6 +129,13 @@ void tang_key_reset(tang_key_t *k)
     memset(k, 0, sizeof(*k));
 }
 
+void tang_key_absorb(tang_key_t *k, uint8_t mods, const uint8_t keys[6])
+{
+    k->mods = mods;
+    memcpy(k->keys, keys, sizeof(k->keys));
+    k->held = false;
+}
+
 static bool key_in(const uint8_t keys[6], uint8_t usage)
 {
     for (int i = 0; i < 6; i++) {
@@ -137,6 +144,11 @@ static bool key_in(const uint8_t keys[6], uint8_t usage)
         }
     }
     return false;
+}
+
+bool tang_key_toggle_down(const uint8_t keys[6])
+{
+    return key_in(keys, TANG_KEY_USAGE_TOGGLE);
 }
 
 int tang_key_step(tang_key_t *k, uint8_t mods, const uint8_t keys[6],
@@ -153,7 +165,7 @@ int tang_key_step(tang_key_t *k, uint8_t mods, const uint8_t keys[6],
     uint8_t pressed = 0;
     for (int i = 0; i < 6; i++) {
         const uint8_t usage = keys[i];
-        if (usage == 0) {
+        if (usage == 0 || usage == TANG_KEY_USAGE_TOGGLE) {
             continue;
         }
         if (!key_in(k->keys, usage)) {
@@ -174,7 +186,8 @@ int tang_key_step(tang_key_t *k, uint8_t mods, const uint8_t keys[6],
         /* Find the key still down that we were repeating. */
         uint8_t still = 0;
         for (int i = 5; i >= 0; i--) {
-            if (keys[i] != 0 && key_in(k->keys, keys[i])) {
+            if (keys[i] != 0 && keys[i] != TANG_KEY_USAGE_TOGGLE &&
+                key_in(k->keys, keys[i])) {
                 still = keys[i];
                 break;
             }

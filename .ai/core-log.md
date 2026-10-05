@@ -407,3 +407,37 @@ Three items are open from this cycle and earlier. The `osd desk status` row coun
 - User Test: PASS
 
 ---
+## 14 COMMIT Unreleased 2026-10-04T22:19:17-07:00
+
+#### Coming From:
+
+Unreleased e33a213
+
+#### Purpose:
+
+Reserve F12 to switch the screen between TinyDesk and the running core the way MiSTer does, and record the faults this session's testing exposed alongside it.
+
+#### Outcome:
+
+F12 now flips the overlay from the keyboard as L already did from the pad, at the console, inside the desktop and during a game, and the user reports everything works, including on other monitors and capture devices. The key is reserved in `ports/bl616/tang_key.c` as `TANG_KEY_USAGE_TOGGLE`: it is never typed and never becomes the repeating key, so pressing it while a key repeats no longer steals the repeat, and the core does not map it into the pad word, so no game sees it. `ports/bl616/tang_osd_desk.c` reads the keyboard once per poll, since its freshness flag is read-and-clear and the toggle and the typing must share it, detects the F12 edge in both branches, and while the core has the screen absorbs the report with the new `tang_key_absorb()`, so a key held across the switch is neither a fresh press nor a repeat into the shell. With the layer off altogether F12 brings it up on a fresh grid, and `tangload` now starts the task that watches for it, because a core carrying the keyboard link only exists after a `tangload`. Making F12 work in a game meant keeping the layer up across a cartridge load, which `boot-cart.tdsh` and `castlevania.tdsh` had dropped since cycle 4, and the reason they had to is now established rather than assumed: the layer's re-arm after `tangload` forced the overlay on for eight polls, but it runs below the shell, so `nesload`'s `taskYIELD()` starves it until the ROM has streamed and `nesload` has cleared the overlay, after which the re-arm put it back -- on cycle 4's stock `nestang.bin`, which has no wide layer, that was the legacy page and its logo with the game running behind, exactly the symptom recorded then. The re-arm now restores the overlay to `tang_osd_shown()` instead of forcing it, so both scripts keep the layer up and `castlevania.tdsh` gained the `osd clear` that `boot-cart.tdsh` got in cycle 9. Folded in at the user's direction, `osd desk status` now counts rows actually sent rather than rows examined. The key translation is host-tested by `tools/tests/test_key.sh`, 41 checks, including the F12 cases and absorb, and the repeat case fails when the reservation is removed. The firmware built clean at 321552 bytes, MD5 `00dcfd426b5a55aa1a2b3101498da076`; it went to the card with `tangput` after the absolute-position check, was installed with `tangflash` run by hand, showed the FT2232 signature, and ran after the user's power cycle, and both scripts were deployed at 2675 and 1723 bytes; the FPGA cores are unchanged from cycle 13. While testing displays the board began booting to a TangCore splash, and the cause was that `/scripts/boot.tdsh` had been deleted from the card -- nothing else was missing or moved -- so nothing ran `tangload` and the FPGA stayed on the core it loads by itself, answering core 0. It was restored with `tangput`, 4358 bytes and identical to the committed file. How it was deleted is not proven; the suspect is TinyDesk's Files app, whose Delete key opens a confirmation with Delete focused so that Enter removes the selected file, and that is recorded as a possible TinyDesk bug in `TDESK-010`, INFERRED from the source and not reproduced. The same incident settles entry 12's open observation: `DEV-003`, which said the FPGA comes up empty, is superseded by `DEV-006`, recorded as INFERRED because the configuration storage behind it is not traced to a schematic or a Gowin document. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and its only deletions are `DEV-003`'s status, routing pointer and index line as the reference's supersession rule requires, with its statement untouched, the two added records were checked against the field shape and family ordering and reached from both indexes, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+`TDESK-010` is a candidate for an upstream issue against TinyDesk -- a destructive confirmation should not default to its destructive button -- and until it is fixed the card's boot chain is one confirmed dialog away from removal, with `tangput` of `scripts/boot.tdsh` as the restore. The pointer reports reaching the shell in console mode, the menu core not yet being the boot core, and `osd term` drawing a page the menu core no longer has remain as entries 10 and 11 left them.
+
+#### Files Modified:
+
+- ports/bl616/tang_key.c
+- ports/bl616/tang_key.h
+- ports/bl616/tang_osd_desk.c
+- scripts/boot-cart.tdsh
+- scripts/castlevania.tdsh
+- tools/tests/tb_key.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

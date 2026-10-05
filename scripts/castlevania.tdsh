@@ -6,8 +6,9 @@
 #
 #   tdsh run /scripts/castlevania.tdsh
 #
-# The cycle is the same three steps boot-cart.tdsh uses: drop the desk layer,
-# program the core, prove it answers on the UART, then stream the ROM. The
+# The cycle is the same three steps boot-cart.tdsh uses: program the core,
+# prove it answers on the UART, then stream the ROM. F12 switches between the
+# game and TinyDesk once it is running. The
 # probe between the loads is the point; a ROM streamed into a core that is
 # not listening vanishes with no error anywhere.
 
@@ -18,11 +19,8 @@ if "$ROM" == ""
     ROM=/roms/castlevania.nes
 endif
 
-# Drop the desk layer before programming the core.
-#
-# A live overlay stays asserted over whatever the new core draws, and the
-# symptom is a black screen that looks like a ROM that failed to load.
-osd desk off
+# The desk layer stays up across the load so that F12 works in the game; see
+# boot-cart.tdsh for why that is now safe.
 
 echo "castlevania: core  $CORE"
 echo "castlevania: rom   $ROM"
@@ -53,6 +51,11 @@ if $? != 0
     echo "castlevania: the core is not answering on the UART; not streaming"
     return 1
 endif
+
+# Blank the core's own text page, as boot-cart.tdsh does: after tangload the
+# core is back with its overlay on, showing that uninitialised page until the
+# ROM takes the screen.
+osd clear
 
 echo "castlevania: streaming the rom"
 nesload "$ROM"

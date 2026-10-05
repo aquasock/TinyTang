@@ -30,15 +30,12 @@ if "$ROM" == ""
     ROM=/roms/castlevania.nes
 endif
 
-# Drop the layer before programming the core.
-#
-# A live overlay stays asserted over whatever the new core draws, and a core
-# that cannot draw the layer falls through to the legacy page: a black screen
-# with the core's logo on it, and the game running invisibly behind it.  That
-# is not a guess -- it is what happened, and it looked exactly like a ROM that
-# had failed to load.  'osd desk off' is what drops the overlay as well as the
-# layer, so it is the one command that clears the way.
-osd desk off
+# The desk layer stays up across the load, so that F12 -- the key reserved
+# for switching between TinyDesk and the core -- still works once the game is
+# running; with the layer off nothing watches the keyboard.  nesload clears
+# the overlay to hand the screen to the game, and the layer's re-arm after
+# tangload restores the overlay rather than forcing it on, which is what once
+# put the core's legacy page back over a running game.
 
 echo "boot-cart: core  $CORE"
 echo "boot-cart: rom   $ROM"

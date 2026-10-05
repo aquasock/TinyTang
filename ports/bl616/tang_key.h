@@ -74,8 +74,25 @@ typedef struct {
     uint32_t last_report;   /* when a report last arrived from the core */
 } tang_key_t;
 
+/* The key reserved for switching the screen between TinyDesk and the running
+ * core, the way MiSTer reserves F12 for its menu: HID usage 0x45.  It is never
+ * typed and never repeats -- tang_key_step skips it -- and the core does not
+ * map it into the pad word, so neither the shell, the desktop nor a game ever
+ * sees it.  tang_osd_desk.c acts on it. */
+#define TANG_KEY_USAGE_TOGGLE 0x45u
+
 /* Forget everything, as if no report had ever arrived. */
 void tang_key_reset(tang_key_t *k);
+
+/* Take a report as already seen, without typing anything.
+ *
+ * For while the screen belongs to the core: the keys go to the game, not here,
+ * but tracking them means that a key still held when TinyDesk comes back is
+ * not mistaken for a fresh press and does not start repeating into the shell. */
+void tang_key_absorb(tang_key_t *k, uint8_t mods, const uint8_t keys[6]);
+
+/* Whether the reserved toggle key is down in this report. */
+bool tang_key_toggle_down(const uint8_t keys[6]);
 
 /* Turn one report into typing.
  *

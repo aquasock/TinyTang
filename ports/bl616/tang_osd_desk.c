@@ -59,6 +59,7 @@ static int         s_rearm;          /* polls left to re-arm after a reload */
 static unsigned    s_cells;
 static unsigned    s_rows;
 static unsigned    s_dropped;
+static bool        s_toggle_prev;    /* F12 was down at the last poll */
 
 static uint8_t     s_payload[TANG_DESK_COLS * 5];
 
@@ -247,7 +248,14 @@ static bool flush_row(int y)
     if (!send_cursor((uint8_t)first, (uint8_t)y)) {
         return false;
     }
-    return send_cells(s_payload, (size_t)(last - first + 1));
+    if (!send_cells(s_payload, (size_t)(last - first + 1))) {
+        return false;
+    }
+    /* Counted here, where a row was actually sent, not per row examined: the
+     * status line says "rows sent", and counting every row of every poll made
+     * that read as polls times 45. */
+    s_rows++;
+    return true;
 }
 
 static void flush(void)
@@ -270,19 +278,12 @@ static void flush(void)
             s_dropped++;
             break;
         }
-        s_rows++;
     }
     tang_fpga_unlock();
 }
 
-/* The pad, once per poll.
- *
- * L is the session switch.  It does not stop the layer or the desktop: it
- * flips the overlay, which is the same byte the cartridge loader clears to
- * hand the screen to the game.  So the desktop keeps running and its grid
- * stays in the core, and coming back is a frame rather than a repaint.  The
- * state is read back from the OSD module rather than tracked here, so it
- * cannot disagree with what the loader did. */
+static void ensure_task(void);
+
 /* The core was reprogrammed underneath us.
  *
  * `tangload` reconfigures the FPGA, which wipes everything the layer had put
@@ -301,6 +302,20 @@ void tang_osd_desk_core_reloaded(void)
     if (s_enabled) {
         s_rearm = DESK_REARM_POLLS;
     }
+    /* A core that carries the keyboard link may have just arrived, and F12
+     * has to work from then on whether or not anyone has turned the layer
+     * on -- so the task that watches for it starts here at the latest. */
+    ensure_task();
+}
+
+/* The reserved toggle key's press, from one report.  Edge, not level: the
+ * report is state, and a held F12 is one switch, not one per poll. */
+static bool toggle_pressed(const uint8_t rep[8])
+{
+    const bool down = tang_key_toggle_down(&rep[2]);
+    const bool pressed = down && !s_toggle_prev;
+    s_toggle_prev = down;
+    return pressed;
 }
 
 static void desk_poll(void)
@@ -315,7 +330,17 @@ static void desk_poll(void)
             (void)tang_fpga_frame(FPGA_CMD_DESK_CTRL, p, sizeof(p));
             tang_fpga_unlock();
         }
-        (void)tang_osd_set(true);
+        /* Restore the overlay to what it was, rather than forcing it on.  The
+         * re-arm runs below the shell, so during a cartridge load it is
+         * starved until nesload has finished -- and nesload's last act is to
+         * clear the overlay to hand the screen to the game.  Forcing it on
+         * here then put it straight back over the game: the TinyDesk layer on
+         * a core that has one, and on one that has not, the legacy page and
+         * its logo with the game running invisibly behind (the symptom of
+         * core-log cycle 4).  A reset core asserts the overlay itself
+         * (PROT-005), so restoring the recorded state is what keeps the two
+         * in agreement. */
+        (void)tang_osd_set(tang_osd_shown());
         /* Whatever the core holds is unknown, so everything goes again. */
         for (int y = 0; y < TANG_DESK_ROWS; y++) {
             for (int x = 0; x < TANG_DESK_COLS; x++) {
@@ -327,10 +352,27 @@ static void desk_poll(void)
     uint16_t joy1 = 0, joy2 = 0;
     tang_fpga_joypad(&joy1, &joy2);
 
-    /* L is read whatever is on screen, because switching back is exactly the
-     * case where the desktop is hidden. */
-    const bool toggle =
+    /* The keyboard, read once per poll whatever is on screen: the freshness
+     * flag is read-and-clear, so the toggle and the typing must share it.
+     *
+     * The report is the HID boot layout: byte 0 is the modifier, byte 1 is
+     * the reserved byte a boot report carries, and bytes 2..7 are the usage
+     * codes. */
+    uint8_t rep[8];
+    const bool fresh = tang_fpga_keyboard(rep);
+
+    /* The session switch: L on the pad, or F12 on the keyboard, the key
+     * reserved for it the way MiSTer reserves F12 for its menu.  It does not
+     * stop the layer or the desktop: it flips the overlay, which is the same
+     * byte the cartridge loader clears to hand the screen to the game.  So the
+     * desktop keeps running and its grid stays in the core, and coming back is
+     * a frame rather than a repaint.  The state is read back from the OSD
+     * module rather than tracked here, so it cannot disagree with what the
+     * loader did.  Both are read whatever is on screen, because switching back
+     * is exactly the case where the desktop is hidden. */
+    const bool pad_toggle =
         ((uint16_t)(joy1 & (uint16_t)~s_pad.prev) & TANG_PAD_LB) != 0;
+    const bool key_toggle = toggle_pressed(rep);
 
     if (tang_osd_shown()) {
         char seq[96];
@@ -343,13 +385,7 @@ static void desk_poll(void)
         /* Then the keyboard, if the core has one.  After the pointer, so that
          * a keystroke and a pointer move arriving in the same poll keep the
          * order they happened in -- which matters for a click that opens a
-         * window followed by typing into it.
-         *
-         * The report is the HID boot layout, so it goes to the translation
-         * unchanged: byte 0 is the modifier, byte 1 is the reserved byte a boot
-         * report carries, and bytes 2..7 are the usage codes. */
-        uint8_t rep[8];
-        const bool fresh = tang_fpga_keyboard(rep);
+         * window followed by typing into it. */
         char typed[32];
         const uint32_t now_ms =
             (uint32_t)xTaskGetTickCount() * (1000u / (uint32_t)configTICK_RATE_HZ);
@@ -364,10 +400,30 @@ static void desk_poll(void)
          * not wander across the screen while somebody is playing -- coming back
          * to find it somewhere else is a small thing that reads as a fault. */
         s_pad.prev = joy1;
+        /* The keys belong to the game too.  Absorbing them means a key still
+         * held when TinyDesk comes back -- an arrow mid-jump -- is neither a
+         * fresh press nor a repeat into the shell. */
+        tang_key_absorb(&s_kbd, rep[0], &rep[2]);
     }
 
-    if (toggle) {
+    if (pad_toggle || key_toggle) {
         (void)tang_osd_set(!tang_osd_shown());
+    }
+}
+
+/* F12 with the layer off altogether -- after `osd desk off`, or after a
+ * tangload with no `osd desk on` -- brings TinyDesk up, which is what the key
+ * promises.  It comes up on a fresh grid, as `osd desk on` does, because
+ * nothing was mirrored while the layer was off; the next output repaints it. */
+static void desk_watch_toggle(void)
+{
+    if (tang_fpga_link_open() != 0) {
+        return;
+    }
+    uint8_t rep[8];
+    (void)tang_fpga_keyboard(rep);
+    if (toggle_pressed(rep)) {
+        (void)tang_osd_desk_set(true);
     }
 }
 
@@ -379,6 +435,8 @@ static void desk_task(void *arg)
         if (s_enabled) {
             desk_poll();
             flush();
+        } else {
+            desk_watch_toggle();
         }
     }
 }

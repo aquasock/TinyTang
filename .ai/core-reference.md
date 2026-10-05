@@ -123,7 +123,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 |---|---|---|
 | Which FPGA is on this board, and how is it identified on the wire? | DEV | DEV-001 |
 | Which core image belongs on this board? | DEV | DEV-002 |
-| Does the FPGA keep its core across a power cycle? | DEV | DEV-003 |
+| Does the FPGA keep its core across a power cycle? | DEV | DEV-006 |
 | Does this project run AE350 RISC-V code, and how does it get there? | DEV | DEV-004 |
 | Is there a core with no emulator for TinyDesk to sit on? | DEV | DEV-005 |
 | Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
@@ -185,6 +185,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
+| Can the Files app delete a file with two keystrokes? | TDESK | TDESK-010 |
 | Why is CONFIG_CHERRYUSB_HOST set with a device-only firmware? | TOOL | TOOL-001 |
 | Which IDCODEs does the Gowin programmer accept? | TOOL | TOOL-002 |
 | What versions are the build made from? | TOOL | TOOL-003 |
@@ -213,9 +214,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 ```yaml
 DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as ID=0001081b on every tangload"
 DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
-DEV-003: "The FPGA keeps no configuration across a power cycle, so a core has to be reloaded with tangload on every boot before a ROM will run"
+DEV-003: "Superseded by DEV-006. Recorded the FPGA as unconfigured at power-up, which held only because tangload always replaced what was there before it was seen"
 DEV-004: "A core bitstream can carry AE350 RISC-V software: the program is compiled to a hex file and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and arrives with tangload; the firmware loads whole images and never AE350 code as an artifact of its own"
 DEV-005: "The menu core is the console138k design with nestang's NES machine not instantiated: MENU_CORE in src/boards/console138k_menu.v, selected by build.tcl's third `menu` argument; it answers CORE_ID 1, the same value the patched NES core answers, and is about four fifths smaller in logic while its bitstream is only ~2.5 percent smaller"
+DEV-006: "The FPGA is not empty at power-up: with no tangload it is already running a core that answers core ID 0 on the UART and shows a TangCore splash on HDMI, so it configures itself from storage of its own; boot.tdsh replaces it within seconds, which is why it went unseen"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
@@ -270,6 +272,7 @@ TDESK-006: "The Editor saves with Ctrl+S; the host HAL clears IXON so it arrives
 TDESK-007: "td_run() returns after td_quit(); td_shutdown() restores the terminal"
 TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock.c and proto/td_tls.c: POSIX sockets, esp_timer.h, and mbedTLS with esp_crt_bundle.h"
 TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
+TDESK-010: "In the Files app the Delete key opens a confirmation whose first button, Delete, holds the focus, and Enter activates the focused button, so Delete then Enter removes the selected file; a possible TinyDesk bug, suspected of deleting /scripts/boot.tdsh on 2026-10-04 but not reproduced"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -339,7 +342,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   kind: DEVICE
   topic_id: DEV
   title: "The FPGA keeps no configuration across a power cycle, so a core is reloaded every boot"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "Nothing on this board reconfigures the GW5AST-138 on power-up: the fabric comes up empty and the BL616 has to program a core image over JTAG. On this bench a core was never present after a power cycle until tangload ran, and the load was what brought the HDMI output and the UART link to life."
   consequence: "Any procedure that spans a power cycle must reload the core, which is why a cartridge takes three commands in order - tangload to put the core in, fpga to confirm it answers, nesload to stream the ROM - rather than assuming a core is there. It also means there is no persisted fabric state to reason about at boot."
@@ -347,6 +350,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's session behaviour: a core appeared only after tangload on every boot"
     - "BRD-001: the JTAG pins the load drives"
   verification: "Exercised on this board across many power cycles; each began with an unconfigured FPGA until tangload ran. Not tested against a hypothetical on-board reconfiguration path, because none was found."
+  superseded_by: "DEV-006"
 
 - record_id: DEV-004
   kind: DEVICE
@@ -374,6 +378,21 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's third_party/patches/menu/0001-menu-core.patch, third_party/patches/menu/README.md and tools/build_menu_core.sh"
     - "src/nestang_top.sv and build.tcl as the menu patch leaves them"
   verification: "Built with Gowin 1.9.11.03 for console138k: timing met, worst setup +3.443 ns and worst hold +0.144 ns. A fresh clone at the pinned commit, the common series, then the menu patch reproduces the working tree byte-for-byte. On this board tangload loaded it, fpga reported 'core 1 answering on UART1 at 2000000 baud', and osd desk on followed by desktop brought TinyDesk up with no emulator instantiated."
+
+- record_id: DEV-006
+  kind: DEVICE
+  topic_id: DEV
+  title: "The FPGA comes up running a stock core of its own at power-up, not empty"
+  status: INFERRED
+  verified_date: 2026-10-04
+  statement: "With /scripts/boot.tdsh absent, so that nothing ran tangload after power-up, the board's FPGA was already running a core 80 seconds into uptime: fpga reported 'core 0 answering on UART1 at 2000000 baud', where every core this project builds answers 1, the desk layer was off, and the HDMI output showed a TangCore splash on more than one monitor and capture device. The same core-0 answer was seen once before, on 2026-10-04 in core-log cycle 12, with boot.tdsh renamed away. The FPGA therefore configures itself at power-up from configuration storage of its own, with a stock TangCore image, before the BL616 programs anything over JTAG."
+  consequence: "DEV-003 said the fabric comes up empty and was wrong; it held only because boot.tdsh's tangload replaces the stock core within seconds of power-up, before most displays have locked. Procedures still reload a core on every boot -- tangload is what puts this project's cores in, since they live on the card and not in that storage -- but 'no core answers' is not the state at boot: a core answering 0 is the sign that the boot chain did not run, which is how a missing boot.tdsh shows up (TDESK-010). tangload programs SRAM and leaves that storage alone, which is why the stock core returns on every power cycle. Core ID 0 is not in TangCore's core table (TCTL-006), so which image it is beyond the splash it draws is not established."
+  sources:
+    - "This board's console on 2026-10-04: fpga reporting core 0 with no tangload since power-up, and osd desk status reporting the layer off"
+    - "The user's report of a TangCore splash at boot on several displays while boot.tdsh was missing"
+    - "core-log cycle 12: the first core-0 observation"
+    - "ports/bl616/tdsh_tang_flash.c: tangload calls fpga_program(), which loads SRAM ('Load SRAM' in its output)"
+  verification: "Observed twice on this board, both times with boot.tdsh absent; restoring boot.tdsh returns the board to core 1 at boot. The mechanism -- which storage and by what configuration mode the FPGA loads at power-up -- is inferred from that behaviour and not traced to a schematic or a Gowin document, which is why this is INFERRED rather than VERIFIED."
 
 - record_id: BRD-001
   kind: BOARD
@@ -941,6 +960,21 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk/apps/session.c: compute_paths(), giving root the home '<root>/root'"
     - "third_party/tinydesk-shell/docs/SCRIPTING.md: 'TinyDesk desktop: right-click, Run, opens the Terminal window and runs tdsh run'"
   verification: "The user worked through the desktop and found the filesystem, the Editor, the Terminal and window management working. The desktop-icon path was not separately exercised."
+
+- record_id: TDESK-010
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "Possible TinyDesk bug: the Files app's delete confirmation defaults to Delete, so two keystrokes remove a file"
+  status: INFERRED
+  verified_date: 2026-10-04
+  statement: "files.c binds the Delete key to do_delete() (`case TD_KEY_DELETE: do_delete()`), which opens td_msgbox(\"Confirm\", \"Delete <name>?\", \"Delete|Cancel\"). td_msgbox adds its buttons in the order given, and a window's first focusable widget takes the focus (widgets.c: `if (focusable && !win->focus) win->focus = w`), so the focused button is Delete; a focused button activates on Enter or Space (widget_key), and delete_answer() removes the file for button 0 with no further step. The desktop's own icon menu reaches the same kind of confirmation through ask_delete()."
+  consequence: "On this board the keyboard sends Delete as ESC [ 3 ~ (tang_key.c), which the desktop's parser reads as TD_KEY_DELETE, and Enter is both a key and, under right-alt, the pointer's left click -- so a file in the selected row can be removed by Delete followed by Enter or Space, which is easy to do by accident while testing input. /scripts/boot.tdsh sorts first in that folder. When boot.tdsh is missing nothing runs tangload, the FPGA stays on the core it configured itself with at power-up, and the screen shows that core's TangCore splash rather than TinyDesk. Until TinyDesk changes the default (Cancel first, or no default on a destructive dialog), the card's boot chain is one confirmed dialog away from being removed, and restoring it is a tangput of scripts/boot.tdsh. This is a candidate for an upstream issue against TinyDesk rather than a local patch."
+  sources:
+    - "third_party/tinydesk @ 791cad8, apps/files.c: do_delete(), delete_answer(), the TD_KEY_DELETE case in the list's key handler"
+    - "third_party/tinydesk @ 791cad8, src/widgets.c: td_msgbox() button order, the first-focusable rule, widget_key() for TD_WT_BUTTON"
+    - "third_party/tinydesk @ 791cad8, apps/desktop.c: item_menu_chosen() and ask_delete()"
+    - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
+  verification: "Inferred from reading the source, not reproduced. On 2026-10-04 /scripts/boot.tdsh vanished from the card during the user's display testing, after the board had booted with it; no other file was missing or moved and no tool run from the host removes files, which is what made the Files app the suspect. The board then came up on the FPGA's own core (fpga reported core 0, the user saw TangCore), and restoring the file with tangput returned the boot chain."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN
