@@ -65,6 +65,10 @@ is called out in the source where it is used.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
   from a file on the SD, and put a file on the card over the console, with no
   BOOT button.
+- **`platform`** reports the firmware's build identity, as does the startup
+  banner: the commit it was built from, and a hash of any uncommitted changes
+  (`318b23c`, or `318b23c-dirty.4f1a9c2`). It is regenerated on every build by
+  `cmake/tinytang_build_id.cmake`, so an install can be confirmed from the host.
 
 ## Quick start
 
@@ -77,7 +81,8 @@ make flash CHIP=bl616 BOARD=bl616dk COMX=/dev/ttyACM0
 
 # From then on, reflash over USB with no BOOT button:
 tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
-#   ... then power-cycle the board (see fact 6)
+#   ... then power-cycle the board (see fact 6), and confirm with `platform`:
+#   it prints the build identity, which must match build/tinytang/tinytang_build_id.h
 
 # Build the two FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
 # at ../tangcore/nestang, or NESTANG_DIR)
@@ -215,6 +220,8 @@ STM32's own DFU bootloader.
   - `td_bridge_bl616.c` — the shell inside TinyDesk's Terminal window.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
+- `cmake/tinytang_build_id.cmake` — writes the build identity header on every
+  build.
 - `third_party/tinydesk-shell`, `third_party/tinydesk` — the shell and the
   desktop, as submodules.
 - `third_party/patches/` — the nestang patch series, the menu-core patch and
@@ -255,8 +262,8 @@ session. `.ai/core-reference.md` holds the full records and their sources.
 6. **A `tangflash` normally needs a power cycle.** Its soft reset usually lands
    in the vendor loader, and the board shows up as an FT2232 until it is
    power-cycled. Once, on 2026-10-04, it came straight back to the console
-   instead; that is not explained, and the board reports no build identity, so
-   power-cycle after every install and confirm the new behaviour.
+   instead; that is not explained, so power-cycle after every install and
+   confirm the build identity `platform` reports.
 7. **The core's UART is the BL616's UART1: TX GPIO 28, RX GPIO 27, 2 Mbaud.**
    Frames in both directions are `0xAA len_hi len_lo type payload[len-1]`;
    the length is big-endian and counts the type byte, and a length high byte

@@ -108,6 +108,21 @@ else()
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
                                third_party/tinydesk/ports/common/td_fs_stdio.c)
     sdk_set_main_file(main.cpp)
+
+    # The firmware's build identity: the commit, plus a hash of any uncommitted
+    # changes, regenerated on every build so it cannot go stale (see
+    # cmake/tinytang_build_id.cmake).  `platform` and the startup banner print
+    # it, which is what lets an install be confirmed from the host.
+    set(TINYTANG_BUILD_ID_DIR "${CMAKE_BINARY_DIR}/tinytang")
+    add_custom_target(tinytang_build_id ALL
+        COMMAND ${CMAKE_COMMAND}
+                -DSRC=${CMAKE_CURRENT_SOURCE_DIR}
+                -DOUT=${TINYTANG_BUILD_ID_DIR}/tinytang_build_id.h
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/tinytang_build_id.cmake
+        BYPRODUCTS ${TINYTANG_BUILD_ID_DIR}/tinytang_build_id.h
+        COMMENT "TinyTang build identity")
+    add_dependencies(app tinytang_build_id)
+    target_include_directories(app PRIVATE ${TINYTANG_BUILD_ID_DIR})
 endif()
 
 project(tinytang)

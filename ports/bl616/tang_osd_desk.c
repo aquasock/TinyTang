@@ -342,8 +342,11 @@ static void desk_poll(void)
          * its logo with the game running invisibly behind (the symptom of
          * core-log cycle 4).  A reset core asserts the overlay itself
          * (PROT-005), so restoring the recorded state is what keeps the two
-         * in agreement. */
-        (void)tang_osd_set(tang_osd_shown());
+         * in agreement.  Read and sent under one lock (tang_osd_reassert):
+         * reading first and locking second let a re-arm that had to wait for
+         * nesload's lock send the state from before nesload hid the overlay,
+         * which put TinyDesk back over a running game. */
+        (void)tang_osd_reassert();
         /* Whatever the core holds is unknown, so everything goes again. */
         for (int y = 0; y < TANG_DESK_ROWS; y++) {
             for (int x = 0; x < TANG_DESK_COLS; x++) {
@@ -416,7 +419,7 @@ static void desk_poll(void)
     }
 
     if (pad_toggle || key_toggle) {
-        (void)tang_osd_set(!tang_osd_shown());
+        (void)tang_osd_toggle();
     }
 }
 

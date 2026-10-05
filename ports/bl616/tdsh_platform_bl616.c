@@ -22,6 +22,7 @@
 #include "dirent.h"
 #include <sys/stat.h>
 #include "tdsh_terminal.h"
+#include "tinytang_build_id.h"   /* generated each build: TINYTANG_BUILD_ID */
 
 /* ---------------------------------------------------------------- platform */
 
@@ -137,8 +138,11 @@ static int bl616_worker_run(void *context,
     return 0;
 }
 
+/* The port's name carries the build identity, so `platform` and `version`
+ * report which firmware is running -- the commit, and a hash of any
+ * uncommitted changes it was built with (cmake/tinytang_build_id.cmake). */
 static const tdsh_platform_api_t s_platform = {
-    .name = "bl616/freertos",
+    .name = "bl616/freertos, tinytang " TINYTANG_BUILD_ID,
     .context = NULL,
     .monotonic_ms = bl616_monotonic_ms,
     .sleep_ms = bl616_sleep_ms,
@@ -259,7 +263,8 @@ static void probe_root(const char *p)
 static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session; (void)argc; (void)argv;
-    tdsh_printf("tinytang: platform=bl616/freertos  sd FRESULT=%d  mounted=%d\r\n",
+    tdsh_printf("tinytang: build %s  platform=bl616/freertos  sd FRESULT=%d  mounted=%d\r\n",
+                TINYTANG_BUILD_ID,
                 tdsh_bl616_fs_last_result(), tdsh_bl616_fs_ready() ? 1 : 0);
     probe_root("/sd");
     probe_root("/sd/");
@@ -407,7 +412,7 @@ int tdsh_bl616_run_until(volatile const bool *stop)
     /* Written through the terminal io, not straight to the console, so the
      * greeting lands wherever this shell's output is going. */
     static const char banner[] =
-        "\r\n\033[1;36mTinyTang\033[0m — TinyDesk Shell " TDSH_VERSION "\r\n"
+        "\r\n\033[1;36mTinyTang\033[0m " TINYTANG_BUILD_ID " — TinyDesk Shell " TDSH_VERSION "\r\n"
         "A Tang core booted from the board. Type 'help' for commands.\r\n\r\n";
     (void)bl616_terminal_write_bytes(NULL, banner, sizeof(banner) - 1);
     run_boot_script();

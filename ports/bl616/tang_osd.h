@@ -44,6 +44,22 @@ int tang_osd_set(bool on);
  * was actually told rather than to what someone assumed. */
 bool tang_osd_shown(void);
 
+/* Send the overlay state this module last recorded, again -- for when the core
+ * has been reprogrammed and its own copy is unknown.  The state is read under
+ * the transmit lock, in the same critical stretch as the send.
+ *
+ * That is the whole reason this exists rather than tang_osd_set(
+ * tang_osd_shown()): that reads the state first and takes the lock second, so
+ * a caller that has to wait for the lock -- while nesload holds it to stream a
+ * ROM -- sends a value that was true before nesload hid the overlay, and puts
+ * TinyDesk back over a game that is running.  Returns 0, or -1 if the link is
+ * down. */
+int tang_osd_reassert(void);
+
+/* Flip the overlay, reading its state under the lock for the same reason.
+ * This is the F12 / L session switch.  Returns 0, or -1 if the link is down. */
+int tang_osd_toggle(void);
+
 /* Blank every cell. */
 int tang_osd_clear(void);
 

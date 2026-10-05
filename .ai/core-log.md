@@ -539,3 +539,38 @@ The `tangflash` reset behaviour now has one install of each kind, the FT2232 thi
 - User Test: PASS
 
 ---
+## 18 COMMIT Unreleased 2026-10-04T23:23:47-07:00
+
+#### Coming From:
+
+Unreleased 318b23c
+
+#### Purpose:
+
+Give the firmware a build identity the board reports, so an install can be confirmed from the host, and close an overlay race that left TinyDesk over a running game.
+
+#### Outcome:
+
+The firmware now reports which build it is. `cmake/tinytang_build_id.cmake` runs as a step of every build, from a custom target in `CMakeLists.txt` that `app` depends on, and writes `build/tinytang/tinytang_build_id.h` with the commit and, when the tree has uncommitted changes, a short hash of `git diff HEAD`, so that two test builds in one cycle are told apart; the header is rewritten only when the identity changes. The port's platform name carries it, so `platform` and `version` print it without touching the TinyDesk Shell submodule, and the startup banner and `tang` print it too. On the build side a rebuild with no change recompiled nothing and produced a byte-identical image, and a README edit changed the identity and recompiled only `tdsh_platform_bl616.c`. On the board the old firmware reported `platform: bl616/freertos` with no identity, and after the install and the user's power cycle `platform` reported `bl616/freertos, tinytang 318b23c-dirty.0928fb2`, the build that was flashed -- the first install in this project confirmed from the host rather than by behaviour. That identity names this cycle's tree before this entry was written, which is why it carries the previous commit and a dirty hash. The second change came from a fault the user reported mid-cycle: running `castlevania.tdsh` from the Files app opened the Terminal, printed the script's lines correctly, and left TinyDesk on the screen instead of the game. Run from the console the same script reached `castlevania: up` and showed the game, and after a reboot it worked from the desktop too, so the fault was seen once and not reproduced. The code holds a defect that explains it: the layer's re-arm after `tangload` called `tang_osd_set(tang_osd_shown())`, reading the overlay state before taking the link lock, and `nesload` holds that lock while it reads the ROM from the card, where an SD read can let the desk task run, read the state as shown and then wait; once `nesload` cleared the overlay and released the lock, the waiting re-arm sent its stale value and put TinyDesk back over the game. The desktop's Terminal shell runs at priority 4 and its UI at 5 against the console shell's 5, which leaves the desk task, at 2, more gaps to land in. `tang_osd.c` now has `tang_osd_reassert()` and `tang_osd_toggle()`, which read the state and send it in one locked stretch; the re-arm and the F12 / L switch use them, and no read-then-set of the overlay remains. The fix rests on the code, not on a reproduction. The image is 319840 bytes, MD5 `64ec8f981bdf5cef12664792a21ac574`, it went to the card behind a guard that refuses unless the console is a plain shell, and `tangflash` presented the FT2232 as `FLS-001` describes; the user reports that every run of Castlevania from Files passed, back to back and across a reboot, with F12 switching both ways. One error of mine during the investigation is recorded because it repeats `TOOL-009`'s hazard: I treated three seconds of console silence as proof the desktop was not running -- an idle desktop sends nothing -- and chained commands after a probe that had reported 64 absolute-position sequences, so they were typed into a TinyDesk Editor window holding `castlevania.tdsh`; the user stopped it before anything was saved, the file on the card was confirmed at its committed 1723 bytes, and every later send in this cycle was gated on a guard that exits non-zero unless it sees the prompt and no desktop markers. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and is this entry alone, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+`tools/tinytang_run.py` sends commands with no shell guard while `tools/tinytang_put.py` has one, and that gap is what let this cycle's stray commands reach the desktop; it should get the same `require_shell()` check, failing closed. If TinyDesk ever stays over a game again after a cartridge load, the overlay race was not the cause and the next step is a listen-only capture of the console during a run from the desktop.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- cmake/tinytang_build_id.cmake
+- ports/bl616/tang_osd.c
+- ports/bl616/tang_osd.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tdsh_platform_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

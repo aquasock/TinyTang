@@ -79,6 +79,28 @@ bool tang_osd_shown(void)
     return s_shown;
 }
 
+int tang_osd_reassert(void)
+{
+    if (tang_fpga_link_open() != 0) {
+        return -1;
+    }
+    tang_fpga_lock();
+    const int rc = overlay_locked(s_shown);
+    tang_fpga_unlock();
+    return rc;
+}
+
+int tang_osd_toggle(void)
+{
+    if (tang_fpga_link_open() != 0) {
+        return -1;
+    }
+    tang_fpga_lock();
+    const int rc = overlay_locked(!s_shown);
+    tang_fpga_unlock();
+    return rc;
+}
+
 int tang_osd_put(uint8_t x, uint8_t y, const char *text, size_t length)
 {    if (tang_fpga_link_open() != 0) {
         return -1;
