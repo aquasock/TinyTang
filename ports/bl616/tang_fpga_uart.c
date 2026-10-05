@@ -279,13 +279,20 @@ static int uart_write(const uint8_t *data, size_t length)
                          UART_TX_FIFO_CNT_MASK) >> UART_TX_FIFO_CNT_SHIFT;
         if (room == 0) {
             const uint64_t start = bflb_mtimer_get_time_ms();
-            do {
-                if (bflb_mtimer_get_time_ms() - start > 100) {
-                    return -1;  /* the FIFO stayed full for 100 ms: byte dropped */
-                }
+            for (;;) {
+                /* Read the clock before the FIFO: a higher-priority task can
+                 * pre-empt this loop for longer than the limit, and the FIFO
+                 * has usually drained by the time it gets the CPU back. */
+                const uint64_t now = bflb_mtimer_get_time_ms();
                 room = (getreg32(base + UART_FIFO_CONFIG_1_OFFSET) &
                         UART_TX_FIFO_CNT_MASK) >> UART_TX_FIFO_CNT_SHIFT;
-            } while (room == 0);
+                if (room != 0) {
+                    break;
+                }
+                if (now - start > 100) {
+                    return -1;  /* the FIFO stayed full for 100 ms: byte dropped */
+                }
+            }
         }
         while (room != 0 && i < length) {
             putreg8(data[i++], base + UART_FIFO_WDATA_OFFSET);

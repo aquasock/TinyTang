@@ -25,7 +25,7 @@ is called out in the source where it is used.
   commands, redirection and scripts, plus the Tang commands below.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
-  Monitor, Task Manager, Log, Settings, Counter and About. Quitting returns to
+  Monitor, Task Manager, Log, Settings, Counter, Phosphor and About. Quitting returns to
   the prompt. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS.
 - **The Terminal window runs the shell.** It is the same session as the
@@ -48,14 +48,17 @@ is called out in the source where it is used.
   and holding the left button while moving drags. The pointer exists only while
   the desktop runs: at the bare console nothing is drawn and nothing moves.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
-  `rm`, `mkdir`, `cp`, `mv` all work on the card.
+  `rm`, `mkdir`, `cp`, `mv` all work on the card. FatFS is built reentrant
+  (`FF_FS_REENTRANT`), so the shell, the desktop and the playback task can use
+  the card at the same time.
 - **`tangload <path>`** programs the FPGA with a core image from the SD over
   the board's JTAG. A core loads in a second or two.
 - **`fpga`** asks the running core for its ID over the BL616's UART link: the
   link's liveness proof. This project's cores answer 1; the core the FPGA comes
   up with on its own answers 0.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
-- **`phosphor caps | peek | poke | play | status | stop | stats`** drives a loaded
+- **`phosphor caps | peek | poke | play | pause | resume | status | stop | stats`**
+  drives a loaded
   Tang-Phosphor core over its extended protocol (register access on frame
   type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
   plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
@@ -66,7 +69,9 @@ is called out in the source where it is used.
   plain `play` waits for it and Ctrl-C stops the track itself, not just the
   wait. `phosphor status` shows the state (idle, loading, playing, ended,
   stopped, failed), the file, elapsed time, samples, rate and underruns;
-  `phosphor stop` silences the track at once and restarts the AE350. A new
+  `phosphor pause` holds the track where it is (even while it is still
+  loading) and `phosphor resume` carries on, without the pause counting as a
+  stall; `phosphor stop` silences the track at once and restarts the AE350. A new
   `play` replaces the current track, and `tangload` stops it before it
   reprograms the FPGA. The core,
   `/cores/console138k/phosphortang.bin`, carries the desktop layer, the
@@ -77,6 +82,14 @@ is called out in the source where it is used.
   desktop up, probes it, hands it the screen and starts `/music/test.mp3` (or
   `$FILE`) without waiting; F12 then switches between the player and TinyDesk,
   during the track and after it.
+- **The Phosphor app** in the desktop's start menu is a player for `/music`:
+  a sorted list of the playable files, the title and status of the current
+  track, a progress bar (WAV and FLAC, whose length is read from the file's
+  header; the others show elapsed time only), Prev, Play, Pause/Resume, Stop
+  and Next, and an auto-advance checkbox that plays the folder through. It
+  drives the same playback task as the `phosphor` command, so closing the
+  window leaves the track playing and reopening it picks the track back up.
+  Without the Phosphor core loaded it says so and its buttons are disabled.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
@@ -243,7 +256,9 @@ STM32's own DFU bootloader.
   - `phosphor/` — the Tang-Phosphor host side, ported from Tang-Control: the
     extended-protocol transport, the resident AE350 player loader, the
     background playback task (`phosphor_player.cpp`, with its end-of-track rule
-    in `phosphor_track.h`), and the `phosphor` command.
+    in `phosphor_track.h`), the `phosphor` command, and the desktop's
+    Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
+    helpers in `phosphor_media.h`).
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every

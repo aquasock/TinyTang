@@ -65,6 +65,7 @@ command s_command = command::NONE;
 char s_command_real[TDSH_MAX_REAL_PATH];
 uint32_t s_next_track;
 phosphor_player_status s_status;
+bool s_pause_wanted;
 
 // The task's own: whether the current track is held paused until the sink
 // takes its START, and the START count it is waiting to see move.
@@ -74,6 +75,9 @@ uint32_t s_sessions_before;
 // register is cleared only with the core, so a track's own underruns are the
 // difference.
 uint32_t s_underruns_before;
+// The listener's pause as last written to the core.  While the track is held
+// the hold owns the control register, and its release writes this instead.
+bool s_paused;
 
 void lock() { (void)xSemaphoreTake(s_mutex, portMAX_DELAY); }
 void unlock() { (void)xSemaphoreGive(s_mutex); }
@@ -121,6 +125,7 @@ void finish(uint32_t track, phosphor_player_state state, const char *error)
     lock();
     if (s_status.track == track) {
         s_status.state = state;
+        s_status.paused = false;
         set_error(s_status, error);
     }
     unlock();
@@ -167,6 +172,7 @@ bool start_track(uint32_t track, const char *real)
 {
     const uint64_t started = now_ms();
     const char *error = nullptr;
+    s_paused = false;
     s_held = drain() && write_reg(PHOSPHOR_PLAYBACK_CONTROL, 1) &&
              read_reg(PHOSPHOR_STREAM_SESSIONS, &s_sessions_before);
     if (!s_held) {
@@ -202,9 +208,19 @@ bool start_track(uint32_t track, const char *real)
 bool poll_track(uint32_t track, phosphor_track::tracker &t)
 {
     using phosphor_track::verdict;
+    lock();
+    const bool want_pause = s_pause_wanted;
+    unlock();
+    if (s_held) {
+        s_paused = want_pause;
+    } else if (want_pause != s_paused &&
+               write_reg(PHOSPHOR_PLAYBACK_CONTROL, want_pause ? 1 : 0)) {
+        s_paused = want_pause;
+    }
     uint32_t sessions;
     if (s_held && read_reg(PHOSPHOR_STREAM_SESSIONS, &sessions) &&
-        sessions != s_sessions_before && write_reg(PHOSPHOR_PLAYBACK_CONTROL, 0)) {
+        sessions != s_sessions_before &&
+        write_reg(PHOSPHOR_PLAYBACK_CONTROL, s_paused ? 1 : 0)) {
         s_held = false;
     }
     uint32_t loader;
@@ -222,7 +238,7 @@ bool poll_track(uint32_t track, phosphor_track::tracker &t)
         underruns -= s_underruns_before;
     }
 
-    const verdict v = phosphor_track::step(t, {loader, status, samples, now_ms()});
+    const verdict v = phosphor_track::step(t, {loader, status, samples, now_ms(), s_paused});
     phosphor_player_state next = phosphor_player_state::FAILED;
     uint32_t result = 0;
     char error[sizeof(s_status.error)] = "";
@@ -273,6 +289,7 @@ bool poll_track(uint32_t track, phosphor_track::tracker &t)
         s_status.rate = rate;
         s_status.underruns = underruns;
         s_status.result = result;
+        s_status.paused = next == phosphor_player_state::PLAYING && s_paused;
         set_error(s_status, error);
     }
     unlock();
@@ -309,6 +326,7 @@ void player_task(void *)
             lock();
             if (phosphor_player_active(s_status)) {
                 s_status.state = phosphor_player_state::STOPPED;
+                s_status.paused = false;
                 set_error(s_status, "stopped");
             }
             unlock();
@@ -336,6 +354,7 @@ bool request(command c, const char *real, const char *shown, uint32_t *track_out
         s_status.track = track;
         s_status.state = phosphor_player_state::LOADING;
         snprintf(s_status.path, sizeof(s_status.path), "%s", shown != nullptr ? shown : real);
+        snprintf(s_status.real, sizeof(s_status.real), "%s", real);
         snprintf(s_command_real, sizeof(s_command_real), "%s", real);
         if (track_out != nullptr) {
             *track_out = track;
@@ -343,6 +362,7 @@ bool request(command c, const char *real, const char *shown, uint32_t *track_out
     }
     s_command = c;
     s_cancel = true;
+    s_pause_wanted = false;
     unlock();
     xTaskNotifyGive(s_task);
     return true;
@@ -394,6 +414,24 @@ bool phosphor_player_stop(uint32_t timeout_ms)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+bool phosphor_player_pause(bool pause)
+{
+    if (s_task == nullptr) {
+        return false;
+    }
+    lock();
+    const bool active = phosphor_player_active(s_status);
+    if (active) {
+        s_pause_wanted = pause;
+    }
+    unlock();
+    if (active) {
+        // Wakes the task to apply it now; no command, so nothing is cancelled.
+        xTaskNotifyGive(s_task);
+    }
+    return active;
 }
 
 void phosphor_player_get(phosphor_player_status *out)

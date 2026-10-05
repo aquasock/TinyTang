@@ -119,6 +119,48 @@ void test_begin_resets()
           "the old run count is gone");
 }
 
+// A pause of any length is neither a stall nor a player that returned without
+// completing, and the time paused is taken off the timeouts afterwards.
+void test_pause()
+{
+    tracker t;
+    phosphor_track::begin(t, 0);
+    phosphor_track::step(t, {RUN, PLAYING, 100, 250});
+    phosphor_track::step(t, {RUN, PLAYING, 200, 500});
+    check(phosphor_track::step(t, {RUN, PLAYING, 200, 750, true}) == verdict::RUNNING,
+          "pause begins");
+    check(phosphor_track::step(t, {RUN, PLAYING, 200, 60000, true}) == verdict::RUNNING,
+          "a minute paused is not a stall");
+    check(phosphor_track::step(t, {RUN, PLAYING, 200, 64000}) == verdict::RUNNING,
+          "resumed");
+    // Last progress at 500, paused from 750 to 64000: the clock now reads 63750.
+    check(phosphor_track::step(t, {RUN, PLAYING, 200, 68750}) == verdict::RUNNING,
+          "resumed: the pause is not counted towards a stall");
+    check(phosphor_track::step(t, {RUN, PLAYING, 200, 68751}) == verdict::STALLED,
+          "a real stall after the pause is still found");
+
+    phosphor_track::begin(t, 0);
+    phosphor_track::step(t, {RUN, PLAYING, 100, 250});
+    phosphor_track::step(t, {RUN | RETURNED, PLAYING, 200, 500});
+    phosphor_track::step(t, {RUN | RETURNED, PLAYING, 200, 750, true});
+    check(phosphor_track::step(t, {RUN | RETURNED, PLAYING, 200, 30000, true}) ==
+              verdict::RUNNING,
+          "returned and paused is not incomplete");
+    check(phosphor_track::step(t, {RUN | RETURNED, PLAYING, 300, 30250}) == verdict::RUNNING,
+          "resumed after returning");
+    check(phosphor_track::step(t, {RUN | RETURNED, COMPLETE, 400, 30500}) ==
+              verdict::COMPLETE,
+          "completes after the pause");
+
+    phosphor_track::begin(t, 0);
+    check(phosphor_track::step(t, {0x81, 0, 0, 250, true}) == verdict::LOADER_STOPPED,
+          "a trap is reported while paused");
+    phosphor_track::begin(t, 0);
+    check(phosphor_track::step(t, {RUN | RETURNED, error_status(7), 0, 250, true}) ==
+              verdict::DECODER_ERROR,
+          "a decoder error is reported while paused");
+}
+
 } // namespace
 
 int main()
@@ -130,6 +172,7 @@ int main()
     test_slow_start_and_no_start();
     test_stall_mid_track();
     test_begin_resets();
+    test_pause();
     if (failures != 0) {
         printf("phosphor_track: %d failures\n", failures);
         return EXIT_FAILURE;

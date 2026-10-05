@@ -1024,21 +1024,29 @@ bool fpga_program(const char *fname) {
     writetdi_time_start = jtag_writetdi_time;
     time_total = bflb_mtimer_get_time_us();
 #ifdef JTAG_FAST
-    taskENTER_CRITICAL();
+    // TinyTang: FatFS is reentrant, so f_read takes an RTOS mutex and must not
+    // run inside a critical section; another task holding the card would make
+    // it block there. Each block is read first, then shifted out with the
+    // scheduler held off (the shift writes the whole GPIO 0-31 output register).
+    // TCK is driven only by this loop, so the pause between blocks is harmless.
     jtag_enter_gpio_out_mode();
     for (;;) {
         f_read(&fcore, fbuf, BLOCK_SIZE, &bytes);
         if (bytes == 0) break;
         total += bytes;
+        taskENTER_CRITICAL();
         jtag_writeTDI_msb_first_gpio_out_mode(fbuf, bytes, total >= len);
+        taskEXIT_CRITICAL();
         if (bytes < BLOCK_SIZE) break;
     }
     jtag_exit_gpio_out_mode();
-    if (!writeSRAM_end()) {
+    taskENTER_CRITICAL();
+    const bool sram_ended = writeSRAM_end();
+    taskEXIT_CRITICAL();
+    if (!sram_ended) {
         overlay_status("Failed to program SRAM\n");
         goto load_core_close;
     }
-    taskEXIT_CRITICAL();
 
 #else
     taskENTER_CRITICAL();

@@ -10,7 +10,9 @@
 // it has queued all of its audio.  So the track is done when the run count has
 // moved and the player then reports complete.  Decoding happens before any
 // sample plays, so the first sample is given longer than the stall rule allows
-// between samples.
+// between samples.  A paused track plays nothing and its player, once its
+// queue is full, cannot return, so while paused only a trap, a decoder error
+// or completion count, and the time spent paused is taken off every timeout.
 #pragma once
 
 #include <stdint.h>
@@ -41,6 +43,7 @@ struct observation {
     uint32_t status;   // 0x5c
     uint32_t samples;  // 0x68
     uint64_t now_ms;
+    bool paused = false;  // the listener's pause (0x78), not the start hold
 };
 
 struct tracker {
@@ -51,6 +54,8 @@ struct tracker {
     bool have_last = false;
     bool playing = false;
     bool returned = false;
+    bool paused = false;
+    uint64_t paused_ms = 0;
 };
 
 inline uint8_t loader_state(uint32_t loader) { return static_cast<uint8_t>(loader & 0xff); }
@@ -68,6 +73,16 @@ inline verdict step(tracker &t, const observation &o)
 {
     if (loader_state(o.loader) >= 0x81) {
         return verdict::LOADER_STOPPED;
+    }
+    if (o.paused && !t.paused) {
+        t.paused = true;
+        t.paused_ms = o.now_ms;
+    } else if (!o.paused && t.paused) {
+        const uint64_t away = o.now_ms - t.paused_ms;
+        t.paused = false;
+        t.started_ms += away;
+        t.last_progress_ms += away;
+        t.returned_ms += away;
     }
     if (t.have_last && o.samples != t.last_samples) {
         t.playing = true;
@@ -87,6 +102,9 @@ inline verdict step(tracker &t, const observation &o)
     }
     if (returned && state == STATE_ERROR) {
         return verdict::DECODER_ERROR;
+    }
+    if (t.paused) {
+        return verdict::RUNNING;
     }
     if (returned && o.now_ms - t.returned_ms > STALL_TIMEOUT_MS) {
         return verdict::RETURNED_INCOMPLETE;

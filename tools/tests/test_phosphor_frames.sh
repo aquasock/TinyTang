@@ -16,7 +16,7 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-for t in fpga_ext_frame_test flac_stream_prefix_test phosphor_track_test; do
+for t in fpga_ext_frame_test flac_stream_prefix_test phosphor_track_test phosphor_media_test; do
     c++ -std=c++17 -O1 -Wall -Wextra \
         -I "$root/ports/bl616/phosphor" \
         -o "$work/$t" "$root/tools/tests/$t.cpp"

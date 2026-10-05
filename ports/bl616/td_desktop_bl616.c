@@ -54,6 +54,7 @@ int tdsh_printf(const char *fmt, ...);
 /* The shell bridge (td_bridge_bl616.c): what fills TinyDesk's Terminal. */
 const td_term_backend_t *td_bridge_bl616_backend(void);
 void td_bridge_bl616_stop(void);
+void td_phosphor_register(void);   /* phosphor/td_phosphor_app.cpp */
 
 /* The desktop's root is the card -- the same filesystem the shell uses, so
  * both see the same files. */
@@ -204,6 +205,7 @@ void td_apps_register_all(void)
     td_logview_register();
     td_settings_register();
     td_counter_register();
+    td_phosphor_register();
     td_about_register();
     td_datetime_install_clock();
     td_session_init();

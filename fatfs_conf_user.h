@@ -251,7 +251,11 @@ All configuration items must be included in the file */
 /      can be opened simultaneously under file lock control. Note that the file
 /      lock control is independent of re-entrancy. */
 
-#define FF_FS_REENTRANT 0
+/* TinyTang: on, because the card is read from more than one task -- the
+/  Phosphor playback task sends a file while the shell or the desktop (the
+/  Phosphor app's folder list and headers) reads others.  The SDK's
+/  ffsystem.c supplies the FreeRTOS mutexes; the timeout is in ticks (1 ms). */
+#define FF_FS_REENTRANT 1
 #define FF_FS_TIMEOUT   1000
 /* The option FF_FS_REENTRANT switches the re-entrancy (thread safe) of the FatFs
 /  module itself. Note that regardless of this option, file access to different

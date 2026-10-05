@@ -90,13 +90,14 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
     if (tang_fpga_frame(FPGA_STREAM_COMMAND, frame, body + 2) == 0) {
         const uint64_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
         for (;;) {
+            // Check the ring once more even past the deadline: a pre-empted
+            // task can wake late with the reply already queued.
             const uint64_t now = bflb_mtimer_get_time_ms();
-            if (now >= deadline) {
-                break;
-            }
+            const uint32_t remaining =
+                now < deadline ? static_cast<uint32_t>(deadline - now) : 0;
             uint8_t reply[RESPONSE_PAYLOAD_LENGTH + 8];
             const int n = tang_fpga_wait(FPGA_STREAM_COMMAND, reply, sizeof(reply),
-                                         static_cast<uint32_t>(deadline - now));
+                                         remaining);
             if (n < 0) {
                 break;
             }

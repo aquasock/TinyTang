@@ -218,8 +218,8 @@ int cmd_status(void)
         tdsh_printf("phosphor: idle, nothing played since boot\r\n");
         return 0;
     }
-    tdsh_printf("phosphor: %s %s (track %lu)\r\n", phosphor_player_state_name(s.state),
-                s.path, static_cast<unsigned long>(s.track));
+    tdsh_printf("phosphor: %s%s %s (track %lu)\r\n", phosphor_player_state_name(s.state),
+                s.paused ? ", paused," : "", s.path, static_cast<unsigned long>(s.track));
     if (s.load_ms != 0) {
         const uint32_t seconds = s.rate != 0 ? s.samples / s.rate : 0;
         tdsh_printf("phosphor: %lu:%02lu, %lu samples at %lu Hz, %lu underruns, "
@@ -253,6 +253,16 @@ int cmd_stop(void)
     return 0;
 }
 
+int cmd_pause(bool pause)
+{
+    if (!phosphor_player_pause(pause)) {
+        tdsh_printf("phosphor: nothing is playing\r\n");
+        return 1;
+    }
+    tdsh_printf("phosphor: %s\r\n", pause ? "paused" : "resumed");
+    return 0;
+}
+
 int cmd_stats(void)
 {
     fpga_debug_stats s;
@@ -269,7 +279,8 @@ int usage(void)
 {
     tdsh_printf("usage: phosphor caps | peek <addr> | poke <addr> <value> | stats\r\n"
                 "       phosphor play <file> [nowait]  any format, on the AE350 Rockbox player\r\n"
-                "       phosphor status | stop         the track playing in the background\r\n");
+                "       phosphor status | stop         the track playing in the background\r\n"
+                "       phosphor pause | resume        silence it and carry on\r\n");
     return 1;
 }
 
@@ -303,11 +314,17 @@ int cmd_phosphor(tdsh_session_t *session, int argc, char **argv)
     if (strcmp(sub, "stop") == 0 && argc == 2) {
         return cmd_stop();
     }
+    if (strcmp(sub, "pause") == 0 && argc == 2) {
+        return cmd_pause(true);
+    }
+    if (strcmp(sub, "resume") == 0 && argc == 2) {
+        return cmd_pause(false);
+    }
     return usage();
 }
 
 const tdsh_command_t s_commands[] = {
-    { "phosphor", "phosphor caps|peek|poke|play|status|stop|stats",
+    { "phosphor", "phosphor caps|peek|poke|play|status|stop|pause|resume|stats",
       "Drive a loaded Tang-Phosphor core over the extended protocol", cmd_phosphor, 0 },
 };
 

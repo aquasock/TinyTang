@@ -911,3 +911,48 @@ The next step of the agreed sequence is the Phosphor app in TinyDesk, with a fil
 - User Test: PASS
 
 ---
+
+## 28 COMMIT Unreleased 2026-10-05T16:57:43-07:00
+
+#### Coming From:
+
+Unreleased 4068d91
+
+#### Purpose:
+
+Add a Phosphor player app to TinyDesk on top of the background playback task, with the options the user chose: a progress bar for WAV and FLAC from their headers, Pause, auto-advance with a checkbox, a no-core message with disabled buttons, and FatFS locking so the app, the shell and the player can share the card.
+
+#### Outcome:
+
+The new `ports/bl616/phosphor/td_phosphor_app.cpp` is a resizable "Phosphor" window registered from `td_desktop_bl616.c`: a case-insensitively sorted list of the playable files in `/music`, the title, a status line, a progress bar, Prev, Play, Pause/Resume, Stop and Next, an auto-advance checkbox that plays the folder through only from tracks the window started, and a message line; it reads only `phosphor_player_get` every 500 ms and checks for the core by reading the magic at 0x0000, saying so and dimming its buttons when the Phosphor core is absent. Because the core reports no duration (`PHOS-009`), the duration comes from the file: `phosphor_media.h` walks WAV chunks and reads FLAC's STREAMINFO (after an ID3v2 tag), and both gave exactly 7250 ms on ffmpeg-made WAV with a LIST chunk, 24-bit 96 kHz WAV and FLAC; other formats show elapsed time only. The playback task gained `phosphor_player_pause` and the shell gained `phosphor pause` and `phosphor resume`: the pause register is applied by the task, recorded during the drain hold so the hold's release keeps it, and `phosphor_track.h` reports nothing but a trap, completion or decoder error while paused and moves its timers on by the paused time, so a pause is never a stall. `fatfs_conf_user.h` sets `FF_FS_REENTRANT` to 1. Testing found two defects, both fixed within this cycle: a `cp` on the card during a send failed the stream, because the higher-priority shell task held the CPU for a few hundred ms and the link's wait loops in `tang_fpga_uart.c`, `fpga_debug.cpp` and `fpga_stream.cpp` judged their deadline before looking at the FIFO or the reply ring, and now always look once more first; and `tangload` failed from TinyDesk's Terminal, because the JTAG programmer called `f_read`, which now takes an RTOS mutex, inside a critical section, so `tang_jtag_programmer.c` now reads each block outside it and shifts the block inside (`TOOL-015`), which also stops a failed load from returning with the section still entered. The host tests (`tools/tests/test_phosphor_frames.sh`, now including `phosphor_media_test.cpp` and a pause test in `phosphor_track_test.cpp`) pass. The final build `4068d91-dirty.0bb182d` was flashed over the CDC; across it and the two builds before it, pause held at 0 samples through loading and at 98,799 samples mid-FLAC without a stall and both tracks then completed with 0 underruns, two passes of a 705 KB `cp` and an MP3 `cp` during a WAV send ended at 441,000 samples with 0 underruns, `tools/phosphor_format_sweep.py` passed all thirteen plays (FLAC's 444,240 samples is its qualified figure), and `tangload` of the Phosphor and menu cores succeeded at the console. The user then tested the app on the desktop, including `tangload` from the Terminal, the list, playback, the progress bar, pause, stop, prev and next, auto-advance and reopening the window, and reported that everything passes. `README.md` describes the app, pause and resume, and the card's locking. `TOOL-014` records, at the user's request, the Raspberry Pi Pico 2 CMSIS-DAP JTAG probe on the module's U1201 header as a third debug path beside one-wire and two-wire, from Tang-Phosphor's `scripts/flash-pico.sh` and README and Tang-PSX's record, not yet run by this project. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `TOOL-014` and `TOOL-015` with their routing and index lines), confirmed `.ai/core.md` is unchanged, validated this entry as number 28 of 100 with exactly six sections, and confirmed that no settled history was rewritten.
+
+#### Next Steps:
+
+The fourth step of the agreed sequence is done; the next is packaging the desktop-layer integration as a kit for other cores, as planned after entry 27. The Phosphor core's on-core metadata text slots and artwork registers (0x7c, 0x80, 0x100 onward) are unused and could carry the app's now-playing text to the core's own display. The shell's file-descriptor table in `tdsh_fs_bl616.c` is not thread-safe, which matters only if two tasks open files through the shell layer rather than FatFS directly. The Pico 2 probe (`TOOL-014`) is untried here and is the candidate for JTAG checks while TinyTang runs. The `.bak` cores on the card can be removed, and entry 25's open items stand: the 5 Mbaud switch over one-wire, the `PHOS-007` layout hang, what selects one-wire at power-up, and a single command for all host tests.
+
+#### Files Modified:
+
+- README.md
+- fatfs_conf_user.h
+- ports/bl616/phosphor/fpga_debug.cpp
+- ports/bl616/phosphor/fpga_stream.cpp
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- ports/bl616/phosphor/phosphor_media.h
+- ports/bl616/phosphor/phosphor_player.cpp
+- ports/bl616/phosphor/phosphor_player.h
+- ports/bl616/phosphor/phosphor_track.h
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_jtag_programmer.c
+- ports/bl616/td_desktop_bl616.c
+- tools/tests/phosphor_media_test.cpp
+- tools/tests/phosphor_track_test.cpp
+- tools/tests/test_phosphor_frames.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

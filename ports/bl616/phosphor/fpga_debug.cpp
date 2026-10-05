@@ -108,14 +108,14 @@ bool transaction_locked(uint8_t command, uint8_t *payload, size_t length,
 
     const uint64_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
     for (;;) {
+        // A pre-empted task can wake past the deadline with the reply already
+        // queued, so the ring is always checked once more before giving up.
         const uint64_t now = bflb_mtimer_get_time_ms();
-        if (now >= deadline) {
-            count(counters.timeouts);
-            return false;
-        }
+        const uint32_t remaining =
+            now < deadline ? static_cast<uint32_t>(deadline - now) : 0;
         uint8_t reply[RESPONSE_PAYLOAD_LENGTH + 8];
         const int n = tang_fpga_wait(FPGA_EXT_COMMAND, reply, sizeof(reply),
-                                     static_cast<uint32_t>(deadline - now));
+                                     remaining);
         if (n < 0) {
             count(counters.timeouts);
             return false;

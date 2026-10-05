@@ -22,11 +22,13 @@ struct phosphor_player_status {
     phosphor_player_state state;
     uint32_t track;      // which play this is; each play request takes the next
     char path[128];      // the path as it was given, cut to fit
+    char real[192];      // the FatFS path, for reading the file's header
     uint32_t load_ms;    // how long the send took, once it is done
     uint32_t samples;    // samples presented so far
     uint32_t rate;       // HDMI audio rate in hertz, 0 until known
     uint32_t underruns;
     uint32_t result;     // the player's result word, at the end
+    bool paused;         // a playing track held silent by phosphor_player_pause
     char error[96];
 };
 
@@ -43,6 +45,13 @@ bool phosphor_player_play(const char *real_path, const char *shown_path,
 // Stop whatever is loading or playing.  Waits up to `timeout_ms` for the task
 // to have stopped it; returns whether it had.
 bool phosphor_player_stop(uint32_t timeout_ms);
+
+// Pause or resume the track loading or playing, through Phosphor's playback
+// control (0x78); the task applies it at once and `paused` in the status
+// follows.  A pause made while the track loads takes effect when it would have
+// started.  Returns false if no track is loading or playing.  A new play or a
+// stop always clears the pause.
+bool phosphor_player_pause(bool pause);
 
 void phosphor_player_get(phosphor_player_status *out);
 

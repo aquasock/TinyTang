@@ -205,6 +205,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
 | How is a core deployed, debugged and exercised entirely over one-wire? | TOOL | TOOL-013 |
+| Is there a JTAG path to the FPGA other than the BL616 and the FT2232? | TOOL | TOOL-014 |
+| Can a FatFS call be made inside a critical section? | TOOL | TOOL-015 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-004 |
@@ -303,6 +305,8 @@ TOOL-010: "A carried patch stops being recognised once a later cycle edits the l
 TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
 TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 (openFPGALoader -c ft2232; --detect reads 0x0001081b and changes nothing; an SRAM load must be .fs, not .bin) and the FPGA UART on interface 1 (/dev/ttyUSB1, 2 Mbaud, the same 0xAA frames as the BL616 link); no shell, desktop, boot script or TinyTang tool runs, and reaching it takes a cold power-up that also restarts the FPGA, so it cannot inspect a state reached under TinyDesk"
 TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs over JTAG with Tang-Phosphor's scripts/flash-otg.sh (17 s for the merged Phosphor image), then identify, peek, poke and stream to it on /dev/ttyUSB1 at 2 Mbaud with tools/fpga_uart.py and scripts/play_stream.py; an MP3 played through the AE350 this way gave 441000 samples, 0 underruns, 44100 Hz"
+TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
+TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -1272,6 +1276,35 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's tools/make_codec_corpus.sh, which regenerated test.mp3 (402304 bytes) and test.flac (131601 bytes, the size Tang-Phosphor entry 69 recorded)"
     - "Observed on this board, 2026-10-05"
   verification: "Every step above was run on this board on 2026-10-05 in one-wire mode with the reported figures read back over the UART."
+
+- record_id: TOOL-014
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A Pico 2 CMSIS-DAP probe on U1201: a JTAG path of its own, beside one-wire and two-wire"
+  status: SOURCED
+  verified_date: 2026-10-05
+  statement: "A Raspberry Pi Pico 2 running CMSIS-DAP JTAG-probe firmware is wired to the FPGA module's 8-pin header U1201 (PSX-004) and plugs into the host as a separate USB device, 2e8a:000c, not through the BL616 or the FT2232. The user reports it set up and validated, and plugs it in on request. Tang-Phosphor's scripts/flash-pico.sh SRAM-loads a .fs with oss-cad-suite's openFPGALoader -c cmsisdap --vid 0x2e8a --pid 0x000c -b tangmega138k --freq 2000000 (PICO_VID, PICO_PID and PICO_FREQ override); like flash-otg.sh it refuses a .bin, which does not start the FPGA (TOOL-012). The probe bit-bangs JTAG, its clock must stay at or below 2 MHz (4 MHz and up read garbage IDCODEs), and its 64-byte bulk endpoint makes a full bitstream take about 10 to 20 minutes. Tang-Phosphor's README names its real value as GAO, Gowin's internal logic analyser, over the module's debug connector. Tang-PSX found the same probe (lonehog/JTAGprobe, CMSIS-DAP v2; TCK GP19, TMS GP14, TDI GP18, TDO GP21) under OpenOCD 0.12.0 with IDCODE 0x0001081B, where openFPGALoader 0.13.1 could not open it; Tang-Phosphor's later openFPGALoader from oss-cad-suite read the same IDCODE through it."
+  consequence: "This is the third way to reach the FPGA, beside the BL616's tangload in two-wire and the FT2232 in one-wire (TOOL-012, TOOL-013). Because it is its own USB device on its own header, it is not bound to the power-input choice that makes one-wire and two-wire exclusive (BRD-006, BRD-007): Tang-Control lists Pico 2 JTAG programming as part of its two-wire debug arrangement (TCTL-005), although Tang-Phosphor's README files flash-pico.sh under one-wire. So it is the candidate for JTAG access while TinyTang runs: GAO captures, a --detect or status read that checks a tangload's result independently of the BL616's own report, or a core load when the card or tangload is in question. It is too slow for routine loads; use tangload in two-wire or flash-otg.sh in one-wire. Two rules come from PSX-004: the probe shares TCK, TMS and TDI with the BL616, so it must be idle (or unplugged) whenever TinyTang runs tangload, and only pins 2 to 5 and 8 are wired to it, never pin 1 (about 4.4 V) or pins 6 and 7 (the core UART). A core loaded through it under TinyTang replaces the running core without the firmware being told, so the desktop layer and the Phosphor playback task do not know the core changed."
+  sources:
+    - "Tang-Phosphor at 4936ed1: scripts/flash-pico.sh (added in 67979d8, core-log entry 30) and README.md, section 'Pico 2 JTAG probe'"
+    - "Tang-PSX, .ai/core-reference.md record BRD-006 (copied here as PSX-004)"
+    - "TCTL-005: Tang-Control's two-wire debug arrangement, which includes JTAG programming through a Pico 2"
+    - "The user, 2026-10-05: the probe is set up, validated and available"
+  verification: "Not yet run by this project. Tang-Phosphor entry 30 verified the probe against the GW5AST-138 (IDCODE 0x1081b) at 2 MHz; Tang-PSX confirmed it under OpenOCD on 2026-09-29 (its core-log entry 44). Whether it works alongside a running TinyTang in two-wire is Tang-Control's statement and has not been tried on this board."
+
+- record_id: TOOL-015
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "Reentrant FatFS takes an RTOS mutex in every call, so no file call may run inside a critical section"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The SDK's FatFS is R0.15 (components/fs/fatfs). With FF_FS_REENTRANT 1 every public file function locks the volume on entry and unlocks it on exit; under OS_TYPE 3 ffsystem.c implements that as xSemaphoreTake(Mutex[vol], FF_FS_TIMEOUT) and xSemaphoreGive on a FreeRTOS mutex, one per volume plus one for the system, and a take that times out makes the call return FR_TIMEOUT. FreeRTOS documents that its API functions must not be called from inside a taskENTER_CRITICAL section, where the scheduler and the tick are held off, so a take there cannot block safely and a give that wakes a higher-priority waiter yields from inside the section."
+  consequence: "Since this project turned FF_FS_REENTRANT on (fatfs_conf_user.h), no f_* call may run inside a critical section. nand2mario's JTAG programmer (TOOL-007) read the bitstream with f_read inside one; it worked at the bare console, where nothing else used the card, and failed tangload from TinyDesk's Terminal, where the desktop also uses it. The programmer now reads each block outside the section and shifts it to the FPGA inside, which still keeps the shift's whole-register GPIO writes free of interruption. FF_FS_TIMEOUT is in ticks, 1000 here, so a task that holds the volume for longer than a second makes the other user's call fail rather than wait."
+  sources:
+    - "Bouffalo SDK 2.0.0 at 7f44f9e (TOOL-003): components/fs/fatfs/ff.h (R0.15), ff.c lock_volume and unlock_volume, ffsystem.c ff_mutex_create, ff_mutex_take and ff_mutex_give under OS_TYPE == 3"
+    - "FreeRTOS kernel reference, taskENTER_CRITICAL(): FreeRTOS API functions must not be called from within a critical section, https://www.freertos.org/Documentation/02-Kernel/04-API-references/04-RTOS-kernel-control/01-taskENTER_CRITICAL_taskEXIT_CRITICAL"
+    - "ports/bl616/tang_jtag_programmer.c, fpga_program, the JTAG_FAST path"
+  verification: "Observed on this board on 2026-10-05: with FF_FS_REENTRANT on, tangload of phosphortang.bin failed from TinyDesk's Terminal and succeeded at the bare console; after the reads were moved out of the critical section it succeeded at the console and, by the user's test, from the desktop. Which of the blocked take or the yielding give broke the load was not traced; either is outside what FreeRTOS allows."
 
 - record_id: TCTL-004
   kind: EXTERNAL
