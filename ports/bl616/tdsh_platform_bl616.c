@@ -323,6 +323,10 @@ int tdsh_bl616_init(const char *hostname)
     rc = tdsh_bl616_fpga_register();
     if (rc) return rc;
 
+    extern int tang_phosphor_register(void);
+    rc = tang_phosphor_register();
+    if (rc) return rc;
+
     extern int tang_osd_register(void);
     rc = tang_osd_register();
     if (rc) return rc;

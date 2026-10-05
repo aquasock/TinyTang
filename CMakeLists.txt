@@ -56,6 +56,11 @@ else()
     # unchanged, its include tree is on the path, and its platform API,
     # filesystem and console are implemented under ports/bl616.
     file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")
+
+    # Tang-Phosphor's host side, ported from Tang-Control as C++ and kept close
+    # to it: the extended-protocol transport and the `phosphor` command.
+    file(GLOB TINYTANG_PHOSPHOR_SOURCES "ports/bl616/phosphor/*.cpp")
+    target_include_directories(app PRIVATE ports/bl616/phosphor)
     file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
 
     # TinyDesk, the desktop environment.  Its core and apps are compiled here
@@ -104,7 +109,8 @@ else()
     set_source_files_properties(${TDSH_CORE_SOURCES} PROPERTIES
         COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/ports/bl616/tdsh_stdio_redirect.h")
 
-    target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TDSH_CORE_SOURCES}
+    target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TINYTANG_PHOSPHOR_SOURCES}
+                               ${TDSH_CORE_SOURCES}
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
                                third_party/tinydesk/ports/common/td_fs_stdio.c)
     sdk_set_main_file(main.cpp)

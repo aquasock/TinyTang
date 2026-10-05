@@ -11,8 +11,10 @@
 # The second form is the usual one here, because a cycle builds and deploys
 # before it commits.  A bare "-dirty" would make two different test builds in
 # one cycle look the same; hashing the diff tells them apart, and the same diff
-# always gives the same identity.  Untracked files do not count, as they do not
-# for git itself.
+# always gives the same identity.  New files a cycle has not committed yet count
+# too -- their names and contents are hashed with the diff -- because a cycle
+# that adds a file is exactly the one whose test builds most need telling
+# apart; files git ignores do not.
 #
 # This runs as a step of every build rather than once at configure time, which
 # is the point: a value fixed at configure time goes stale exactly the way the
@@ -34,6 +36,17 @@ else()
         COMMAND git -C "${SRC}" diff HEAD --no-ext-diff --no-color
         OUTPUT_VARIABLE diff
         ERROR_QUIET)
+    execute_process(
+        COMMAND git -C "${SRC}" ls-files --others --exclude-standard
+        OUTPUT_VARIABLE untracked
+        ERROR_QUIET)
+    string(REPLACE "\n" ";" untracked "${untracked}")
+    foreach(f IN LISTS untracked)
+        if(NOT f STREQUAL "" AND EXISTS "${SRC}/${f}")
+            file(SHA1 "${SRC}/${f}" fh)
+            string(APPEND diff "untracked ${f} ${fh}\n")
+        endif()
+    endforeach()
     if(NOT diff STREQUAL "")
         string(SHA1 h "${diff}")
         string(SUBSTRING "${h}" 0 7 h)

@@ -93,6 +93,15 @@ int  tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length);
 int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
                     uint32_t timeout_ms);
 
+/* Change the link's rate, for a core that negotiates one (Phosphor's extended
+ * protocol switches between 2 and 5 Mbaud around a file stream, EXTCTL-001).
+ * The caller holds the lock and has already had the core's agreement: the core
+ * switches after its response, and this switches this end to match.  Bytes in
+ * the RX ring are dropped, since anything half-received spans the change.
+ * Returns 0, or -1 if the link is not open. */
+int      tang_fpga_set_baud(uint32_t baud);
+uint32_t tang_fpga_baud(void);
+
 /* The newest joypad the core has reported.
  *
  * The core sends this unprompted whenever the pad changes and at most every

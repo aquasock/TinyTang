@@ -67,6 +67,7 @@
 
 #include "bflb_gpio.h"
 #include "bflb_irq.h"
+#include "hardware/uart_reg.h"
 #include "bflb_mtimer.h"
 #include "bflb_uart.h"
 #include "ff.h"
@@ -91,6 +92,7 @@ int tdsh_printf(const char *fmt, ...);
 
 static struct bflb_device_s *s_uart;
 static bool                 s_uart_ready;
+static uint32_t             s_baud = FPGA_UART_BAUD;
 static SemaphoreHandle_t    s_tx_lock;
 
 static uint8_t           s_rx_ring[FPGA_RX_RING_SIZE];
@@ -188,26 +190,12 @@ void tang_fpga_unlock(void)
 
 /* ------------------------------------------------------------------ startup */
 
-int tang_fpga_link_open(void)
+/* Program UART1 at a rate and (re)attach the RX interrupt.  Shared by the
+ * first open and by a baud switch, so the two cannot configure it differently. */
+static void uart_configure(uint32_t baud)
 {
-    if (s_uart_ready) {
-        return 0;
-    }
-    if (!s_tx_lock) {
-        s_tx_lock = xSemaphoreCreateMutex();
-        if (!s_tx_lock) {
-            return -1;
-        }
-    }
-
-    struct bflb_device_s *gpio = bflb_device_get_by_name("gpio");
-    bflb_gpio_uart_init(gpio, FPGA_UART_RX_PIN, GPIO_UART_FUNC_UART1_RX);
-    bflb_gpio_uart_init(gpio, FPGA_UART_TX_PIN, GPIO_UART_FUNC_UART1_TX);
-
-    s_uart = bflb_device_get_by_name("uart1");
-
     const struct bflb_uart_config_s cfg = {
-        .baudrate = FPGA_UART_BAUD,
+        .baudrate = baud,
         .direction = UART_DIRECTION_TXRX,
         .data_bits = UART_DATA_BITS_8,
         .stop_bits = UART_STOP_BITS_1,
@@ -225,18 +213,83 @@ int tang_fpga_link_open(void)
     bflb_uart_rxint_mask(s_uart, false);
     bflb_irq_attach(s_uart->irq_num, fpga_uart_rx_isr, NULL);
     bflb_irq_enable(s_uart->irq_num);
+    s_baud = baud;
+}
+
+int tang_fpga_link_open(void)
+{
+    if (s_uart_ready) {
+        return 0;
+    }
+    if (!s_tx_lock) {
+        s_tx_lock = xSemaphoreCreateMutex();
+        if (!s_tx_lock) {
+            return -1;
+        }
+    }
+
+    struct bflb_device_s *gpio = bflb_device_get_by_name("gpio");
+    bflb_gpio_uart_init(gpio, FPGA_UART_RX_PIN, GPIO_UART_FUNC_UART1_RX);
+    bflb_gpio_uart_init(gpio, FPGA_UART_TX_PIN, GPIO_UART_FUNC_UART1_TX);
+
+    s_uart = bflb_device_get_by_name("uart1");
+    uart_configure(FPGA_UART_BAUD);
 
     s_uart_ready = true;
     return 0;
 }
 
+int tang_fpga_set_baud(uint32_t baud)
+{
+    if (!s_uart_ready) {
+        return -1;
+    }
+    /* Let the last request leave the TX FIFO at the old rate before the
+     * divider changes under it. */
+    while (bflb_uart_txempty(s_uart) == 0) {
+    }
+    taskENTER_CRITICAL();
+    bflb_uart_deinit(s_uart);
+    uart_configure(baud);
+    taskEXIT_CRITICAL();
+    return 0;
+}
+
+uint32_t tang_fpga_baud(void)
+{
+    return s_baud;
+}
+
 /* ------------------------------------------------------------- TX to core */
 
+/* Fill the TX FIFO as fast as it drains.
+ *
+ * bflb_uart_putchar() reads the millisecond timer before every byte, for its
+ * 100 ms timeout.  That made a byte cost about 7.5 us of CPU, which capped the
+ * link near 133 KB/s whatever the baud -- below even 2 Mbaud's line rate, and
+ * well short of the 176 KB/s a CD-quality stream needs at 5 Mbaud.  Here the
+ * FIFO's free count is read once and that many bytes are written, and the
+ * clock is consulted only while the FIFO is full, with the same timeout. */
 static int uart_write(const uint8_t *data, size_t length)
 {
-    for (size_t i = 0; i < length; i++) {
-        if (bflb_uart_putchar(s_uart, data[i]) != 0) {
-            return -1;      /* the FIFO stayed full for 100 ms: byte dropped */
+    const uint32_t base = s_uart->reg_base;
+    size_t i = 0;
+    while (i < length) {
+        uint32_t room = (getreg32(base + UART_FIFO_CONFIG_1_OFFSET) &
+                         UART_TX_FIFO_CNT_MASK) >> UART_TX_FIFO_CNT_SHIFT;
+        if (room == 0) {
+            const uint64_t start = bflb_mtimer_get_time_ms();
+            do {
+                if (bflb_mtimer_get_time_ms() - start > 100) {
+                    return -1;  /* the FIFO stayed full for 100 ms: byte dropped */
+                }
+                room = (getreg32(base + UART_FIFO_CONFIG_1_OFFSET) &
+                        UART_TX_FIFO_CNT_MASK) >> UART_TX_FIFO_CNT_SHIFT;
+            } while (room == 0);
+        }
+        while (room != 0 && i < length) {
+            putreg8(data[i++], base + UART_FIFO_WDATA_OFFSET);
+            room--;
         }
     }
     return 0;
@@ -327,12 +380,12 @@ static int cmd_fpga(tdsh_session_t *session, int argc, char **argv)
     const int got = tang_fpga_wait(FPGA_RESP_CORE_ID, &id, sizeof(id), 500);
     if (got == 1) {
         tdsh_printf("fpga: core %u answering on UART1 at %u baud\r\n",
-                    (unsigned)id, (unsigned)FPGA_UART_BAUD);
+                    (unsigned)id, (unsigned)s_baud);
         return 0;
     }
 
     tdsh_printf("fpga: no answer on UART1 at %u baud (is a core loaded?)\r\n",
-                (unsigned)FPGA_UART_BAUD);
+                (unsigned)s_baud);
     return 1;
 }
 
@@ -384,7 +437,7 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     }
 
     tdsh_printf("nesload: %u bytes, mapper %u -> the core at %u baud\r\n",
-                (unsigned)size, mapper, (unsigned)FPGA_UART_BAUD);
+                (unsigned)size, mapper, (unsigned)s_baud);
 
     tang_fpga_lock();
     tang_fpga_drain();

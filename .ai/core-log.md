@@ -574,3 +574,51 @@ The firmware now reports which build it is. `cmake/tinytang_build_id.cmake` runs
 - User Test: PASS
 
 ---
+## 19 COMMIT Unreleased 2026-10-05T01:01:51-07:00
+
+#### Coming From:
+
+Unreleased d0801a9
+
+#### Purpose:
+
+Bring up the Tang-Phosphor core on TinyTang as far as its transport and a first WAV played to the end, porting Tang-Control's host side rather than rewriting it.
+
+#### Outcome:
+
+TinyTang now speaks Tang-Phosphor's extended protocol and plays a WAV through it. The host side is ported from Tang-Control into `ports/bl616/phosphor/` as C++, at the user's direction: `fpga_ext_frame.h` and `flac_stream_prefix.h` are copied unchanged with their host tests (`tools/tests/test_phosphor_frames.sh`, both passing), and `fpga_debug`, `fpga_stream` and `fpga_file_stream` keep Tang-Control's frames, sequence and CRC checks and session logic while their plumbing is replaced -- each transaction sends with `tang_fpga_frame`, collects its reply with `tang_fpga_wait`, and holds `tang_fpga_lock` across both as `EXTCTL-005` requires, in place of Tang-Control's receive task and semaphores. `tang_fpga_uart.c` gained `tang_fpga_set_baud()` for the 5 Mbaud switch a file stream negotiates, and a `phosphor` command offers `caps`, `peek`, `poke`, `play` and `stats`; `play` refuses while the desk layer is on, since Phosphor has none and its cell frames would only take bandwidth. The core on the card is Tang-Phosphor entry 68's merged `place3` image as `/cores/console138k/phosphortang.bin`, 4987082 bytes, CRC-32 `11d738b5`, chosen by the user over rebuilding entry 66's proven image, and the test track is `/music/test-tones.wav` from the new deterministic `tools/make_test_wav.py`, 705644 bytes, CRC-32 `021ea0ca`, four rising notes in both channels and then the right only. On hardware Phosphor answered `fpga` as core 80, `caps` as `0x1f` with every capability, `peek 0` as `TPH0`, and its core capabilities register as `0xff`. The first play delivered the file intact -- the core's own counters showed one session, 705644 bytes and CRC `021ea0ca`, and all 176411 samples played -- but with 96897 samples of underrun, and the user heard only the core's boot tone. Measuring rather than guessing found the cause on this side: of 6213 ms, 5364 went to writing frames to the UART, because `bflb_uart_putchar()` reads the millisecond timer before every byte and capped the link near 133 KB/s at any baud, against the 176 KB/s CD-quality audio needs; it is recorded as `BL6-007`. `uart_write` now fills the TX FIFO from its free count and consults the clock only while the FIFO is full, after which the same track streamed in 3967 ms with sends at the 5 Mbaud wire rate, the rest of the time the core's own back-pressure, and zero underruns; the user heard the notes as intended. That change carries every frame on the link, so the board was returned to its boot state and `boot-cart.tdsh` run, and the user confirms Castlevania plays, F12 switches, and the desktop draws and points normally. The tone the user heard throughout the first play stopped once a stream had been seen, which is the core's documented audio policy and showed the first stream had reached the player. The build identity also failed this cycle in exactly the case it exists for: the new files were untracked, `git diff HEAD` ignored them, and two different builds reported the same identity; `cmake/tinytang_build_id.cmake` now hashes untracked, non-ignored files' names and contents too, and the identity changed as expected. The deployed firmware is `d0801a9-dirty.fbcfb61`, 326896 bytes, MD5 `627805364a4ff31bef1a1cffc95badc4`, confirmed by `platform` after the power cycle; it is this cycle's tree before the README, `THIRD_PARTY.md` and reference edits that followed the test. No change was made in the Tang-Phosphor repository. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds `BL6-007` with its routing row and index line and this entry, with no deletions, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The user is to decide how far the Phosphor effort goes past this first step. Step 2 is Rockbox single-file playback through the AE350, which needs `ae350_play` ported and `/ae350/resident.tpi` on the card; step 3 is playlists and pad controls; step 4 is metadata and cover art; step 5 is launching from TinyDesk. Two Phosphor-side facts are carried for whoever takes those on: its keyboard receiver runs at 750 kbaud while the Keychron link settled at 281250, so the keyboard does not work on Phosphor, and the core has no desktop layer, so F12 and TinyDesk are absent while it runs.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- cmake/tinytang_build_id.cmake
+- ports/bl616/phosphor/flac_stream_prefix.h
+- ports/bl616/phosphor/fpga_debug.cpp
+- ports/bl616/phosphor/fpga_debug.h
+- ports/bl616/phosphor/fpga_ext_frame.h
+- ports/bl616/phosphor/fpga_file_stream.cpp
+- ports/bl616/phosphor/fpga_file_stream.h
+- ports/bl616/phosphor/fpga_stream.cpp
+- ports/bl616/phosphor/fpga_stream.h
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tdsh_platform_bl616.c
+- tools/make_test_wav.py
+- tools/tests/flac_stream_prefix_test.cpp
+- tools/tests/fpga_ext_frame_test.cpp
+- tools/tests/test_phosphor_frames.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

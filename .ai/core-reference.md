@@ -140,6 +140,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why do xPortGetFreeHeapSize() and friends fail to link? | BL6 | BL6-004 |
 | Is there any real-time clock? | BL6 | BL6-005 |
 | How do I read the CPU clock? | BL6 | BL6-006 |
+| Why is the FPGA link slower than its baud rate? | BL6 | BL6-007 |
 | What speed does the console negotiate? | USB | USB-001 |
 | Can the OTG block tell me what is on the other end of the cable? | USB | USB-002 |
 | Can the OTG connector power a keyboard? | USB | USB-003 |
@@ -232,6 +233,7 @@ BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and hea
 BL6-004: "xPortGetFreeHeapSize() and xPortGetMinimumEverFreeHeapSize() do not exist in this build; using them fails at link time"
 BL6-005: "There is an HBN always-on RTC counter (HBN_Enable_RTC_Counter, HBN_Get_RTC_Timer_Val) with a selectable 32 kHz source: a counter, not a calendar, and no battery"
 BL6-006: "bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) returns the CPU clock"
+BL6-007: "bflb_uart_putchar() reads the millisecond timer before every byte for its 100 ms timeout, costing about 7.5 us of CPU per byte here, which capped UART1 near 133 KB/s at 5 Mbaud; filling the TX FIFO from its free count reaches the wire rate"
 USB-001: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps (lsusb -t); CONFIG_USB_HS sets CDC_MAX_MPS 512, which is legal only at HS"
 USB-002: "No role signal follows the cable: OTG_CSR's ID bit tracks the forced configuration (PDS IDDIG), not the connector"
 USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing comes out, in both DRVBUS_POL polarities, and a device that reacts to power stayed dark for 60 s"
@@ -535,6 +537,19 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   sources:
     - "Bouffalo SDK, drivers/lhal/include/bflb_clock.h: '#define BFLB_SYSTEM_CPU_CLK 1' and 'uint32_t bflb_clk_get_system_clock(uint8_t type)'"
   verification: "Resolves and links in this build. The value it returns has not been read on hardware."
+
+- record_id: BL6-007
+  kind: SOC
+  topic_id: BL6
+  title: "bflb_uart_putchar is CPU-bound per byte, so it cannot keep a fast UART busy"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "bflb_uart_putchar() in the Bouffalo SDK's lhal driver calls bflb_mtimer_get_time_ms() once before every byte to start its 100 ms full-FIFO timeout, then polls UART_FIFO_CONFIG_1's TX free count and writes UART_FIFO_WDATA. On this board that made each byte cost about 7.5 us of CPU, so a loop of putchar calls sent about 133 KB/s regardless of the configured rate -- below even 2 Mbaud's 200 KB/s line rate, and well under 5 Mbaud's 500 KB/s. Reading the free count (UART_TX_FIFO_CNT_MASK, shift 0) once and writing that many bytes, consulting the clock only while the FIFO is full, sends at the wire rate."
+  consequence: "ports/bl616/tang_fpga_uart.c's uart_write fills the FIFO directly with the same 100 ms timeout, which every frame to the core goes through. It was found because a CD-quality stream to the Phosphor core (176 KB/s) underran for 2.2 s of a 4 s track; afterwards the same track streamed in real time with zero underruns, and nesload and the desk layer run at their full line rate too."
+  sources:
+    - "Bouffalo SDK, drivers/lhal/src/bflb_uart.c: bflb_uart_putchar()"
+    - "Bouffalo SDK, drivers/lhal/include/hardware/uart_reg.h: UART_FIFO_CONFIG_1_OFFSET, UART_FIFO_WDATA_OFFSET, UART_TX_FIFO_CNT_MASK"
+  verification: "Measured on this board on 2026-10-05 with timers around the send: 692 frames of 1036 bytes took 5364 ms through putchar at 5 Mbaud, and 1394 ms (about 2.0 ms a frame, the wire rate) through the FIFO fill, the stream then paced by the core's acknowledgements. Castlevania's ROM load and the desktop were re-tested on the new path and pass."
 
 - record_id: USB-001
   kind: USB
