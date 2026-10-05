@@ -34,10 +34,9 @@ blocks, including the corner cells and the write-port guard that keeps a column
 past the grid from wrapping into the next row. A build cannot tell a correct
 address decode from a plausible one; that test can.
 
-The colour path is three pixels deep, so the layer lands three output pixels
-right of where its addressing says. That is a uniform shift of a full-screen
-image and invisible in practice, and it is the same property the legacy page
-already has.
+The colour path is three pixels deep. As first carried, the layer addressed
+the store with the raster's own `cx` and so landed three output pixels late,
+which this README called invisible. It was not: see `0007`.
 
 ## 0003-desktop-layer-wiring.patch
 
@@ -55,6 +54,20 @@ nothing new to keep in step.
 
 When it is up it replaces the output entirely — bars included — which is what
 full screen means for a desktop.
+
+## 0007-wide-layer-alignment.patch
+
+Aligns the layer with the raster. Pixels 0-2 of every line were computed at the
+end of the previous line, in blanking, where the store's address falls back to
+cell 0 -- so cell (0,0)'s glyph column was painted down the whole left edge in
+that cell's colours, and the marks changed with whatever character sat in the
+top-left corner. `textdisp_wide` now takes `frame_width`/`frame_height` from
+`hdmi` and addresses the store three pixels ahead of the raster, wrapping into
+the next line and frame as `hdmi.sv`'s counters do, so `color` is the pixel for
+the coordinate being presented now and matches the stock one-register `rgb`
+path. `tools/tb_textdisp_wide.sv` was rewritten to stream a free-running
+1650x750 raster and check every visible pixel of a frame; the old testbench
+held `cx` still for four clocks per check and could not see any latency.
 
 ## Built result
 

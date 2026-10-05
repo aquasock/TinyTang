@@ -1,0 +1,117 @@
+diff --git a/src/iosys/textdisp_wide.sv b/src/iosys/textdisp_wide.sv
+index 021374c..ecb874f 100644
+--- a/src/iosys/textdisp_wide.sv
++++ b/src/iosys/textdisp_wide.sv
+@@ -23,10 +23,19 @@
+ // array rather than a generated IP: the array is what both simulation and
+ // synthesis can see, so the design can be checked before it reaches hardware.
+ //
+-// Latency.  The colour path is three pixels deep.  The layer therefore lands
+-// three output pixels to the right of where its addressing says, which is a
+-// uniform shift of a full-screen image and invisible in practice.  The legacy
+-// page has the same property and the core has always tolerated it.
++// Latency.  The colour path is four pixels deep, so the store is addressed
++// four pixels ahead of the raster -- (cx, cy) advanced by LAT, wrapping into
++// the next line and the next frame exactly as hdmi.sv's counters do -- and
++// `color` is the pixel for the coordinate being presented now, aligned with
++// the stock one-register `rgb` path.  Addressing with the raster's own cx
++// instead is not a harmless shift: the first version of this layer did, three
++// deep, and pixels 0-2 of every line were computed at the end of the previous
++// line, in blanking, where the address falls back
++// to cell 0, so cell (0,0)'s glyph is painted down the whole left edge in that
++// cell's colours.  That is what hardware showed.  The address is registered
++// before the store rather than decoded combinationally into it: the look-ahead
++// adds a wrap test and a carry in front of the row multiply, and unregistered
++// that path closed at +0.6 ns of a 13.5 ns pixel clock.
+ //
+ // Colour.  fg and bg are 15-bit BGR5, the same encoding as the existing
+ // `overlay_color`, so the compositor widens them the same way.
+@@ -49,9 +58,12 @@ module textdisp_wide #(
+     input  wire [14:0] wfg,
+     input  wire [14:0] wbg,
+ 
+-    // Scanout, in output pixels.
+-    input  wire [10:0] cx,         // 0..1279
+-    input  wire [9:0]  cy,         // 0..719
++    // Scanout, in output pixels: the raster hdmi.sv generates, blanking
++    // included, and its frame size, which the look-ahead wraps at.
++    input  wire [10:0] cx,         // 0..frame_width-1, visible 0..1279
++    input  wire [9:0]  cy,         // 0..frame_height-1, visible 0..719
++    input  wire [10:0] frame_width,
++    input  wire [9:0]  frame_height,
+     output reg  [14:0] color
+ );
+ 
+@@ -63,20 +75,34 @@ module textdisp_wide #(
+     wire write_ok = we && (wx < COLS) && (wy < ROWS);
+     wire [11:0] waddr = wy * COLS + wx;
+ 
++    /* The coordinate whose pixel `color` must hold LAT clocks from now:
++     * the raster advanced by the pipeline's depth, carried into the next line
++     * (and the next frame) the way hdmi.sv's counters carry. */
++    localparam integer LAT = 4;
++    wire        wrap = cx >= frame_width - 11'(LAT);
++    wire [10:0] ax   = wrap ? cx + 11'(LAT) - frame_width : cx + 11'(LAT);
++    wire [9:0]  ay   = !wrap                   ? cy
++                     : (cy == frame_height - 1) ? 10'd0
++                     :                            cy + 10'd1;
++
+     /* The raster is not the visible area: its counters run to frame_width-1 and
+      * frame_height-1, which on this core are 1650 and 750, so most of every
+      * frame is off-screen.  Unclamped that reaches cell 3783 of a 3600-cell
+-     * store -- a read past the end of the array for the whole of blanking.
+-     * What is read there is never shown, but reading outside an array is not
+-     * something to leave to the synthesiser's discretion, so off-screen reads
+-     * address the first cell and are discarded by the compositor anyway. */
+-    wire in_screen = (cx < 11'd1280) && (cy < 10'd720);
+-    wire [11:0] raddr = in_screen ? (cy[9:4] * COLS + cx[10:4]) : 12'd0;
++     * store -- a read past the end of the array for the whole of blanking --
++     * so off-screen reads address the first cell.  What they produce is only
++     * ever presented during blanking, where hdmi.sv sends no video data, and
++     * that holds only because of the look-ahead above. */
++    wire in_screen = (ax < 11'd1280) && (ay < 10'd720);
++    wire [11:0] raddr = in_screen ? (ay[9:4] * COLS + ax[10:4]) : 12'd0;
+ 
+     always @(posedge clk) begin
+         if (write_ok) mem[waddr] <= {wbg, wfg, wch};
+     end
+ 
++    // Stage 0: the address, and the coordinate it was decoded from.
++    reg [11:0] raddr_r;
++    reg [10:0] cx0;
++    reg [9:0]  cy0;
+     // Stage 1: the cell, and the coordinate that addresses it.
+     reg [36:0] cell_r;
+     reg [10:0] cx1;
+@@ -89,9 +115,13 @@ module textdisp_wide #(
+     // Stage 3: the pixel.
+ 
+     always @(posedge hclk) begin
+-        cell_r <= mem[raddr];
+-        cx1    <= cx;
+-        cy1    <= cy;
++        raddr_r <= raddr;
++        cx0     <= ax;
++        cy0     <= ay;
++
++        cell_r <= mem[raddr_r];
++        cx1    <= cx0;
++        cy1    <= cy0;
+ 
+         font_r <= FONT[cell_r[6:0]][cy1[3:1]];
+         fg_r   <= cell_r[21:7];
+diff --git a/src/nes2hdmi.sv b/src/nes2hdmi.sv
+index ccedb25..5033ed9 100644
+--- a/src/nes2hdmi.sv
++++ b/src/nes2hdmi.sv
+@@ -224,7 +224,9 @@ textdisp_wide u_wide (
+     .clk(clk), .hclk(clk_pixel),
+     .we(wide_we), .wx(wide_x), .wy(wide_y),
+     .wch(wide_ch), .wfg(wide_fg), .wbg(wide_bg),
+-    .cx(cx), .cy(cy), .color(wide_color)
++    .cx(cx), .cy(cy),
++    .frame_width(frameWidth), .frame_height(frameHeight),
++    .color(wide_color)
+ );
+ 
+ // The enable is a register in the main logic clock; bring it across before it

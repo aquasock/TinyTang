@@ -4,10 +4,10 @@ The changes that turn this project's patched nestang into an emulator-free
 **menu core** — the board with the NES machine left out, so TinyDesk has a host
 of its own rather than riding on an emulator.
 
-These are separate from `third_party/patches/0001`–`0006`, which stay the
+These are separate from `third_party/patches/0001`–`0007`, which stay the
 official patched NES core. Apply order:
 
-1. `third_party/patches/0001`–`0006`, via `scripts/apply-nestang-patches.sh`
+1. `third_party/patches/0001`–`0007`, via `scripts/apply-nestang-patches.sh`
 2. `menu/0001-menu-core.patch`, on top
 
 `tools/build_menu_core.sh` does both and builds. The nestang checkout stays

@@ -374,3 +374,36 @@ The left-edge lines the user saw after the prompt are still open, and the whole 
 - User Test: PASS
 
 ---
+## 13 COMMIT Unreleased 2026-10-04T20:29:32-07:00
+
+#### Coming From:
+
+Unreleased f8cde86
+
+#### Purpose:
+
+Remove the marks drawn down the left edge of the desktop layer, which entry 12 left open with the refusal count as the next step.
+
+#### Outcome:
+
+The refusal count settled the transport first: `osd desk status` reported 0 refused, so no cells were being dropped. Its other figure is mislabelled -- `s_rows` in `ports/bl616/tang_osd_desk.c` counts every row the flush examines, changed or not, so "5535945 rows sent" against 3763 cells is polls times 45, not traffic -- which is recorded here and was deferred rather than fixed, since it costs a reflash. The fault was in the layer's timing, not its contents, and it is recorded as `PROT-009`. `hdmi.sv`'s counters name the pixel sent on the next clock and the stock `rgb` path is one register deep to match, but `textdisp_wide` was three registers deeper and addressed its store with the live `cx`, so visible pixels 0-2 of every line were computed at `cx` 1647-1649 of the previous line, in blanking, where the store's address falls back to cell 0; cell (0,0)'s glyph columns 7, 0 and 0 were therefore painted down the whole left edge in that cell's colours. That predicted, and hardware showed, marks that follow the top-left character: green dashes under the prompt's `r` after `clear`, a clean edge once `help` scrolled a line beginning with a space into row 0, and white pairs after a reboot under the `b` of `boot:`, whose column-0 ink on glyph rows 0 and 6 matches the paired dots in the user's photograph exactly. One wrong turn is worth keeping: the user first read the top-left line as `tdsh`, whose `t` has no column-0 ink, and the prediction from that failed; the photograph showed `boot:` in row 0 and the mechanism held. The fix is `third_party/patches/0007-wide-layer-alignment.patch`: `textdisp_wide` takes `frame_width` and `frame_height` from `hdmi` and addresses the store ahead of the raster by its own depth, wrapping into the next line and frame as the counters do, so `color` is the pixel for the coordinate being presented. The first version looked ahead three pixels combinationally, met timing, and was not kept, because the look-ahead sat in front of the row multiply on the BRAM address and closed the pixel clock at +0.624 ns where cycle 3 had +1.064 ns overall; the address is now registered and the look-ahead is four. The old testbench passed the broken module because it held `cx` still for four clocks per check, which hides any latency, so `tools/tb_textdisp_wide.sv` now streams a free-running 1650x750 raster and checks every visible pixel of a frame plus line 0 again: it fails 445264 of 922881 pixels on the old module, passes all of them on the fixed one, and fails again with the look-ahead off by one. The NES core is `nestang-desk.bin`, 4603392 bytes, MD5 `5d0b920dd28a304ea85ca4f09edc56f2`, TNS 0 on every clock, worst setup +1.360 ns on `hdmi`'s own TMDS path, the layer no longer among the worst paths, and hold +0.143 ns unchanged on the layer's write port, with BSRAM 41 of 340; the menu core rebuilds at 4524032 bytes, MD5 `01f9e221fe220c188778f94dd182d9c6`, setup +1.609 ns and hold +0.144 ns. Reconstruction passes byte-for-byte against a fresh clone at `c2450818` with `0001` through `0007` through the applier and the menu patch on top; the applier now presumes `0002` and `0003` applied in the working tree, as `TOOL-010` describes. The core went to the card with `tangput` after the absolute-position check confirmed the plain console, the size was confirmed on the card, and `boot.tdsh` loaded it with `fpga` reporting core 1. The user reports the left edge clean with `r` in cell (0,0), the exact condition that produced the marks, and clean again after a reboot. `third_party/patches/README.md` called the old three-pixel shift invisible and now says otherwise, and `THIRD_PARTY.md` named the series as `0001` through `0004` and now names `0007`. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, the added record was checked against the reference's field shape and family ordering and routed from the Active routing table and the Fast lookup index, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+Three items are open from this cycle and earlier. The `osd desk status` row counter should count rows actually sent, a one-line firmware change that waits for the next cycle needing a reflash anyway. The FPGA self-configuration observation from entry 12 still needs its one deliberate test. And a reachability check run while adding `PROT-009` found four existing records -- `PROV-002`, `TCTL-003`, `TCTL-011` and `TDESK-008` -- in the Fast lookup index but in no row of the Active routing table, which predates this cycle and was left untouched. The pointer reports reaching the shell in console mode, the menu core not yet being the boot core, and `osd term` drawing a page the menu core no longer has all remain as entries 10 and 11 left them.
+
+#### Files Modified:
+
+- THIRD_PARTY.md
+- third_party/patches/0007-wide-layer-alignment.patch
+- third_party/patches/README.md
+- third_party/patches/menu/README.md
+- tools/tb_textdisp_wide.sv
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -88,7 +88,7 @@ reconstructible from upstream:
 - Project: https://github.com/nand2mario/nestang
 - Base commit: `c2450818e1f0c858e13c5dd16746ee5221a5c760` ("upgrade iosys")
 - License: GPL-3.0 (`COPYING` at that commit)
-- Patches: `third_party/patches/0001` through `0004`, applied by
+- Patches: `third_party/patches/0001` through `0007`, applied by
   `scripts/apply-nestang-patches.sh`
 
 The patches are modifications to GPL-3.0 sources, so the patch files reproduce
