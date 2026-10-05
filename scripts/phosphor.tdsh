@@ -1,0 +1,89 @@
+#!/bin/tdsh
+# phosphor.tdsh - play one track on the Tang-Phosphor core, then come back.
+#
+# Run it from the console prompt, or from the desktop -- right-click its icon
+# and choose Run -- or from the Terminal:
+#
+#   tdsh run /scripts/phosphor.tdsh
+#
+# It plays /music/test.mp3 unless FILE is set in the session first; tdsh run
+# passes no arguments, but the script inherits the session's variables:
+#
+#   FILE=/music/test.flac; tdsh run /scripts/phosphor.tdsh
+#
+# This is a test launcher for the core as it is today, not the player it will
+# become.  Phosphor's core has no desktop layer yet, so it cannot run under
+# TinyDesk the way the NES core does: the layer is turned off before the load,
+# the screen is Phosphor's own while the track plays, F12 does nothing and the
+# keyboard reaches nothing.  The script therefore waits for the track to end
+# and then puts the board back as boot.tdsh left it -- the menu core loaded and
+# the console on the layer.  Run from the desktop, the desktop comes back with
+# its screen blank until it redraws.  Ctrl-C from a computer's terminal stops
+# the wait early.
+
+if "$FILE" == ""
+    FILE=/music/test.mp3
+endif
+CORE=/cores/console138k/phosphortang.bin
+PLAYER=/ae350/resident.tpi
+MENU=/cores/console138k/nestang-menu.bin
+
+echo "phosphor: core  $CORE"
+echo "phosphor: file  $FILE"
+
+if test -f "$CORE"
+    echo "phosphor: core image found"
+else
+    echo "phosphor: no core image at $CORE"
+    return 1
+endif
+if test -f "$PLAYER"
+    echo "phosphor: player found"
+else
+    echo "phosphor: no AE350 player at $PLAYER"
+    return 1
+endif
+if test -f "$FILE"
+    echo "phosphor: file found"
+else
+    echo "phosphor: no file at $FILE"
+    return 1
+endif
+
+# The layer goes before the load: phosphor play refuses while it is on, since
+# its cell frames share the link, and a core without the layer cannot show it.
+osd desk off
+
+echo "phosphor: programming the FPGA"
+tangload "$CORE"
+if $? != 0
+    echo "phosphor: the core did not load"
+    return 1
+endif
+
+echo "phosphor: probing the link"
+fpga
+if $? != 0
+    echo "phosphor: the core is not answering on the UART; not playing"
+    return 1
+endif
+
+echo "phosphor: playing $FILE"
+phosphor play "$FILE"
+if $? != 0
+    echo "phosphor: playback did not complete"
+endif
+
+# Back to the boot state, whether or not the track finished: the menu core,
+# its text page blanked, and the console on the layer.
+echo "phosphor: reloading the menu core"
+tangload "$MENU"
+if $? != 0
+    echo "phosphor: the menu core did not load"
+    return 1
+endif
+fpga
+osd clear
+osd desk on
+echo "phosphor: done"
+return 0

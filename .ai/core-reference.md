@@ -131,6 +131,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
 | What is the onboard USB debug bridge? | BRD | BRD-004 |
 | Does the board need a particular power input? | BRD | BRD-005 |
+| What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
 | Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-003 |
@@ -199,6 +200,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 | Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-008 |
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
+| How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-004 |
@@ -227,6 +229,7 @@ BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NO
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
 BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB Debugger'), a separate USB path from the BL616's CDC"
 BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
+BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
 PMOD-003: "Socket control register 0x10: bit 0 renderer, bits 4-7 PMOD0 personality and 8-11 PMOD1, bits 12/13 upside-down; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2; 0x14 is scratch"
@@ -293,6 +296,7 @@ TOOL-008: "Linked out of the SDK, each under its own licence rather than the SDK
 TOOL-009: "Superseded by TOOL-011. Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending"
 TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
 TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
+TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 (openFPGALoader -c ft2232; --detect reads 0x0001081b and changes nothing; an SRAM load must be .fs, not .bin) and the FPGA UART on interface 1 (/dev/ttyUSB1, 2 Mbaud, the same 0xAA frames as the BL616 link); no shell, desktop, boot script or TinyTang tool runs, and reaching it takes a cold power-up that also restarts the FPGA, so it cannot inspect a state reached under TinyDesk"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -467,6 +471,19 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   sources:
     - "User report, 2026-10-03: 'my tang has both the power and otg USB cable plugged in. they both supply power and the tang can run on either'"
   verification: "Not instrumented. Consistent with the board surviving removals and reinsertions of the OTG cable with the console session intact, but the power routing was not measured."
+
+- record_id: BRD-006
+  kind: BOARD
+  topic_id: BRD
+  title: "One-wire or two-wire is chosen at a cold power-up by which input powers the board"
+  status: INFERRED
+  verified_date: 2026-10-05
+  statement: "The two modes TCTL-005 names are two different programs on the BL616, and only one runs at a time. A cold power-up with the dedicated power input connected, with or without the OTG cable, runs this project's firmware, and the host sees the TinyTang CDC (ffff:5454). A cold power-up with the OTG cable alone comes up instead as SIPEED's 'USB Debugger' FT2232 (0403:6010, serial 2025041420), with interface 0 as /dev/ttyUSB0 and interface 1 as /dev/ttyUSB1, and the CDC absent. Removing the power cable from a board already running TinyTang changes nothing: the OTG cable keeps it powered (BRD-005), the CDC stays enumerated under the same device number, and the console keeps answering. The same FT2232 is what a soft reset reaches after tangflash (FLS-001)."
+  consequence: "Switching between the modes is a full power cycle -- both cables out, then the power input for two-wire or the OTG cable alone for one-wire -- and it restarts the FPGA as well as the BL616, so the FPGA comes back on the core it loads by itself (DEV-006) whichever mode follows. In one-wire nothing of TinyTang runs: no shell, no boot.tdsh, so no menu core, no desktop layer, no desktop, no keyboard handling and no F12, and HDMI shows the TangCore splash. Which signal the vendor loader reads to make the choice is not known; the power input's VBUS is the obvious candidate and has not been tested."
+  sources:
+    - "Observed on this board, 2026-10-05: lsusb and udevadm on the host after each change; the TinyTang status probe (TOOL-011) before and after the power cable was removed"
+    - "TCTL-005: Tang-Control's names for the modes"
+  verification: "Each path observed once on 2026-10-05: power cable removed while running (CDC stayed as device 36, probe answered 1); cold start on the OTG cable alone (FT2232 enumerated, CDC absent, user saw the TangCore splash); cold start with both cables (CDC back as device 38, probe answered 1). Two-wire cold starts with both cables have come back as TinyTang throughout this project. Inferred rather than verified because the selection mechanism has no source and each one-wire start was seen once."
 
 - record_id: BL6-001
   kind: SOC
@@ -1207,6 +1224,20 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's ports/bl616/tdsh_platform_bl616.c: tdsh_bl616_console_state(), set around bl616_readline and, through tdsh_bl616_console_set_desktop(), around desktop_run() in td_desktop_bl616.c"
     - "This project's tools/tinytang_console.py: PROBE, REPLY, console_state() and require_shell()"
   verification: "Exercised on this board with firmware e912c5d-dirty.3417d90, 2026-10-05: state 1 at the prompt; no answer within 1 s during 'sleep 5' and state 1 4.8 s later, when the prompt returned; tinytang_run.py held a second command until 'sleep 3' ended; a 6120-byte file holding twenty copies of the probe arrived whole through tangput; and with the desktop and its Terminal window up the answer was 2, tinytang_run.py and tinytang_put.py both refused, and the user saw nothing typed on screen. State 3 was not observed, since no command that reads the console was running during the probe; the busy case was seen only as no answer."
+
+- record_id: TOOL-012
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "One-wire debugging reaches the FPGA directly, and nothing of TinyTang or TinyDesk"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "With the board in one-wire mode (BRD-006) the host drives the FPGA without the BL616's firmware in between. JTAG is FT2232 interface 0: openFPGALoader v0.13.1 with -c ft2232 --detect scanned the chain at 6 MHz and reported one Gowin GW5AST-138, IDCODE 0x0001081b (TOOL-002), and programmed nothing. Loading a core is an SRAM load and must use the .fs stream; a raw .bin is shifted in but does not start the FPGA, which leaves it unconfigured and the UART silent. The FPGA UART is interface 1, /dev/ttyUSB1, at 2,000,000 baud with the same 0xAA len_hi len_lo type framing the BL616 uses: the core-ID request AA 00 01 01 was answered AA 00 02 01 00, core 0. A core speaks only when asked, so four seconds of listening at 2 Mbaud and at 115200 with nothing sent returned no bytes; that silence is not evidence either way."
+  consequence: "One-wire is for the FPGA alone: identifying it, loading a bitstream into SRAM, and the 0xAA and extended (0x10) protocols from the host, which is how Tang-Phosphor developed its core (tools/fpga_uart.py, scripts/flash-otg.sh, scripts/uart_probe.py). It cannot see TinyTang or TinyDesk at all: the CDC, the shell, the status probe, tinytang_put/run/flash.py, phosphor, tangload and nesload all need two-wire. It also cannot inspect a fault reached under TinyDesk, because getting into one-wire takes a cold power-up that puts the FPGA back on its own core, and a core loaded over one-wire is replaced at the next two-wire boot when boot.tdsh loads the menu core. The port is opened with DTR and RTS held low so opening it moves no control line; with the BL616 running the debugger, the host is the only other party on the UART."
+  sources:
+    - "Observed on this board, 2026-10-05: openFPGALoader --detect output; AA 00 01 01 sent once on /dev/ttyUSB1 at 2 Mbaud and the five reply bytes; udevadm interface numbers for ttyUSB0 and ttyUSB1"
+    - "Tang-Phosphor, scripts/flash-otg.sh and tools/fpga_uart.py at 532e19d; its core-log entry 29 for the .fs-versus-.bin cause"
+    - "This project's ports/bl616/tang_fpga_link.h: the frame layout and FPGA_CMD_CORE_ID 0x01"
+  verification: "JTAG detect and the core-ID round trip were run on this board on 2026-10-05 with no change to the FPGA, which answered core 0 before and after. The .fs requirement is Tang-Phosphor's finding and was not repeated here, since no core was loaded over one-wire."
 
 - record_id: TCTL-004
   kind: EXTERNAL

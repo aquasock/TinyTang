@@ -10,16 +10,16 @@ index 205a44a..347e0a0 100644
 +// Pointer mode.  Declared here, ahead of its users, because both the withheld-
 +// key test below and the pad-word gate further down need it.
 +//
-+// Right-alt because it is a modifier no ordinary typing needs, and because the
-+// report already carries it: the keyboard end sends its modifier byte and the
-+// receiver hands it up as link_mods, so no new plumbing is involved.  HID puts
-+// right-alt at bit 6 (left-alt is bit 2).
++// Left-alt because it is a modifier no typing here needs -- the BL616's key
++// translator ignores both alts -- and because the report already carries it:
++// the keyboard end sends its modifier byte and the receiver hands it up as
++// link_mods, so no new plumbing is involved.  HID puts left-alt at bit 2.
 +//
 +// Why a modifier at all: the arrows are wanted twice -- as a pointer on the
 +// desktop and as arrow keys in a window -- and never at the same time, since
 +// scrolling across the desktop while typing in the Terminal is unusable.
 +// Held, this keyboard is a pointer; released, it is only a keyboard.
-+wire link_pointer_mode = link_mods[6];
++wire link_pointer_mode = link_mods[2];
 +
 +// Which keys the pointer is currently using, so they can be withheld from the
 +// typing path while it uses them.

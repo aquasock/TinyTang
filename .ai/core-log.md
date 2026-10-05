@@ -774,3 +774,36 @@ The Phosphor sequence continues as planned: the desktop layer, keyboard link and
 - User Test: PASS
 
 ---
+
+## 24 COMMIT Unreleased 2026-10-05T12:51:07-07:00
+
+#### Coming From:
+
+Unreleased 6c01152
+
+#### Purpose:
+
+Add a one-step Phosphor test launcher, move the desktop pointer's hotkey from right-alt to left-alt, and record how the board's one-wire and two-wire modes are reached and what each can debug.
+
+#### Outcome:
+
+`scripts/phosphor.tdsh`, placed on the card as `/scripts/phosphor.tdsh`, is the Phosphor counterpart of `castlevania.tdsh`: it checks for the core, `/ae350/resident.tpi` and the track, turns the desktop layer off because `phosphor play` refuses while it is on and the Phosphor core cannot show it, loads `phosphortang.bin`, probes the link, plays `/music/test.mp3` or the session's `FILE` to the end, and then reloads the menu core, clears its text page and turns the layer back on, so the board ends where `boot.tdsh` leaves it; the README lists it. The user ran it and heard the track over the Phosphor core's video; the F12 toggling they saw afterwards between TinyDesk and a grey screen was the restored menu core, since the ten-second track had ended, and was expected. Pointer mode is decided in the core, not the firmware: patch 0006 now tests `link_mods[2]`, left-alt, instead of bit 6, with its comment rewritten line for line so no hunk count moved; the firmware's key translator ignores both alts and the desktop uses only Alt+Tab and Alt+F4, neither of which the pointer withholds. A fresh nestang clone with the series and the menu patch applied reproduced the checkout exactly. `tools/build_nestang_core.sh` built `nestang-desk.bin` at 4603392 bytes, MD5 `ab96565b269f6a1b352c3eacbc88d2eb`, and `tools/build_menu_core.sh` built `nestang-menu.bin` at 4524032 bytes, MD5 `bf01d35064fedef43498c9a649f27702`, both with zero setup and hold TNS on `sys_clk`; both went onto the card through `tinytang_put.py` with the previous images kept beside them as `.bak`, and after a power cycle the user found left-alt moving the pointer, right-alt doing nothing, and everything else passing. The BL616 firmware is unchanged at `e912c5d-dirty.3417d90`, whose source is commit `6c01152`; only a comment in `tang_osd_desk.h` changed here. The user also exercised the wiring modes, recorded as `BRD-006` and `TOOL-012`: removing the power cable from a running board changed nothing, a cold start on the OTG cable alone came up as SIPEED's FT2232 debugger with the CDC gone and the TangCore splash on HDMI, and a cold start with both cables brought TinyTang back. In one-wire, `openFPGALoader -c ft2232 --detect` read IDCODE `0x0001081b` without programming anything, and the core-ID frame `AA 00 01 01` sent on `/dev/ttyUSB1` at 2 Mbaud was answered `AA 00 02 01 00`, core 0, the FPGA's own core. One-wire reaches the FPGA only, and reaching it restarts the FPGA, so it cannot inspect anything TinyTang or TinyDesk set up. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds `BRD-006` and `TOOL-012` with their routing rows and index lines and this entry, with no deletions, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The Phosphor sequence continues as planned: the desktop layer, keyboard link and F12 in Tang-Phosphor's core so it behaves like the NES core, then a background playback task in place of the blocking `phosphor play`, then the Phosphor app in TinyDesk. The `.bak` cores on the card can be removed once the user is satisfied with the new ones. Which signal makes the vendor loader choose one-wire at power-up is untested.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_osd_desk.h
+- scripts/phosphor.tdsh
+- third_party/patches/0006-pointer-mode.patch
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

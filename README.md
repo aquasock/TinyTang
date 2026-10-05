@@ -44,7 +44,7 @@ is called out in the source where it is used.
   keyboard drives its own D+ line as a UART and the core receives it (see
   *Keyboard* below).
 - **A pointer in the desktop.** The D-pad on controller 1, or the arrows with
-  right-alt held, moves it; A or Enter is the left button, B or Esc the right,
+  left-alt held, moves it; A or Enter is the left button, B or Esc the right,
   and holding the left button while moving drags. The pointer exists only while
   the desktop runs: at the bare console nothing is drawn and nothing moves.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
@@ -66,7 +66,9 @@ is called out in the source where it is used.
   with `/cores/console138k/phosphortang.bin` after `osd desk off`, since it has
   no desktop layer. The merged core has no WAV or FLAC decoder in the fabric:
   its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is the only
-  way to play a file.
+  way to play a file. `scripts/phosphor.tdsh` does the whole round trip --
+  layer off, core in, probe, play `/music/test.mp3` (or `$FILE`) to the end,
+  then the menu core and the layer back -- from the console or the desktop.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
@@ -173,7 +175,7 @@ than as a fork. The checkout stays pristine at commit `c2450818`, and
 | 0003 | Wires the layer into iosys (commands `0x13`-`0x15`) and the HDMI mixer |
 | 0004 | The keyboard link receiver on both front USB D+ pins |
 | 0005 | The keyboard report sent up to the BL616 as response `0x08` |
-| 0006 | Right-alt pointer mode: arrows, Enter and Esc become pad bits |
+| 0006 | Left-alt pointer mode: arrows, Enter and Esc become pad bits |
 | 0007 | Aligns the layer with the raster (fact 16) |
 
 `third_party/patches/menu/0001-menu-core.patch` applies on top to make the
@@ -242,7 +244,8 @@ STM32's own DFU bootloader.
 - `third_party/patches/` — the nestang patch series, the menu-core patch and
   the QMK keyboard patches.
 - `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up),
-  `boot-cart.tdsh` (core, probe, ROM) and `castlevania.tdsh`; plus the two
+  `boot-cart.tdsh` (core, probe, ROM), `castlevania.tdsh` and `phosphor.tdsh`
+  (play one track on the Phosphor core and return); plus the two
   patch appliers, which run on the host.
 - `tools/` — host tools:
   - `make_test_wav.py` — writes a deterministic 4-second test tone for the

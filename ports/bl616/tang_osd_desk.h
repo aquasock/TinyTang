@@ -84,7 +84,7 @@ void tang_osd_desk_core_reloaded(void);
  * reporting and draws windows to point at.  At the bare console there is
  * nothing to point at, and the pointer's mouse reports would reach the shell
  * as text, so there it is off -- not drawn, not moved by the pad or by
- * right-alt with the arrows.  The desktop command turns it on for the length
+ * left-alt with the arrows.  The desktop command turns it on for the length
  * of desktop_run(); it starts off. */
 void tang_osd_desk_set_pointer(bool on);
 
