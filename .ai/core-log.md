@@ -807,3 +807,33 @@ The Phosphor sequence continues as planned: the desktop layer, keyboard link and
 - User Test: PASS
 
 ---
+
+## 25 COMMIT Unreleased 2026-10-05T13:01:19-07:00
+
+#### Coming From:
+
+Unreleased 4f59cee
+
+#### Purpose:
+
+Prove that a core can be deployed, debugged and exercised entirely over one-wire with no TinyTang involved, record the method, and leave a handoff of the project's state for the next agent.
+
+#### Outcome:
+
+With the board cold-started on the OTG cable alone, so the BL616 ran SIPEED's FT2232 debugger instead of TinyTang (`BRD-006`), the whole core loop ran from the host, recorded as `TOOL-013`. Tang-Phosphor's `scripts/flash-otg.sh`, run with `bash` because it has no execute bit, SRAM-loaded the merged place3 image `build/merged/place3/tang_phosphor_merged.fs`, the `.fs` twin of the card's `phosphortang.bin`, in 17 s; the core answered the core-ID frame as `0x50`; its registers read back over `tools/fpga_uart.py` on `/dev/ttyUSB1` at 2 Mbaud; the scratch register `0x0020` took two pokes, read both back and was restored; and `scripts/play_stream.py` streamed the resident AE350 player in 10.1 s and a 402304-byte `test.mp3` in 4.0 s, after which the core reported 441000 samples, 0 underruns and 44100 Hz, equal to Tang-Phosphor entry 43's figure. The player found in Tang-Phosphor's ignored `build/rbhost/bench/` was the 863748-byte image that hangs, so it was rebuilt from the fixed Makefile with `~/.cache/tangcore-dev/toolchain/bin` on PATH, giving entry 69's qualified 863764-byte image, CRC-32 `ef1502ed`, byte for byte, recorded as `PHOS-008`; the corpus came from `tools/make_codec_corpus.sh` in scratch, its `test.flac` again 131601 bytes. The user's account that one-wire and two-wire cannot be combined because the board's modules are powered from one input or the other is recorded as `BRD-007`, marked inferred because no written record of the earlier attempts was found in Tang-Control, Tang-Phosphor or Tang-PSX. Nothing in this repository or in Tang-Phosphor's tracked files changed, and the user did not report whether the tone was heard, so the user test is recorded as not run although every figure was read back from the core. For the agent taking over, the live state is this: the BL616 firmware is `e912c5d-dirty.3417d90`, built from the source of `6c01152`; the card holds the left-alt menu and NES cores of entry 24 with the previous images beside them as `.bak`, `/scripts/phosphor.tdsh`, `/ae350/resident.tpi` and the twelve-file corpus in `/music`; and the board was last left in one-wire with the Phosphor core in SRAM, so a cold power-up with the power input is needed before any TinyTang tool will find `/dev/ttyACM0`. Every host tool now refuses to send unless the firmware's status probe answers 1 (`TOOL-011`), and that rule is the one to keep: a byte sent while the desktop is up is a keystroke. The core-syntax audit required by the change to these files was performed: `.ai/core.md` and `.ai/core-syntax.md` were confirmed unchanged since they were re-read in this session, the complete `.ai/` diff was inspected and adds `BRD-007`, `TOOL-013` and `PHOS-008` with their routing rows and index lines and this entry, with no deletions, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+Return the board to two-wire with a cold power-up on the power input and confirm the status probe answers 1 before sending anything. The agreed work then continues with Phosphor following the NES core's model: add the desktop layer, the keyboard link and F12 to Tang-Phosphor's core, logging that work in Tang-Phosphor's own `core-log.md` and not reading its `core.md`, and settle the keyboard link's baud, which differs between the two projects (750k against 281250); one-wire is now the fastest way to iterate on that core by itself. After it come a background playback task on the BL616 in place of the blocking `phosphor play`, and a Phosphor app in TinyDesk with a file list of `/music`, now-playing, a progress bar, transport buttons and a status line; playlists and gapless playback are deferred. Smaller open items are the 5 Mbaud switch over one-wire, the resident player's unexplained layout hang (`PHOS-007`), what signal selects one-wire at power-up, a single command to run all the host test scripts, and removing the `.bak` cores once the user is satisfied.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

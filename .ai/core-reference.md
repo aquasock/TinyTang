@@ -132,6 +132,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What is the onboard USB debug bridge? | BRD | BRD-004 |
 | Does the board need a particular power input? | BRD | BRD-005 |
 | What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
+| Can one-wire and two-wire run together? | BRD | BRD-007 |
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
 | Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-003 |
@@ -181,6 +182,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How does the Phosphor core receive cover art? | PHOS | PHOS-005 |
 | Does the merged Phosphor core decode WAV or FLAC in the FPGA? | PHOS | PHOS-006 |
 | Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
+| Which resident player image is the qualified one, and how is it rebuilt? | PHOS | PHOS-008 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-003 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-012, TDESK-003 |
@@ -201,6 +203,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-008 |
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
+| How is a core deployed, debugged and exercised entirely over one-wire? | TOOL | TOOL-013 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-004 |
@@ -230,6 +233,7 @@ BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2
 BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB Debugger'), a separate USB path from the BL616's CDC"
 BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
 BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered"
+BRD-007: "One-wire and two-wire cannot be combined: by the user's account the board's modules are powered from one input or the other, never both, and making the two work together was tried at length in the earlier projects without success; no written record of that work was found"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
 PMOD-003: "Socket control register 0x10: bit 0 renderer, bits 4-7 PMOD0 personality and 8-11 PMOD1, bits 12/13 upside-down; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2; 0x14 is scratch"
@@ -297,6 +301,7 @@ TOOL-009: "Superseded by TOOL-011. Recorded the console's input as exclusive and
 TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
 TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
 TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 (openFPGALoader -c ft2232; --detect reads 0x0001081b and changes nothing; an SRAM load must be .fs, not .bin) and the FPGA UART on interface 1 (/dev/ttyUSB1, 2 Mbaud, the same 0xAA frames as the BL616 link); no shell, desktop, boot script or TinyTang tool runs, and reaching it takes a cold power-up that also restarts the FPGA, so it cannot inspect a state reached under TinyDesk"
+TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs over JTAG with Tang-Phosphor's scripts/flash-otg.sh (17 s for the merged Phosphor image), then identify, peek, poke and stream to it on /dev/ttyUSB1 at 2 Mbaud with tools/fpga_uart.py and scripts/play_stream.py; an MP3 played through the AE350 this way gave 441000 samples, 0 underruns, 44100 Hz"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -309,6 +314,7 @@ PHOS-004: "FLAC is sent as fLaC with STREAMINFO marked as the last metadata bloc
 PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL616 and uploaded to an inactive FPGA bank before one atomic commit; the audible-stream register 0xa4 gates the display change"
 PHOS-006: "The merged Phosphor core's FPGA player is pcm_sink, a raw-PCM sink with no WAV or FLAC parser; it takes its rate from the AE350's last play_rate, latched at stream start, so a file streamed straight to it plays its bytes as samples at that rate, and every file must go through the resident AE350 player"
 PHOS-007: "A resident AE350 player hangs at the start of its first decode depending on its image layout: a null jump, RAM-bridge ERROR responses from address 0 and no return; the streamed player needs 16 bytes where an input would go (0 and 32 hang, 16 and 48 play), which Tang-Phosphor's Makefile now reserves; the cause is not found"
+PHOS-008: "The qualified resident player is 863764 bytes, CRC-32 ef1502ed, built by make -C software/rbhost bench-universal BENCH_NAME=resident with ~/.cache/tangcore-dev/toolchain/bin (Xuantie GCC 10.2.0) on PATH; the image left in Tang-Phosphor's build/rbhost/bench was the 863748-byte 3d762d13 that hangs (PHOS-007), so a player is rebuilt and its CRC checked before use"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
 PROV-004: "TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
@@ -484,6 +490,18 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Observed on this board, 2026-10-05: lsusb and udevadm on the host after each change; the TinyTang status probe (TOOL-011) before and after the power cable was removed"
     - "TCTL-005: Tang-Control's names for the modes"
   verification: "Each path observed once on 2026-10-05: power cable removed while running (CDC stayed as device 36, probe answered 1); cold start on the OTG cable alone (FT2232 enumerated, CDC absent, user saw the TangCore splash); cold start with both cables (CDC back as device 38, probe answered 1). Two-wire cold starts with both cables have come back as TinyTang throughout this project. Inferred rather than verified because the selection mechanism has no source and each one-wire start was seen once."
+
+- record_id: BRD-007
+  kind: BOARD
+  topic_id: BRD
+  title: "One-wire and two-wire are exclusive; they cannot be made to work together"
+  status: INFERRED
+  verified_date: 2026-10-05
+  statement: "By the user's account, the Tang Console's modules are powered from one input or the other and never from both at once, so the board is in exactly one of the two modes BRD-006 describes, and combining them -- the CDC console and the FT2232 debugger at the same time -- is a power-delivery limit rather than a firmware one. The user recalls trying at length in the earlier projects to make one-wire and two-wire work together, without success."
+  consequence: "Do not spend a cycle trying to run TinyTang and the FT2232 debugger together, or to reach the FPGA's JTAG or UART from the host while TinyTang runs. Pick the mode for the job: two-wire for anything involving TinyTang, TinyDesk or the card; one-wire for a core on its own (TOOL-013)."
+  sources:
+    - "User statement, 2026-10-05: 'we spend a lot of time trying to figure out how to get 1 and 2 wire to work together already. its a no go. Its a power deliver issue if i recall ... the actually devices/modules are powered 1 or the other, not both.'"
+  verification: "Not instrumented, and no written record was found: Tang-Control's README and .ai files, Tang-Phosphor's and Tang-PSX's core-reference.md and core-log.md were searched for the power finding on 2026-10-05 and hold nothing on it. Consistent with BRD-006, where every observed state was one mode or the other."
 
 - record_id: BL6-001
   kind: SOC
@@ -1239,6 +1257,20 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's ports/bl616/tang_fpga_link.h: the frame layout and FPGA_CMD_CORE_ID 0x01"
   verification: "JTAG detect and the core-ID round trip were run on this board on 2026-10-05 with no change to the FPGA, which answered core 0 before and after. The .fs requirement is Tang-Phosphor's finding and was not repeated here, since no core was loaded over one-wire."
 
+- record_id: TOOL-013
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The one-wire core loop: deploy over JTAG, then debug and exercise over the UART"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "With the board in one-wire mode (BRD-006) a core is deployed, debugged and exercised from the host with no BL616 firmware involved. Deploy: Tang-Phosphor's scripts/flash-otg.sh <image>.fs runs oss-cad-suite's openFPGALoader v1.1.1 with -b tangmega138k and loads SRAM; the merged place3 image (build/merged/place3/tang_phosphor_merged.fs, 39929717 bytes, whose .bin twin is the card's phosphortang.bin at 4987082 bytes) loaded in 17 s. The script has no execute bit, so it is run with bash. Identify: AA 00 01 01 on /dev/ttyUSB1 at 2 Mbaud answered AA 00 02 01 50, core 0x50. Debug: tools/fpga_uart.py peek and poke work over the extended 0x10 channel; the scratch register 0x0020 (docs/debug-registers.md) took 0xC0FFEE42 and 0x12345678 and read both back, and was restored to 0. Exercise: scripts/play_stream.py --tpi <player> --input <file> sets cpu_mode, restarts the AE350 loader, streams the player and then the file, and polls 0x4020 for the run to complete; the qualified player (PHOS-008) took 10.1 s and a 402304-byte test.mp3 4.0 s, and the core then reported 441000 samples played at 0x68, 0 underruns at 0x6c and 44100 Hz at 0x70, with one completed run in 0x4020."
+  consequence: "This is the loop for working on a core by itself: rebuild, SRAM-load, peek and poke its registers, stream to it, all without touching the card or reflashing anything, and a power cycle with the power input returns the board to TinyTang with the core gone, since SRAM loads are volatile. At 2 Mbaud the link moves about 85 KB/s, so the player upload dominates; the extended channel's baud switch to 5 Mbaud (EXTCTL-001 opcode 0x03) is the next speed-up and has not been tried in one-wire. Two cautions carry over from Tang-Phosphor: a .bin does not start the FPGA (TOOL-012), and the player image must be the qualified one (PHOS-008). The MP3 result equals Tang-Phosphor entry 43's figure for the same file. Whether the tone was heard cleanly was not reported by the user."
+  sources:
+    - "Tang-Phosphor at 9e6f183: scripts/flash-otg.sh, scripts/play_stream.py, tools/fpga_uart.py, docs/debug-registers.md"
+    - "This project's tools/make_codec_corpus.sh, which regenerated test.mp3 (402304 bytes) and test.flac (131601 bytes, the size Tang-Phosphor entry 69 recorded)"
+    - "Observed on this board, 2026-10-05"
+  verification: "Every step above was run on this board on 2026-10-05 in one-wire mode with the reported figures read back over the UART."
+
 - record_id: TCTL-004
   kind: EXTERNAL
   topic_id: TCTL
@@ -1487,6 +1519,19 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Tang-Phosphor 1b313fe, software/rbhost/Makefile: the stream-mode input change"
     - "Tang-Phosphor src/ae350/ae350_exts_regs.sv: the loader state, log, bridge counter and bridge trace registers read here"
   verification: "Reproduced on this board on 2026-10-05 over TinyTang's phosphor command: the unpadded player hung on three runs and a 32-byte-padded one on one; 16- and 48-byte-padded players played on every run, and the Makefile-built player passed the full sweep. The cause was not found."
+
+- record_id: PHOS-008
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "The qualified resident player image, and the stale one left in Tang-Phosphor's build directory"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Tang-Phosphor's fixed Makefile (entry 69, 9e6f183) builds the resident AE350 player as 863764 bytes with CRC-32 ef1502ed, payload CRC-32 d8ea32ff, load and entry 0x40000000: make -C software/rbhost bench-universal BENCH_NAME=resident, with ~/.cache/tangcore-dev/toolchain/bin on PATH, since riscv64-unknown-elf-gcc (Xuantie-900 elf newlib V2.6.1, GCC 10.2.0) is not on the default PATH and the build fails with 'No such file or directory' without it. The image found in build/rbhost/bench/resident.tpi before that rebuild was dated 2026-10-02 and was 863748 bytes, CRC-32 3d762d13: the layout that hangs (PHOS-007)."
+  consequence: "build/ is ignored by Tang-Phosphor's git, so a player sitting there says nothing about the tree it came from. Rebuild it and check the size and CRC before streaming it, over one-wire or onto the card. The rebuild reproduced entry 69's image byte for byte, which also confirms the build is deterministic."
+  sources:
+    - "Tang-Phosphor core-log entry 69 and software/rbhost/Makefile at 9e6f183"
+    - "The rebuild on 2026-10-05: tools/ae350_run.py pack's report and zlib.crc32 of the output"
+  verification: "Rebuilt on 2026-10-05 and played on this board over one-wire (TOOL-013), completing with zero underruns."
 
 - record_id: PMOD-001
   kind: BOARD
