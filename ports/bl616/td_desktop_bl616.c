@@ -367,7 +367,10 @@ static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
 
+    /* The pointer is the desktop's, and only for as long as it runs. */
+    tang_osd_desk_set_pointer(true);
     desktop_run();
+    tang_osd_desk_set_pointer(false);
 
     tdsh_printf("\r\ndesktop: exited\r\n");
     return 0;

@@ -60,6 +60,7 @@ static unsigned    s_cells;
 static unsigned    s_rows;
 static unsigned    s_dropped;
 static bool        s_toggle_prev;    /* F12 was down at the last poll */
+static volatile bool s_pointer;      /* the desktop is running; see the header */
 
 static uint8_t     s_payload[TANG_DESK_COLS * 5];
 
@@ -174,7 +175,9 @@ static bool send_cells(const uint8_t *cells, size_t count)
  * real cell back.  Nothing has to remember where the pointer used to be. */
 static td_vcell_t pointer_cell(const td_vcell_t c, int x, int y)
 {
-    if (x != s_pad.x || y != s_pad.y) {
+    /* No pointer, no highlight.  The cell it last sat on now differs from
+     * the shadow, so the next poll puts the real cell back by itself. */
+    if (!s_pointer || x != s_pad.x || y != s_pad.y) {
         return c;
     }
     td_vcell_t p = c;
@@ -375,11 +378,17 @@ static void desk_poll(void)
     const bool key_toggle = toggle_pressed(rep);
 
     if (tang_osd_shown()) {
-        char seq[96];
-        bool ignored = false;
-        const int n = tang_pad_step(&s_pad, joy1, seq, sizeof(seq), &ignored);
-        if (n > 0) {
-            desk_in_push(seq, n);
+        if (s_pointer) {
+            char seq[96];
+            bool ignored = false;
+            const int n = tang_pad_step(&s_pad, joy1, seq, sizeof(seq), &ignored);
+            if (n > 0) {
+                desk_in_push(seq, n);
+            }
+        } else {
+            /* Console mode: the pad moves nothing, and its mouse reports would
+             * reach the shell as text.  Tracking it keeps L's edge. */
+            s_pad.prev = joy1;
         }
 
         /* Then the keyboard, if the core has one.  After the pointer, so that
@@ -537,6 +546,11 @@ int tang_osd_desk_set(bool on)
 bool tang_osd_desk_enabled(void)
 {
     return s_enabled;
+}
+
+void tang_osd_desk_set_pointer(bool on)
+{
+    s_pointer = on;
 }
 
 int tang_osd_desk_command(int argc, char **argv)

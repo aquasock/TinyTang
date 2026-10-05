@@ -441,3 +441,34 @@ F12 now flips the overlay from the keyboard as L already did from the pad, at th
 - User Test: PASS
 
 ---
+## 15 COMMIT Unreleased 2026-10-04T22:34:08-07:00
+
+#### Coming From:
+
+Unreleased c9ce9bb
+
+#### Purpose:
+
+Remove the pointer from console mode, so that at the bare prompt nothing is drawn, nothing moves and right-alt with the arrows does nothing.
+
+#### Outcome:
+
+The pointer now exists only while the desktop runs. `ports/bl616/tang_osd_desk.c` gained `tang_osd_desk_set_pointer()`, and `cmd_desktop` in `ports/bl616/td_desktop_bl616.c` turns it on immediately before `desktop_run()` and off when it returns. With it off, `pointer_cell()` returns the plain cell, so the highlighted cell is not drawn and the shadow diff repaints whatever it last sat on, and the shown branch of `desk_poll()` no longer runs `tang_pad_step()`, so the D-pad and right-alt with the arrows move nothing and no SGR mouse reports reach the shell -- the rough edge entries 11 and 12 recorded, closed by removing the pointer rather than by a second input ring, at the user's direction. The pad's previous state is still tracked, so L's edge and F12 keep working, and right-alt with the arrows, Enter or Esc types nothing at the prompt because the core already withholds those usages from the report while right-alt is held (patch 0006); no core change was needed. The firmware built clean at 321632 bytes, MD5 `3161da57f2312d2815e9afeecaeef758`, went to the card with `tangput` after the absolute-position check and was installed with `tangflash`, and the user confirms all three tests pass: no pointer and no movement at the console, a working pointer in the desktop, and none again after exiting it. One observation is recorded rather than explained: this time `tangflash` came back up on the TinyTang CDC console within seconds, with uptime restarting, instead of presenting the FT2232 as `FLS-001` says a soft reset does and as the previous two installs did, so the image that ran before the user's power cycle could not be identified from the host -- the board reports no build identity and the image's embedded date stamp comes from an unchanged file -- and the user's test after the power cycle is what establishes the new firmware is running. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and is this entry alone, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The `tangflash` reset that returned straight to the console contradicts `FLS-001` and should be watched on the next install; if it recurs, `FLS-001` needs a correcting record, and a build identity the board can report would make an install verifiable from the host rather than by behaviour. `TDESK-010` remains a candidate upstream issue, and the menu core not being the boot core and `osd term` drawing a page the menu core no longer has remain as entries 10 and 11 left them.
+
+#### Files Modified:
+
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_osd_desk.h
+- ports/bl616/td_desktop_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
