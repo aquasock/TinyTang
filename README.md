@@ -55,14 +55,20 @@ is called out in the source where it is used.
   link's liveness proof. This project's cores answer 1; the core the FPGA comes
   up with on its own answers 0.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
-- **`phosphor caps | peek | poke | play | stats`** drives a loaded
+- **`phosphor caps | peek | poke | play | status | stop | stats`** drives a loaded
   Tang-Phosphor core over its extended protocol (register access on frame
   type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
   plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
   Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
   resident Rockbox player `/ae350/resident.tpi` onto the core's AE350 and
-  streaming the file to it, then waits for the track to finish; Ctrl-C stops
-  the wait, and `nowait` returns as soon as the file is sent. The core,
+  streaming the file to it. A playback task owns the track, so the shell is
+  free: `nowait` returns at once and the track plays in the background, while
+  plain `play` waits for it and Ctrl-C stops the track itself, not just the
+  wait. `phosphor status` shows the state (idle, loading, playing, ended,
+  stopped, failed), the file, elapsed time, samples, rate and underruns;
+  `phosphor stop` silences the track at once and restarts the AE350. A new
+  `play` replaces the current track, and `tangload` stops it before it
+  reprograms the FPGA. The core,
   `/cores/console138k/phosphortang.bin`, carries the desktop layer, the
   keyboard link and F12 the way the NES core does, so it runs under TinyDesk
   with the layer left on. The merged core has no WAV or FLAC decoder in the
@@ -235,8 +241,9 @@ STM32's own DFU bootloader.
   - `td_desktop_bl616.c` — the TinyDesk port and the `desktop` command.
   - `td_bridge_bl616.c` — the shell inside TinyDesk's Terminal window.
   - `phosphor/` — the Tang-Phosphor host side, ported from Tang-Control: the
-    extended-protocol transport, the resident AE350 player loader, and the
-    `phosphor` command.
+    extended-protocol transport, the resident AE350 player loader, the
+    background playback task (`phosphor_player.cpp`, with its end-of-track rule
+    in `phosphor_track.h`), and the `phosphor` command.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every

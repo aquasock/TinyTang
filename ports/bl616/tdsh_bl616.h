@@ -57,6 +57,9 @@ int  tdsh_bl616_run_until(volatile const bool *stop);
  * with NULL, NULL.  Only one shell runs at a time, so one redirect is enough. */
 void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
                                 int (*write_fn)(const void *data, size_t length));
+/* One byte of the shell's input -- the Terminal window, the desk keyboard or
+ * USB, wherever the shell is being typed at -- or -1; never blocks. */
+int  tdsh_bl616_input_read_byte(void);
 /* The redirected terminal's width, for the line editor to wrap at (TinyDesk
  * Shell 0.1.4's columns()); 0 when it is not known. */
 void tdsh_bl616_terminal_set_columns(int cols);

@@ -6,5 +6,11 @@
 // full_path (a FatFS path such as "/sd/music/track.flac"), leaving cpu_mode
 // set so the decoded PCM reaches the pcm_sink and playback proceeds
 // asynchronously.  Returns true on success.  On failure returns false and,
-// when error_out is non-null, sets it to a short message.
-bool ae350_play_file(const char *full_path, const char **error_out);
+// when error_out is non-null, sets it to a short message.  `cancel`, when
+// given, is polled between stream frames of both files, as fpga_file_stream
+// does; a cancelled send fails with "cancelled".
+#include "fpga_file_stream.h"
+
+bool ae350_play_file(const char *full_path, const char **error_out,
+                     fpga_file_stream_cancel cancel = nullptr,
+                     void *cancel_context = nullptr);

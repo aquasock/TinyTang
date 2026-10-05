@@ -870,3 +870,44 @@ The next step of the agreed sequence is a background playback task on the BL616 
 - User Test: PASS
 
 ---
+
+## 27 COMMIT Unreleased 2026-10-05T15:35:51-07:00
+
+#### Coming From:
+
+Unreleased 8071e09
+
+#### Purpose:
+
+Replace the blocking `phosphor play` with a background playback task on the BL616, so a track on the Phosphor core can be started, watched and stopped from the shell or TinyDesk's Terminal while the shell stays free.
+
+#### Outcome:
+
+Before any change the baseline on `aafca8e-dirty.a7d2d8d` passed: `tools/phosphor_format_sweep.py` played all thirteen tracks with zero underruns at the expected rates, and every host test script passed. The new `ports/bl616/phosphor/phosphor_player.cpp` runs a task, `phosplay`, that owns the track: a play request claims the status at once and the task sends the player and file through `ae350_play_file`, which now takes the file stream's cancel callback, and then reads the loader and sink registers every 250 ms, deciding the end of the track with `phosphor_track.h`, a header-only port of the old blocking wait's rules that `tools/tests/phosphor_track_test.cpp` checks on the host through `test_phosphor_frames.sh`. `phosphor play` still waits by default and prints the old completion line unchanged, so the sweep needs no change; `nowait` returns at once; `phosphor status` reports idle, loading, playing, ended, stopped or failed with the file, elapsed time from samples and rate, underruns and the send time; and `phosphor stop`, Ctrl-C during a waited play, a new play and `tangload` (through `tang_phosphor_core_replacing` in `tdsh_tang_flash.c`) all stop the track by pausing the sink and restarting the AE350, where the old Ctrl-C only ended the wait and left the audio playing. Hardware testing found two faults in the sink's behaviour on a stop, recorded as `PHOS-009`: left unpaused, the next track counted its whole load as underruns (168717 on one track), because the stopped sink stays in its playing state and the count clears only with the core; and held paused, the next track never started, because the stopped track's samples stay queued ahead of its START. The task therefore drains that tail at the next play, at most about 58 ms of the old track and audible, then holds the sink paused until the START count at 0x30 moves, and reports underruns as a per-track difference. The user's first test under TinyDesk then found that Ctrl-C did not stop a waited play in the Terminal, because the wait read only the USB console; the shell's input routing is now `tdsh_bl616_input_read_byte` in `tdsh_platform_bl616.c`, used by both the shell's read and the wait. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` without new warnings, giving `tinytang_bl616.bin` at 337984 bytes, MD5 `ef0763d2da9066fe0bfad287a887ed37`, build identity `8071e09-dirty.0dccbf7`, installed with `tools/tinytang_flash.py` and confirmed by `platform` after a power cycle. On it Ctrl-C over USB stopped a waited play, the sweep passed again with zero underruns, and every host test passed. The user then reported every test passing under TinyDesk: the script's track with F12 and typing in the Terminal during it, `phosphor status` and `phosphor stop`, Ctrl-C stopping a waited play in the Terminal, a new track replacing a playing one, and `tangload` during a track. The README describes the new commands. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and `git diff` confirms it unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds only this entry and the `PHOS-009` record with its question row and index line, and `tools/check_core_log.py` reports every entry conforming in this log and in Tang-Phosphor's.
+
+#### Next Steps:
+
+The next step of the agreed sequence is the Phosphor app in TinyDesk, with a file list of `/music`, now-playing, a progress bar, transport buttons and a status line, built on the playback task's status; the core reports no track duration (`PHOS-009`), so the progress bar needs a duration from the BL616 or the player, or shows elapsed time only. Packaging the desktop-layer integration as a kit for other cores can follow it. The `.bak` cores on the card can be removed once the user is satisfied with the new ones, and entry 25's open items stand: the 5 Mbaud switch over one-wire, the resident player's layout hang (`PHOS-007`), what selects one-wire at power-up, and a single command to run all the host test scripts.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- ports/bl616/phosphor/phosphor_player.cpp
+- ports/bl616/phosphor/phosphor_player.h
+- ports/bl616/phosphor/phosphor_track.h
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- tools/tests/phosphor_track_test.cpp
+- tools/tests/test_phosphor_frames.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

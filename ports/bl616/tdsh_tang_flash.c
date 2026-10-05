@@ -337,6 +337,9 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
  * on this board: the .bin is a bitstream, not anything the BL616 executes. */
 bool fpga_program(const char *fname);
 
+/* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
+void tang_phosphor_core_replacing(void);
+
 static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
 {
     if (argc < 2) {
@@ -348,6 +351,10 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
         tdsh_printf("tangload: bad path %s\r\n", argv[1]);
         return 1;
     }
+
+    /* A track playing on a Phosphor core is stopped while that core can still
+     * be told, so the playback task never talks to the core that replaces it. */
+    tang_phosphor_core_replacing();
 
     tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
     const bool ok = fpga_program(real);

@@ -43,7 +43,8 @@ bool read32(uint32_t address, uint32_t *value)
 
 } // namespace
 
-bool ae350_play_file(const char *full_path, const char **error_out)
+bool ae350_play_file(const char *full_path, const char **error_out,
+                     fpga_file_stream_cancel cancel, void *cancel_context)
 {
     // The resident player loops forever once loaded: the loader stays in RUN
     // state (0x03) while the player waits for the next stream and while it
@@ -94,7 +95,7 @@ bool ae350_play_file(const char *full_path, const char **error_out)
             return false;
         }
 
-        const fpga_file_stream_result player = fpga_file_stream(PLAYER_TPI);
+        const fpga_file_stream_result player = fpga_file_stream(PLAYER_TPI, cancel, cancel_context);
         if (player.status != fpga_file_stream_status::OK) {
             if (error_out != nullptr)
                 *error_out = fpga_file_stream_status_text(player.status);
@@ -102,7 +103,7 @@ bool ae350_play_file(const char *full_path, const char **error_out)
         }
     }
 
-    const fpga_file_stream_result audio = fpga_file_stream(full_path);
+    const fpga_file_stream_result audio = fpga_file_stream(full_path, cancel, cancel_context);
     if (audio.status != fpga_file_stream_status::OK) {
         if (error_out != nullptr)
             *error_out = fpga_file_stream_status_text(audio.status);

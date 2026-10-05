@@ -183,6 +183,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Does the merged Phosphor core decode WAV or FLAC in the FPGA? | PHOS | PHOS-006 |
 | Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
 | Which resident player image is the qualified one, and how is it rebuilt? | PHOS | PHOS-008 |
+| How is a track stopped on the merged core, and what do the sink's counters mean? | PHOS | PHOS-009 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-003 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-012, TDESK-003 |
@@ -315,6 +316,7 @@ PHOS-005: "Cover art is a baseline JPEG centre-fitted to 92x92 RGB332 on the BL6
 PHOS-006: "The merged Phosphor core's FPGA player is pcm_sink, a raw-PCM sink with no WAV or FLAC parser; it takes its rate from the AE350's last play_rate, latched at stream start, so a file streamed straight to it plays its bytes as samples at that rate, and every file must go through the resident AE350 player"
 PHOS-007: "A resident AE350 player hangs at the start of its first decode depending on its image layout: a null jump, RAM-bridge ERROR responses from address 0 and no return; the streamed player needs 16 bytes where an input would go (0 and 32 hang, 16 and 48 play), which Tang-Phosphor's Makefile now reserves; the cause is not found"
 PHOS-008: "The qualified resident player is 863764 bytes, CRC-32 ef1502ed, built by make -C software/rbhost bench-universal BENCH_NAME=resident with ~/.cache/tangcore-dev/toolchain/bin (Xuantie GCC 10.2.0) on PATH; the image left in Tang-Phosphor's build/rbhost/bench was the 863748-byte 3d762d13 that hangs (PHOS-007), so a player is rebuilt and its CRC checked before use"
+PHOS-009: "The merged core's pcm_sink has no stop: an AE350 restart (0x43f0) ends the decode and pause (0x78 bit 0) silences it, but the sink stays in its playing state, and the stopped track's samples (up to 2048 in the sink and 512 in the AE350 stream queue) stay queued ahead of the next START, so a sink kept paused never takes that START; underruns (0x6c) clear only with the core, 0x30 counts STARTs, and elapsed and duration (0x8c, 0x90) read 0"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
 PROV-004: "TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
@@ -1532,6 +1534,18 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Tang-Phosphor core-log entry 69 and software/rbhost/Makefile at 9e6f183"
     - "The rebuild on 2026-10-05: tools/ae350_run.py pack's report and zlib.crc32 of the output"
   verification: "Rebuilt on 2026-10-05 and played on this board over one-wire (TOOL-013), completing with zero underruns."
+
+- record_id: PHOS-009
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "Stopping a track on the merged core's pcm_sink, and what its counters report"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "pcm_sink.sv takes a stream's samples into a 2048-sample FIFO (FIFO_ADDRESS_WIDTH 11, not the 16384 docs/debug-registers.md gives for 0x64), fed by ae350_play_stream.sv's 512-entry queue, whose entries (data, start, end, cancel) leave strictly in order. Only the AE350 player can queue a cancel; the BL616 can restart the AE350 (0x43f0) and pause the sink (0x78 bit 0, which stops consumption and outputs silence), and neither clears the sink, which remains in its playing state with what was queued. Unpaused and empty in that state it counts an underrun every sample period; paused and full it accepts nothing, so the next track's START, queued behind the old samples, never arrives. The FIFO and the byte assembler clear only on a START or cancel. The underrun count at 0x6c is cleared only by the core's reset, although the register map describes it as per stream. 0x30 counts STARTs since the core loaded. 0x8c and 0x90, elapsed and duration, are tied to 0."
+  consequence: "ports/bl616/phosphor/phosphor_player.cpp stops a track by pausing the sink and restarting the AE350, and at the next play unpauses until the stale tail has drained (0x64 at 0 and 0x68 still), pauses again, and lifts the pause when 0x30 moves; it reports underruns as the difference from the start of the track. The drained tail, at most about 58 ms of the old track, is heard at the start of the next play. Elapsed time is computed from 0x68 and 0x70, and a track's duration is not available from the core, which bounds the TinyDesk Phosphor app's progress display."
+  sources:
+    - "Tang-Phosphor src/audio/pcm_sink.sv, src/ae350/ae350_play_stream.sv, src/ae350/ae350_subsystem.sv, src/stream/stream_debug_sink.sv and docs/debug-registers.md"
+  verification: "On this board on 2026-10-05: with the sink held paused across the next load, the track never started and the stuck queue read 0x64 = 2048 with 0x30 unmoved; unpausing drained 2562 samples. Without the hold, a track after a stop reported 168717 underruns. With drain and hold, tracks after a stop and after a replacement played with 0 underruns, and the format sweep passed (core-log entry 27)."
 
 - record_id: PMOD-001
   kind: BOARD

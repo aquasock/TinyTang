@@ -176,46 +176,55 @@ void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
     s_term_write = write_fn;
 }
 
+/* One byte of the shell's input, or -1 if none is waiting.  Commands that
+ * watch for Ctrl-C while they run read here, so a key reaches them from
+ * wherever the shell itself is being typed at. */
+int tdsh_bl616_input_read_byte(void)
+{
+    /* Three sources, in the only order that keeps a single reader on the
+     * stream.  The desktop's Terminal takes it while the desktop is up.
+     * Otherwise, if the layer is up, take the layer's ring -- that is
+     * console mode, and the ring is where the keyboard link's typing
+     * lands, through the same path the desktop reads, so the keyboard
+     * types at the prompt without the desktop running.  Otherwise the CDC,
+     * so a host can still type.
+     *
+     * The order is the point: while the desktop owns the console it is the
+     * only reader, exactly as TOOL-009 requires of a transfer.  The ring
+     * also carries the pointer's reports and the emulator's answers, which
+     * the desktop consumes; in console mode a pointer move reaches the
+     * shell as a mouse report, which is odd but harmless, and no plain
+     * keystroke produces one. */
+    int b;
+    if (s_term_read) {
+        b = s_term_read();
+    } else if (tang_osd_desk_enabled()) {
+        /* Console mode: the keyboard first, then the host.
+         *
+         * These must not be exclusive, and making them so was a real bug:
+         * treating the ring as a replacement for the CDC left the console
+         * unreachable from the host the moment the layer came up, and
+         * silently -- the shell simply stopped reading, so a keystroke from
+         * the host produced no echo and no prompt, with nothing to say why.
+         * The desktop's Terminal is different: it *owns* the console, which
+         * is why the s_term_read case above is exclusive.  Here both are
+         * ways of typing at one prompt, so the ring leads and the CDC
+         * catches what it does not have. */
+        b = tang_osd_desk_read_byte();
+        if (b < 0) {
+            b = tdsh_bl616_console_read_byte();
+        }
+    } else {
+        b = tdsh_bl616_console_read_byte();
+    }
+    return b;
+}
+
 static int bl616_terminal_read_byte(void *context, uint8_t *byte_out)
 {
     (void)context;
     for (;;) {
-        /* Three sources, in the only order that keeps a single reader on the
-         * stream.  The desktop's Terminal takes it while the desktop is up.
-         * Otherwise, if the layer is up, take the layer's ring -- that is
-         * console mode, and the ring is where the keyboard link's typing
-         * lands, through the same path the desktop reads, so the keyboard
-         * types at the prompt without the desktop running.  Otherwise the CDC,
-         * so a host can still type.
-         *
-         * The order is the point: while the desktop owns the console it is the
-         * only reader, exactly as TOOL-009 requires of a transfer.  The ring
-         * also carries the pointer's reports and the emulator's answers, which
-         * the desktop consumes; in console mode a pointer move reaches the
-         * shell as a mouse report, which is odd but harmless, and no plain
-         * keystroke produces one. */
-        int b;
-        if (s_term_read) {
-            b = s_term_read();
-        } else if (tang_osd_desk_enabled()) {
-            /* Console mode: the keyboard first, then the host.
-             *
-             * These must not be exclusive, and making them so was a real bug:
-             * treating the ring as a replacement for the CDC left the console
-             * unreachable from the host the moment the layer came up, and
-             * silently -- the shell simply stopped reading, so a keystroke from
-             * the host produced no echo and no prompt, with nothing to say why.
-             * The desktop's Terminal is different: it *owns* the console, which
-             * is why the s_term_read case above is exclusive.  Here both are
-             * ways of typing at one prompt, so the ring leads and the CDC
-             * catches what it does not have. */
-            b = tang_osd_desk_read_byte();
-            if (b < 0) {
-                b = tdsh_bl616_console_read_byte();
-            }
-        } else {
-            b = tdsh_bl616_console_read_byte();
-        }
+        int b = tdsh_bl616_input_read_byte();
         if (b >= 0) {
             *byte_out = (uint8_t)b;
             return 0;
