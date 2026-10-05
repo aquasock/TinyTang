@@ -158,6 +158,9 @@ static const tdsh_platform_api_t s_platform = {
  * drains rather than to the USB CDC.  One redirect is enough: only one shell
  * runs at a time, because while the desktop is up the outer shell is parked
  * inside the command that started it and is neither reading nor writing. */
+/* The layer's ring, for console mode: see bl616_terminal_read_byte. */
+#include "tang_osd_desk.h"
+
 static int  (*s_term_read)(void);
 static int  (*s_term_write)(const void *data, size_t length);
 
@@ -172,7 +175,28 @@ static int bl616_terminal_read_byte(void *context, uint8_t *byte_out)
 {
     (void)context;
     for (;;) {
-        int b = s_term_read ? s_term_read() : tdsh_bl616_console_read_byte();
+        /* Three sources, in the only order that keeps a single reader on the
+         * stream.  The desktop's Terminal takes it while the desktop is up.
+         * Otherwise, if the layer is up, take the layer's ring -- that is
+         * console mode, and the ring is where the keyboard link's typing
+         * lands, through the same path the desktop reads, so the keyboard
+         * types at the prompt without the desktop running.  Otherwise the CDC,
+         * so a host can still type.
+         *
+         * The order is the point: while the desktop owns the console it is the
+         * only reader, exactly as TOOL-009 requires of a transfer.  The ring
+         * also carries the pointer's reports and the emulator's answers, which
+         * the desktop consumes; in console mode a pointer move reaches the
+         * shell as a mouse report, which is odd but harmless, and no plain
+         * keystroke produces one. */
+        int b;
+        if (s_term_read) {
+            b = s_term_read();
+        } else if (tang_osd_desk_enabled()) {
+            b = tang_osd_desk_read_byte();
+        } else {
+            b = tdsh_bl616_console_read_byte();
+        }
         if (b >= 0) {
             *byte_out = (uint8_t)b;
             return 0;

@@ -313,3 +313,33 @@ The physical keyboard in console mode is the next cycle, and it is the thing tha
 - User Test: PASS
 
 ---
+## 11 COMMIT Unreleased 2026-10-04T18:00:34-07:00
+
+#### Coming From:
+
+Unreleased 4413745
+
+#### Purpose:
+
+Let the physical keyboard type at the console, so console mode is a console rather than a display that only a host can type into.
+
+#### Outcome:
+
+The gap was that the keyboard had exactly one consumer: `tang_key_step` was called from `tang_osd_desk.c` alone, on the desktop's input path, so with the desktop not running the board read the keys and did nothing with them, and the prompt took input only from the CDC. The fix is routing rather than a driver, and it is one expression: `bl616_terminal_read_byte` in `ports/bl616/tdsh_platform_bl616.c` now chooses between three sources -- the desktop's Terminal when it owns the console, otherwise the layer's ring when the layer is up, otherwise the CDC. Everything the branch needs already existed: `tang_key.h` states that `tang_key_step` produces "the byte stream an ANSI terminal sends", so there was no translation to write; `desk_in_push` is where those bytes already land; `tang_osd_desk_read_byte()` already drains that ring; and `tang_osd_desk_set(true)` already sets `s_enabled` and starts `desk_task`, so the poll that translates the keyboard runs whenever the layer is up, desktop or not. The source order is the load-bearing part: while the desktop owns the console it stays the only reader, which is what `TOOL-009` requires of anything sharing that stream, and the CDC stays last so a host can still type. The firmware is `2b0005a0a08d576f50cf04228d32a6d2`, 321360 bytes, flashed with `tangput` and `tangflash` and confirmed by the FT2232 signature before the power cycle. The user reports everything passes: the keyboard types at the console prompt, and the desktop comes up and takes input as before. One caveat is recorded rather than fixed: the ring also carries the pointer's reports and the emulator's answers, so in console mode a pointer move -- arrows with right-alt held -- reaches the shell as a mouse escape sequence. No plain keystroke produces one, so it is odd rather than harmful, and the clean fix if it ever matters is a ring for typing alone. This cycle also fixed the diagnostic that had been reporting the previous entry as having no sections: `tools/check_core_log.py` checks section order, numbering, types, the terminator, the Status table and the hundred-entry cap, and it was tested against a deliberately mangled copy so that a checker which only ever says "fine" cannot pass for one that works. The core-syntax audit required by the change to this log was performed with that tool rather than by hand -- it reports all eleven entries conforming -- alongside the manual steps: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, and the complete `.ai/` diff was inspected.
+
+#### Next Steps:
+
+The pointer reports reaching the shell in console mode are the one known rough edge. Otherwise nothing is pending on this cycle, and the keyboard is wired everywhere it is wanted. Two things remain open from earlier and are unchanged by this: `third_party/patches/menu/` is still the only patch set outside the numbered series, and the menu core is still not the boot core -- `boot.tdsh` loads `nestang-desk.bin`, and the menu core has been exercised by hand.
+
+#### Files Modified:
+
+- ports/bl616/tdsh_platform_bl616.c
+- tools/check_core_log.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
