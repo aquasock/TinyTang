@@ -57,6 +57,15 @@ else
     return 0
 endif
 
+# Blank the core's own text page before the layer comes up.
+#
+# A core comes out of reset with its overlay on, and while the desktop layer is
+# still off the compositor shows that page instead of the desktop -- and the
+# page's store is never initialised, so what shows is its power-on contents.
+# Clearing it here makes the gap between the core loading and the desktop
+# painting blank rather than stray characters.
+osd clear
+
 # The layer needs the overlay, which the desktop sets when it starts drawing.
 osd desk on
 if $? != 0

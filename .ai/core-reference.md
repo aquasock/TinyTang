@@ -154,6 +154,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does the screen go black when the OSD is on? | PROT | PROT-005 |
 | How could a controller navigate a menu? | PROT | PROT-006 |
 | Why can a ROM load end in a black screen with no error? | PROT | PROT-007 |
+| What shows on screen between a core loading and the desktop painting? | PROT | PROT-008 |
 | Why can't a modern keyboard work on the USB-A ports? | NEST | NEST-001, NEST-002 |
 | How does Tang-Control draw and navigate its OSD? | TCTL | TCTL-001 |
 | How does Tang-Control configure the OTG connector? | TCTL | TCTL-002 |
@@ -242,6 +243,7 @@ PROT-004: "The text page is 32 columns by 28 rows of 8x8 cells from a full ASCII
 PROT-005: "overlay selects the whole picture at the mixer (nes2hdmi.sv: if (overlay) rgb <= overlay_color), and a core comes out of reset with it on"
 PROT-006: "The core sends its joypad state as response 0x03 every 20 ms when it changes, unconditionally, whether or not anyone asked"
 PROT-007: "A ROM stream into a core that is not running is discarded with no error on either side and surfaces as a black screen; the fpga ID probe between the loads is the only detection"
+PROT-008: "A loaded core comes out of reset with the overlay asserted, and while the desktop's wide layer is still disabled the compositor shows the core's legacy 32x28 text page instead - whose store, gowin_dpb_menu.v, is never initialised, so its power-on contents are what appears; the font is initialised, which is why the garbage reads as glyphs; osd clear blanks the page (28 rows of 32 spaces) and is issued after the fpga probe in boot.tdsh and boot-cart.tdsh"
 NEST-001: "nestang's FPGA USB host is low-speed only, 1.5 Mbps, on two GPIO wires with external 15K pull-downs and a 12 MHz clock; its signalling engine is a 1072-byte ROM program"
 NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard outputs key_modifiers and key1..key4 are unconnected, so a keyboard enumerates and is discarded"
 TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
@@ -693,6 +695,21 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's scripts/boot-cart.tdsh: the sequence and the check between the two loads"
     - "PROT-002: command 0x07 for ROM data and 0x01 for the core ID"
   verification: "Exercised on this board. scripts/boot-cart.tdsh has been run on its happy path and on its guard path (TDSH-001), and the black-screen-with-audio symptom was seen before the overlay clearing of PROT-005."
+
+- record_id: PROT-008
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "Between a core loading and the desktop painting, the screen is the core's uninitialised text page"
+  status: VERIFIED
+  verified_date: 2026-10-04
+  statement: "nes2hdmi's mixer takes the desktop layer only while the wide layer is enabled *and* the overlay is asserted; with the overlay on and the layer still off it falls to the overlay colour, which iosys draws from the legacy 32x28 text page (its textdisp instance). A core comes out of reset with the overlay already on (iosys_bl616.v: `reg overlay_reg = 1`, which is PROT-005), and that page's store, src/iosys/gowin_dpb_menu.v, carries no `initial` and no `readmem` at all, so the compositor is showing its power-on contents. The font is initialised -- textdisp.v says so in as many words -- which is why those contents render as recognisable glyphs rather than as noise."
+  consequence: "Every tangload therefore shows the loaded core's own uninitialised page until something takes the screen. boot.tdsh and boot-cart.tdsh now issue `osd clear` after the fpga probe and before osd desk on; tang_osd_clear() blanks all 28 rows of 32 columns with spaces and asserts the overlay itself, so the window is blank rather than garbled. The window is longest on a core that never writes that page -- the menu core, which has no ROM menu -- and short-lived on nestang, where the firmware writes the menu into it."
+  sources:
+    - "src/nes2hdmi.sv: the rgb mixer's wide/overlay/picture priority"
+    - "src/iosys/iosys_bl616.v: `reg overlay_reg = 1` and the textdisp instance driving overlay_color"
+    - "src/iosys/gowin_dpb_menu.v: no initial block or $readmem"
+    - "ports/bl616/tang_osd.c: tang_osd_clear()"
+  verification: "Seen on this board on 2026-10-04 as stray characters between tangload and the desktop on the menu core, reported by the user and traced to the code above; cleared by adding osd clear, and the user confirmed the window is now blank."
 
 - record_id: NEST-001
   kind: EXTERNAL

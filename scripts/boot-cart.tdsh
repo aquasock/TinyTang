@@ -70,6 +70,12 @@ if $? != 0
     return 1
 endif
 
+# Blank the core's own text page.  After tangload the core is back with its
+# overlay on, and the compositor shows that uninitialised page until the ROM
+# takes the screen -- which on a core that never draws it is not a moment but
+# the whole gap.
+osd clear
+
 echo "boot-cart: streaming the rom"
 nesload "$ROM"
 if $? != 0

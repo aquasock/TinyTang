@@ -251,3 +251,33 @@ The stray-character window is the next cycle: clear the legacy page after `tangl
 - User Test: PASS
 
 ---
+## 9 COMMIT Unreleased 2026-10-04T17:09:29-07:00
+
+#### Coming From:
+
+Unreleased 9323bae
+
+#### Purpose:
+
+Close the window in which a freshly loaded core shows its own uninitialised text page instead of a blank screen.
+
+#### Outcome:
+
+The cause was established in the previous cycle and is now recorded as `PROT-008`: a core comes out of reset with the overlay asserted, the compositor falls to the overlay colour while the desktop's wide layer is still disabled, and that colour is drawn from the legacy 32x28 text page, whose store carries no initialisation -- so what shows is its power-on contents. The fix is the `osd clear` the firmware already had: `tang_osd_clear()` blanks all 28 rows of 32 columns with spaces and asserts the overlay itself, so it both makes the page blank and leaves the overlay in the state the layer needs. It is issued in `scripts/boot.tdsh` after the `fpga` probe and before `osd desk on`, and in `scripts/boot-cart.tdsh` after the probe and before `nesload`; after the probe deliberately, because the clear travels the BL616 link and the link should be proven live first. Nothing else in either script changed -- the `if`/`endif` structure is untouched and still balances at 3 and 7, which is what cycle 4 recorded for them -- and the change is one command with no control flow. Deployed with `tangput` from the host at the plain console, the console being confirmed by the absolute-position check (`PROT-008`'s window is exactly why that check matters): `/scripts/boot.tdsh` 3283 bytes and `/scripts/boot-cart.tdsh` 2745 bytes on the card, both matching their local sizes. `osd clear` prints nothing on success, so the console log could not confirm it ran; the user's eyes did. The user reports the window is blank now and TinyDesk comes up correctly, and asked for the next cycle to be a boot into console mode with `desktop` typed to switch. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, the added record was checked against the reference's field shape and family ordering and routed from the Active routing table and the Fast lookup index as well as added to the records, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The next cycle is the user's ask: boot to TinyDesk's console mode and require `desktop` to be typed to bring the desktop up. That means `boot.tdsh` stops short of running `desktop`, and the question to settle first is where the layer is enabled -- whether `desktop` becomes self-sufficient (loading the core and asserting the overlay itself) or `boot.tdsh` leaves the core loaded and the layer ready and only the final command is withheld. Nothing else is pending; `third_party/patches/menu/` remains the first patch set outside the numbered series.
+
+#### Files Modified:
+
+- scripts/boot.tdsh
+- scripts/boot-cart.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
