@@ -96,6 +96,16 @@ static int hal_write(void *ctx, const uint8_t *buf, int len)
     if (len <= 0) {
         return 0;
     }
+    /* With the desk layer up, HDMI is the display: the desktop's drawing goes
+     * to the layer's mirror alone and not to the USB console, which keeps the
+     * shell, command output and transfers but no longer floods a computer
+     * terminal with window redraws.  The layer answers the desktop's size
+     * query, as it did when both saw it.  With the layer off the desktop is
+     * being viewed from a computer terminal and draws to the console as before. */
+    if (tang_osd_desk_enabled()) {
+        tang_osd_desk_feed(buf, (size_t)len);
+        return len;
+    }
     return tdsh_bl616_console_write(buf, (size_t)len);
 }
 

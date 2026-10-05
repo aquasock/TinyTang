@@ -228,6 +228,11 @@ static int bl616_terminal_write_bytes(void *context, const void *data, size_t le
 {
     (void)context;
     if (s_term_write) {
+        /* The prompt and the command line as typed, to the USB console as
+         * well as the window, so USB keeps a whole transcript -- prompt,
+         * command and output -- now that the desktop's drawing no longer goes
+         * there. */
+        (void)tdsh_bl616_console_write_usb(data, length);
         return s_term_write(data, length);
     }
     return tdsh_bl616_console_write(data, length);

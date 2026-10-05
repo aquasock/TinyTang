@@ -18,6 +18,7 @@
 #include "task.h"
 #include "usbd_core.h"
 #include "usbd_cdc.h"
+#include "bflb_mtimer.h"
 
 #define CDC_IN_EP  0x81
 #define CDC_OUT_EP 0x02
@@ -81,19 +82,40 @@ static volatile bool     s_dtr = false;
  * is harmless for a cooked one. */
 static uint8_t s_last_tx = 0;
 
+/* How long one packet may wait for the host to take it. */
+#define TX_CHUNK_TIMEOUT_MS 50u
+
+/* Send to the USB host, never holding the caller up for long.
+ *
+ * A packet only leaves when the host asks for it, and a host asks only while a
+ * program has the port open and is reading.  The old loop waited a million
+ * yields per packet whenever the device was enumerated but nobody was reading,
+ * and every caller waited with it -- including the desktop, which draws through
+ * this console, so with the cable attached TinyDesk on HDMI went laggy, and a
+ * large burst (opening the Terminal window) looked like a freeze.  It also
+ * cleared the busy flag on its own and started the next packet over one the
+ * hardware still held.
+ *
+ * Now nothing is sent unless a program has the port open (DTR), a packet waits
+ * at most TX_CHUNK_TIMEOUT_MS, and a packet the host has not taken is left
+ * pending: further output is dropped until the host reads it, and its
+ * completion (usbd_cdc_acm_bulk_in) clears the way by itself. */
 static void console_flush(const uint8_t *buf, size_t len)
 {
     size_t done = 0;
     while (done < len) {
-        if (!s_configured) return;
+        if (!s_configured || !s_dtr) return;   /* nobody to send to */
+        if (s_tx_busy) return;                  /* the host has not read the last one */
         size_t chunk = len - done;
         if (chunk > CDC_MAX_MPS) chunk = CDC_MAX_MPS;
         memcpy(s_in_buf, buf + done, chunk);
         s_tx_busy = true;
         usbd_ep_start_write(CDC_IN_EP, s_in_buf, chunk);
-        uint32_t spin = 0;
+        const uint64_t started = bflb_mtimer_get_time_ms();
         while (s_tx_busy) {
-            if (++spin > 1000000u) { s_tx_busy = false; break; }
+            if (bflb_mtimer_get_time_ms() - started >= TX_CHUNK_TIMEOUT_MS) {
+                return;                         /* left pending; see above */
+            }
             taskYIELD();
         }
         done += chunk;
@@ -110,6 +132,7 @@ void usbd_event_handler(uint8_t event)
         break;
     case USBD_EVENT_DISCONNECTED:
         s_configured = false;
+        s_tx_busy = false;
         break;
     default:
         break;

@@ -704,3 +704,34 @@ The Phosphor work continues with the plan agreed before this update: the desktop
 - User Test: PASS
 
 ---
+## 22 COMMIT Unreleased 2026-10-05T10:42:54-07:00
+
+#### Coming From:
+
+Unreleased 18b9bef
+
+#### Purpose:
+
+Stop the USB console from stalling TinyDesk on HDMI when a computer is attached, and keep the desktop's drawing off USB now that HDMI is the primary display.
+
+#### Outcome:
+
+TinyDesk on HDMI is now smooth with the USB cable attached and nothing reading the port, which the user had not been able to do before and had not logged: the console flooded and the desktop went laggy and unresponsive. The cause, recorded as `USB-007`, is that a bulk IN packet leaves only when the host reads it, and a Linux host reads a CDC port only while a program has it open; `console_flush()` waited up to a million yields per 512-byte packet when nobody was reading, every writer waited with it, and the desktop draws through the console, so the HDMI desktop crawled. It also cleared its own busy flag after the wait and started the next packet over one the hardware still held. Now nothing is sent unless DTR is up, a packet waits at most 50 ms, and a packet the host has not taken is left pending with further output dropped until the host reads it, its completion clearing the way. At the user's choice of the second option offered, the desktop's drawing goes only to the layer's mirror while the layer shows it, so USB carries the shell and not the window redraws; with the layer off the desktop still draws to the console as before. Because the user would not give up USB output, the line editor's writes in the Terminal window -- the prompt and the command line -- are copied to USB as command output already was in entry 21, so USB holds a whole transcript. A listen-only capture while the user went into the desktop, dragged windows, ran `ls /music` in the Terminal and exited held 556 bytes: the desktop's start line, the Terminal shell's banner, the prompt, the command, its listing, `desktop: exited` and the console prompt, with no cursor positioning at all; the console answered after the exit, and the user also launched NES from the desktop with the cable attached and found it smooth. This most likely explains entry 21's Terminal freeze too: opening the Terminal is one of the largest bursts the desktop writes, and no program had the port open at the time. One consequence matters for the tools. The desktop is now invisible on USB, so the console guard can no longer see its markers; it still failed closed once in this cycle, refusing because no prompt came back, but its probe is a carriage return, which reaches the desktop as Enter if the desktop is running. The firmware build is `18b9bef-dirty.3162998`, 332576 bytes, confirmed by `platform`, and every host test passes. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds `USB-007` with its routing row and index line and this entry, with no deletions, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The console guard needs to be sound again without the desktop's drawing: it should listen first and go by the last of the `desktop: starting TinyDesk` and `desktop: exited` lines, which still reach USB, before sending anything, and the same applies to `tools/tinytang_put.py` and `tools/tinytang_run.py`, the latter still having no guard at all. The Phosphor sequence then continues as planned: the desktop layer, keyboard link and F12 in Tang-Phosphor's core, a background playback task, and the Phosphor app.
+
+#### Files Modified:
+
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/usb_cdc_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

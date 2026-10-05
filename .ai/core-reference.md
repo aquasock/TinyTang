@@ -147,6 +147,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Is it safe to re-register the console's endpoints? | USB | USB-004 |
 | Why is there no host deinit, and what must be done by hand? | USB | USB-005 |
 | How do I tell whether a host is attached? | USB | USB-006 |
+| Why is TinyDesk on HDMI laggy with the computer attached? | USB | USB-007 |
 | Where does the application live in flash, and what does a soft reset do? | FLS | FLS-001 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
@@ -242,6 +243,7 @@ USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing c
 USB-004: "usbd_add_endpoint() assigns by endpoint index, not by appending, and usbd_deinitialize() resets intf_offset and calls usb_dc_deinit(), so tdsh_bl616_console_init() is safe to call again"
 USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-only, and usb_hc_low_level_init() has no counterpart, so the port must be returned to device mode by hand"
 USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
+USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
 FLS-001: "Application at 0x40000, staging at 0x100000, commit runs from .tcm_code with interrupts off; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
 PROT-002: "Commands: 01 core ID, 02 config string, 03 joypad (core to BL616), 04 cursor, 05 text, 06 loading state, 07 ROM data, 08 overlay, 09 HID, 0a/0b floppy, 0c PS/2"
@@ -634,6 +636,19 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   sources:
     - "This project's ports/bl616/usb_cdc_bl616.c: usbd_event_handler(), setting and clearing s_configured"
   verification: "In use for the whole session: the configured flag is what the console's writes are gated on and what the OSD watch reports through."
+
+- record_id: USB-007
+  kind: USB
+  topic_id: USB
+  title: "A CDC console write waits on the host reading, so an attached but idle computer can stall the board"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "A bulk IN packet completes only when the host issues IN tokens for it, and a Linux host does that for a CDC ACM port only while a program has the tty open and is reading. Opening the port raises DTR, which CherryUSB reports through usbd_cdc_acm_set_dtr, and closing it lowers DTR. With the board enumerated and no program reading, console_flush() in ports/bl616/usb_cdc_bl616.c waited up to a million taskYIELD() calls per 512-byte packet, then cleared the busy flag itself and started the next packet over one the hardware still held."
+  consequence: "Every writer to the console waited with it, and the desktop draws through the console, so with the cable attached TinyDesk on HDMI was laggy and unresponsive, and a large burst -- opening the Terminal window -- looked like a freeze. console_flush() now sends nothing unless DTR is up, waits at most 50 ms for a packet, and leaves an untaken packet pending, dropping further output until the host reads it, whose completion clears the way. Separately, while the desk layer shows the desktop its drawing goes only to the layer's mirror and not to USB, so a computer terminal sees the shell's transcript but not the window redraws; a consequence is that the desktop is no longer visible on USB, so a tool cannot detect it from its drawing (TOOL-009) and must go by the 'desktop: starting TinyDesk' and 'desktop: exited' lines, which still reach USB."
+  sources:
+    - "ports/bl616/usb_cdc_bl616.c: console_flush(), usbd_cdc_acm_bulk_in() and usbd_cdc_acm_set_dtr()"
+    - "Linux cdc-acm: read URBs are submitted when the tty is opened and killed when it is closed"
+  verification: "On this board on 2026-10-05 the user found TinyDesk on HDMI smooth with the cable attached and nothing reading the port, where before it had been unusable; a listen-only capture while the user dragged windows and ran ls /music in the Terminal held only the transcript -- the desktop's start line, the prompt, the command, its output and 'desktop: exited' -- with no cursor positioning at all, and the console answered after the desktop exited."
 
 - record_id: FLS-001
   kind: FLASH
