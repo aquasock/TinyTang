@@ -219,3 +219,35 @@ None.
 - User Test: N/A
 
 ---
+## 8 COMMIT Unreleased 2026-10-04T17:02:50-07:00
+
+#### Coming From:
+
+Unreleased a8222d1
+
+#### Purpose:
+
+Build an emulator-free menu core from the same nestang checkout, so TinyDesk has a host of its own without forking the project.
+
+#### Outcome:
+
+The strip is 26 files and 16,436 lines out of a 20,307-line design, with about 3,871 kept: `iosys_bl616`, both `textdisp` layers, `gowin_dpb_menu`, `uart_fixed`, `nes2hdmi`, `nestang_top` and `hdmi2/`, plus both `keylink_rx` receivers and the DS2 controllers. The couplings were settled by reading rather than guessing, and one guess was wrong in a way worth keeping: the first build died on `loader_do` being driven twice, because `iosys` *drives* `rom_do` and `rom_do_valid` -- the BL616 streams ROM bytes down the link into the loader -- so it is the loader that consumed them that is gone, not the source. The four signals the survivors still read, all consumed by `nes2hdmi`, are tied off in the `else` of `ifndef MENU_CORE`. A second build failed in the timing stage because `nestjs.sdc` constrains `fclk`, the SDRAM clock, whose only consumers were `sdram_nes` and the NES memory ports; with no master it is removed and a constraint naming it fails outright, so the menu core carries its own SDC with `clk` taken as a primary clock on its own net. The artifact is `impl/pnr/nestang_console138k_ds2_menu.bin`, 4492288 bytes, MD5 `c747105422aa4462bffc67c555b2bda3`, built with Gowin 1.9.11.03 at worst setup +3.443 ns and worst hold +0.144 ns. Its logic is about a fifth of the patched NES core's -- 2781 LUT against roughly 12400, and BSRAM 13 of 340 against 43 -- but its bitstream is only about 2.5 percent smaller, because Gowin frames and routing rather than logic dominate the image; so the strip buys a far smaller design, not a measurably faster `tangload`, and the thin hold margin is unchanged at +0.144 against +0.143 ns, which is to say it is not the emulator's and the strip neither fixes nor worsens it. None of this touched the NES core: rebuilt with the menu patch present, `nestang_console138k_ds2.bin` came back byte-for-byte as `191537528e67911993c6fd40173057f0`, the documented cycle-3 image, which also establishes that the Gowin core build is reproducible where the BL616 firmware build is not. Reconstruction passed: a fresh clone at the pinned commit, the common series through the applier, then the menu patch reproduces the working tree byte-for-byte. On hardware the core went to the card with `tangput` -- safe because the console was first confirmed to be the plain one by checking for absolute-position sequences, zero of them against the shell's documented emission set (`TDSH-002`), which is the check that should have been used instead of a prompt match -- and then `tangload` reported `core loaded`, `fpga` reported `core 1 answering on UART1 at 2000000 baud`, `osd desk on` succeeded, and `desktop` produced 13191 bytes rendering the taskbar and icons: TinyDesk running on a core with no NES machine. The user confirmed it on HDMI and reported one fault worth its own cycle: between the core resetting and the desktop painting, the screen shows stray characters. The cause is established and is not a fault in this patch: the compositor shows the legacy 32x28 OSD page whenever the overlay is asserted and the desktop layer is not, a core comes out of reset with the overlay on (`PROT-005`, `iosys_bl616.v` `reg overlay_reg = 1`), and that page's store, `gowin_dpb_menu.v`, has no initialisation at all, so its power-on contents are drawn; the font is initialised, which is why the garbage renders as recognisable glyphs. It is transient on the NES core because the firmware writes the ROM menu into that page, and persistent on the menu core, which has no ROM menu to write it. This commit also brings in `scripts/castlevania.tdsh`, left untracked when its own cycle closed. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, every added record was checked against the reference's field shape and family ordering, the new record was routed from the Active routing table and the Fast lookup index as well as added to the records, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The stray-character window is the next cycle: clear the legacy page after `tangload` and before `osd desk on`, using the `osd clear` the firmware already has (`ports/bl616/tang_osd.c`), so the uninitialised page is never composited; that is a change to `boot.tdsh`, `boot-cart.tdsh` and whatever loads the menu core, and it helps the NES core too because the same window exists there. Separately, the menu core is not yet the boot core -- `boot.tdsh` still loads `nestang-desk.bin`, and the menu core was exercised by hand -- and `third_party/patches/menu/` is the first patch set outside the numbered series, so the applier's reach over it is a thing to keep in view.
+
+#### Files Modified:
+
+- third_party/patches/menu/0001-menu-core.patch
+- third_party/patches/menu/README.md
+- tools/build_menu_core.sh
+- scripts/castlevania.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

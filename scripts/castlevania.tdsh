@@ -1,0 +1,65 @@
+#!/bin/tdsh
+# castlevania.tdsh - boot Castlevania on the patched NES core.
+#
+# Run it from the desktop -- right-click its icon and choose Run -- or from
+# the Terminal:
+#
+#   tdsh run /scripts/castlevania.tdsh
+#
+# The cycle is the same three steps boot-cart.tdsh uses: drop the desk layer,
+# program the core, prove it answers on the UART, then stream the ROM. The
+# probe between the loads is the point; a ROM streamed into a core that is
+# not listening vanishes with no error anywhere.
+
+if "$CORE" == ""
+    CORE=/cores/console138k/nestang-desk.bin
+endif
+if "$ROM" == ""
+    ROM=/roms/castlevania.nes
+endif
+
+# Drop the desk layer before programming the core.
+#
+# A live overlay stays asserted over whatever the new core draws, and the
+# symptom is a black screen that looks like a ROM that failed to load.
+osd desk off
+
+echo "castlevania: core  $CORE"
+echo "castlevania: rom   $ROM"
+
+if test -f "$CORE"
+    echo "castlevania: core image found"
+else
+    echo "castlevania: no core image at $CORE"
+    return 1
+endif
+if test -f "$ROM"
+    echo "castlevania: rom found"
+else
+    echo "castlevania: no rom at $ROM"
+    return 1
+endif
+
+echo "castlevania: programming the FPGA"
+tangload "$CORE"
+if $? != 0
+    echo "castlevania: the core did not load"
+    return 1
+endif
+
+echo "castlevania: probing the link"
+fpga
+if $? != 0
+    echo "castlevania: the core is not answering on the UART; not streaming"
+    return 1
+endif
+
+echo "castlevania: streaming the rom"
+nesload "$ROM"
+if $? != 0
+    echo "castlevania: the rom did not load"
+    return 1
+endif
+
+echo "castlevania: up"
+return 0

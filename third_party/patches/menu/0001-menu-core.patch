@@ -1,0 +1,153 @@
+diff --git a/build.tcl b/build.tcl
+index c7443c5..dd180d3 100644
+--- a/build.tcl
++++ b/build.tcl
+@@ -97,15 +97,35 @@ if {$dev eq "nano20k"} {
+     set_option -output_base_name nestang_${dev}_${controller}
+ } elseif {$dev eq "console138k"} {
+     set_device GW5AST-LV138PG484AC1/I0 -device_version B
+-    add_file src/boards/console138k.v
++    # TinyTang menu core: `gw_sh build.tcl console138k ds2 menu` builds the same
++    # board with the NES machine left out.  The board file carries MENU_CORE,
++    # which nestang_top gates its emulator on; the emulator's own sources stay
++    # in the file list and are pruned by synthesis because nothing instantiates
++    # them.
++    set menu [expr {$argc >= 3 && [lindex $argv 2] eq "menu"}]
++    if {$menu} {
++        add_file src/boards/console138k_menu.v
++    } else {
++        add_file src/boards/console138k.v
++    }
+     add_file -type cst "src/boards/console.cst"
+     add_file -type verilog "src/pll/gowin_pll_27.v"
+     add_file -type verilog "src/pll/gowin_pll_hdmi.v"
+     add_file -type verilog "src/pll/gowin_pll_nes.v"
+     add_file -type verilog "src/pll/pll_12.v"
+     add_file -type verilog "src/keylink_rx.sv"
+-    add_file -type sdc "src/nestang.sdc"
+-    set_option -output_base_name nestang_${dev}_${controller}
++    # The menu core has no SDRAM, so its constraints drop fclk and the
++    # NES<->SDRAM multicycle paths that would name a removed net.
++    if {$menu} {
++        add_file -type sdc "src/boards/console138k_menu.sdc"
++    } else {
++        add_file -type sdc "src/nestang.sdc"
++    }
++    if {$menu} {
++        set_option -output_base_name nestang_${dev}_${controller}_menu
++    } else {
++        set_option -output_base_name nestang_${dev}_${controller}
++    }
+ } else {
+     error "Unknown device $dev"
+ }
+diff --git a/src/boards/console138k_menu.sdc b/src/boards/console138k_menu.sdc
+new file mode 100644
+index 0000000..d5b21d2
+--- /dev/null
++++ b/src/boards/console138k_menu.sdc
+@@ -0,0 +1,19 @@
++// TinyTang menu core clock constraints.
++//
++// The NES machine is not built in this variant, and fclk -- the 64.47 MHz SDRAM
++// clock, whose only consumers were sdram_nes and the NES memory ports -- has no
++// user, so synthesis removes it.  A constraint naming a removed net fails the
++// timing stage outright, and the NES<->SDRAM multicycle paths have no endpoints
++// at all.  What remains is the 50 MHz crystal, the main clock the PLL makes for
++// the compositor and the BL616 link, and the HDMI clock.
++//
++// clk is taken as a primary clock on its own net here, where upstream declares
++// it as generated from fclk; with fclk gone there is nothing to generate it
++// from, and the net is the PLL's own output in any case.  The period is
++// upstream's (fclk's 15.51 ns divided by three), not the crystal's nominal.
++create_clock -name sys_clk -period 20 [get_nets {sys_clk}]       // 50 Mhz
++
++create_clock -name clk -period 46.53 [get_nets {clk}]            // 21.491 Mhz
++
++// HDMI clocks
++create_clock -name hclk5 -period 2.6936 [get_nets {hclk5}]       // 371.25 Mhz
+diff --git a/src/boards/console138k_menu.v b/src/boards/console138k_menu.v
+new file mode 100644
+index 0000000..9fbc521
+--- /dev/null
++++ b/src/boards/console138k_menu.v
+@@ -0,0 +1,32 @@
++// TinyTang menu core: the console138k board with the NES machine not built.
++//
++// Identical to console138k.v apart from the one define below.  Everything the
++// board needs to be a board -- the 50 MHz clock, HDMI, the BL616 UART, the two
++// front USB pins that carry the keyboard link -- is unchanged, and the DS2
++// controller path is left defined because iosys still reports a joypad word
++// upward and the keyboard's pointer mode is folded into it.
++`define RES_720P
++`define GW_IDE
++`define MEGA138K
++`define PRIMER
++`define CONSOLE
++
++`define USB1
++`define USB2
++
++`define CONTROLLER_DS2
++
++// Selects the emulator-free variant of nestang_top.sv: the NES machine, its
++// SDRAM, the ROM loader and the autofire/joypad shift registers are not
++// instantiated, and the signals their survivors still read are tied off.
++`define MENU_CORE
++
++package configPackage;  
++
++    // Tang SDRAM v1.2: 2B * 8K * 512 * 4 = 32MB
++    localparam SDRAM_DATA_WIDTH = 16;     // 2 bytes per word
++    localparam SDRAM_ROW_WIDTH = 13;      // 8K rows
++    localparam SDRAM_COL_WIDTH = 9;       // 512 cols
++    localparam SDRAM_BANK_WIDTH = 2;      // 4 banks
++
++endpackage
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index 347e0a0..0dd2a09 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -299,6 +299,7 @@ assign link_kbd_keys = 48'd0;
+ `endif
+ 
+ 
++`ifndef MENU_CORE
+ // Main NES machine
+ NES nes(
+     .clk(clk), .reset_nes(reset_nes), .cold_reset(1'b0),
+@@ -405,6 +406,18 @@ always @(posedge clk) begin
+     if (~sys_resetn)
+         reset_nes <= 1;
+ end
++`else
++// TinyTang menu core: the NES machine is not instantiated, so the picture and
++// audio inputs its compositor still reads are tied off here.  The BL616 link's
++// ROM handshake lines are deliberately NOT tied off -- iosys drives those, and
++// it is the loader that consumed them that is gone.  Everything else the
++// emulator drove -- the SDRAM, the CPU and PPU memory ports, the joypad shift
++// registers -- is now simply unread.
++assign color    = 6'd0;
++assign scanline = 9'd0;
++assign cycle    = 9'd0;
++assign sample   = 16'd0;
++`endif
+ 
+ ///////////////////////////
+ // Peripherals
+@@ -593,6 +606,7 @@ assign led = ~{6'b0, link_frames[5], link_frames[0]};
+ assign joy_usb2 = 12'b0;
+ `endif
+ 
++`ifndef MENU_CORE
+ // Autofire for NES A (right) and B (left) buttons
+ Autofire af_a (.clk(clk), .resetn(sys_resetn), .btn(joy1[8]), .out(auto_a));
+ Autofire af_b (.clk(clk), .resetn(sys_resetn), .btn(joy1[9]), .out(auto_b));
+@@ -613,6 +627,7 @@ always @(posedge clk) begin
+ end
+ assign joypad1_data[0] = joypad_bits[0];
+ assign joypad2_data[0] = joypad_bits2[0];
++`endif
+ 
+ `endif
+ 

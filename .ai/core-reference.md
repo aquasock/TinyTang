@@ -125,6 +125,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which core image belongs on this board? | DEV | DEV-002 |
 | Does the FPGA keep its core across a power cycle? | DEV | DEV-003 |
 | Does this project run AE350 RISC-V code, and how does it get there? | DEV | DEV-004 |
+| Is there a core with no emulator for TinyDesk to sit on? | DEV | DEV-005 |
 | Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
 | Why does the SD card fail to mount? | BRD | BRD-002 |
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
@@ -212,6 +213,7 @@ DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as I
 DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
 DEV-003: "The FPGA keeps no configuration across a power cycle, so a core has to be reloaded with tangload on every boot before a ROM will run"
 DEV-004: "A core bitstream can carry AE350 RISC-V software: the program is compiled to a hex file and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and arrives with tangload; the firmware loads whole images and never AE350 code as an artifact of its own"
+DEV-005: "The menu core is the console138k design with nestang's NES machine not instantiated: MENU_CORE in src/boards/console138k_menu.v, selected by build.tcl's third `menu` argument; it answers CORE_ID 1, the same value the patched NES core answers, and is about four fifths smaller in logic while its bitstream is only ~2.5 percent smaller"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
@@ -355,6 +357,19 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Tang-Phosphor, scripts/build-ae350-ddr3.sh: 'Build the AE350 + DDR3 image: the boot ROM (software/ae350), the Gowin DDR3 IP ...'"
     - "Tang-Phosphor, src/ae350/ae350_subsystem.sv: the ae350_boot_rom instantiation"
   verification: "Read from Tang-Phosphor's AE350 design this session: the ROM init file, the $readmemh, and the build script that produces it. Not exercised on this bench, and no AE350 software was built here."
+
+- record_id: DEV-005
+  kind: DEVICE
+  topic_id: DEV
+  title: "The menu core is the console138k core with the NES machine not instantiated"
+  status: VERIFIED
+  verified_date: 2026-10-04
+  statement: "third_party/patches/menu/0001-menu-core.patch builds the console138k bitstream with nestang's NES machine left out. The board file src/boards/console138k_menu.v defines MENU_CORE, build.tcl takes a third `menu` argument to select that board file and a second SDC, and nestang_top.sv carries its NES cluster -- the NES instance, sdram_nes, GameLoader, the autofire/joypad shift registers and the clkref/reset block -- inside `ifndef MENU_CORE`, with the four signals the survivors read (color, scanline, cycle, sample, all consumed by nes2hdmi) tied off in the else. iosys_bl616, both textdisp layers, nes2hdmi and the keyboard link are unchanged. The result answers CORE_ID 1, the same value the patched NES core answers, so the fpga probe reports one for both and cannot tell them apart."
+  consequence: "The menu core exists so TinyDesk has a host of its own rather than riding on an emulator, and it is the base a later separate project grows from. It builds to impl/pnr/nestang_console138k_ds2_menu.bin. Its logic is roughly a fifth of the patched NES core's (2781 LUT against about 12400, BSRAM 13 of 340 against 43) but its bitstream is only about 2.5 percent smaller, because Gowin frames and routing rather than logic dominate the image -- so it is a much smaller design, not a meaningfully faster tangload. The NES core is untouched: the same series with the menu patch present still builds nestang_console138k_ds2.bin byte-for-byte."
+  sources:
+    - "This project's third_party/patches/menu/0001-menu-core.patch, third_party/patches/menu/README.md and tools/build_menu_core.sh"
+    - "src/nestang_top.sv and build.tcl as the menu patch leaves them"
+  verification: "Built with Gowin 1.9.11.03 for console138k: timing met, worst setup +3.443 ns and worst hold +0.144 ns. A fresh clone at the pinned commit, the common series, then the menu patch reproduces the working tree byte-for-byte. On this board tangload loaded it, fpga reported 'core 1 answering on UART1 at 2000000 baud', and osd desk on followed by desktop brought TinyDesk up with no emulator instantiated."
 
 - record_id: BRD-001
   kind: BOARD
