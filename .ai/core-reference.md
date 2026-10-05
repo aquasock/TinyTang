@@ -198,7 +198,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 | Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-008 |
-| Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-009 |
+| Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-004 |
@@ -290,8 +290,9 @@ TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib
 TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
 TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
 TOOL-008: "Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
-TOOL-009: "The console's input is exclusive: tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending"
+TOOL-009: "Superseded by TOOL-011. Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending"
 TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
+TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -1169,7 +1170,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   kind: TOOLCHAIN
   topic_id: TOOL
   title: "The console's input is exclusive, and a raw upload's bytes are keystrokes"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-04
   statement: "tangput takes raw bytes from the same CDC stream the desktop reads its typed input from, and on that wire a file and a burst of typing are the same thing: nothing distinguishes them, because the console is one byte stream with no framing of its own. The desktop, when it is running, is the reader holding it. So a transfer is safe only while the console is at a shell prompt, and tangput itself cannot tell the difference - it will accept whatever arrives and write it."
   consequence: "A file sent while the desktop is up is delivered to whichever window has focus instead of to tangput. Nothing reports an error and tangput never sees a short write, so the failure is silent until the card is looked at. Observed on 2026-10-04: a 131088-byte ROM sent this way produced a root directory of new.txt and New folder entries with binary data where filenames belong, and damaged the allocation table badly enough that /cores, /scripts and /roms became unreachable. The board then booted a stock core (fpga reports core 0; the patched image reports 1) and boot.tdsh could not find its core. The recovery is fsck.vfat from a PC, before any reformat. tools/tinytang_put.py now refuses to send unless it sees a shell prompt, checking for the desktop's own markers ([Start], Terminal - tdsh, or the alternate-screen sequence) first; the check belongs in the tool because the alternative is remembering, and this was done twice."
@@ -1178,6 +1179,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's ports/bl616/tang_osd_desk.c: the desktop layer reads the console's input and forwards it to the desktop"
     - "Observed on this board, 2026-10-04"
   verification: "Observed directly: the damaged directory listing was read back from the board, the card stopped accepting writes with 'cannot create', and the same send succeeded once the desktop was exited. The guard's refusing path has not itself been exercised."
+  superseded_by: "TOOL-011"
 
 - record_id: TOOL-010
   kind: TOOLCHAIN
@@ -1191,6 +1193,20 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "This project's scripts/apply-nestang-patches.sh: the strict pass, the -C1 fallback, and the local-changes presumption"
     - "third_party/patches/0004-keyboard-link.patch, whose added lines 0006 rewrote"
   verification: "Bitten once and fixed: the build failed with 'does not apply cleanly' on patch 0004 while the same series applied cleanly to a fresh clone. The reconstruction test then passed for all six patches with the tree reproduced byte-for-byte."
+
+- record_id: TOOL-011
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The console's input is exclusive, so the tools ask the board what holds it"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The CDC console is one byte stream with one reader at a time: at the shell prompt a byte is part of a command line, while the desktop runs it is a keystroke into whichever window has focus, and while a command such as tangput runs it is that command's data. Nothing on the wire distinguishes them. The firmware therefore answers a status probe that never reaches any reader: the USB receive interrupt takes ESC [ ? 7 7 n out of the input, and the next task to read the console replies ESC [ ? 7 7 ; <state> n, with 1 at the shell prompt, 2 while the desktop runs and 3 for a command that reads the console. A command that reads nothing does not answer until it ends."
+  consequence: "TOOL-009's guard looked for the desktop's drawing on USB and sent a carriage return to wake a prompt. Once the desktop's drawing left USB (USB-007) it could not see the desktop, its carriage return was Enter in whatever window had focus, and with the Terminal window open the shell in it printed a real prompt to USB, so the guard could pass with the desktop up. USB-007 suggested following the desktop's start and exit lines instead; asking the board was chosen because it types nothing and does not depend on having seen the start of the session. tools/tinytang_console.py's require_shell() is used by tinytang_put.py, tinytang_flash.py, phosphor_format_sweep.py and tinytang_run.py, which had no guard before and now asks before each line, so a second command waits for the first to end. No answer is treated as not ready, which also covers a firmware that predates the probe; flashing the first firmware with the probe needed the old guard and the user's word that the console was at a prompt. The probe is matched within one USB packet, so a lone Esc typed at a terminal is not held, and tangput turns the matching off while it receives, because a file may contain the sequence."
+  sources:
+    - "This project's ports/bl616/usb_cdc_bl616.c: usbd_cdc_acm_bulk_out()'s probe matcher, tdsh_bl616_console_set_raw() and the reply in tdsh_bl616_console_read_byte()"
+    - "This project's ports/bl616/tdsh_platform_bl616.c: tdsh_bl616_console_state(), set around bl616_readline and, through tdsh_bl616_console_set_desktop(), around desktop_run() in td_desktop_bl616.c"
+    - "This project's tools/tinytang_console.py: PROBE, REPLY, console_state() and require_shell()"
+  verification: "Exercised on this board with firmware e912c5d-dirty.3417d90, 2026-10-05: state 1 at the prompt; no answer within 1 s during 'sleep 5' and state 1 4.8 s later, when the prompt returned; tinytang_run.py held a second command until 'sleep 3' ended; a 6120-byte file holding twenty copies of the probe arrived whole through tangput; and with the desktop and its Terminal window up the answer was 2, tinytang_run.py and tinytang_put.py both refused, and the user saw nothing typed on screen. State 3 was not observed, since no command that reads the console was running during the probe; the busy case was seen only as no answer."
 
 - record_id: TCTL-004
   kind: EXTERNAL

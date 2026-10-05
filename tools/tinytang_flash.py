@@ -8,8 +8,9 @@ After the power cycle it runs the new firmware; no BOOT button, no card reader.
 
     tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 
-The board must be in two-wire mode (the CDC is exposed) and running a TinyTang
-firmware that has these commands.
+The board must be in two-wire mode (the CDC is exposed), running a TinyTang
+firmware that has these commands, and at a shell prompt: the board is asked
+first (tinytang_console), and nothing is sent unless it says so.
 """
 
 import argparse
@@ -21,6 +22,11 @@ try:
     import serial
 except ImportError:
     sys.exit("pyserial is required: pip install pyserial")
+
+# Nothing is sent until the board says its console is at a shell prompt
+# (tinytang_console).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 REMOTE_PATH = "/tinytang-upload.bin"
 FW_APP_MAX = 0x80000
@@ -63,10 +69,7 @@ def main():
     print(f"opening {args.port}")
     port = serial.Serial(args.port, args.baud, timeout=1.0)
     try:
-        # Wake the shell and get to a prompt.
-        port.write(b"\r")
-        time.sleep(0.6)
-        port.read(65536)
+        require_shell(port)
 
         print(f"uploading {len(data)} bytes to {REMOTE_PATH}")
         port.write(f"tangput {len(data)} {REMOTE_PATH}\r".encode())
@@ -95,5 +98,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except TimeoutError as exc:
+    except (TimeoutError, ConsoleNotReady) as exc:
         sys.exit(str(exc))

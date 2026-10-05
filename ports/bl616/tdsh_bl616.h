@@ -28,6 +28,20 @@ int  tdsh_bl616_console_write_usb(const void *data, size_t length);
  * but not the layer's mirror. */
 int  tdsh_bl616_output(const void *data, size_t length);
 
+/* What the console is doing, for the host tools' status probe: the probe
+ * ESC [ ? 7 7 n is taken out of the USB input before the shell or the desktop
+ * sees it, and answered with ESC [ ? 7 7 ; <state> n.  The tools send nothing
+ * else unless the state is TDSH_BL616_AT_PROMPT. */
+enum {
+    TDSH_BL616_AT_PROMPT = 1,   /* the console shell is waiting for a line */
+    TDSH_BL616_DESKTOP = 2,     /* TinyDesk owns the console */
+    TDSH_BL616_BUSY = 3,        /* a command is running */
+};
+int  tdsh_bl616_console_state(void);
+void tdsh_bl616_console_set_desktop(bool running);
+/* Pass the probe through as data, for a command reading a raw byte stream. */
+void tdsh_bl616_console_set_raw(bool raw);
+
 /* Filesystem (tdsh_fs_fatfs.c): a stdio shim over FatFS on the SD card. */
 int  tdsh_bl616_fs_mount(void);
 bool tdsh_bl616_fs_ready(void);

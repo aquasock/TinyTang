@@ -735,3 +735,42 @@ The console guard needs to be sound again without the desktop's drawing: it shou
 - User Test: PASS
 
 ---
+
+## 23 COMMIT Unreleased 2026-10-05T12:12:51-07:00
+
+#### Coming From:
+
+Unreleased e912c5d
+
+#### Purpose:
+
+Make the console guard sound again now that the desktop no longer draws to USB, by having the host tools ask the board what holds the console before they send anything.
+
+#### Outcome:
+
+The host tools now ask the board before sending. The firmware takes the probe `ESC [ ? 7 7 n` out of the USB input in the receive interrupt, so neither the shell nor the desktop sees it, and the next task to read the console replies `ESC [ ? 7 7 ; <state> n`: 1 at the shell prompt, set around `bl616_readline`; 2 while the desktop runs, set around `desktop_run()`; and 3 for a command that reads the console, while a command that reads nothing answers only when it ends. `tools/tinytang_console.py` holds the one `require_shell()`, which sends nothing unless the answer is 1 and treats no answer as not ready; `tinytang_put.py`, `tinytang_flash.py` and `phosphor_format_sweep.py` use it in place of the old carriage-return check, and `tinytang_run.py`, which had no guard, now asks before every line, so a second command waits for the first to end while the first one's output is still shown. The probe is matched only within one USB packet, so a lone Esc typed at a terminal is never held back, and `tangput` turns the matching off while it receives, because a file may contain the sequence. Entry 22 proposed following the desktop's start and exit lines instead; asking was chosen because it types nothing and does not depend on having seen the session begin, and it closes a hole the old guard had: with the Terminal window open, the shell in it prints a real prompt to USB, so the old check could pass with the desktop up. The board's firmware did not know the probe, so this one flash went out under the old check, with the user confirming the console was at a plain prompt. On the deployed firmware, `e912c5d-dirty.3417d90`, 333056 bytes, confirmed by `platform`, the probe answered 1 at the prompt; during `sleep 5` it gave no answer within 1 s and answered 1 after 4.8 s, when the prompt returned; `tinytang_run.py` held `echo` until `sleep 3` ended; a 6120-byte file holding twenty copies of the probe arrived whole; and with the desktop and its Terminal window up the probe answered 2, `tinytang_run.py` and `tinytang_put.py` both refused with exit status 1, and the user saw nothing typed on screen. State 3 was not seen, since no command that reads the console was running during a probe. The reference adds `TOOL-011` and supersedes `TOOL-009`, and all seven host test scripts pass. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and its only deletions are `TOOL-009`'s status line, routing pointer and index line, with its statement untouched, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The Phosphor sequence continues as planned: the desktop layer, keyboard link and F12 in Tang-Phosphor's core so it behaves like the NES core, a background playback task in place of the blocking `phosphor play`, and a Phosphor app in TinyDesk. No single command yet runs all the host test scripts.
+
+#### Files Modified:
+
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- ports/bl616/usb_cdc_bl616.c
+- tools/phosphor_format_sweep.py
+- tools/tinytang_console.py
+- tools/tinytang_flash.py
+- tools/tinytang_put.py
+- tools/tinytang_run.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

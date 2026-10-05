@@ -409,6 +409,27 @@ static int bl616_terminal_columns(void *context)
     return s_term_read ? s_term_cols : 0;
 }
 
+/* For the status probe (tdsh_bl616.h).  The desktop flag is set by the
+ * desktop command around desktop_run(); the prompt flag by the shell around
+ * its line read, which is the only time it reads the console a line at a time.
+ * The desktop flag wins: while it is up the outer shell is parked in the
+ * desktop command, and a prompt in its Terminal window is not the console's. */
+static volatile bool s_desktop_running;
+static volatile bool s_at_prompt;
+
+void tdsh_bl616_console_set_desktop(bool running)
+{
+    s_desktop_running = running;
+}
+
+int tdsh_bl616_console_state(void)
+{
+    if (s_desktop_running) {
+        return TDSH_BL616_DESKTOP;
+    }
+    return s_at_prompt ? TDSH_BL616_AT_PROMPT : TDSH_BL616_BUSY;
+}
+
 static int bl616_readline(const char *prompt, char *line, size_t capacity)
 {
     const tdsh_terminal_io_t io = {
@@ -417,7 +438,10 @@ static int bl616_readline(const char *prompt, char *line, size_t capacity)
         .write_bytes = bl616_terminal_write_bytes,
         .columns = bl616_terminal_columns,
     };
-    return tdsh_terminal_readline(&s_session, &io, prompt, line, capacity);
+    s_at_prompt = true;
+    const int rc = tdsh_terminal_readline(&s_session, &io, prompt, line, capacity);
+    s_at_prompt = false;
+    return rc;
 }
 
 int tdsh_bl616_run(void)

@@ -15,7 +15,7 @@ ends by playing the WAV again, so the rate is seen to change both ways.
     tools/phosphor_format_sweep.py [--only mp3,flac] [--port /dev/ttyACM0]
 
 Nothing is sent unless the console is first shown to be a plain shell prompt
-(tinytang_put.require_shell), because bytes sent while the desktop is up are
+(tinytang_console.require_shell), because bytes sent while the desktop is up are
 typed into whichever window has focus.
 """
 
@@ -30,7 +30,7 @@ except ImportError:
     sys.exit("pyserial is required: pip install pyserial")
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
-from tinytang_put import require_shell  # noqa: E402
+from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 # Samples presented per file in Tang-Phosphor entry 43 (2026-10-02), the last
 # full sweep of this corpus.  FLAC's 444240 against a nominal 441000 is that
@@ -104,4 +104,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except ConsoleNotReady as exc:
+        sys.exit(str(exc))

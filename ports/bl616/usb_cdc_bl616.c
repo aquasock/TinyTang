@@ -139,6 +139,32 @@ void usbd_event_handler(uint8_t event)
     }
 }
 
+/* The host tools' status probe (tdsh_bl616.h).  It is recognised here, in
+ * the interrupt that fills the input ring, so neither the shell nor the
+ * desktop ever sees it -- which is what lets a tool ask what is on the console
+ * without typing into whatever is there.  It is matched within one USB packet,
+ * which is how a tool's single write arrives; a partial match is handed on
+ * unchanged at the end of the packet, so a lone Esc from a terminal is not
+ * held back waiting for bytes that will not come.  While a command reads raw
+ * data (tangput), bytes pass untouched: a file may hold the sequence. */
+static const uint8_t k_probe[] = { 0x1Bu, '[', '?', '7', '7', 'n' };
+static volatile bool s_probe_pending;
+static volatile bool s_raw;
+
+void tdsh_bl616_console_set_raw(bool raw)
+{
+    s_raw = raw;
+}
+
+static void ring_put(uint8_t b)
+{
+    uint16_t next = (uint16_t)((s_rx_head + 1u) & RX_RING_MASK);
+    if (next != s_rx_tail) {
+        s_rx_ring[s_rx_head] = b;
+        s_rx_head = next;
+    }
+}
+
 void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
 {
     (void)ep;
@@ -147,12 +173,32 @@ void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
      * task-context critical section here would be wrong: taskENTER_CRITICAL()
      * from an ISR can assert on interrupt priority and hang the handler, which
      * stalls enumeration.  Only our own index is written here. */
+    size_t held = 0;
     for (uint32_t i = 0; i < nbytes; i++) {
-        uint16_t next = (uint16_t)((s_rx_head + 1u) & RX_RING_MASK);
-        if (next != s_rx_tail) {
-            s_rx_ring[s_rx_head] = s_out_buf[i];
-            s_rx_head = next;
+        const uint8_t b = s_out_buf[i];
+        if (s_raw) {
+            ring_put(b);
+            continue;
         }
+        if (b == k_probe[held]) {
+            if (++held == sizeof(k_probe)) {
+                s_probe_pending = true;
+                held = 0;
+            }
+            continue;
+        }
+        for (size_t k = 0; k < held; k++) {
+            ring_put(k_probe[k]);
+        }
+        held = 0;
+        if (b == k_probe[0]) {
+            held = 1;
+            continue;
+        }
+        ring_put(b);
+    }
+    for (size_t k = 0; k < held; k++) {
+        ring_put(k_probe[k]);
     }
     /* Re-arm only with room for a whole packet; otherwise the read is armed
      * again from read_byte() once the consumer has made room. */
@@ -203,6 +249,19 @@ bool tdsh_bl616_console_connected(void)
 
 int tdsh_bl616_console_read_byte(void)
 {
+    /* Answer a status probe from whichever task reads the console next: the
+     * shell at its prompt, or the desktop, which polls it continuously.  A
+     * command that is running reads nothing, so it answers only when it is
+     * done -- too late for a tool waiting to send, which is the point. */
+    if (s_probe_pending) {
+        s_probe_pending = false;
+        char reply[16];
+        const int n = snprintf(reply, sizeof(reply), "\x1b[?77;%dn",
+                               tdsh_bl616_console_state());
+        if (n > 0) {
+            (void)tdsh_bl616_console_write_usb(reply, (size_t)n);
+        }
+    }
     /* Sole consumer of the ring; the ISR owns the head.  No lock needed. */
     int out = -1;
     if (s_rx_tail != s_rx_head) {

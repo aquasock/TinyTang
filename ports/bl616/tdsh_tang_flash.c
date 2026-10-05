@@ -303,6 +303,8 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
 
+    /* The file's bytes are data, not a status probe (tdsh_bl616.h). */
+    tdsh_bl616_console_set_raw(true);
     tdsh_printf("tangput: ready for %u bytes\r\n", size);
 
     uint32_t done = 0;
@@ -314,12 +316,14 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
         }
         UINT wrote = 0;
         if (f_write(&file, s_sector, chunk, &wrote) != FR_OK || wrote != chunk) {
+            tdsh_bl616_console_set_raw(false);
             f_close(&file);
             tdsh_printf("tangput: write failed at %u\r\n", done);
             return 1;
         }
         done += chunk;
     }
+    tdsh_bl616_console_set_raw(false);
     f_close(&file);
 
     tdsh_printf("tangput: wrote %u bytes to %s\r\n", done, path);

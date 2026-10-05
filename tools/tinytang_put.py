@@ -9,13 +9,15 @@ relative to the shell's root (the card), e.g. /roms/castlevania.nes.
 
 The board must be in two-wire mode and running a TinyTang firmware that has
 the tangput command, and the console must be at a **shell prompt** -- not
-running the desktop.  That check is not politeness: raw bytes and keystrokes
+running the desktop.  The board is asked first (tinytang_console), and nothing
+is sent unless it says so.  That check is not politeness: raw bytes and keystrokes
 are the same thing on this wire, so a file sent while the desktop is up is
 typed into whichever window has focus, silently.  That is how a 131 KB ROM
 became a directory full of `new.txt` entries and took the card's FAT with it.
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -40,35 +42,10 @@ def wait_for(port, needle, timeout, echo=True):
     raise TimeoutError(f"timed out waiting for {needle!r}; saw: {buf[-300:]!r}")
 
 
-# Signs that the console is running the desktop rather than a shell.
-DESKTOP_MARKERS = (b"[Start]", b"Terminal - tdsh", b"\x1b[?1049h")
-
-
-def require_shell(port, timeout=8.0):
-    """Refuse to send unless the console is at a shell prompt.
-
-    The point is to fail *before* writing anything, because the failure this
-    prevents is destructive and silent: the bytes go somewhere, no error comes
-    back, and the damage shows up later on the card.  A prompt is the proof
-    that the bytes will reach tangput rather than a focused window.
-    """
-    port.write(b"\r")
-    time.sleep(0.8)
-    deadline = time.time() + timeout
-    seen = b""
-    while time.time() < deadline and not seen:
-        seen = port.read(65536)
-    if not seen:
-        raise TimeoutError("console gave no reply; refusing to send")
-    for marker in DESKTOP_MARKERS:
-        if marker in seen:
-            raise TimeoutError(
-                "the desktop is running on this console; exit it first "
-                "(F10, End, Enter) or a raw send will be typed into a window")
-    if b"root@tinytang" not in seen:
-        raise TimeoutError(
-            "no shell prompt on the console; refusing to send raw bytes "
-            f"(saw: {seen[-120:]!r})")
+# Nothing is sent until the board says its console is at a shell prompt
+# (tinytang_console).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 
 def main():
@@ -89,7 +66,6 @@ def main():
     port = serial.Serial(args.port, args.baud, timeout=1.0, write_timeout=30.0)
     try:
         require_shell(port)
-        port.read(65536)
 
         print(f"sending {len(data)} bytes to {args.remote}")
         port.write(f"tangput {len(data)} {args.remote}\r".encode())
@@ -107,5 +83,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except TimeoutError as exc:
+    except (TimeoutError, ConsoleNotReady) as exc:
         sys.exit(str(exc))

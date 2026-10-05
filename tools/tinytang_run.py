@@ -7,10 +7,14 @@ commands that take a while and print progress, such as `nesload`.
 
     tools/tinytang_run.py "nesload /roms/castlevania.nes" --seconds 30
 
-The board must be in two-wire mode and running a TinyTang firmware.
+The board must be in two-wire mode and running a TinyTang firmware, and the
+console must be at a shell prompt: each line is sent only after the board says
+so (tinytang_console), so a line is never typed into the desktop or into a
+command that is still running.
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -18,6 +22,11 @@ try:
     import serial
 except ImportError:
     sys.exit("pyserial is required: pip install pyserial")
+
+# Nothing is sent until the board says its console is at a shell prompt
+# (tinytang_console).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 
 def main():
@@ -28,16 +37,20 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--seconds", type=float, default=8.0,
                     help="how long to keep streaming after the last command")
+    ap.add_argument("--wait", type=float, default=10.0,
+                    help="how long to wait for the prompt before each command")
     args = ap.parse_args()
 
     print(f"opening {args.port}")
     port = serial.Serial(args.port, args.baud, timeout=0.3, write_timeout=30.0)
-    try:
-        port.write(b"\r")
-        time.sleep(0.7)
-        port.read(65536)
 
+    def show(data):
+        sys.stdout.write(data.decode("utf-8", "replace"))
+        sys.stdout.flush()
+
+    try:
         for command in args.command:
+            require_shell(port, timeout=args.wait, on_output=show)
             print(f"$ {command}")
             port.write(command.encode() + b"\r")
             time.sleep(0.5)
@@ -56,4 +69,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ConsoleNotReady as exc:
+        sys.exit(str(exc))
