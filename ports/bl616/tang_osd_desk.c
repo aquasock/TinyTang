@@ -493,16 +493,19 @@ int tang_osd_desk_command(int argc, char **argv)
 
     const char *what = argv[2];
     if (strcmp(what, "on") == 0) {
+        /* Quiet on success, the way `osd clear` is: the layer appearing *is*
+         * the feedback, and at boot this line would be the first thing the
+         * layer ever mirrors -- so the confirmation would be the first thing
+         * on the screen, which is exactly where it should not be.  A failure
+         * still speaks. */
         if (tang_osd_desk_set(true) != 0) {
             tdsh_printf("osd desk: could not start the layer\r\n");
             return 1;
         }
-        tdsh_printf("osd desk: on\r\n");
         return 0;
     }
     if (strcmp(what, "off") == 0) {
         (void)tang_osd_desk_set(false);
-        tdsh_printf("osd desk: off\r\n");
         return 0;
     }
     if (strcmp(what, "status") == 0) {

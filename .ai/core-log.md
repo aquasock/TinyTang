@@ -343,3 +343,34 @@ The pointer reports reaching the shell in console mode are the one known rough e
 - User Test: PASS
 
 ---
+## 12 COMMIT Unreleased 2026-10-04T18:34:36-07:00
+
+#### Coming From:
+
+Unreleased bd3aec6
+
+#### Purpose:
+
+Fix the two defects the boot experience exposed -- one cosmetic, one a transport regression this session introduced.
+
+#### Outcome:
+
+The cosmetic one first: `tang_osd_desk_command` printed `osd desk: on` after enabling the layer, so at boot that line was the first thing the layer ever mirrored and the confirmation became the first thing on screen. `osd desk on` and `off` are now quiet on success, like `osd clear` in the same command family, with failures still speaking and `osd desk status` still reporting. The second defect was mine, and it is the one worth recording properly: the keyboard cycle made the console's read path choose between the layer's ring and the CDC exclusively, so the moment the layer came up the CDC was never read, and the host stopped being able to type at the console with no output to say why. Worse, the commit that introduced it said "the CDC stays last so a host can still type", which was false -- the CDC branch is reached only when the layer is off, and the layer is what boot turns on. The cost was real: `tangput` and `tangflash` need the console to read the host, so the defect blocked the only path that could deliver its own fix. Recovery was a card trip -- `boot.tdsh` renamed away so the board booted to a prompt with no layer, the console came back, and the image was flashed by hand; the boot script was then restored with `mv` at the prompt, which the fix itself made possible. The read path is now a priority rather than a choice: the ring leads and falls through to the CDC, so both are live, because both are ways of typing at one prompt. The `s_term_read` case stays exclusive, which is correct -- the desktop's Terminal owns the console, and two readers on one stream is the hazard `TOOL-009` describes. Verified: with the layer up, `whoami` sent from the host returned `root` and a fresh prompt, which is exactly what the broken build could not do; and `osd desk: on` no longer appears in the boot output. One observation is recorded as unconfirmed rather than as a fact: with `boot.tdsh` withdrawn and no `tangload` run, `fpga` reported `core 0 answering` -- a stock core, where ours answer 1 -- which suggests the FPGA configured itself from its own flash at power-up. That would refine `DEV-003`, which says the FPGA keeps no configuration across a power cycle. It is not recorded in the reference because it is not established: an idle UART could plausibly read as core 0, and the test that separates those two has not been run. The core-syntax audit was performed with `tools/check_core_log.py`, which reports every entry conforming, alongside re-reading `.ai/core.md` (unchanged) and `.ai/core-syntax.md` and inspecting the complete `.ai/` diff.
+
+#### Next Steps:
+
+The left-edge lines the user saw after the prompt are still open, and the whole point of `tools/check_core_log.py`'s companion is that they should be chased with evidence: `osd desk status` reports `<n> cells in <m> rows sent, <k> refused`, and a non-zero refusal count would mean cells are being dropped, while zero would put the fault in the rendering. The uninitialised-cell theory is already dead -- `td_vterm_init` clears the grid -- so the next step is that number, not another guess. Separately, the FPGA self-configuration observation needs one deliberate test to become a record or be discarded, and `third_party/patches/menu/` remains the only patch set outside the numbered series.
+
+#### Files Modified:
+
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tdsh_platform_bl616.c
+- tools/check_core_log.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

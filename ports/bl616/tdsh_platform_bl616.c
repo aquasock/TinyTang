@@ -193,7 +193,21 @@ static int bl616_terminal_read_byte(void *context, uint8_t *byte_out)
         if (s_term_read) {
             b = s_term_read();
         } else if (tang_osd_desk_enabled()) {
+            /* Console mode: the keyboard first, then the host.
+             *
+             * These must not be exclusive, and making them so was a real bug:
+             * treating the ring as a replacement for the CDC left the console
+             * unreachable from the host the moment the layer came up, and
+             * silently -- the shell simply stopped reading, so a keystroke from
+             * the host produced no echo and no prompt, with nothing to say why.
+             * The desktop's Terminal is different: it *owns* the console, which
+             * is why the s_term_read case above is exclusive.  Here both are
+             * ways of typing at one prompt, so the ring leads and the CDC
+             * catches what it does not have. */
             b = tang_osd_desk_read_byte();
+            if (b < 0) {
+                b = tdsh_bl616_console_read_byte();
+            }
         } else {
             b = tdsh_bl616_console_read_byte();
         }
