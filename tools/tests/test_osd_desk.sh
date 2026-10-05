@@ -31,6 +31,7 @@ cc -std=c11 -O1 -Wall -Wextra -Wno-unused-parameter \
    -o "$work/tb" \
    "$root/tools/tests/tb_osd_desk.c" \
    "$root/ports/bl616/tang_pad.c" \
+   "$root/ports/bl616/tang_key.c" \
    "$root/third_party/tinydesk/src/"*.c
 
 "$work/tb"

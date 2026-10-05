@@ -198,13 +198,17 @@ int tdsh_bl616_console_read_byte(void)
 
 int tdsh_bl616_console_write(const void *data, size_t length)
 {
-    /* Everything the shell prints passes through here, which makes this the one
-     * place the desktop layer has to watch.  The feed sees the shell's own
+    /* Everything the console shows passes through here, which makes this the
+     * one place the desktop layer has to watch.  The feed sees the shell's own
      * bytes -- a newline, not the carriage-return-newline inserted below for
      * the USB host.  It is a no-op while the layer is off.  The console is one
      * stream and the layer is a view of it, so it does not own the tap. */
     tang_osd_desk_feed(data, length);
+    return tdsh_bl616_console_write_usb(data, length);
+}
 
+int tdsh_bl616_console_write_usb(const void *data, size_t length)
+{
     const uint8_t *p = (const uint8_t *)data;
     uint8_t out[CDC_MAX_MPS];
     size_t  out_len = 0;

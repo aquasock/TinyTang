@@ -167,6 +167,7 @@ static const tdsh_platform_api_t s_platform = {
 
 static int  (*s_term_read)(void);
 static int  (*s_term_write)(const void *data, size_t length);
+static volatile int s_term_cols;    /* the redirected terminal's width */
 
 void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
                                 int (*write_fn)(const void *data, size_t length))
@@ -227,6 +228,25 @@ static int bl616_terminal_write_bytes(void *context, const void *data, size_t le
 {
     (void)context;
     if (s_term_write) {
+        return s_term_write(data, length);
+    }
+    return tdsh_bl616_console_write(data, length);
+}
+
+/* Command output.  The line editor already wrote to the Terminal window, but
+ * command output -- printf from echo, ls, tangload, the JTAG programmer --
+ * went to the console writer, whose mirror feed drew it raw onto the layer
+ * wherever the desktop had left its cursor: at column 0, through the window
+ * frame, in the desktop's last colours, and invisible to the desktop's own
+ * diff, so it stayed until a full redraw.  Loading a core repaints the layer
+ * from that mirror, which is when it showed.  Now, while the shell runs in the
+ * window, output goes to the window and to the USB console, and the mirror --
+ * which only the desktop's own drawing should feed -- is left alone.  The USB
+ * console keeps every line, as the user asked. */
+int tdsh_bl616_output(const void *data, size_t length)
+{
+    if (s_term_write) {
+        (void)tdsh_bl616_console_write_usb(data, length);
         return s_term_write(data, length);
     }
     return tdsh_bl616_console_write(data, length);
@@ -365,12 +385,32 @@ static void build_prompt(char *out, size_t cap)
              s_session.username, s_session.hostname, display, marker);
 }
 
+void tdsh_bl616_terminal_set_columns(int cols)
+{
+    s_term_cols = cols;
+}
+
+/* The width the line editor wraps at, read once per line.  TinyDesk's Terminal
+ * window is narrower than the screen -- 76 columns inside its frame on the
+ * 80-column layer -- and an editor that assumes 80 puts four characters on the
+ * row after every full one.  The window's width comes from the bridge's start()
+ * and resize().  On the console it is unknown and the editor keeps its default
+ * of 80, which is the console layer's width; no read_byte_timeout is offered,
+ * so it never asks the terminal, which matters because the layer and a host
+ * terminal would both answer. */
+static int bl616_terminal_columns(void *context)
+{
+    (void)context;
+    return s_term_read ? s_term_cols : 0;
+}
+
 static int bl616_readline(const char *prompt, char *line, size_t capacity)
 {
     const tdsh_terminal_io_t io = {
         .context = NULL,
         .read_byte = bl616_terminal_read_byte,
         .write_bytes = bl616_terminal_write_bytes,
+        .columns = bl616_terminal_columns,
     };
     return tdsh_terminal_readline(&s_session, &io, prompt, line, capacity);
 }

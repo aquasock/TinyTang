@@ -2,8 +2,9 @@
 """Reflash a TinyTang board over its USB CDC console, without BOOT mode.
 
 The image is uploaded to the card with the shell's `tangput` command and then
-installed with `tangflash`, which stages it, commits it from TCM and resets.
-The board comes back running the new firmware; no BOOT button, no card reader.
+installed with `tangflash`, which stages it and commits it from TCM; the board
+then needs a power cycle to run it (FLS-001).
+After the power cycle it runs the new firmware; no BOOT button, no card reader.
 
     tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 
@@ -79,13 +80,15 @@ def main():
         port.write(f"tangflash {REMOTE_PATH}\r".encode())
         wait_for(port, "OK committing", 180)
 
-        # The board erases, copies and resets; it will disappear and come back.
-        print("\ncommitting; the board is resetting")
+        # The board erases, copies and soft-resets into the vendor loader, where
+        # it shows up as an FT2232 until it is power-cycled (FLS-001).
+        print("\ncommitted")
     finally:
         port.close()
 
-    print("The board should now be running the new firmware. If it does not "
-          "reappear, put it in ROM-bootloader mode and reflash with "
+    print("Power-cycle the board now to run the new firmware; until then it shows "
+          "up as an FT2232. Afterwards `platform` reports the new build identity. "
+          "If it does not come back, put it in ROM-bootloader mode and reflash with "
           "`make flash CHIP=bl616 BOARD=bl616dk COMX=...`.")
 
 

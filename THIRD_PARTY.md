@@ -62,7 +62,7 @@ The shell this firmware runs, consumed as `third_party/tinydesk-shell` and
 compiled unchanged:
 
 - Project: https://github.com/schikani/tinydesk-shell
-- Commit: `232a39fa3375f2c8eb2560cdc69440f7095f8a25` (v0.1.3)
+- Commit: `3b7d7f8aca22af99a57606c1f8297df11ab81889` (v0.1.4)
 - License: MIT
 
 ## TinyDesk
@@ -70,7 +70,7 @@ compiled unchanged:
 The desktop environment, consumed as `third_party/tinydesk`:
 
 - Project: https://github.com/schikani/tinydesk
-- Commit: `791cad83dc49a5901300438ed4af8eaf73e4b265` (v0.1.3-1)
+- Commit: `f4c1d29f6327df1b3dd40e00fe301cf002021dd6` (v0.1.4)
 - License: MIT
 
 ## nestang core UART protocol (read as a specification, no code copied)

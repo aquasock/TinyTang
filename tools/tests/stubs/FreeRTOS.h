@@ -14,11 +14,14 @@ typedef long     BaseType_t;
 #define pdPASS 1
 #define pdFAIL 0
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
+#define configTICK_RATE_HZ 1000
+
 
 #define taskENTER_CRITICAL() do { } while (0)
 #define taskEXIT_CRITICAL()  do { } while (0)
 
 void      vTaskDelay(TickType_t ticks);
+TickType_t xTaskGetTickCount(void);
 BaseType_t xTaskCreate(void (*fn)(void *), const char *name,
                        uint32_t stack_words, void *arg,
                        unsigned priority, void *handle);

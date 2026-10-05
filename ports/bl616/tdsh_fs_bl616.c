@@ -205,8 +205,9 @@ _ssize_t _read_r(struct _reent *reent, int fd, void *ptr, size_t size)
 _ssize_t _write_r(struct _reent *reent, int fd, const void *ptr, size_t size)
 {
     if (fd == 1 || fd == 2) {
-        /* stdout/stderr: the USB CDC console. */
-        int written = tdsh_bl616_console_write(ptr, size);
+        /* stdout/stderr: the console, or the Terminal window and USB while
+         * the shell runs in one (tdsh_bl616_output). */
+        int written = tdsh_bl616_output(ptr, size);
         if (written < 0) {
             reent->_errno = EIO;
             return -1;

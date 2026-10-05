@@ -661,3 +661,46 @@ The user is to decide on the remaining Phosphor steps, and step 3 has changed sh
 - User Test: PASS
 
 ---
+## 21 COMMIT Unreleased 2026-10-05T10:08:53-07:00
+
+#### Coming From:
+
+Unreleased c89745b
+
+#### Purpose:
+
+Move TinyDesk and TinyDesk Shell to their 0.1.4 release, and fix what the update and its testing exposed.
+
+#### Outcome:
+
+Both submodules are at v0.1.4 -- TinyDesk `f4c1d29`, which pins the shell at `3b7d7f8`, and TinyDesk Shell `3b7d7f8` -- and the port built on the first attempt with no change to `td_hal_t`, the backend interface or the source lists; upstream reformatted every source with clang-format 16, so the real changes were found by formatting the old sources with the release's own `.clang-format` before diffing, which showed `terminal.c`, `vterm.c` and `td.c` unchanged and `wm.c` moved to character-safe text copying. The user confirmed the console, the desktop, the Terminal, Files, the Editor keeping its file name on save, Tab completion, F12 and Castlevania. Three fixes came out of the testing. The Terminal window wrapped typing as one full row then four characters: shell 0.1.4 lets a bridge give the line editor its width through a new optional `columns()` callback, which upstream's bridges fill from the Terminal's `start()` and `resize()`, and ours did not, so the editor assumed 80 columns in a 76-column window; `ports/bl616/td_bridge_bl616.c` now forwards the width and implements `resize()`, and `tdsh_platform_bl616.c` returns it while the shell runs in the window and 0 at the console, where the editor keeps 80. Command output run from the Terminal window -- echo in a script, `tangload`, `nesload`, the JTAG programmer, even `ls` -- went to the console writer, whose mirror feed drew it raw onto the layer at the desktop's cursor, through the window frame and in its last colours, where the desktop's diff never saw it; loading a core repaints the layer from that mirror, which is why the user saw it after starting Castlevania, as a fault present since the Terminal existed. Output now goes through `tdsh_bl616_output()`: at the console as before, and in the window to the window and the USB console but not to the mirror, which the user required, since they will not give up USB output; a listen-only capture confirmed `ls /music` run in the window still reached USB. And `tangflash` and `tools/tinytang_flash.py` said the board would reset, when it needs a power cycle (`FLS-001`); both now say to power-cycle, keeping the `OK committing` text the tool waits for, and the new message was seen on the next flash. `tools/tests/test_osd_desk.sh` had failed to build since cycle 2's keyboard repeat and nobody had run it: its stubs lacked the tick count, the keyboard link and cycle 18's locked overlay calls, and two expectations were older than deliberate changes -- the pointer, which since cycle 15 exists only while the desktop runs, and a re-arm forcing the overlay on, which cycle 14 removed because it covered a running game; with those corrected and three checks added for the current behaviour it passes 50 checks, and every host test passes. One fault is recorded unexplained: on the first boot of the first 0.1.4 build, opening the Terminal froze the screen and keyboard at once, and it did not happen again after a power cycle; nothing in the changed code explained it, and if it recurs, whether F12 still works will say whether the whole BL616 stopped. The reference now has `TDSH-003` and `TDESK-012` for the 0.1.4 pair, superseding `TDSH-001` and `TDESK-001`, and `THIRD_PARTY.md` and the build's comment carry the new pins. The deployed firmware is `c89745b-dirty.0c42a85`, 332528 bytes, confirmed by `platform`; what changed after it is comments, documents and the reference only. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and its only deletions are the two superseded records' status lines, routing pointers and index lines, with their statements untouched, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The Phosphor work continues with the plan agreed before this update: the desktop layer, keyboard link and F12 in Tang-Phosphor's core, so it behaves like the NES core; a background playback task in place of the blocking `phosphor play`; and a Phosphor app in TinyDesk with a file list, now-playing, progress and transport buttons. `tools/tinytang_run.py` still lacks the console guard, and no single command runs all the host tests, which is how the broken one went unnoticed.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- THIRD_PARTY.md
+- ports/bl616/td_bridge_bl616.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/tdsh_console_stdio_bl616.c
+- ports/bl616/tdsh_fs_bl616.c
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- ports/bl616/usb_cdc_bl616.c
+- third_party/tinydesk
+- third_party/tinydesk-shell
+- tools/tests/stubs/FreeRTOS.h
+- tools/tests/tb_osd_desk.c
+- tools/tests/test_osd_desk.sh
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

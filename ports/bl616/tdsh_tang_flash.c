@@ -267,7 +267,10 @@ static int cmd_tangflash(tdsh_session_t *session, int argc, char **argv)
     }
     f_close(&file);
 
-    tdsh_printf("tangflash: OK committing; the board will reset\r\n");
+    /* "OK committing" is what tools/tinytang_flash.py waits for.  The commit
+     * ends in a soft reset, which lands in the vendor loader rather than in
+     * the new image (FLS-001), so the user has to power-cycle the board. */
+    tdsh_printf("tangflash: OK committing; power-cycle the board to run the new firmware\r\n");
     vTaskDelay(pdMS_TO_TICKS(80));   /* let the message reach the host */
     commit_staged_image(image_size);
     return 0;
@@ -357,7 +360,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
 /* ------------------------------------------------------------ registration */
 
 static const tdsh_command_t s_tang_flash_commands[] = {
-    { "tangflash", "tangflash <path>", "Reflash the BL616 from an image on the SD and reset",
+    { "tangflash", "tangflash <path>", "Reflash the BL616 from an image on the SD; power-cycle after",
       cmd_tangflash, 0 },
     { "tangput",   "tangput <size> <path>", "Receive raw bytes over the console into a file",
       cmd_tangput, 0 },

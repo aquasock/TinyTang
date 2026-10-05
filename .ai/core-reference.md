@@ -179,9 +179,9 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How does the Phosphor core receive cover art? | PHOS | PHOS-005 |
 | Does the merged Phosphor core decode WAV or FLAC in the FPGA? | PHOS | PHOS-006 |
 | Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
-| Which shell revision is this, and what can a script do? | TDSH | TDSH-001 |
+| Which shell revision is this, and what can a script do? | TDSH | TDSH-003 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
-| What does TinyDesk need from a port? | TDESK | TDESK-001, TDESK-003 |
+| What does TinyDesk need from a port? | TDESK | TDESK-012, TDESK-003 |
 | How much RAM does the desktop need? | TDESK | TDESK-002 |
 | Why does the Terminal window say "No shell backend in this build."? | TDESK | TDESK-004 |
 | How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
@@ -265,9 +265,10 @@ TCTL-008: "No-BOOT update: patch the boot header (body length at 0x84, CRC-32 of
 TCTL-009: "The RX task kept counters for bytes, joypad frames, FIFO overflows, FIFO high water, resync bytes, unknown frame types and longest poll gap; the rework adding interrupt-driven RX and a TX mutex fixed gamepad and OSD stutter"
 TCTL-010: "Helper scripts being retired: tangctl.py, liveuart.py, liveuart_draw.py, print_uart.py, jtag.py, tdi_compare.py, crc16.sh and fs.py, which converts a Gowin .fs to .bin"
 TCTL-011: "Tang-Control is the architecture of record for the Phosphor core and the cores after it, and is hardware-verified as a whole because this project was built from it; a record's own status still reports whether that specific fact was confirmed here"
-TDSH-001: "TinyDesk Shell v0.1.3 at 232a39f; uScript 1.1.1 with if/while/for/function, pipes, redirection; Linux and Windows host ports"
+TDSH-001: "Superseded by TDSH-003. Recorded TinyDesk Shell v0.1.3 at 232a39f and its scripting language"
 TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
-TDESK-001: "TinyDesk pins tinydesk-shell at 232a39f, the same revision as this project's submodule; its port surface is td_hal_t: read_byte, write, millis, sleep_ms"
+TDSH-003: "TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
+TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
 TDESK-004: "The Terminal app draws 'No shell backend in this build.' exactly when s_backend is NULL; td_terminal_set_backend() supplies it"
@@ -278,6 +279,7 @@ TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock
 TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
 TDESK-010: "Superseded by TDESK-011. Called the Files app's delete dialog a possible TinyDesk bug and suspected it of removing /scripts/boot.tdsh, which the user had deleted themselves"
 TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step"
+TDESK-012: "TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -838,7 +840,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   kind: EXTERNAL
   topic_id: TDSH
   title: "TinyDesk Shell v0.1.3, and the scripting language it provides"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "The shell is TinyDesk Shell v0.1.3 at commit 232a39fa3375f2c8eb2560cdc69440f7095f8a25, consumed here as the third_party/tinydesk-shell submodule. Its portable core is C11 and MIT licensed. The script language, uScript 1.1.1, provides variables, quoting, command substitution, arithmetic, if/elseif/else/endif, while/endwhile, for/endfor, functions with return statuses, pipes up to eight stages, and redirection. tdsh run passes no arguments to a script; a script inherits the caller's variables. It also ships POSIX and Windows host ports."
   consequence: "scripts/boot-cart.tdsh is written in this language and needed nothing beyond if, $?, and two variables. Its four shell commands are registered through tdsh_register_commands()."
@@ -846,6 +848,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk-shell/docs/SCRIPTING.md: the language reference, the run forms, and the limits table"
     - "third_party/tinydesk-shell/VERSION and .git (v0.1.3, 232a39f)"
   verification: "The shell runs on this board; boot-cart.tdsh has been run repeatedly, on its happy path and on its guard path."
+  superseded_by: "TDSH-003"
 
 - record_id: TDSH-002
   kind: EXTERNAL
@@ -860,11 +863,24 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk-shell/src/core/tdsh_builtin.c: the clear builtin's ESC [ H ESC [ 2 J"
   verification: "The mirror was built against this set and the user confirmed the result on the core's screen."
 
+- record_id: TDSH-003
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "TinyDesk Shell v0.1.4: the same language, and a terminal interface that can carry its width"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The shell is TinyDesk Shell v0.1.4 at commit 3b7d7f8aca22af99a57606c1f8297df11ab81889, consumed as the third_party/tinydesk-shell submodule; the core is C11 and MIT licensed, and the script language is unchanged from v0.1.3 (TDSH-001). The line editor now redraws command lines that wrap over several rows. tdsh_terminal_io_t gains two optional members: columns(), the terminal's width read once per line, and read_byte_timeout(), with which the editor may ask the terminal for its width (ESC[6n). With neither, the editor assumes 80 columns."
+  consequence: "This port fills columns() from the width TinyDesk's Terminal window reports, through tdsh_bl616_terminal_set_columns() from the bridge's start() and resize(), and returns 0 at the console so the editor keeps 80, the console layer's width. It offers no read_byte_timeout(): at the console the layer and a host terminal would both answer the width query. Without columns() the editor wrapped the 76-column window at 80, which put four characters on the row after every full one."
+  sources:
+    - "third_party/tinydesk-shell @ 3b7d7f8, include/tdsh_terminal.h: tdsh_terminal_io_t and its comments"
+    - "third_party/tinydesk-shell @ 3b7d7f8, src/core/tdsh_terminal.c: terminal_columns()"
+  verification: "Built into this firmware on 2026-10-05; the user confirmed long lines wrap correctly in the console and in the Terminal window once columns() was filled, and that Tab completion works."
+
 - record_id: TDESK-001
   kind: EXTERNAL
   topic_id: TDESK
   title: "TinyDesk's port surface is four functions, and it pins the same shell revision"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "TinyDesk is a terminal desktop: it draws overlapping text-mode windows with ANSI escape sequences, reads the keyboard and mouse back from the terminal, and has no display hardware. Its whole port surface is td_hal_t, four function pointers - read_byte returning the next byte or -1 without blocking, write returning the number of bytes accepted, millis, and sleep_ms - plus a context pointer. It consumes tinydesk-shell as a submodule at 232a39fa, the same revision this project uses, and its core is portable C11."
   consequence: "The port in ports/bl616/td_desktop_bl616.c is mostly a table of pointers over console calls this project already had. There is no second copy of the shell to keep in step."
@@ -873,6 +889,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk/README.md: the terminal-desktop description and the four-functions claim"
     - "third_party/tinydesk/.gitmodules: submodule third_party/tdsh at 232a39fa3375f2c8eb2560cdc69440f7095f8a25"
   verification: "Built into this firmware and running: the desktop draws, opens windows, and its Terminal runs the shell."
+  superseded_by: "TDESK-012"
 
 - record_id: TDESK-002
   kind: EXTERNAL
@@ -1011,6 +1028,21 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk @ 791cad8, src/widgets.c: td_msgbox() button order, the first-focusable rule, widget_key() for TD_WT_BUTTON"
     - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
   verification: "Read from the source; not exercised on hardware."
+
+- record_id: TDESK-012
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "TinyDesk v0.1.4: the same port surface, and a Terminal that reports its width"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "TinyDesk v0.1.4 at commit f4c1d29f6327df1b3dd40e00fe301cf002021dd6 pins tinydesk-shell at 3b7d7f8, the same revision as this project's submodule, so there is still no second copy to keep in step. td_hal_t is unchanged: read_byte, write, millis and sleep_ms plus a context pointer (TDESK-001). The Terminal app's td_term_backend_t has start(cols, rows), read, write, resize(cols, rows), user and set_user, and the upstream shell bridges pass the window's width from start() and resize() to the line editor through columns() (TDSH-003). Release 0.1.4 also cuts text at character boundaries (td_utf8_copy, td_utf8_pad, td_utf8_skip), keeps the file name when the Editor saves, adds widget and Editor tests, and reformats every source with clang-format 16; its README lists TinyTang as a community port."
+  consequence: "The update needed no change to this port's td_hal_t or to the build's source lists; the bridge in ports/bl616/td_bridge_bl616.c gained a resize() and forwards the width. Diffs across the release should be read after formatting both sides with the release's .clang-format, since otherwise the reformatting hides the real changes."
+  sources:
+    - "third_party/tinydesk @ f4c1d29, apps/td_apps.h: td_term_backend_t"
+    - "third_party/tinydesk @ f4c1d29, include/tinydesk/td_hal.h: td_hal_t"
+    - "third_party/tinydesk commit 5ad7c45: 'the Terminal window gives the shell its width'"
+    - "third_party/tinydesk @ f4c1d29, .gitmodules and third_party/tdsh: the shell at 3b7d7f8"
+  verification: "Built and run on this board on 2026-10-05; the user confirmed the desktop, the Terminal, Files, the Editor's save and F12, and Castlevania from the Terminal."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

@@ -102,7 +102,10 @@ static void shell_task(void *arg)
 
 static int backend_start(void *ctx, int cols, int rows)
 {
-    (void)ctx; (void)cols; (void)rows;
+    (void)ctx; (void)rows;
+
+    /* The window's width, for the shell's line editor to wrap at. */
+    tdsh_bl616_terminal_set_columns(cols);
 
     if (s_started) {
         return 0;
@@ -153,6 +156,13 @@ static int backend_write(void *ctx, const uint8_t *buf, int len)
     return n;
 }
 
+/* The window was resized: the editor reads the width at its next line. */
+static void backend_resize(void *ctx, int cols, int rows)
+{
+    (void)ctx; (void)rows;
+    tdsh_bl616_terminal_set_columns(cols);
+}
+
 static const char *backend_user(void *ctx)
 {
     (void)ctx;
@@ -164,6 +174,7 @@ static const td_term_backend_t s_backend = {
     .start = backend_start,
     .read = backend_read,
     .write = backend_write,
+    .resize = backend_resize,
     .user = backend_user,
     .set_user = NULL,       /* one user on this board */
 };

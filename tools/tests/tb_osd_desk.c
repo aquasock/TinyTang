@@ -69,6 +69,27 @@ bool tang_osd_shown(void)
     return g_osd_last;
 }
 
+/* The locked forms the driver uses for the re-arm and the F12 / L switch
+ * (tang_osd.c): one atomic read-and-send on the board, the same here. */
+int tang_osd_reassert(void)
+{
+    return tang_osd_set(g_osd_last);
+}
+
+int tang_osd_toggle(void)
+{
+    return tang_osd_set(!g_osd_last);
+}
+
+/* The keyboard link: no keyboard here, so an empty report, never fresh. */
+bool tang_fpga_keyboard(uint8_t out[8])
+{
+    for (int i = 0; i < 8; i++) {
+        out[i] = 0;
+    }
+    return false;
+}
+
 /* The pad the poll sees. */
 static uint16_t g_joy;
 
@@ -79,6 +100,7 @@ void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2)
 }
 
 void vTaskDelay(TickType_t ticks) { (void)ticks; }
+TickType_t xTaskGetTickCount(void) { return 0; }
 
 /* Report failure so no task starts: the test drives the diff itself. */
 BaseType_t xTaskCreate(void (*fn)(void *), const char *name, uint32_t stack_words,
@@ -218,7 +240,10 @@ int main(void)
      * tinydesk never draws a mouse pointer: a real terminal does.  Over the OSD
      * there is no terminal, so without this the pointer would be invisible and
      * the controller unusable.  The cell under it is shown reversed, and the
-     * pad starts at the middle of an 80x45 grid: cell (40,22). */
+     * pad starts at the middle of an 80x45 grid: cell (40,22).  The pointer
+     * exists only while the desktop runs, which turns it on (cycle 15); this
+     * section is the desktop's view, and console mode is checked at the end. */
+    tang_osd_desk_set_pointer(true);
     frames_clear();
     feed("\x1b[23;41H");                          /* 1-based row 23, column 41 */
     feed("\x1b[38;5;196m\x1b[48;5;21m" "M");      /* (40,22) red on blue */
@@ -296,13 +321,13 @@ int main(void)
      * would send nothing and the desktop would stay gone for good.  That is
      * what launching a cartridge from the desktop does. */
     g_joy = 0;
-    g_osd_last = false;
+    g_osd_last = true;
     frames_clear();
     tang_osd_desk_core_reloaded();
     desk_poll();
     check(g_frames == 1 && g_type[0] == 0x15 && g_payload[0][0] == 1,
           "a reprogrammed core did not re-enable the layer");
-    check(g_osd_last, "a reprogrammed core did not re-assert the overlay");
+    check(g_osd_last, "a reprogrammed core did not re-assert a shown overlay");
     frames_clear();
     flush();
     check(g_frames == TANG_DESK_ROWS * 2,
@@ -318,6 +343,26 @@ int main(void)
     check(g_osd_set_calls == 1, "stopping the layer did not touch the overlay");
     check(!g_osd_last, "stopping the layer left the overlay asserted");
     check(!tang_osd_desk_enabled(), "the layer still reports itself enabled");
+
+    /* ---- the re-arm restores the overlay, it does not force it ----------
+     * With the game on screen the overlay is off, and a reload must leave it
+     * off: forcing it on put TinyDesk back over a running game (cycle 14). */
+    g_osd_last = false;
+    frames_clear();
+    tang_osd_desk_core_reloaded();
+    desk_poll();
+    check(!g_osd_last, "a reprogrammed core put a hidden overlay back on");
+
+    /* ---- console mode has no pointer ------------------------------------
+     * Off, the pointer is not drawn and the pad sends nothing to the shell:
+     * its mouse reports would arrive at the prompt as text (cycle 15). */
+    tang_osd_desk_set_pointer(false);
+    g_osd_last = true;
+    g_joy = TANG_PAD_RIGHT;
+    while (tang_osd_desk_read_byte() >= 0) { }
+    desk_poll();
+    check(tang_osd_desk_read_byte() < 0, "the pad sent mouse reports in console mode");
+    g_joy = 0;
 
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;
