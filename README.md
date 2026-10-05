@@ -62,13 +62,15 @@ is called out in the source where it is used.
   Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
   resident Rockbox player `/ae350/resident.tpi` onto the core's AE350 and
   streaming the file to it, then waits for the track to finish; Ctrl-C stops
-  the wait, and `nowait` returns as soon as the file is sent. Load the core
-  with `/cores/console138k/phosphortang.bin` after `osd desk off`, since it has
-  no desktop layer. The merged core has no WAV or FLAC decoder in the fabric:
-  its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is the only
-  way to play a file. `scripts/phosphor.tdsh` does the whole round trip --
-  layer off, core in, probe, play `/music/test.mp3` (or `$FILE`) to the end,
-  then the menu core and the layer back -- from the console or the desktop.
+  the wait, and `nowait` returns as soon as the file is sent. The core,
+  `/cores/console138k/phosphortang.bin`, carries the desktop layer, the
+  keyboard link and F12 the way the NES core does, so it runs under TinyDesk
+  with the layer left on. The merged core has no WAV or FLAC decoder in the
+  fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
+  the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
+  desktop up, probes it, hands it the screen and starts `/music/test.mp3` (or
+  `$FILE`) without waiting; F12 then switches between the player and TinyDesk,
+  during the track and after it.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
@@ -245,7 +247,7 @@ STM32's own DFU bootloader.
   the QMK keyboard patches.
 - `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up),
   `boot-cart.tdsh` (core, probe, ROM), `castlevania.tdsh` and `phosphor.tdsh`
-  (play one track on the Phosphor core and return); plus the two
+  (start one track on the Phosphor core under TinyDesk); plus the two
   patch appliers, which run on the host.
 - `tools/` — host tools:
   - `make_test_wav.py` — writes a deterministic 4-second test tone for the

@@ -78,10 +78,10 @@ index 0000000..2610a3e
 +// the FPGA end of it.
 +//
 +// It is a fixed-baud UART, one direction per wire, with no addressing and no
-+// polling discipline imposed by anything but us.  The baud is 750 kbaud
-+// because both ends divide it exactly: clk_pixel is 74.25 MHz, so 99 cycles
-+// per bit, and the keyboard's STM32F401 runs at 72 MHz, so 96.  No standard
-+// baud rate divides both, which is only possible because we own both ends.
++// polling discipline imposed by anything but us.  The baud is set where the
++// receiver is instantiated, 281250 on every core: the keyboard's 72 MHz
++// STM32F401 divides it to exactly 256 clocks, and this end counts its own
++// clocks per bit from CLK_HZ, within half a percent.  The default is unused.
 +//
 +// Wire assignment:
 +//   usb1_dp  (D+)  keyboard PA12 -> FPGA    keyboard to Tang

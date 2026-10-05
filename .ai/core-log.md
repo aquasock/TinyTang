@@ -837,3 +837,36 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 26 COMMIT Unreleased 2026-10-05T13:46:03-07:00
+
+#### Coming From:
+
+Unreleased aafca8e
+
+#### Purpose:
+
+Run the Phosphor core under TinyDesk the way the NES core runs, with the desktop layer kept up, F12 switching between the player and the desktop, the keyboard reaching TinyDesk and left-alt driving the pointer, and settle the keyboard link's baud at 281250 for both cores.
+
+#### Outcome:
+
+The resumed session first confirmed the board back in two-wire after entry 25's one-wire work: the status probe answered 1 and `platform` reported `tinytang e912c5d-dirty.3417d90` with TinyDesk Shell 0.1.4. The core side is Tang-Phosphor's entry 70, which ports this project's desktop layer (`textdisp_wide.sv` and commands 0x13-0x15), the 0x08 keyboard report and left-alt pointer mode into the merged core, moves its keyboard receiver from 750k to 281250 baud, and built a place3 image, MD5 `28536b620a1c0b324ea43c5cf08036a4`, that meets timing. On this side the firmware needed no protocol change, because `fpga_frames.c` queues frames by type and already caches 0x08 reports from any core; `phosphor_cmd.cpp` no longer refuses to play while the desktop layer is on, since the core now draws it and the layer's cell frames take the link lock one frame at a time between stream frames. `scripts/phosphor.tdsh` was rewritten after `castlevania.tdsh`: it loads `phosphortang.bin` with the desktop left up, probes the link, runs `osd off` to hand the screen to the player, and starts the track with `phosphor play ... nowait`, and it no longer reloads `nestang-menu.bin` afterwards, which is what had put the menu core on screen when F12 was pressed after a track. The README describes the new behaviour, and patch 0004's `keylink_rx.sv` comment, which still claimed 750 kbaud although both nestang instantiations pass 281250, was corrected line for line in the patch and in the nestang checkout, and `scripts/apply-nestang-patches.sh` still recognises the series as applied. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` after `git submodule update --init` populated this checkout's TinyDesk submodules at their recorded commits, giving `tinytang_bl616.bin` at 332960 bytes, MD5 `712d95d4642563cb1083ab1fc856426e`, build identity `aafca8e-dirty.a7d2d8d`, installed with `tools/tinytang_flash.py`; the Phosphor image went to `/cores/console138k/phosphortang.bin` with the previous one kept as `phosphortang.bin.bak`, and the script to `/scripts/phosphor.tdsh`, all through the guarded tools. After a power cycle the user reported everything working: the new build identity, the track playing on the Phosphor screen, F12 switching to TinyDesk and back during the track and after it ended with the menu core never appearing, typing in TinyDesk, and left-alt moving the pointer. A later `platform` from the host was correctly refused by the guard because the desktop was running. `phosphor play` without `nowait` still blocks the shell for the length of the track. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and `git diff` confirms it unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and adds only this entry, and `tools/check_core_log.py` reports every entry conforming in this log and in Tang-Phosphor's.
+
+#### Next Steps:
+
+The next step of the agreed sequence is a background playback task on the BL616 in place of the blocking `phosphor play`, so a track can be started, watched and stopped from TinyDesk, followed by the Phosphor app in TinyDesk with a file list of `/music`, now-playing, a progress bar, transport buttons and a status line. The `.bak` cores on the card can be removed once the user is satisfied with the new ones. The open items from entry 25 stand: the 5 Mbaud switch over one-wire, the resident player's layout hang (`PHOS-007`), what selects one-wire at power-up, and a single command to run all the host test scripts.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- scripts/phosphor.tdsh
+- third_party/patches/0004-keyboard-link.patch
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

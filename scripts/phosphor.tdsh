@@ -1,5 +1,5 @@
 #!/bin/tdsh
-# phosphor.tdsh - play one track on the Tang-Phosphor core, then come back.
+# phosphor.tdsh - load the Tang-Phosphor core and start one track under TinyDesk.
 #
 # Run it from the console prompt, or from the desktop -- right-click its icon
 # and choose Run -- or from the Terminal:
@@ -11,22 +11,18 @@
 #
 #   FILE=/music/test.flac; tdsh run /scripts/phosphor.tdsh
 #
-# This is a test launcher for the core as it is today, not the player it will
-# become.  Phosphor's core has no desktop layer yet, so it cannot run under
-# TinyDesk the way the NES core does: the layer is turned off before the load,
-# the screen is Phosphor's own while the track plays, F12 does nothing and the
-# keyboard reaches nothing.  The script therefore waits for the track to end
-# and then puts the board back as boot.tdsh left it -- the menu core loaded and
-# the console on the layer.  Run from the desktop, the desktop comes back with
-# its screen blank until it redraws.  Ctrl-C from a computer's terminal stops
-# the wait early.
+# The core carries the TinyDesk layer, so this works the way castlevania.tdsh
+# does: the desktop stays up across the load, the screen is handed to the
+# player, and F12 switches between the player and TinyDesk.  The track is
+# started without waiting, so the shell comes straight back and the core stays
+# loaded after the track ends -- loading another core is what replaces it.
+# Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
 
 if "$FILE" == ""
     FILE=/music/test.mp3
 endif
 CORE=/cores/console138k/phosphortang.bin
 PLAYER=/ae350/resident.tpi
-MENU=/cores/console138k/nestang-menu.bin
 
 echo "phosphor: core  $CORE"
 echo "phosphor: file  $FILE"
@@ -50,10 +46,6 @@ else
     return 1
 endif
 
-# The layer goes before the load: phosphor play refuses while it is on, since
-# its cell frames share the link, and a core without the layer cannot show it.
-osd desk off
-
 echo "phosphor: programming the FPGA"
 tangload "$CORE"
 if $? != 0
@@ -68,22 +60,17 @@ if $? != 0
     return 1
 endif
 
-echo "phosphor: playing $FILE"
-phosphor play "$FILE"
-if $? != 0
-    echo "phosphor: playback did not complete"
-endif
+# The core comes out of configuration with its overlay on, which in this core
+# shows the TinyDesk layer; hand the screen to the player instead.  F12 brings
+# TinyDesk back.
+osd off
 
-# Back to the boot state, whether or not the track finished: the menu core,
-# its text page blanked, and the console on the layer.
-echo "phosphor: reloading the menu core"
-tangload "$MENU"
+echo "phosphor: playing $FILE"
+phosphor play "$FILE" nowait
 if $? != 0
-    echo "phosphor: the menu core did not load"
+    echo "phosphor: playback did not start"
     return 1
 endif
-fpga
-osd clear
-osd desk on
-echo "phosphor: done"
+
+echo "phosphor: up"
 return 0

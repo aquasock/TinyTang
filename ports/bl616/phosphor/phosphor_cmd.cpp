@@ -20,7 +20,6 @@ extern "C" {
 #include "bflb_mtimer.h"
 #include "tdsh.h"
 #include "tdsh_bl616.h"
-#include "tang_osd_desk.h"
 
 int tdsh_printf(const char *fmt, ...);
 int tang_phosphor_register(void);
@@ -131,16 +130,13 @@ int cmd_poke(const char *address_text, const char *value_text)
     return r.status == 0 ? 0 : 1;
 }
 
-// The desk layer sends its cell frames over the same link, and the core has
-// no layer to draw them on: with it running they would only take bandwidth
-// from the audio.  Shared by both ways of playing a file.
+// The desk layer may stay on: the core carries it (commands 0x13-0x15), and
+// its cell frames take the link lock one frame at a time, so they interleave
+// with the file stream rather than corrupting it.  Shared by both ways of
+// playing a file.
 bool resolve_for_playback(tdsh_session_t *session, const char *path, char *real,
                           size_t real_size)
 {
-    if (tang_osd_desk_enabled()) {
-        tdsh_printf("phosphor: the desk layer is on; run 'osd desk off' first\r\n");
-        return false;
-    }
     char logical[TDSH_MAX_PATH];
     if (tdsh_path_to_real(session, path, real, real_size, logical, sizeof(logical)) != 0) {
         tdsh_printf("phosphor: bad path %s\r\n", path);
