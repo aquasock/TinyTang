@@ -1,8 +1,8 @@
 diff --git a/build.tcl b/build.tcl
-index c7443c5..dd180d3 100644
+index c7443c5..fb851d8 100644
 --- a/build.tcl
 +++ b/build.tcl
-@@ -97,15 +97,35 @@ if {$dev eq "nano20k"} {
+@@ -97,22 +97,48 @@ if {$dev eq "nano20k"} {
      set_option -output_base_name nestang_${dev}_${controller}
  } elseif {$dev eq "console138k"} {
      set_device GW5AST-LV138PG484AC1/I0 -device_version B
@@ -41,6 +41,21 @@ index c7443c5..dd180d3 100644
  } else {
      error "Unknown device $dev"
  }
+ 
+ add_file -type verilog "src/iosys/iosys_bl616.v"
+-add_file -type verilog "src/iosys/gowin_dpb_menu.v"
+-add_file -type verilog "src/iosys/textdisp.v"
++# The legacy 32x28 page and its store are not built for the menu core: it has
++# no ROM menu, so that page has nothing to hold, and the compositor's overlay
++# branch is tied to black instead (see iosys_bl616.v's MENU_CORE section).
++# `menu` is set by the console138k branch above; other boards never set it.
++if {![info exists menu] || !$menu} {
++    add_file -type verilog "src/iosys/gowin_dpb_menu.v"
++    add_file -type verilog "src/iosys/textdisp.v"
++}
+ add_file -type verilog "src/iosys/textdisp_wide.sv"
+ add_file -type verilog "src/iosys/uart_fixed.v"
+ add_file -type verilog "src/apu.v"
 diff --git a/src/boards/console138k_menu.sdc b/src/boards/console138k_menu.sdc
 new file mode 100644
 index 0000000..d5b21d2
@@ -104,6 +119,54 @@ index 0000000..9fbc521
 +    localparam SDRAM_BANK_WIDTH = 2;      // 4 banks
 +
 +endpackage
+diff --git a/src/iosys/iosys_bl616.v b/src/iosys/iosys_bl616.v
+index efbcc00..e67da54 100644
+--- a/src/iosys/iosys_bl616.v
++++ b/src/iosys/iosys_bl616.v
+@@ -287,6 +287,13 @@ always @(posedge clk) begin
+                             core_config <= {data_reg[23:0], rx_data};
+                         end
+                     end
++`ifndef MENU_CORE
++                    // TinyTang menu core: no legacy page, so the cursor and
++                    // print commands have nothing to address.  They are the
++                    // only writers of the page store, and the store is not
++                    // built; leaving them in would drive wires that lead
++                    // nowhere.  Command 8 below still sets the overlay -- the
++                    // wide layer is gated on it.
+                     4: case (data_cnt)              // cursor
+                         0: cursor_x <= rx_data;
+                         1: cursor_y <= rx_data;
+@@ -301,6 +308,7 @@ always @(posedge clk) begin
+                             we <= 1;
+                         end
+                     end
++`endif
+                     6: begin
+                         rom_loading_reg <= rx_data;
+                         recv_state <= RECV_IDLE;    // Single byte command
+@@ -709,6 +717,14 @@ always @(posedge clk) begin
+ end
+ 
+ // text display
++`ifdef MENU_CORE
++// TinyTang menu core: there is no legacy page.  Nothing draws it, so the
++// compositor's overlay branch -- the one PROT-008 describes -- has no source,
++// and what it shows when the overlay is up and the wide layer is not is this
++// constant.  Black instead of a baked-in logo, by construction rather than by
++// an `osd clear` someone has to remember to send.
++assign overlay_color = 15'd0;
++`else
+ `ifndef SIM
+ wire [31:0] reg_char_di = {8'b0, x_wr, y_wr, char_wr};
+ wire [3:0] reg_char_we = {4{we}};
+@@ -719,5 +735,6 @@ textdisp #(.COLOR_LOGO(COLOR_LOGO)) disp (
+     .reg_char_di(reg_char_di), .reg_char_we(reg_char_we)
+ );
+ `endif
++`endif
+ 
+ endmodule
 diff --git a/src/nestang_top.sv b/src/nestang_top.sv
 index 347e0a0..0dd2a09 100644
 --- a/src/nestang_top.sv

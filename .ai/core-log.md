@@ -281,3 +281,35 @@ The next cycle is the user's ask: boot to TinyDesk's console mode and require `d
 - User Test: PASS
 
 ---
+## 10 COMMIT Unreleased 2026-10-04T17:51:31-07:00
+
+#### Coming From:
+
+Unreleased c57db21
+
+#### Purpose:
+
+Make the board come up at TinyDesk's console with the display showing it, the desktop a thing the user types, and the core's own dead page gone from the menu core.
+
+#### Outcome:
+
+Three pieces landed as one cycle because they turned out to be one thing. First, `desktop` became self-sufficient: `cmd_desktop` now stops the legacy console mirror and calls `tang_osd_desk_set(true)` before `desktop_run()`, so the layer is the command's to enable and is never shown enabled and empty. Second, `scripts/boot.tdsh` stopped short of the desktop and stopped using the legacy page -- and that is where the cycle changed shape: reading `tang_osd_desk.h` showed the module is not a desktop renderer at all but the layer driver, fed by the console tap (`console tap -> td_vterm_write -> diff -> frames`), so *enabling the layer is the console mirror*. `osd term on` was drawing the core's 32x28 page with nand2mario's font, one flat colour and the baked-in logo, which is exactly what the user reported seeing; `osd desk on` draws the same session on the 80x45 grid with per-cell colour instead. No firmware refactor was needed for that, and the earlier estimate in this session that it would be one was wrong. Third, the menu core lost the legacy page for good: `iosys_bl616.v` takes its `4:`/`5:` command items out under `MENU_CORE` and replaces the `textdisp` instance with `assign overlay_color = 15'd0`, keeping command `8:` because the wide layer is gated on the overlay; and `build.tcl` excludes `gowin_dpb_menu.v` and `textdisp.v` from the menu build, guarded with `[info exists menu]` so no other board is affected. The effect is structural rather than procedural: with no page there is no source for the compositor's overlay branch, so a reset menu core shows black instead of a logo, and `PROT-008`'s window closes by construction instead of by an `osd clear` someone has to remember. This also revisits the previous cycle's strip: the legacy page was deliberately kept then, on the reasoning that the OSD commands used it, which holds for the NES core where the ROM menu writes it and not at all for the menu core, where its only content was the baked logo. The menu core rebuilds with the page gone -- `nestang_console138k_ds2_menu.bin`, 4492288 bytes, MD5 `b7221eb07758bf69beab6ee4a4039905` -- the reconstruction test passes byte-for-byte against a fresh clone plus the common and menu series, and the NES core rebuilt with all of it present is byte-identical to `191537528e67911993c6fd40173057f0`, which is the evidence that the gating genuinely leaves the stock path alone. On hardware the user confirmed the boot now lands at the console with the session mirrored in TinyDesk's own font and no logo, and typing `desktop` brings the desktop up, both verified from the console stream and on the display. Three defects were found on the way and are recorded rather than fixed: `tools/tinytang_flash.py` prompts `[y/N]` with no `-y`, so on a non-interactive stdin it waits forever and cannot be told from a board that is resetting -- it cost two stalled attempts before the upload and `tangflash` were run by hand; the physical keyboard is not wired into console mode, so at the prompt the board can only be typed at from a computer, which is the next cycle; and this cycle's own first edit left `desktop` in `boot.tdsh` after removing `osd desk on`, which would have kept auto-starting it, and was caught before deploying. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected, and this entry was validated against the template, section order, prose, Status and numbering rules.
+
+#### Next Steps:
+
+The physical keyboard in console mode is the next cycle, and it is the thing that makes the experience whole rather than a display: the keyboard link feeds the core, and only the desktop path turns its output into typing, so the prompt is currently typeable only from the host. Separately, `osd term` and `tang_osd_term.c` now draw a page the menu core does not build, so they should be retired or pointed at the layer rather than left as a command that does nothing; and the menu core itself is still not the boot core -- it was exercised by hand and by `osd desk on`, while `boot.tdsh` loads `nestang-desk.bin`.
+
+#### Files Modified:
+
+- ports/bl616/td_desktop_bl616.c
+- scripts/boot.tdsh
+- third_party/patches/menu/0001-menu-core.patch
+- third_party/patches/menu/README.md
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

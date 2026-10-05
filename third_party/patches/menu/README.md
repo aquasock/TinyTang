@@ -15,7 +15,7 @@ pristine; nothing here is a fork.
 
 ## 0001-menu-core.patch
 
-Four files, 89 insertions.
+Five files, 114 insertions.
 
 - `src/boards/console138k_menu.v` — the console138k board file plus one define,
   `MENU_CORE`. Everything the board needs to be a board is unchanged: the 50 MHz
@@ -34,9 +34,19 @@ Four files, 89 insertions.
   removes it, and a constraint naming a removed net fails the timing stage
   outright. `clk` becomes a primary clock on its own net, where upstream
   declares it generated from `fclk`; the period is upstream's (15.51 ns ÷ 3).
+- `src/iosys/iosys_bl616.v` — the legacy 32x28 page comes out too. Its command
+  items (`4:` cursor, `5:` print) are gated, and the `textdisp` instance is
+  replaced under `MENU_CORE` by `assign overlay_color = 15'd0`. Command `8:`,
+  which sets the overlay, is deliberately kept: the wide layer is gated on it.
+  Half a page is worse than none -- with the page gone the compositor's overlay
+  branch has no source, so it draws black rather than a baked-in logo, and
+  PROT-008's window closes by construction rather than by an `osd clear`
+  somebody has to remember to send.
 - `build.tcl` — a third argument, `menu`, selecting the board file, the SDC and
-  the artifact name. The emulator's sources stay in the file list and are pruned
-  by synthesis because nothing instantiates them.
+  the artifact name; and `gowin_dpb_menu.v` + `textdisp.v` are excluded for the
+  menu build (guarded with `[info exists menu]`, since only the console138k
+  branch sets it). The emulator's own sources stay in the file list and are
+  pruned by synthesis because nothing instantiates them.
 
     gw_sh build.tcl console138k ds2 menu
 
@@ -60,7 +70,9 @@ opposite is the intuitive guess.
 
 ## Scope
 
-This first patch leaves the emulator's *sources* in the build's file list; only
-the instantiation is gated. Trimming the list can follow once the core is proven
-on hardware. Nothing here ports nestang's streaming command path — ROM data,
-floppy, PS/2 and the extended channel are absent by construction, not disabled.
+This patch leaves the emulator's *sources* in the build's file list; only the
+instantiation is gated, so trimming that list can follow once the core is proven
+on hardware. The legacy page's two files are the exception -- they are excluded
+outright, because the menu core has nothing to put in them. Nothing here ports
+nestang's streaming command path -- ROM data, floppy, PS/2 and the extended
+channel are absent by construction, not disabled.

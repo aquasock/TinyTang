@@ -15,8 +15,13 @@
 # The cycle this sets up, all on the HDMI output:
 #
 #   tangload   put a core in, so there is a raster for the layer to sit over
-#   osd desk   enable the desktop layer and start the pointer
-#   desktop    run TinyDesk on it -- this blocks until it is quit
+#   osd clear  blank the core's own text page, which a reset core shows
+#   osd desk   mirror this session onto the desktop layer, so the screen shows it
+#
+# and then it stops.  The board is left showing its own console on the display,
+# the way a machine of the period came up at a prompt, and bringing the desktop
+# up is a thing the user types -- `desktop` enables the layer itself and turns
+# the mirror off on its way past.
 #
 # The game comes back by launching a cartridge from the desktop, and the
 # desktop comes back with L on controller 1.
@@ -66,13 +71,19 @@ endif
 # painting blank rather than stray characters.
 osd clear
 
-# The layer needs the overlay, which the desktop sets when it starts drawing.
+# Mirror this session onto the core's own text page.  The board has no display
+# hardware, so this is what puts the console on the screen: from here the
+# display shows the prompt, not the core's idle logo, and `desktop` is a thing
+# the user asks for rather than the thing that arrives first.  `desktop` stops
+# it as it takes the screen.
+# Mirror this session onto the desktop *layer* -- the 80x45 grid with per-cell
+# colour that the desktop itself draws on, fed by the console tap.  This is what
+# puts the console on the display, and it is why the mirror looks like TinyDesk
+# rather than like the core's own 32x28 page: `osd term` draws the latter, with
+# nand2mario's font, one flat colour and the core's baked-in logo.
 osd desk on
-if $? != 0
-    echo "boot: the desktop layer did not start; leaving the prompt"
-    return 0
-endif
 
-desktop
-
-echo "boot: the desktop exited; this is the prompt"
+# Stop here, at a loaded core, a displayed prompt and a live console.  The
+# desktop is the only thing that draws into the layer as a window manager, so
+# starting it from here would take the console before the user asked.
+echo "boot: core loaded; type 'desktop' to bring up TinyDesk"
