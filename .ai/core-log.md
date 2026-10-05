@@ -502,3 +502,40 @@ Make the emulator-free menu core the core the board boots, and bring the README 
 - User Test: PASS
 
 ---
+## 17 COMMIT Unreleased 2026-10-04T23:02:44-07:00
+
+#### Coming From:
+
+Unreleased 486985e
+
+#### Purpose:
+
+Retire `osd term`, which the desktop layer replaced and which does nothing on the menu core, and drop the TinyDesk delete-dialog issue now that the missing boot script is known to have been the user's own deletion.
+
+#### Outcome:
+
+`osd term` is gone: `ports/bl616/tang_osd_term.c` and `tang_osd_term.h` are deleted, the `term` subcommand and its usage line are out of `tang_osd.c`, the console writer in `usb_cdc_bl616.c` feeds only the desktop layer, and `cmd_desktop` no longer stops a mirror that cannot be running. The first build failed on the one remaining dependency -- `osd`'s usage text printed the terminal's row count -- and that line now states the fact it stood for, that the core's logo owns rows 25 and 26, and that the page is the NES core's. `usbwatch` now tells the user to run `osd desk on` for the cable-swap test rather than `osd term on`, with a note that its row-27 reading is on the NES core's page; a stale comment paragraph describing the old mirror came out of `scripts/boot.tdsh`, and `THIRD_PARTY.md` and the README no longer list the file. Three settled reference records mention `tang_osd_term.c` in their consequences and were left as history. The firmware built clean at 319600 bytes, MD5 `7dbeb02fd78b1b16ba1f24c95c365ac6`, 2032 bytes smaller, with no `tang_osd_term` symbol in the link map; it went to the card with `tangput` after the absolute-position check, `boot.tdsh` went with it at 4389 bytes, and `tangflash` committed it. This install presented the FT2232 as `FLS-001` describes, so entry 15's straight-to-console reset did not recur. The user power-cycled and reports everything passes: the board boots to the console, the desktop runs and exits to the console, and F12 switches. The host-side check that `osd term` is now rejected was not run, because the board was not on USB when it was attempted; the link map is the evidence that the code is gone. `TDESK-010` is superseded by `TDESK-011`, which keeps only the source fact that TinyDesk's delete confirmations focus their Delete button, records that `/scripts/boot.tdsh` was deleted by the user rather than by that dialog, and states that the project is not raising it upstream, at the user's direction; the routing table now leads to `TDESK-011`. The core-syntax audit required by the change to these files was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and its only deletions are `TDESK-010`'s status, routing pointer and index line as the reference's supersession rule requires, with its statement untouched, the added record was checked against the field shape and family ordering and reached from both indexes, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+The `tangflash` reset behaviour now has one install of each kind, the FT2232 this time and the console in entry 15, so `FLS-001` stands and the earlier case stays unexplained; a build identity the board can report would let an install be confirmed from the host. Nothing else is pending from this cycle.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/tang_osd.c
+- ports/bl616/tang_osd_term.c
+- ports/bl616/tang_osd_term.h
+- ports/bl616/tang_usbstat.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/usb_cdc_bl616.c
+- scripts/boot.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

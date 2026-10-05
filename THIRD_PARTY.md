@@ -67,8 +67,8 @@ The desktop environment, consumed as `third_party/tinydesk`:
 
 ## nestang core UART protocol (read as a specification, no code copied)
 
-The frame format and command set implemented by `ports/bl616/tang_fpga_uart.c`,
-`tang_osd.c` and `tang_osd_term.c` are nand2mario's, documented in comments
+The frame format and command set implemented by `ports/bl616/tang_fpga_uart.c`
+and `tang_osd.c` are nand2mario's, documented in comments
 above the nestang receiver:
 
 - Project: https://github.com/nand2mario/nestang

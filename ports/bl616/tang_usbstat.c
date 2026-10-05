@@ -124,13 +124,14 @@ static int cmd_usbstat(tdsh_session_t *session, int argc, char **argv)
 // console is the port being measured: with a keyboard attached there is no
 // computer to print to.  So a watcher samples the register and puts the state
 // somewhere that survives the swap -- on the OSD page, in row 27, which the
-// OSD terminal leaves free, and on the console when one is attached.
+// page's logo rows leave free, and on the console when one is attached.
 //
-// Run `osd term on` first, so the page is up and the reading stays visible on
-// the board's own video output after the cable is moved.
+// Run `osd desk on` first, so the console -- where the reading is also
+// reported -- stays visible on the board's own video output after the cable is
+// moved.  Row 27 is the NES core's page, which the menu core does not have.
 
 #define WATCH_PERIOD_MS 250
-#define WATCH_ROW       27      /* below the terminal's 25 rows */
+#define WATCH_ROW       27      /* the page's last row, below its logo */
 
 static volatile bool s_watching;
 static bool          s_task_started;
@@ -218,7 +219,7 @@ static int cmd_usbwatch(tdsh_session_t *session, int argc, char **argv)
         tdsh_printf("usage: usbwatch on | usbwatch off\r\n");
         tdsh_printf("Reports each USB OTG role change to the OSD (row %d) and the\r\n",
                     WATCH_ROW);
-        tdsh_printf("console. For the cable-swap test, run `osd term on` first so the\r\n");
+        tdsh_printf("console. For the cable-swap test, run `osd desk on` first so the\r\n");
         tdsh_printf("reading stays visible without a computer.\r\n");
         tdsh_printf("now: %s\r\n", s_watching ? "watching" : "idle");
         return 1;

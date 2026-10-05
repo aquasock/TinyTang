@@ -60,8 +60,6 @@ is called out in the source where it is used.
   the core, `status` reports cells and rows sent and any refused.
 - **`osd on | off | clear | at | menu`** draw on the NES core's own 32x28 text
   page, the one nand2mario's menu uses. The menu core does not build that page.
-  `osd term` mirrored the console onto it before the desktop layer existed; it
-  does nothing on the menu core and is due to be retired.
 - **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
@@ -212,8 +210,7 @@ STM32's own DFU bootloader.
   - `tang_key.c` — keyboard reports to terminal input bytes, with auto-repeat.
   - `tang_pad.c` — the controller as the desktop's pointer, as xterm SGR mouse
     reports.
-  - `tang_osd.c`, `tang_osd_term.c` — the NES core's 32x28 text page and
-    `osd`, and the old `osd term` mirror.
+  - `tang_osd.c` — the NES core's 32x28 text page, and `osd`.
   - `td_desktop_bl616.c` — the TinyDesk port and the `desktop` command.
   - `td_bridge_bl616.c` — the shell inside TinyDesk's Terminal window.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.

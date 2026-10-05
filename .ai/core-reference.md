@@ -185,7 +185,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
-| Can the Files app delete a file with two keystrokes? | TDESK | TDESK-010 |
+| Can the Files app delete a file with two keystrokes? | TDESK | TDESK-011 |
 | Why is CONFIG_CHERRYUSB_HOST set with a device-only firmware? | TOOL | TOOL-001 |
 | Which IDCODEs does the Gowin programmer accept? | TOOL | TOOL-002 |
 | What versions are the build made from? | TOOL | TOOL-003 |
@@ -272,7 +272,8 @@ TDESK-006: "The Editor saves with Ctrl+S; the host HAL clears IXON so it arrives
 TDESK-007: "td_run() returns after td_quit(); td_shutdown() restores the terminal"
 TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock.c and proto/td_tls.c: POSIX sockets, esp_timer.h, and mbedTLS with esp_crt_bundle.h"
 TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
-TDESK-010: "In the Files app the Delete key opens a confirmation whose first button, Delete, holds the focus, and Enter activates the focused button, so Delete then Enter removes the selected file; a possible TinyDesk bug, suspected of deleting /scripts/boot.tdsh on 2026-10-04 but not reproduced"
+TDESK-010: "Superseded by TDESK-011. Called the Files app's delete dialog a possible TinyDesk bug and suspected it of removing /scripts/boot.tdsh, which the user had deleted themselves"
+TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -965,7 +966,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   kind: EXTERNAL
   topic_id: TDESK
   title: "Possible TinyDesk bug: the Files app's delete confirmation defaults to Delete, so two keystrokes remove a file"
-  status: INFERRED
+  status: SUPERSEDED
   verified_date: 2026-10-04
   statement: "files.c binds the Delete key to do_delete() (`case TD_KEY_DELETE: do_delete()`), which opens td_msgbox(\"Confirm\", \"Delete <name>?\", \"Delete|Cancel\"). td_msgbox adds its buttons in the order given, and a window's first focusable widget takes the focus (widgets.c: `if (focusable && !win->focus) win->focus = w`), so the focused button is Delete; a focused button activates on Enter or Space (widget_key), and delete_answer() removes the file for button 0 with no further step. The desktop's own icon menu reaches the same kind of confirmation through ask_delete()."
   consequence: "On this board the keyboard sends Delete as ESC [ 3 ~ (tang_key.c), which the desktop's parser reads as TD_KEY_DELETE, and Enter is both a key and, under right-alt, the pointer's left click -- so a file in the selected row can be removed by Delete followed by Enter or Space, which is easy to do by accident while testing input. /scripts/boot.tdsh sorts first in that folder. When boot.tdsh is missing nothing runs tangload, the FPGA stays on the core it configured itself with at power-up, and the screen shows that core's TangCore splash rather than TinyDesk. Until TinyDesk changes the default (Cancel first, or no default on a destructive dialog), the card's boot chain is one confirmed dialog away from being removed, and restoring it is a tangput of scripts/boot.tdsh. This is a candidate for an upstream issue against TinyDesk rather than a local patch."
@@ -975,6 +976,22 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "third_party/tinydesk @ 791cad8, apps/desktop.c: item_menu_chosen() and ask_delete()"
     - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
   verification: "Inferred from reading the source, not reproduced. On 2026-10-04 /scripts/boot.tdsh vanished from the card during the user's display testing, after the board had booted with it; no other file was missing or moved and no tool run from the host removes files, which is what made the Files app the suspect. The board then came up on the FPGA's own core (fpga reported core 0, the user saw TangCore), and restoring the file with tangput returned the boot chain."
+  superseded_by: "TDESK-011"
+
+- record_id: TDESK-011
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "TinyDesk's delete confirmations focus their Delete button"
+  status: SOURCED
+  verified_date: 2026-10-04
+  statement: "files.c binds the Delete key to do_delete(), which opens td_msgbox(\"Confirm\", \"Delete <name>?\", \"Delete|Cancel\"), and the desktop's icon menu reaches the same dialog through ask_delete(). td_msgbox adds its buttons in the order given and a window's first focusable widget takes the focus (widgets.c: `if (focusable && !win->focus) win->focus = w`), so Delete is focused; a focused button activates on Enter or Space (widget_key), and delete_answer() removes the file for button 0 with no further step."
+  consequence: "Delete followed by Enter or Space removes the selected file. On this board the keyboard's Delete arrives as ESC [ 3 ~ (tang_key.c), which the desktop reads as TD_KEY_DELETE. This is TinyDesk's design as written, recorded so it is not mistaken for a fault; the project is not raising it upstream. It supersedes TDESK-010, which suspected the dialog of removing /scripts/boot.tdsh on 2026-10-04 -- the user had deleted that file themselves."
+  sources:
+    - "third_party/tinydesk @ 791cad8, apps/files.c: do_delete(), delete_answer(), the TD_KEY_DELETE case in the list's key handler"
+    - "third_party/tinydesk @ 791cad8, apps/desktop.c: item_menu_chosen() and ask_delete()"
+    - "third_party/tinydesk @ 791cad8, src/widgets.c: td_msgbox() button order, the first-focusable rule, widget_key() for TD_WT_BUTTON"
+    - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
+  verification: "Read from the source; not exercised on hardware."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

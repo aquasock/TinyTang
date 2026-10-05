@@ -48,7 +48,6 @@
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
-#include "tang_osd_term.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -355,13 +354,6 @@ static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)
      * it here is the only way to be sure that grid is never shown enabled and
      * empty -- which is the same uninitialised-store problem osd clear fixes
      * for the legacy page, one layer up.  boot.tdsh no longer sends it. */
-    /* The console mirror has been drawing this session onto the core's own page
-     * since boot, which is what put the prompt on the display.  The desktop
-     * takes the screen from here, so stop the mirror rather than leave it
-     * rendering frames into a page nobody sees -- they contend for the same
-     * link the desktop needs. */
-    (void)tang_osd_term_set(false);
-
     if (tang_osd_desk_set(true) != 0) {
         tdsh_printf("desktop: the desktop layer did not start; not bringing it up\r\n");
         return 1;
