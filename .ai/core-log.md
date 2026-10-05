@@ -472,3 +472,33 @@ The `tangflash` reset that returned straight to the console contradicts `FLS-001
 - User Test: PASS
 
 ---
+## 16 COMMIT Unreleased 2026-10-04T22:54:48-07:00
+
+#### Coming From:
+
+Unreleased 9bbcbeb
+
+#### Purpose:
+
+Make the emulator-free menu core the core the board boots, and bring the README up to date with the system as it now stands.
+
+#### Outcome:
+
+`scripts/boot.tdsh` now loads `/cores/console138k/nestang-menu.bin`; the `CORE` line is the only executable change, its header now describes F12 and the menu core, and its `if`/`endif` structure is unchanged at 2/2, which is also what the committed revision has -- cycle 4's 3/3 predates cycle 10's rewrite. Checking the card first found its menu core stale: 4492288 bytes, the cycle-10 build, which predates patch `0007` and so would have brought the left-edge marks back. The menu core was rebuilt with `tools/build_menu_core.sh` and came back byte-identical to cycle 13's, 4524032 bytes, MD5 `01f9e221fe220c188778f94dd182d9c6`, with TNS 0 on every clock, which also confirms the menu build is reproducible as the NES build was shown to be in cycle 8. The core and then the script went to the card with `tangput` after the absolute-position check, and both sizes were confirmed on the card. No firmware change was needed: the keyboard link, F12, the desktop and the layer's re-arm already serve the menu core. Both cores answer core 1, so `fpga` cannot tell them apart; the user's test is what identifies the menu core, and the user reports everything passes -- the board boots to the console with a clean left edge, F12 shows an empty frame and returns to the console, the desktop works, and `boot-cart.tdsh` starts Castlevania on the NES core with F12 switching between the game and TinyDesk. The README had not changed since 2026-10-03 and was rewritten against the code and the reference rather than from memory: it now describes the desktop on the HDMI output, console mode, F12 and L, the keyboard link and its firmware, the pointer existing only in the desktop, both cores and the nestang patch series, the build and test tools, and three new board facts -- the FPGA's own power-up core (`DEV-006`), the console's exclusive input (`TOOL-009`) and the layer's raster alignment (`PROT-009`). It also corrects what had become wrong: the FPGA does not come up empty, `osd term` is described as legacy and due for retirement, the cartridge example uses the patched NES core rather than the stock one, and fact 6 now records that one `tangflash` came straight back to the console as entry 15 found, rather than stating that a power cycle is always needed. Two of its claims were corrected before committing after checking them against source: the put tool's guard checks for the desktop's markers and the prompt, not for absolute positioning, and the QMK licence is GPL-2.0 overall with GPL-3.0-only board files and keymap, as `THIRD_PARTY.md` records. The core-syntax audit required by the change to this log was performed: `.ai/core.md` was re-read and confirmed unchanged, `.ai/core-syntax.md` was re-read, the complete `.ai/` diff was inspected and is this entry alone, and `tools/check_core_log.py` reports every entry conforming.
+
+#### Next Steps:
+
+`osd term` is to be retired, as the user decided: remove the command and `ports/bl616/tang_osd_term.c`, and the README's mention of it with them. The user has since said that `/scripts/boot.tdsh` went missing because they deleted it themselves, so `TDESK-010`'s suspicion that the Files app's dialog removed it is wrong; the dialog's default is still a source fact, and the record needs superseding by one that drops the suspected incident, with the user to decide whether it stays an upstream suggestion. The `tangflash` reset behaviour from entry 15 is still to be watched on the next install.
+
+#### Files Modified:
+
+- README.md
+- scripts/boot.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

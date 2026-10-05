@@ -23,20 +23,25 @@
 # up is a thing the user types -- `desktop` enables the layer itself and turns
 # the mirror off on its way past.
 #
-# The game comes back by launching a cartridge from the desktop, and the
-# desktop comes back with L on controller 1.
+# The board boots the menu core, which has no machine of its own: F12 (or L
+# on controller 1) switches between TinyDesk and the core, and on this core
+# the core's side is an empty frame.  A game is a cartridge launched from the
+# console or the desktop -- boot-cart.tdsh loads the NES core for it -- and F12
+# switches between the game and TinyDesk the same way.
 
-# The core has to be the patched one.  The desktop layer is three commands the
-# stock nestang does not implement -- it consumes them as unknown frame types
-# and ignores them, which is exactly what keeps it working -- so loading
-# /cores/console138k/nestang.bin here would leave 'osd desk on' talking to a core
-# that cannot hear it, and the screen black with no error anywhere.
-# tools/tinytang_desk_deploy.sh puts this image on the card under this name.
+# The core is the menu core: this project's patched nestang with the NES
+# machine left out (third_party/patches/menu/, built by
+# tools/build_menu_core.sh), so TinyDesk has a host of its own rather than an
+# idle emulator.  It has to be a patched core.  The desktop layer is three
+# commands the stock nestang does not implement -- it consumes them as unknown
+# frame types and ignores them, which is exactly what keeps it working -- so
+# loading /cores/console138k/nestang.bin here would leave 'osd desk on' talking
+# to a core that cannot hear it, and the screen black with no error anywhere.
 # Nothing below falls through to the desktop on a failure.  The desktop takes
 # the console, so starting it with no core, or with no layer, would leave a
 # black screen and no prompt -- a boot that looks broken and cannot be typed
 # at, which is the worst possible place to discover a wrong path.
-CORE=/cores/console138k/nestang-desk.bin
+CORE=/cores/console138k/nestang-menu.bin
 
 # Drop the layer before touching the core.
 #
