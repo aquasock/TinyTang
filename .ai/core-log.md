@@ -1307,3 +1307,33 @@ Record entry 37's correction with the script memory findings, upstream issue #2 
 - User Test: N/A
 
 ---
+
+## 39 COMMIT Unreleased 2026-10-06T08:41:24-07:00
+
+#### Coming From:
+
+Unreleased ba0375a
+
+#### Purpose:
+
+Correct entry 37, record the causes found for two faults the user reported, and record what the FPGA's own flash holds, with the README sentence the user asked for.
+
+#### Outcome:
+
+Entry 37 said scripts started from the desktop now load their cores; that was a misreading of the user's report, and it is wrong: from the desktop a cartridge script returns to the Terminal without running, while from the console it works. A listen-only capture of the desktop Terminal's output on USB, with `crash` and `ble` run in the Terminal, found the cause, recorded as `TDSH-006`. The scripts were opened from Files, which runs `tdsh run` with a quoted path. Each script first allocates a job holding a full copy of the 19,096-byte session, 97% of it the 64-entry variable table, then its 16 KB stack; with the desktop open, only about 7.7 KB of the heap lies outside its 40,536-byte largest block. The script's own small allocations then fail: a 1,056-byte `tdsh_realloc` of its line table was refused in task `tdsh_script`, and the script returns silently, cleanly since entry 35. At the user's request the numbers were filed upstream as tinydesk-project/tinydesk-shell issue #2, proposing that the `tdsh.h` limits behind the job and the stack be overridable, with an offer of the pull request; one estimate in it was corrected after posting. The second fault was a song that would not play from the Phosphor app. It played from the console by its quoted name with spaces after 16 seconds of silence: the whole 4,387,971-byte file is sent to the AE350 player before the first sample, about 3.7 s per MB (`PHOS-010`). A 5,794,918-byte file whose name also has spaces played from the app, and the user then played several more songs and all started after the wait, so the name was not the cause; the long silent load was. The FPGA's own configuration flash was read back in one-wire mode with openFPGALoader, read-only apart from the SRAM erase that reaching the flash requires, and holds one 1,084,246-byte compressed bitstream for this FPGA that matches none of the TangCore 0.9 cores (`DEV-007`). TangCore 0.9's installation writes only the BL616 and TangCore's firmware has no path that writes the FPGA's flash, and the user does not recall writing it, so it is most likely the factory splash core. README fact 14 now says so and that TinyTang never writes that flash. The board's BL616 loader at `0x0` is likewise not TangCore 0.9's `bl616_fpga_partner` file (`FLS-004`). Full backups of both flashes were copied to `/run/media/vash/GIT/Tang-Console-138K-backups` with `SHA256SUMS.txt` and verified against their sources. No firmware source changed, so nothing was built or deployed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `DEV-007`, `FLS-004`, `TDSH-006` and `PHOS-010` with their routing rows and index lines, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 39 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Upstream issue #2 awaits the author's reply, after which the `#ifndef` pull request can follow; until then scripts are started from the console. Phosphor would benefit from a load-progress readout in `phosphor status` and the app, and from finding the file size at which the AE350's memory runs out. The user is to answer the author's questions on issue #1 (peek and poke: which side, which widths), the Community ports pull request recording the `tang` prefix is ready to prepare, and a note to nand2mario is due before TinyTang is listed anywhere visible. The discovery stall when both devices reconnect at once and the open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

@@ -128,6 +128,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which FPGA is on this board, and how is it identified on the wire? | DEV | DEV-001 |
 | Which core image belongs on this board? | DEV | DEV-002 |
 | Does the FPGA keep its core across a power cycle? | DEV | DEV-006 |
+| What is stored in the FPGA's own configuration flash, and who put it there? | DEV | DEV-007 |
 | Does this project run AE350 RISC-V code, and how does it get there? | DEV | DEV-004 |
 | Is there a core with no emulator for TinyDesk to sit on? | DEV | DEV-005 |
 | Which FPGA pins are the JTAG programmer's? | BRD | BRD-001 |
@@ -158,6 +159,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why is TinyDesk on HDMI laggy with the computer attached? | USB | USB-007 |
 | Where does the application live in flash, and what does a soft reset do? | FLS | FLS-002 |
 | What does a watchdog reset do, and where is a crash record kept across it? | FLS | FLS-003 |
+| Which BL616 loader does the board have, and where are the full flash backups? | FLS | FLS-004 |
 | Where is the Bluetooth antenna, and how well does the radio work without one? | BLE | BLE-001 |
 | Which SDK Bluetooth library does this firmware need, and what does Bluetooth cost? | BLE | BLE-002 |
 | Why does a UUID-filtered GATT discovery find nothing? | BLE | BLE-003 |
@@ -204,8 +206,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
 | Which resident player image is the qualified one, and how is it rebuilt? | PHOS | PHOS-008 |
 | How is a track stopped on the merged core, and what do the sink's counters mean? | PHOS | PHOS-009 |
+| Why does a song take many seconds to start, and how big a file can Phosphor play? | PHOS | PHOS-010 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-004 |
 | What rules does upstream set for this port: names, commands, patches, pull requests? | TDSH | TDSH-005 |
+| Why does a script started from the desktop return without running? | TDSH | TDSH-006 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-013, TDESK-003 |
 | How much RAM does the desktop need? | TDESK | TDESK-002 |
@@ -252,6 +256,7 @@ DEV-003: "Superseded by DEV-006. Recorded the FPGA as unconfigured at power-up, 
 DEV-004: "A core bitstream can carry AE350 RISC-V software: the program is compiled to a hex file and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and arrives with tangload; the firmware loads whole images and never AE350 code as an artifact of its own"
 DEV-005: "The menu core is the console138k design with nestang's NES machine not instantiated: MENU_CORE in src/boards/console138k_menu.v, selected by build.tcl's third `menu` argument; it answers CORE_ID 1, the same value the patched NES core answers, and is about four fifths smaller in logic while its bitstream is only ~2.5 percent smaller"
 DEV-006: "The FPGA is not empty at power-up: with no tangload it is already running a core that answers core ID 0 on the UART and shows a TangCore splash on HDMI, so it configures itself from storage of its own; boot.tdsh replaces it within seconds, which is why it went unseen"
+DEV-007: "The FPGA's 16 MB XTX configuration flash (JEDEC 0b 40 18) holds one image at offset 0, 1,084,246 B, a compressed GW5AST-138 bitstream matching no TangCore 0.9 core; TangCore's installer and firmware never write that flash, so it is most likely the factory splash core"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
 BRD-003: "The two USB-A controller ports are FPGA pins: usb1_dp/dn H13/G13, usb2_dp/dn M15/M16, all IO_TYPE=LVCMOS33"
@@ -281,6 +286,7 @@ USB-007: "An IN packet leaves only when the host reads, which it does only while
 FLS-001: "Superseded by FLS-002. Recorded the application slot as at most 0x80000 bytes with staging at 0x100000, a limit Tang-Control chose rather than one the flash or the vendor loader imposes"
 FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000 (the backup shows 0x76000-0x200000 erased), commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 FLS-003: "A watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, so only a power cycle (which scrambles RAM) brings TinyTang back; the crash recorder keeps its record in the last flash sector, 0x3FF000"
+FLS-004: "The BL616 loader at 0x0 is not TangCore 0.9's bl616_fpga_partner_console138k.bin (60,741 of 88,672 bytes differ); full backups of the BL616 and FPGA flashes are in /run/media/vash/GIT/Tang-Console-138K-backups with SHA256SUMS.txt"
 PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
 PROT-002: "Commands: 01 core ID, 02 config string, 03 joypad (core to BL616), 04 cursor, 05 text, 06 loading state, 07 ROM data, 08 overlay, 09 HID, 0a/0b floppy, 0c PS/2"
 PROT-003: "BL616 UART1, TX GPIO 28, RX GPIO 27, 2,000,000 baud, 8N1"
@@ -308,6 +314,7 @@ TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C
 TDSH-003: "Superseded by TDSH-004. TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
 TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell): the same language and terminal interface as v0.1.4; board.conf numbers are decimal or 0x hex, never octal, and network mode/autowifi are root only, neither used by this port"
 TDSH-005: "Upstream STANDARDS.md (v0.1.5) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
+TDSH-006: "Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2)"
 TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
@@ -351,6 +358,7 @@ PHOS-006: "The merged Phosphor core's FPGA player is pcm_sink, a raw-PCM sink wi
 PHOS-007: "A resident AE350 player hangs at the start of its first decode depending on its image layout: a null jump, RAM-bridge ERROR responses from address 0 and no return; the streamed player needs 16 bytes where an input would go (0 and 32 hang, 16 and 48 play), which Tang-Phosphor's Makefile now reserves; the cause is not found"
 PHOS-008: "The qualified resident player is 863764 bytes, CRC-32 ef1502ed, built by make -C software/rbhost bench-universal BENCH_NAME=resident with ~/.cache/tangcore-dev/toolchain/bin (Xuantie GCC 10.2.0) on PATH; the image left in Tang-Phosphor's build/rbhost/bench was the 863748-byte 3d762d13 that hangs (PHOS-007), so a player is rebuilt and its CRC checked before use"
 PHOS-009: "The merged core's pcm_sink has no stop: an AE350 restart (0x43f0) ends the decode and pause (0x78 bit 0) silences it, but the sink stays in its playing state, and the stopped track's samples (up to 2048 in the sink and 512 in the AE350 stream queue) stay queued ahead of the next START, so a sink kept paused never takes that START; underruns (0x6c) clear only with the core, 0x30 counts STARTs, and elapsed and duration (0x8c, 0x90) read 0"
+PHOS-010: "The whole file is streamed to the AE350 before the first sample plays, about 3.7 s per MB (4,387,971 B in 16,064 ms), so a song loads silently for many seconds; files up to 5.8 MB play, and where the AE350's memory limits file size is not known"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
 PROV-004: "Superseded by PROV-005. TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
@@ -467,6 +475,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "ports/bl616/tdsh_tang_flash.c: tangload calls fpga_program(), which loads SRAM ('Load SRAM' in its output)"
   verification: "Observed twice on this board, both times with boot.tdsh absent; restoring boot.tdsh returns the board to core 1 at boot. The mechanism -- which storage and by what configuration mode the FPGA loads at power-up -- is inferred from that behaviour and not traced to a schematic or a Gowin document, which is why this is INFERRED rather than VERIFIED."
 
+
+- record_id: DEV-007
+  kind: BOARD
+  topic_id: DEV
+  title: "What the FPGA's configuration flash holds"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "Read back in one-wire mode with openFPGALoader 0.13.1 (-c ft2232 --detect -f, then --dump-flash --file-size 16777216), the FPGA's configuration flash is a 16 MB SPI part with JEDEC ID 0b 40 18 (XTX, 128 Mbit) and no block protection. It holds exactly one image, at offset 0: 1,084,246 bytes (MD5 d298b31689d1c4927b2f4b4cd49d7629) carrying the same Gowin preamble and device ID 0x0001081b as this project's cores, stored in the same byte order; everything above 0x109000 is erased. At about a quarter of an uncompressed GW5AST-138 core's size it is a compressed bitstream, and it matches none of the seven console138k cores in the TangCore 0.9 release, whole or block by block. Bitstreams carry no readable text, so the 'TangCore' the splash draws is not findable in it. Reaching the flash erased the FPGA's SRAM; the flash itself was only read."
+  consequence: "This is the splash core DEV-006 saw at power-up. TangCore 0.9's installation (its flash_console138k.ini) writes only the BL616, at 0x0 and 0x40000, and TangCore's firmware has no code that writes the FPGA's flash, and the user does not recall writing it, so it was most likely programmed at the factory; a published Sipeed factory image or a word from Sipeed or nand2mario would settle it. TinyTang never writes this flash, so the splash returns at every power-up and in one-wire mode, which README fact 14 now says. The dump is kept with the BL616 backup (FLS-004)."
+  sources:
+    - "openFPGALoader 0.13.1 detect and dump on this board, 2026-10-06"
+    - "TangCore 0.9 release (tangcore-0.9 (1).zip on the user's Desktop): cores/console138k/*.bin, firmware-bl616/flash_console138k.ini, installation.pdf"
+    - "Tang-Control (a fork of TangCore's firmware-bl616): no FPGA-flash write path in fpga/, core/ or main.cpp"
+  verification: "Dump and comparisons made on 2026-10-06 (core-log entry 39)."
 - record_id: BRD-001
   kind: BOARD
   topic_id: BRD
@@ -806,6 +828,19 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "FLS-002's full flash read-back of 2026-09-26"
   verification: "On 2026-10-05 crash test trap, crash test spin and crash test hang each reset the board to the FT2232; after a power cycle the trap and spin records were read back from flash with the right task and PC, and the hang, which runs no code before the reset, left none, as designed. A later tangflash run with the recorder installed committed and booted (core-log entry 34)."
 
+
+- record_id: FLS-004
+  kind: FLASH
+  topic_id: FLS
+  title: "The BL616's loader is a Sipeed build, and where the full backups are"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "TangCore 0.9's installation writes bl616_fpga_partner_console138k.bin (88,672 bytes, MD5 4dbe9bb117d2dd186553340ab6ade45c) to the BL616 at 0x0 and its firmware at 0x40000. The board's own loader at 0x0, from the full BL616 read-back of 2026-09-26 (FLS-002), is not that file: 60,741 of its first 88,672 bytes differ, from 0x84 onwards, and the file's body after 0x1000 is found nowhere in the backup. It is therefore another build of Sipeed's FPGA-partner loader, most likely the one fitted at the factory. Copies of both full flashes are kept outside every repository in /run/media/vash/GIT/Tang-Console-138K-backups: tang-console138k-bl616-backup-20260926.bin (4,194,304 bytes, SHA-256 d0bce6135adf15cf9493a7c3f5d4b2310b33746f08151da2876019730d85e217) and tang-console138k-fpga-flash-backup-20261006.bin (16,777,216 bytes, SHA-256 2e4688e65ae85766d71b44817854fd9bbaffc58f7fb8557f0d103db1f7b5baaa), with SHA256SUMS.txt."
+  consequence: "The loader that picks one-wire or two-wire at power-up (BRD-006) and that every warm reset lands in (FLS-003) is Sipeed's, not part of TangCore's package as released. With both backups the board can be returned to its state before TinyTang: the BL616 through Dev Cube and the FPGA's flash through Gowin Programmer or openFPGALoader -f."
+  sources:
+    - "TangCore 0.9 release: firmware-bl616/bl616_fpga_partner_console138k.bin and flash_console138k.ini"
+    - "/home/vash/Desktop/tang-console138k-bl616-backup-20260926.bin and its copy on the GIT drive"
+  verification: "Compared and copied on 2026-10-06; both copies were verified by SHA-256 against their sources (core-log entry 39)."
 - record_id: PROT-001
   kind: PROTOCOL
   topic_id: PROT
@@ -1059,6 +1094,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): STANDARDS.md, README.md Community ports, CONTRIBUTING.md"
   verification: "Read on 2026-10-06; this port's script headers and platform string were checked against it, and the deviations listed come from its file and command names. Not yet discussed with the author."
 
+
+- record_id: TDSH-006
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "A script from the desktop runs out of heap in its first allocations"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "tdsh run starts each script with a tdsh_script_job_t holding a full copy of the session, then a worker task with TDSH_SCRIPT_TASK_STACK (32,768 B) of stack, then the script's runtime. On a 32-bit target tdsh_session_t is 19,096 B, of which 18,496 B is vars[TDSH_MAX_VARS], 64 entries of 1 + 32 + 256 bytes, and the job is 19,352 B; none of these limits can be overridden by a build in v0.1.5. This port caps worker stacks at 16 KB (BL6-009). With the Bluetooth stack and two devices connected, the heap at the console is 64,704 B free with a 40,536 B largest block and about 24 KB outside it; with the desktop open it is 48,208 B free with the same largest block and about 7.7 KB outside it. Opened from the desktop's Files app, castlevania.tdsh and phosphor.tdsh returned with no output: a 1,056 B tdsh_realloc of the script's line table (src/core/tdsh_script.c:189) was refused in task tdsh_script, and the task had used 3,704 B of stack. The same scripts run at the console."
+  consequence: "Scripts are to be started from the console, or with the desktop closed, until the limits can be sized for this heap. The findings were filed upstream as tinydesk-project/tinydesk-shell issue #2, proposing #ifndef around TDSH_SCRIPT_TASK_STACK, TDSH_MAX_VARS, TDSH_VAR_NAME_MAX and TDSH_VAR_VALUE_MAX (STANDARDS.md sections 3 and 10), with an offer of the pull request; 32 variables of 128-byte values would bring the session to about 5.8 KB."
+  sources:
+    - "third_party/tinydesk-shell @ 8456dd1: include/tdsh.h, src/core/tdsh_script.c, src/core/tdsh_core.c"
+    - "A listen-only capture of the desktop Terminal's output on USB, 2026-10-06, with crash and ble run in the Terminal"
+    - "https://github.com/tinydesk-project/tinydesk-shell/issues/2"
+  verification: "Measured on this board on 2026-10-06; the session size was computed for a 32-bit target and confirmed at 19,112 B on a 64-bit host build (core-log entry 39)."
 - record_id: TDESK-001
   kind: EXTERNAL
   topic_id: TDESK
@@ -1736,6 +1785,18 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Phosphor src/audio/pcm_sink.sv, src/ae350/ae350_play_stream.sv, src/ae350/ae350_subsystem.sv, src/stream/stream_debug_sink.sv and docs/debug-registers.md"
   verification: "On this board on 2026-10-05: with the sink held paused across the next load, the track never started and the stuck queue read 0x64 = 2048 with 0x30 unmoved; unpausing drained 2562 samples. Without the hold, a track after a stop reported 168717 underruns. With drain and hold, tracks after a stop and after a replacement played with 0 underruns, and the format sweep passed (core-log entry 27)."
 
+
+- record_id: PHOS-010
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "A song loads silently while the whole file is sent"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "phosphor play and the Phosphor app send the whole file to the resident AE350 player before the first sample plays. A 4,387,971-byte MP3 was sent in 16,064 ms, about 3.7 s per MB, and then played at 44.1 kHz with no underruns; a 5,794,918-byte MP3 also plays. File names with spaces play, from the console with a quoted path and from the app."
+  consequence: "With the short test files the load took under four to seven seconds and went unnoticed; with whole songs the app sits on 'loading' long enough to look broken, which is what was first taken for a file-name problem. Two follow-ups: report the load's progress in phosphor status and the app, since the player knows how many bytes it has sent, and find the file size at which the AE350's memory runs out, since it holds the whole file."
+  sources:
+    - "phosphor status on this board, 2026-10-06"
+  verification: "Measured on this board on 2026-10-06; the user then played several more songs from the app and all started after the wait (core-log entry 39)."
 - record_id: PMOD-001
   kind: BOARD
   topic_id: PMOD

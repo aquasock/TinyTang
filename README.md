@@ -408,10 +408,15 @@ session. `.ai/core-reference.md` holds the full records and their sources.
     control on, the terminal swallows it as XOFF and stops the display; Ctrl+Q
     brings it back. Turn flow control off (PuTTY: Serial, Flow control = None).
     The board's own keyboard is not affected.
-14. **The FPGA is not empty at power-up.** With no `tangload` it is already
-    running a stock TangCore core that answers core ID 0 and shows a TangCore
-    splash. `boot.tdsh` replaces it within seconds, so it is only seen when the
-    boot script is missing.
+14. **The FPGA is not empty at power-up.** Its own configuration flash holds a
+    small TangCore splash core (about 1 MB, compressed), which answers core
+    ID 0. As far as we can tell the board ships with it: TangCore's installer
+    and firmware only ever write the BL616, never the FPGA's flash. It runs at
+    every power-up and in one-wire mode, where nothing replaces it, which is
+    why the screen then shows TangCore in blue. In two-wire mode `boot.tdsh`
+    replaces it in the FPGA's SRAM within seconds, so it is otherwise seen only
+    when the boot script is missing. TinyTang never writes the FPGA's flash,
+    so the splash core is back after every power cycle.
 15. **The console's input is exclusive.** `tangput` and the desktop read the
     same CDC byte stream, so a file sent while the desktop is running is typed
     into whichever window has focus. That once filled the card's root with
