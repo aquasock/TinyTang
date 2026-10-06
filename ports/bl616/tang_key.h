@@ -94,6 +94,20 @@ void tang_key_absorb(tang_key_t *k, uint8_t mods, const uint8_t keys[6]);
 /* Whether the reserved toggle key is down in this report. */
 bool tang_key_toggle_down(const uint8_t keys[6]);
 
+/* Pointer mode, for a keyboard whose reports do not pass through the core.
+ *
+ * The wired link's pointer mode is decided in the core (nestang patch 0006):
+ * with left-alt held, the arrows, Enter and Esc become the pad's D-pad, A and
+ * B -- the desktop's pointer and its two buttons -- and are withheld from the
+ * report, so they move the pointer without also typing.  A Bluetooth keyboard
+ * reaches the BL616 directly, so the same rule is applied here.
+ *
+ * With left-alt down in `mods`, returns the pad bits (tang_pad.h) for those
+ * six usages and zeroes them in `keys`, which in a boot report is the same as
+ * the key never having been pressed.  With it up, returns 0 and leaves `keys`
+ * alone. */
+uint16_t tang_key_pointer(uint8_t mods, uint8_t keys[6]);
+
 /* Turn one report into typing.
  *
  * `report_fresh` says whether a new report arrived from the core since the last

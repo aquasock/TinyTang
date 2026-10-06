@@ -1024,3 +1024,40 @@ Feed the Bluetooth keyboard's boot reports into the same path as the wired keybo
 - User Test: N/A
 
 ---
+
+## 31 COMMIT Unreleased 2026-10-05T20:54:23-07:00
+
+#### Coming From:
+
+Unreleased 8f0b957
+
+#### Purpose:
+
+Feed the Bluetooth LE keyboard's boot reports into the same input path as the wired keyboard link, so it types at the console and in the desktop, switches the screen with F12 and drives the desktop's pointer with left-alt.
+
+#### Outcome:
+
+Before any change the user confirmed the K950 on the entry-29 firmware `cb9e7d4-dirty.aee808e`: `blescan` found it at `DB:88:A7:81:D9:D5`, `blekbd` paired and set up on the first attempt with no 0x3E failure, and a 60-second watch decoded 571 boot reports with up to six keys held and every modifier on the left. Reading the input path showed two things the plan had to cover, both recorded as `BLE-008`. First, `tang_key.c` stops auto-repeat 300 ms after the last report, a rule built on the wired link's 100 ms heartbeat from the core, while a BLE keyboard notifies only on change, so a held key would have stopped repeating after 300 ms. Second, left-alt pointer mode is decided in the core by patch 0006, and BLE reports never pass through the core. `ports/bl616/tang_ble.c` now exposes `tang_ble_keyboard()` through the new `tang_ble.h`, reporting the boot report as live while the connection is READY and an all-zero report otherwise, and it zeroes the report on disconnect and on a new connection so a key held when the link drops is released. It logs reports only while `blekbd` is watching, since outside a watch every keystroke would only fill the log ring. `tang_key_pointer()` in `ports/bl616/tang_key.c` applies patch 0006's rule in firmware: with left-alt held the arrows, Enter and Esc become the pad's D-pad, A and B and are zeroed from the report. `ports/bl616/tang_osd_desk.c` reads the BLE keyboard on every poll beside the wired one, ORs its pointer bits into the pad word, and keeps a separate key state and F12 edge per keyboard, so two keyboards cannot steal each other's repeat; F12 also works with the layer off, as for the wired link. `tools/tests/tb_key.c` gained twelve pointer-mode checks (53 in all), and `tools/tests/tb_osd_desk.c` gained a BLE stub, a settable tick and eleven checks (61 in all) covering typing, repeat past 300 ms while connected, release on disconnect, left-alt doing nothing at the console, moving the pointer without typing an arrow in the desktop, plain arrows, BLE F12 and absorption while the core has the screen; with the live flag forced false the repeat checks fail, and with `tang_key_pointer()` removed the three pointer checks fail. The existing console-mode pointer check ran after the layer had been disabled, when `tang_osd_desk_read_byte()` always returns -1, so it passed whatever the pad did; the layer is now re-enabled before it. All seven host test scripts pass. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` with no warnings from the changed files, giving `tinytang_bl616.bin` at 595,088 bytes, MD5 `7527e27248a51b9d6dc227d66c7101f1`, build identity `8f0b957-dirty.d6c47c6`; it was installed with `tools/tinytang_flash.py` behind the status probe, and after the power cycle `platform` reported that identity. The K950 had to be put back in pairing mode, since the pairing is kept in RAM only, and came back one address higher at `DB:88:A7:81:D9:D6`, as `BLE-006` describes. After `blekbd` connected it, the keystrokes typed during the watch arrived at the console prompt. The user then reported everything passing: typing, repeat and release at the console, Backspace, Tab, Esc, the arrows and the navigation keys, left-alt with the arrows doing nothing at the console, left-alt moving the pointer with Enter and Esc as the two buttons in the desktop and plain arrows typing there, F12 switching from the console and the desktop, no stuck key when the keyboard was turned off mid-hold, and F1 to F11 doing nothing. After that test `blekbd` reported idle, the keyboard having been turned off. The committed tree differs from the deployed build only in `README.md`, which now describes the Bluetooth keyboard as an input and restores the first line of the `usbstat` / `usbwatch` / `usbrole` bullet that entry 29's edit had dropped, leaving a stray fragment at the end of the `blekbd` paragraph. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `BLE-008` with its routing row and index line, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 31 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+The remaining Bluetooth work from entry 29 stands: keep pairings across resets with `CONFIG_BT_SETTINGS` and storage for the keys, reconnect automatically after a dropout or a power cycle, find the keyboard by name or HID appearance instead of by address, measure the running stack's heap, and then the M650 mouse and a Bluetooth LE controller, which need report protocol and report-map parsing. The F1 to F11 keys still have no path, because the desktop reads terminal bytes, and a BLE keyboard's keys do not reach a game's pad while the core has the screen. An antenna on U35 would remove the 0x3E connection failures. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_key.c
+- ports/bl616/tang_key.h
+- ports/bl616/tang_osd_desk.c
+- tools/tests/tb_key.c
+- tools/tests/tb_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "tang_key.h"
+#include "tang_pad.h"
 
 static int fails;
 static int checks;
@@ -244,6 +245,37 @@ int main(void)
     release(&k, 1800, out, sizeof(out));
     press(&k, 0, 0x52, 0, 1900, out, sizeof(out));
     check_str("absorbed key: pressed again types", out, "\x1b[A");
+
+    /* Pointer mode for a keyboard the core does not see: left-alt turns the
+     * arrows, Enter and Esc into pad bits and withholds them, and leaves every
+     * other key to the typing path. */
+    {
+        uint8_t keys[6] = { 0x52, 0x04, 0x28, 0x29, 0x4F, 0x51 };
+        const uint16_t pad = tang_key_pointer(TANG_KEY_LALT, keys);
+        check_int("pointer: Up, Enter, Esc, Right, Down to pad bits", pad,
+                  TANG_PAD_UP | TANG_PAD_A | TANG_PAD_B | TANG_PAD_RIGHT | TANG_PAD_DOWN);
+        check_int("pointer: Up withheld", keys[0], 0);
+        check_int("pointer: a left for typing", keys[1], 0x04);
+        check_int("pointer: Enter withheld", keys[2], 0);
+        check_int("pointer: Esc withheld", keys[3], 0);
+        check_int("pointer: Right withheld", keys[4], 0);
+        check_int("pointer: Down withheld", keys[5], 0);
+    }
+    {
+        uint8_t keys[6] = { 0x50, 0, 0, 0, 0, 0 };
+        check_int("pointer: Left is bit 6", tang_key_pointer(TANG_KEY_LALT, keys),
+                  TANG_PAD_LEFT);
+    }
+    {
+        /* Right-alt is not the mode (patch 0006 moved it to left-alt). */
+        uint8_t keys[6] = { 0x52, 0x28, 0, 0, 0, 0 };
+        check_int("pointer: right-alt is not pointer mode",
+                  tang_key_pointer(TANG_KEY_RALT, keys), 0);
+        check_int("pointer: right-alt leaves Up", keys[0], 0x52);
+        check_int("pointer: no modifier is not pointer mode",
+                  tang_key_pointer(0, keys), 0);
+        check_int("pointer: no modifier leaves Enter", keys[1], 0x28);
+    }
 
     printf("tb_key: %d checks, %d failures\n", checks, fails);
     return fails == 0 ? 0 : 1;

@@ -17,11 +17,13 @@
 // once started it stays up until reset.
 //
 // `blekbd` is the next step: connect to one BLE keyboard (HID over GATT),
-// pair with Just Works, put it in boot protocol and print its key reports.
-// Boot protocol gives the same 8-byte report (modifiers, reserved, six
-// keycodes) the wired keyboard link already carries.  Keys are held in RAM
-// only (CONFIG_BT_SETTINGS is 0), so after a reset the keyboard must be put
-// back in pairing mode.
+// pair with Just Works and put it in boot protocol.  Boot protocol gives the
+// same 8-byte report (modifiers, reserved, six keycodes) the wired keyboard
+// link already carries, and tang_ble_keyboard() hands it to the desktop
+// layer's poll, which types it exactly as it types the wired link's.
+// `blekbd watch` prints the reports as well.  Keys are held in RAM only
+// (CONFIG_BT_SETTINGS is 0), so after a reset the keyboard must be put back
+// in pairing mode.
 
 #include <errno.h>
 #include <stdarg.h>
@@ -43,6 +45,7 @@
 #include "rfparam_adapter.h"
 
 #include "tdsh.h"
+#include "tang_ble.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -362,6 +365,10 @@ static unsigned s_nsubs;
 
 static volatile uint32_t s_kbd_reports;
 static uint8_t s_kbd_report[8];
+/* Reports are logged only while `blekbd` is watching.  The keyboard is an
+ * input now, so outside a watch every keystroke would only fill the log ring
+ * and come out as "lines lost" at the next command. */
+static volatile bool s_kbd_watching;
 
 static const char *kbd_key_name(uint8_t code, char *buf)
 {
@@ -441,8 +448,10 @@ static u8_t kbd_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *pa
         taskENTER_CRITICAL();
         memcpy(s_kbd_report, p, 8);
         taskEXIT_CRITICAL();
-        kbd_log_boot_report(p);
-    } else {
+        if (s_kbd_watching) {
+            kbd_log_boot_report(p);
+        }
+    } else if (s_kbd_watching) {
         char text[KBD_LOG_LEN];
         int n = snprintf(text, sizeof(text), "report 0x%04X len %u:",
                          params->value_handle, length);
@@ -751,6 +760,11 @@ static void kbd_disconnected(struct bt_conn *conn, u8_t reason)
     bt_conn_unref(s_kbd_conn);
     s_kbd_conn = NULL;
     s_kbd_state = KBD_IDLE;
+    /* Whatever was held is released: tang_ble_keyboard() reports nothing
+     * from here on, and a stale report must not come back on a reconnect. */
+    taskENTER_CRITICAL();
+    memset(s_kbd_report, 0, sizeof(s_kbd_report));
+    taskEXIT_CRITICAL();
     s_boot_value_handle = 0;
     s_nsubs = 0;
     s_setup_active = false;
@@ -828,14 +842,29 @@ static void kbd_watch(int secs)
     TickType_t end = xTaskGetTickCount() + pdMS_TO_TICKS(secs * 1000);
 
     tdsh_printf("blekbd: watching for %d s\r\n", secs);
+    s_kbd_watching = true;
     while ((int32_t)(end - xTaskGetTickCount()) > 0) {
         kbd_log_drain();
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+    s_kbd_watching = false;
     kbd_log_drain();
     tdsh_printf("blekbd: %s, %lu report(s) in this watch\r\n",
                 s_state_names[s_kbd_state],
                 (unsigned long)(s_kbd_reports - start_reports));
+}
+
+bool tang_ble_keyboard(uint8_t out[8])
+{
+    taskENTER_CRITICAL();
+    const bool live = s_kbd_state == KBD_READY;
+    if (live) {
+        memcpy(out, s_kbd_report, 8);
+    } else {
+        memset(out, 0, 8);
+    }
+    taskEXIT_CRITICAL();
+    return live;
 }
 
 static int kbd_usage(void)
@@ -918,6 +947,9 @@ static int cmd_blekbd(tdsh_session_t *session, int argc, char **argv)
     s_kbd_addr = addr;
     s_kbd_boot = false;
     s_boot_value_handle = 0;
+    taskENTER_CRITICAL();
+    memset(s_kbd_report, 0, sizeof(s_kbd_report));
+    taskEXIT_CRITICAL();
     s_kbd_state = KBD_CONNECTING;
     s_kbd_conn = bt_conn_create_le(&addr, BT_LE_CONN_PARAM_DEFAULT);
     if (!s_kbd_conn) {
@@ -936,7 +968,7 @@ static const tdsh_command_t s_ble_commands[] = {
       "Listen for Bluetooth LE devices and list them by signal strength (dBm)",
       cmd_blescan, 0 },
     { "blekbd", "blekbd <addr> [pub|rand] [seconds] | watch [seconds] | off",
-      "Connect to a Bluetooth LE keyboard and print its key reports",
+      "Connect a Bluetooth LE keyboard as an input; watch prints its key reports",
       cmd_blekbd, 0 },
 };
 

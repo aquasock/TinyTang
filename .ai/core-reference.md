@@ -162,6 +162,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does the BLE host hang partway through setting up a device? | BLE | BLE-005 |
 | What does the Logitech K950 expose over Bluetooth LE? | BLE | BLE-006 |
 | Which Bluetooth input devices can the board use? | BLE | BLE-007 |
+| Why does a Bluetooth keyboard need its own liveness rule and its own pointer mode? | BLE | BLE-008 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -352,6 +353,7 @@ BLE-004: "With BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP on, the SDK calls a subscript
 BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host on ATT TX buffer allocation for ever; issue one request at a time, each from the previous one's completion"
 BLE-006: "Logitech K950 in Bluetooth mode is HID over GATT on BLE: a random address that changes each time it enters pairing mode, Just Works pairing, boot protocol supported (Boot Keyboard Input value handle 0x23, CCC 0x24, Protocol Mode 0x4D) and the standard 8-byte boot report"
 BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device such as the Rii K06 (Bluetooth 3.0) cannot connect"
+BLE-008: "A BLE keyboard notifies only when its key state changes, with no heartbeat, so it counts as live while connected and is zeroed on disconnect; its reports bypass the core, so left-alt pointer mode is applied in firmware by tang_key_pointer()"
 ```
 
 ---
@@ -1918,6 +1920,19 @@ BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/ble_common.cmake: ble1m0s1sbredr1 with CONFIG_BT_BREDR 1 and CONFIG_BT_CENTRAL 0"
     - "Amazon product listing for the Rii K06 supplied by the user as a PDF, 2026-10-05"
   verification: "The SDK tree was read on 2026-10-05. No Classic device has been tried on this board."
+
+- record_id: BLE-008
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "A BLE keyboard has no heartbeat and bypasses the core"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The K950 in boot protocol sends a boot report when its key state changes and nothing while a key is held: across 571 reports in a 60-second watch there was no periodic report. The report arrives at the BL616 over the radio and never passes through the FPGA core."
+  consequence: "tang_key.c stops auto-repeat 300 ms after the last report (TANG_KEY_REPORT_TIMEOUT_MS), a rule built on the wired link's 100 ms heartbeat from the core, so a BLE report must not be judged by it: tang_ble_keyboard() in ports/bl616/tang_ble.c reports the source live while the connection is READY, and the link's supervision timeout is the liveness signal, with the report zeroed on disconnect so a key held when the link drops is released rather than repeated. Because the core never sees the report, nestang patch 0006's left-alt pointer mode does not apply to it; tang_key_pointer() in ports/bl616/tang_key.c applies the same rule in firmware (arrows to the D-pad, Enter to A, Esc to B, all withheld from typing), and tang_osd_desk.c ORs the result into the pad word and keeps separate key state per keyboard."
+  sources:
+    - "blekbd watch of the K950 on this board, 2026-10-05"
+    - "This project's ports/bl616/tang_key.h, TANG_KEY_REPORT_TIMEOUT_MS; third_party/patches/0006-pointer-mode.patch, link_key_to_pad"
+  verification: "Host tests tools/tests/test_osd_desk.sh and test_key.sh cover repeat past 300 ms while live, release on disconnect, and pointer mode in console and desktop, and fail when the live flag or tang_key_pointer() is removed. The user confirmed on hardware on 2026-10-05 typing, repeat, release on power-off mid-hold, left-alt pointer and clicks and F12 (core-log entry 31)."
 ```
 
 ---

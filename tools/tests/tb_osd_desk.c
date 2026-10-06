@@ -90,6 +90,38 @@ bool tang_fpga_keyboard(uint8_t out[8])
     return false;
 }
 
+/* The Bluetooth keyboard: a report the test sets, live while "connected". */
+static uint8_t g_ble_rep[8];
+static bool    g_ble_live;
+
+bool tang_ble_keyboard(uint8_t out[8])
+{
+    for (int i = 0; i < 8; i++) {
+        out[i] = g_ble_live ? g_ble_rep[i] : 0;
+    }
+    return g_ble_live;
+}
+
+static void ble_report(uint8_t mods, uint8_t key)
+{
+    memset(g_ble_rep, 0, sizeof(g_ble_rep));
+    g_ble_rep[0] = mods;
+    g_ble_rep[2] = key;
+}
+
+/* Everything the desktop would read, as a string. */
+static void read_typed(char *buf, size_t cap)
+{
+    size_t n = 0;
+    int b;
+    while ((b = tang_osd_desk_read_byte()) >= 0) {
+        if (n + 1 < cap) {
+            buf[n++] = (char)b;
+        }
+    }
+    buf[n] = '\0';
+}
+
 /* The pad the poll sees. */
 static uint16_t g_joy;
 
@@ -100,7 +132,9 @@ void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2)
 }
 
 void vTaskDelay(TickType_t ticks) { (void)ticks; }
-TickType_t xTaskGetTickCount(void) { return 0; }
+/* Milliseconds, since the stub's tick rate is 1000 Hz. */
+static TickType_t g_tick;
+TickType_t xTaskGetTickCount(void) { return g_tick; }
 
 /* Report failure so no task starts: the test drives the diff itself. */
 BaseType_t xTaskCreate(void (*fn)(void *), const char *name, uint32_t stack_words,
@@ -355,7 +389,10 @@ int main(void)
 
     /* ---- console mode has no pointer ------------------------------------
      * Off, the pointer is not drawn and the pad sends nothing to the shell:
-     * its mouse reports would arrive at the prompt as text (cycle 15). */
+     * its mouse reports would arrive at the prompt as text (cycle 15).  The
+     * layer is turned back on first: with it off the desktop reads nothing,
+     * and this check would pass whatever the pad did. */
+    (void)tang_osd_desk_set(true);
     tang_osd_desk_set_pointer(false);
     g_osd_last = true;
     g_joy = TANG_PAD_RIGHT;
@@ -363,6 +400,94 @@ int main(void)
     desk_poll();
     check(tang_osd_desk_read_byte() < 0, "the pad sent mouse reports in console mode");
     g_joy = 0;
+    while (tang_osd_desk_read_byte() >= 0) { }
+
+    /* ---- the Bluetooth keyboard types like the wired one ----------------- */
+    {
+        char got[64];
+
+        g_tick = 1000;
+        g_ble_live = true;
+        ble_report(0, 0x04);                     /* a */
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "a") == 0, "a Bluetooth key did not type");
+
+        /* A BLE keyboard sends nothing while a key is held, so repeat must
+         * outlive the wired link's 300 ms heartbeat timeout while connected. */
+        g_tick = 1600;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "a") == 0, "a held Bluetooth key did not repeat");
+        g_tick = 1700;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "a") == 0, "a held Bluetooth key stopped repeating");
+
+        /* The link drops with the key held: released, never repeated. */
+        g_ble_live = false;
+        g_tick = 1800;
+        desk_poll();
+        g_tick = 2500;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "a key held when the link dropped kept repeating");
+
+        /* Console mode: left-alt with an arrow types nothing and moves nothing,
+         * as the core's pointer mode does for the wired keyboard. */
+        g_ble_live = true;
+        ble_report(TANG_KEY_LALT, 0x4F);         /* left-alt + Right */
+        g_tick = 2600;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "left-alt + Right reached the shell in console mode");
+        ble_report(0, 0);
+        g_tick = 2700;
+        desk_poll();
+
+        /* The desktop: left-alt with an arrow moves the pointer, and does not
+         * also type an arrow. */
+        tang_osd_desk_set_pointer(true);
+        ble_report(TANG_KEY_LALT, 0x4F);
+        g_tick = 2800;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strncmp(got, "\x1b[<", 3) == 0, "left-alt + Right did not move the pointer");
+        check(strstr(got, "\x1b[C") == NULL, "left-alt + Right also typed an arrow");
+
+        /* Without left-alt the same key is only an arrow. */
+        ble_report(0, 0);
+        g_tick = 2900;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        ble_report(0, 0x4F);
+        g_tick = 3000;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "\x1b[C") == 0, "Right without left-alt is not an arrow");
+        tang_osd_desk_set_pointer(false);
+
+        /* F12 on the Bluetooth keyboard switches the screen, once per press. */
+        ble_report(0, 0);
+        g_tick = 3100;
+        desk_poll();
+        g_osd_set_calls = 0;
+        ble_report(0, TANG_KEY_USAGE_TOGGLE);
+        g_tick = 3200;
+        desk_poll();
+        g_tick = 3300;
+        desk_poll();
+        check(g_osd_set_calls == 1, "Bluetooth F12 did not switch exactly once");
+        check(!g_osd_last, "Bluetooth F12 did not hide TinyDesk");
+
+        /* With the core on screen the keys are the game's: absorbed. */
+        ble_report(0, 0x05);                     /* b */
+        g_tick = 3400;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "a Bluetooth key typed while the core had the screen");
+        g_ble_live = false;
+    }
 
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;

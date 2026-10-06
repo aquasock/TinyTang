@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "tang_key.h"
+#include "tang_pad.h"
 
 #include <string.h>
 
@@ -149,6 +150,36 @@ static bool key_in(const uint8_t keys[6], uint8_t usage)
 bool tang_key_toggle_down(const uint8_t keys[6])
 {
     return key_in(keys, TANG_KEY_USAGE_TOGGLE);
+}
+
+/* The same six usages and the same bits as the core's link_key_to_pad(). */
+static uint16_t pointer_bit(uint8_t usage)
+{
+    switch (usage) {
+    case 0x52: return TANG_PAD_UP;
+    case 0x51: return TANG_PAD_DOWN;
+    case 0x50: return TANG_PAD_LEFT;
+    case 0x4F: return TANG_PAD_RIGHT;
+    case 0x28: return TANG_PAD_A;      /* Enter: left click */
+    case 0x29: return TANG_PAD_B;      /* Esc: right click */
+    default: return 0;
+    }
+}
+
+uint16_t tang_key_pointer(uint8_t mods, uint8_t keys[6])
+{
+    if ((mods & TANG_KEY_LALT) == 0) {
+        return 0;
+    }
+    uint16_t pad = 0;
+    for (int i = 0; i < 6; i++) {
+        const uint16_t bit = pointer_bit(keys[i]);
+        if (bit != 0) {
+            pad |= bit;
+            keys[i] = 0;
+        }
+    }
+    return pad;
 }
 
 int tang_key_step(tang_key_t *k, uint8_t mods, const uint8_t keys[6],

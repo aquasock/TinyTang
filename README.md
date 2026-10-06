@@ -38,11 +38,13 @@ is called out in the source where it is used.
   gated away from the game. It works at the console, in the desktop and during
   a game. L on controller 1 does the same. On the menu core the core's side is
   an empty frame; on the NES core it is the game.
-- **A keyboard plugged into the board.** A Keychron K2 HE running this
-  project's QMK patches (`third_party/patches/qmk/`) plugs into either front
-  USB-A port and types at the console and in the desktop. It is not USB: the
-  keyboard drives its own D+ line as a UART and the core receives it (see
-  *Keyboard* below).
+- **A keyboard.** A Bluetooth LE keyboard connected with `blekbd` types at
+  the console and in the desktop; the BL616 receives it directly, so it works
+  on any core that carries the desktop layer. A Keychron K2 HE running this
+  project's QMK patches (`third_party/patches/qmk/`) also plugs into either
+  front USB-A port and does the same. It is not USB: the keyboard drives its
+  own D+ line as a UART and the core receives it (see *Keyboard* below). Both
+  can be used at once.
 - **A pointer in the desktop.** The D-pad on controller 1, or the arrows with
   left-alt held, moves it; A or Enter is the left button, B or Esc the right,
   and holding the left button while moving drags. The pointer exists only while
@@ -99,16 +101,20 @@ is called out in the source where it is used.
   the devices advertising nearby, strongest first, with address, address type,
   signal (dBm) and name. The radio is started by the first Bluetooth command,
   not at boot, and stays up until reset.
-- **`blekbd <address> [pub|rand] [seconds]`** connects to a Bluetooth LE
-  keyboard (HID over GATT), pairs with Just Works, switches it to boot
-  protocol and prints its key reports -- the same 8-byte report the wired
-  keyboard link carries. `blekbd watch [seconds]` prints them again,
-  `blekbd off` disconnects and `blekbd` alone reports the state. Proven with a
-  Logitech K950 (from the MK955 set) in Bluetooth mode. The address comes from
-  `blescan`; the K950's changes every time it enters pairing mode. Pairing is
-  kept in RAM only, so after a reset the keyboard must be put back in pairing
-  mode. Only Bluetooth LE devices work: the SDK has no Bluetooth Classic HID
-  host. The reports do not reach the console or the desktop yet. and switch the
+- **`blekbd <address> [pub|rand] [seconds]`** connects a Bluetooth LE
+  keyboard (HID over GATT) as an input: it pairs with Just Works, switches the
+  keyboard to boot protocol -- the same 8-byte report the wired keyboard link
+  carries -- and prints its reports for `seconds`. The keyboard stays connected
+  afterwards and types at the console and in the desktop exactly as the wired
+  one does, with F12 and left-alt pointer mode (see *A keyboard* above).
+  `blekbd watch [seconds]` prints the reports again, `blekbd off` disconnects
+  and `blekbd` alone reports the state. Proven with a Logitech K950 (from the
+  MK955 set) in Bluetooth mode. The address comes from `blescan`; the K950's
+  changes every time it enters pairing mode. Pairing is kept in RAM only, so
+  after a reset the keyboard must be put back in pairing mode and connected
+  again. Only Bluetooth LE devices work: the SDK has no Bluetooth Classic HID
+  host.
+- **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
   from a file on the SD, and put a file on the card over the console, with no
@@ -273,7 +279,8 @@ STM32's own DFU bootloader.
     Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
     helpers in `phosphor_media.h`).
   - `tang_ble.c` — Bluetooth LE: `blescan`, and `blekbd`, the HID-over-GATT
-    keyboard client.
+    keyboard client whose boot report `tang_osd_desk.c` types like the wired
+    link's, with left-alt pointer mode applied by `tang_key_pointer()`.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every
