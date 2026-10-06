@@ -1367,3 +1367,33 @@ Prepare the upstream pull request in a fork, `aquasock/tinydesk-shell`: TinyTang
 - User Test: N/A
 
 ---
+
+## 41 COMMIT Unreleased 2026-10-06T09:04:44-07:00
+
+#### Coming From:
+
+Unreleased 5eb6326
+
+#### Purpose:
+
+Hand the project to the next agent with the state of the upstream work, the board, and the decisions made since entry 40.
+
+#### Outcome:
+
+Three threads are open upstream on tinydesk-project/tinydesk-shell, all under the user's account. Issue #1 (peek and poke): the author proposed building it in TinyTang as an optional root-only feature limited to ranges the port lists, and asked which side and which widths; the user's reply, posted at 2026-10-06T16:02Z, answers both sides (the BL616's RAM and registers in safe ranges, and FPGA core registers through a core's own debug protocol, as `phosphor peek` and `poke` already do for Tang-Phosphor), 8, 16 and 32-bit access with misaligned addresses refused, and asks whether the port should use `tangpeek` and `tangpoke`, as STANDARDS.md suggests for generic port commands, or plain `peek` and `poke` to save a later rename. That naming answer is awaited. Issue #2 (script memory, `TDSH-006`): the author replied at 15:12Z approving the pull request. It is to wrap the `tdsh.h` limits in `#ifndef` with the current values as defaults, document that an override must apply to every component built with `tdsh.h` because it changes the session's layout, test with the defaults and with smaller limits, and leave the per-script variable copy unchanged. The author also asks, as a separate change, that script loading report an error when it runs out of memory instead of returning silently. Pull request #3, "README: TinyTang's prefix is tang", is open and unreviewed. It changes one row of the Community ports table, recording the prefix `tang` and current notes, from the branch `community-port-tinytang` of the fork `aquasock/tinydesk-shell`, cloned at `/run/media/vash/GIT/tinydesk-shell` with `origin` the fork and `upstream` the project. That clone is where upstream work is done, never the TinyTang submodule. The commit is `e36a084` on `8456dd1`, and the host tests pass 8 of 8 there. STANDARDS.md section 9 asks ports to describe what they did for topics with no rule yet; three such issues were drafted (the boot script, the desktop layer and F12, and media playback) and are saved unposted in `docs/upstream/issue-drafts.md` for the user to approve. Two hardware ideas were discussed and set aside. The first was a Pmod I2S2 for audio in and out on Tang-Phosphor: it needs a real master clock locked to the sample rate, either a new PLL, or a bench generator on the module's MCLK pins with the ADC as I2S master. That is Tang-Phosphor work and was not begun. The second was the Adafruit 2.2-inch PiTFT HAT, which fits the dock's free 40-pin header mechanically; that header is an SDRAM connector with +5 V on pin 11, so the HAT must not be fitted directly (`BRD-008`), and the user does not want an adapter. The dock's LCD connector is the intended display path and is deliberately not set up yet. At the close the board was not on USB; it was last in one-wire mode after the FPGA flash read-back of entry 39, which erased the FPGA's SRAM, so it needs a cold start with both cables to run TinyTang. The firmware on it is `3b025c1-dirty.0b9ad3e` (entry 37). The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `BRD-008` with its routing row and index line, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 41 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+The approved issue #2 pull request comes next. Work in the fork's clone on a new branch from upstream `main`: add `#ifndef` around `TDSH_SCRIPT_TASK_STACK`, `TDSH_MAX_VARS`, `TDSH_VAR_NAME_MAX` and `TDSH_VAR_VALUE_MAX`, keeping the defaults. Document in `tdsh.h` and the README that an override must apply to every component built with it. Build and run the host tests with the defaults and with smaller limits such as `TDSH_MAX_VARS=32` and `TDSH_VAR_VALUE_MAX=128`. Show the user the diff and the pull request text before pushing. The out-of-memory error for script loading may be offered as a second pull request. TinyTang then sets the smaller limits from its build, without editing the submodule, once a release carries the change, and checks that scripts started from the desktop run. Also pending: the author's naming answer on issue #1, after which peek and poke become a TinyTang cycle; review of pull request #3; the user's decision on the three drafted issues; a note to nand2mario before TinyTang is listed anywhere visible, sent by the user; the discovery stall when both Bluetooth devices reconnect at once; and Phosphor's load-progress readout and file-size limit. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- docs/upstream/issue-drafts.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

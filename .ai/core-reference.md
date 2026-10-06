@@ -138,6 +138,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Does the board need a particular power input? | BRD | BRD-005 |
 | What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
 | Can one-wire and two-wire run together? | BRD | BRD-007 |
+| Can a Raspberry Pi HAT go on the dock's 40-pin headers? | BRD | BRD-008 |
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
 | Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-003 |
@@ -264,6 +265,7 @@ BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB D
 BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
 BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered"
 BRD-007: "One-wire and two-wire cannot be combined: by the user's account the board's modules are powered from one input or the other, never both, and making the two work together was tried at length in the earlier projects without success; no written record of that work was found"
+BRD-008: "The dock's two 2x20 2.54 mm headers are the SDRAM connectors J9 (SDRAM0) and J10 (SDRAM1), MiSTer-style: FPGA I/O on pins 1-10, 13-28 and 31-40, +5 V on pin 11, ground on pin 12; they are not Raspberry Pi headers, and a Pi HAT fitted directly would put the board's 5 V on a HAT signal and short eight FPGA pins through the HAT's ground pins"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
 PMOD-003: "Socket control register 0x10: bit 0 renderer, bits 4-7 PMOD0 personality and 8-11 PMOD1, bits 12/13 upside-down; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2; 0x14 is scratch"
@@ -576,6 +578,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "User statement, 2026-10-05: 'we spend a lot of time trying to figure out how to get 1 and 2 wire to work together already. its a no go. Its a power deliver issue if i recall ... the actually devices/modules are powered 1 or the other, not both.'"
   verification: "Not instrumented, and no written record was found: Tang-Control's README and .ai files, Tang-Phosphor's and Tang-PSX's core-reference.md and core-log.md were searched for the power finding on 2026-10-05 and hold nothing on it. Consistent with BRD-006, where every observed state was one mode or the other."
 
+
+- record_id: BRD-008
+  kind: BOARD
+  topic_id: BRD
+  title: "The 40-pin headers are SDRAM connectors, not Raspberry Pi headers"
+  status: SOURCED
+  verified_date: 2026-10-06
+  statement: "The Tang Console dock carries two 2x20 2.54 mm headers, one on each long edge. The schematic (docs/Tang_Mega_138K_Console_32001C__Schematics.pdf, sheet FPGA_EXT_CONN, Rev 1.3) names them J9 'SDRAM0 CONN.' and J10 'SDRAM1 CONN.' (with a note that the second can carry a GBA cartridge for a gamepad application): MiSTer-style SDRAM-module connectors whose pins 1-10, 13-28 and 31-40 go straight to FPGA I/O (SDRAM data, address and control, with two extra I/O on 29 and 30), with +5 V on pin 11 and ground on pin 12. A Raspberry Pi header instead has +5 V on pins 2 and 4, +3.3 V on 1 and 17, and ground on 6, 9, 14, 20, 25, 30, 34 and 39. One header holds the SDRAM module; the other is free."
+  consequence: "A Raspberry Pi HAT fits the free header mechanically but must not be fitted to it: the HAT would take its supplies from FPGA I/O pins, its ground plane would short eight FPGA signals together, and the dock's +5 V on pin 11 would land on a HAT signal line, which on PiTFT HATs is a button that would then short 5 V to ground. A HAT can be used only through a pin-remapping adapter. The free header is otherwise usable as general FPGA I/O, with 5 V and ground on pins 11 and 12, provided the loaded core does not also claim those pins for SDRAM. This came up with the Adafruit 2.2-inch PiTFT HAT (ILI9340, SPI, 320x240), which the user decided not to pursue with an adapter; the dock's 40-pin FPC parallel RGB LCD connector (sheet LCD_DPI_24BIT) is the intended display path and has not been set up."
+  sources:
+    - "docs/Tang_Mega_138K_Console_32001C__Schematics.pdf, sheet FPGA_EXT_CONN: J9 and J10, SMD_PIN_2x20_2.54mm"
+    - "images/circuit_boards/dock_front.jpg: the two edge headers"
+    - "Adafruit, 2.2-inch PiTFT HAT guide: ILI9340 over the Pi's SPI with GPIO 25 and four buttons"
+  verification: "Read from the schematic text and the board photograph on 2026-10-06; nothing was fitted or measured (core-log entry 41). The HAT's own pin assignments beyond those Adafruit's guide states were not checked against its schematic."
 - record_id: BL6-001
   kind: SOC
   topic_id: BL6
