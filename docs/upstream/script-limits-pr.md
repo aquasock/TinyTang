@@ -1,43 +1,25 @@
-Draft pull request for tinydesk-project/tinydesk-shell, addressing issue #2.
-Prepared in `/run/media/vash/GIT/tinydesk-shell` on
-`configurable-script-limits` from upstream `main` at `8456dd1`. Not pushed
-or posted. The proposed source diff is the carried patch
-`third_party/patches/tdsh/0001-configurable-script-limits.patch`; it changes
-only the upstream header and README. Review this diff and text before publication.
+Published as [tinydesk-project/tinydesk-shell PR #4](https://github.com/tinydesk-project/tinydesk-shell/pull/4), addressing issue #2.
+
+The user reviewed the exact diff and description, then authorized publication.
+The fork branch is `aquasock:configurable-script-limits`, commit `b4f9404`
+on upstream `main` at `8456dd1`, in `/run/media/vash/GIT/tinydesk-shell`.
+It changes only `include/tdsh.h` and `README.md` and matches TinyTang's
+carried patch byte-for-byte. The PR is open for upstream review.
 
 # Shell: let ports set script memory limits
 
-Make `TDSH_MAX_VARS`, `TDSH_VAR_NAME_MAX`, `TDSH_VAR_VALUE_MAX` and
-`TDSH_SCRIPT_TASK_STACK` overridable, preserving current defaults and each
-script's copied session and variables. The header and README explain that
-every component including `tdsh.h` must use consistent overrides because
-the variable limits change the session layout.
+Ports can now set `TDSH_MAX_VARS`, `TDSH_VAR_NAME_MAX`, `TDSH_VAR_VALUE_MAX` and `TDSH_SCRIPT_TASK_STACK` from their build. Defaults remain 64 variables, 32-byte names, 256-byte values and a 32 KB worker stack. Each script still receives its own session and variable copy.
 
-Addresses #2. TinyTang's 48-variable, 128-byte-value configuration saves
-10,768 bytes per session on the BL616. The README example uses this table
-size so that the comprehensive host script fits and every host test runs.
+The header and README explain the memory cost and require the same overrides in every component using `tdsh.h`, including C++ consumers. The README includes a smaller-table build example.
 
-Validation on Linux x86_64 with the POSIX/pthread host port: Shell 8/8 and
-TinyDesk 10/10 tests pass without compiler warnings, with defaults and
-with 48 variables and 128-byte value buffers. A separate 32-variable
-configuration passes the seven compatible Shell tests and all ten desktop
-tests; the comprehensive script retains more than 32 variables and is run
-at 48. Boundary and worker probes check both table sizes, variable lengths,
-inherited values, script isolation, cleanup and the exact 16 KB stack request.
-The changed header passes clang-format 16.0.6.
+Addresses #2. TinyTang uses 48 variables and 128-byte values, saving 10,768 bytes per BL616 session.
 
-The native host suites retain their default 32 KB worker stack: Linux pthread
-runs with 16 KB crash in the script tests. TinyTang uses a 16 KB worker stack.
-On the Sipeed Tang Console 138K (BL616/FreeRTOS), the 48-variable build
-passed repeated Castlevania and Phosphor script launches from the desktop,
-including switching cores while music played with the Phosphor window open.
-The target session is 8,328 bytes. The last script used 10,728 of its 16,384
-stack bytes, with no allocation refusals or crash record after the tests.
-Music subsequently played at 44.1 kHz with zero underruns. TinyTang also
-fixed its own Terminal task restart and sized its music catalog to the
-actual folder; those port changes are outside this upstream diff. The firmware
-build retains its existing C-standard-option warning for C++.
+Validation:
 
-Reproduce the checks with `tools/tests/test_script_limits.sh` in TinyTang.
-The separate script-loading allocation-error message discussed in #2 remains
-pending.
+- Linux x86_64: Shell 8/8 and TinyDesk 10/10 tests pass without compiler warnings with defaults and with 48 variables/128-byte values. Boundary, inheritance, isolation, cleanup and stack-request probes also pass.
+- Linux suites retain the default 32 KB stack; 16 KB pthread runs fail in the script tests. On BL616/FreeRTOS, the 16 KB worker stack passed repeated desktop core launches and switches, with 5,656 bytes spare and no allocation refusals after testing.
+- clang-format 16.0.6 passes.
+
+TinyTang's Terminal restart and catalog-allocation fixes are separate port changes. The script-loading allocation-error message remains a separate follow-up.
+
+Reproducible checks: https://github.com/aquasock/TinyTang/blob/4633b4d/tools/tests/test_script_limits.sh

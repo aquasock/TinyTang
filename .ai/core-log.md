@@ -1481,3 +1481,33 @@ Review the prepared upstream guards and PR text before publishing the fork branc
 - User Test: PASS
 
 ---
+
+## 44 COMMIT Unreleased 2026-10-06T12:03:20-07:00
+
+#### Coming From:
+
+Unreleased 4633b4d
+
+#### Purpose:
+
+Publish the reviewed configurable-script-memory-limits change to TinyDesk Shell upstream and record its review handoff.
+
+#### Outcome:
+
+The user reviewed the two-file diff and shortened description, then explicitly authorized publication. The fork clone at /run/media/vash/GIT/tinydesk-shell was committed as b4f9404, Shell: let ports set script memory limits, on configurable-script-limits from upstream main at 8456dd1, which was still the remote head. It was pushed to aquasock/tinydesk-shell and published as tinydesk-project/tinydesk-shell PR #4, https://github.com/tinydesk-project/tinydesk-shell/pull/4, addressing issue #2. The change adds the four requested guards and README guidance, preserves upstream defaults and per-script variable copies, and documents consistent definitions for every tdsh.h consumer. Its committed diff matches TinyTang's carried patch byte-for-byte, and the changed header passes clang-format 16.0.6. The published title, body, base, head commit and two-file scope were checked through GitHub; the PR is open and no GitHub check results were reported at that check. The description cites the already completed default and 48-variable host suites, boundary and isolation probes, and BL616 hardware acceptance from entry 43; tests were not repeated because the reviewed code is unchanged. TinyTang's Terminal restart and catalog-allocation fixes remain outside the upstream change, and the script-loading allocation-error message remains a separate follow-up. docs/upstream/script-limits-pr.md now records the published URL, commit and exact description. No firmware changed, so this publication and documentation cycle required no build, deployment or board test. The core-syntax audit re-read core.md and core-syntax.md, inspected the complete .ai diff, confirmed core.md and all settled log entries unchanged, and validated entry 44 of 100 with tools/check_core_log.py.
+
+#### Next Steps:
+
+Await upstream review of PR #4 and address any requested changes as a new cycle. Remove the carried patch only when a pinned upstream release includes the guards, preserving TinyTang's consistent overrides. The separate script-loading error, the bounded future ID3/artwork implementation and the other open items from entry 43 remain pending.
+
+#### Files Modified:
+
+- docs/upstream/script-limits-pr.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
