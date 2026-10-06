@@ -1276,3 +1276,34 @@ The first pull request upstream comes next as its own cycle: recording the `tang
 - User Test: PASS
 
 ---
+
+## 38 COMMIT Unreleased 2026-10-06T08:11:09-07:00
+
+#### Coming From:
+
+Unreleased 947dfc1
+
+#### Purpose:
+
+Correct how the project credits nand2mario and states its licences, before TinyTang is listed upstream or announced anywhere.
+
+#### Outcome:
+
+Two statements were wrong and are corrected. The README called TinyTang "a from-scratch firmware" that "does not inherit from TangCore", while `THIRD_PARTY.md` already said it started from Tang-Control's board layer, a fork of TangCore's `firmware-bl616`; the README claim discounted nand2mario's work, and it now says plainly that TinyTang stands on it: the lineage through TangCore and Tang-Control, the board knowledge learned there, his JTAG programmer, his BL616-to-core UART protocol and his nestang core, with a pointer to TangCore for a dedicated game launcher. The licence statements were stale or wrong: `THIRD_PARTY.md` said one vendored file was Apache-2.0 and also that the Phosphor files were "Apache-2.0, as this project is", though the project is MIT, and `PROV-004` named the programmer as the only exception. Every file under `ports`, `tools`, `scripts` and `cmake` was searched for Apache-2.0 and for nand2mario, TangCore and Tang-Control, and each carried-over file's authors were read from Tang-Control's history: the programmer is nand2mario's (9 of its 10 commits), and the ten Phosphor transport files and two host tests were written in Tang-Control by this project's author and keep that fork's Apache-2.0, thirteen files in all. `THIRD_PARTY.md` now names each with its author, says no other TangCore source is in the tree, and calls Tang-Control the author's fork; the README's third-party summary lists TangCore and the Phosphor files beside the programmer; and `PROV-005` supersedes `PROV-004`, whose single exception went stale when the Phosphor port landed in entries 19 and 20. No source file and no licence text changed, so nothing was built or deployed. Entry 37's statement that scripts started from the desktop now load their cores is wrong and is corrected in the next entry, with the findings behind it. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `PROV-005` with its index line and routing rows, and `PROV-004` marked superseded with its statement untouched), confirmed `.ai/core.md` unchanged, validated this entry as number 38 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Record entry 37's correction with the script memory findings, upstream issue #2 and the Phosphor large-file finding once the user has finished checking more songs. The first upstream pull request, recording the `tang` prefix in TinyDesk Shell's Community ports table, and a friendly note to nand2mario before TinyTang is listed anywhere visible, follow. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

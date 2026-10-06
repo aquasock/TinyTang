@@ -231,8 +231,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Does the Bluetooth stack need attribution, and where are its notices? | TOOL | TOOL-016 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
-| Does this project carry the licences and notices it owes? | PROV | PROV-004 |
-| What licence is this project under, and what is the exception? | PROV | PROV-004 |
+| Does this project carry the licences and notices it owes? | PROV | PROV-005 |
+| What licence is this project under, and what is the exception? | PROV | PROV-005 |
 | Where is colibri, and what are its terms? | PROV | PROV-003 |
 | Which silicon revision is this board, and which revision is the core image? | PSX | PSX-001 |
 | How much logic and block RAM does the device have? | PSX | PSX-002 |
@@ -353,7 +353,8 @@ PHOS-008: "The qualified resident player is 863764 bytes, CRC-32 ef1502ed, built
 PHOS-009: "The merged core's pcm_sink has no stop: an AE350 restart (0x43f0) ends the decode and pause (0x78 bit 0) silences it, but the sink stays in its playing state, and the stopped track's samples (up to 2048 in the sink and 512 in the AE350 stream queue) stay queued ahead of the next START, so a sink kept paused never takes that START; underruns (0x6c) clear only with the core, 0x30 counts STARTs, and elapsed and duration (0x8c, 0x90) read 0"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
-PROV-004: "TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
+PROV-004: "Superseded by PROV-005. TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
+PROV-005: "TinyTang is MIT with thirteen Apache-2.0 files: nand2mario's JTAG programmer, and ten Phosphor transport files and two host tests written by this project's author in Tang-Control; it descends from nand2mario's TangCore firmware-bl616 through Tang-Control, a fork of it, and copies no other TangCore source"
 PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv pinned to upstream 3fa78412; read the port when working in SystemVerilog since it ships an AGENTS.md and targets Verilator and free tooling, but treat the original as the authority; licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT, with no code copied here"
 PSX-001: "This board is GW5AST-138 revision C (package mark 2518CA0N), while the console138k core image it loads is built for revision B and works anyway"
 PSX-002: "GW5AST-138: 138,240 LUTs, 139,095 registers, 340 BSRAM blocks of 18 Kbit, about 765 KB"
@@ -1913,7 +1914,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: TOOLCHAIN
   topic_id: PROV
   title: "The project licence is MIT, with one file left Apache-2.0"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "TinyTang's own code is MIT, in LICENSE at the repository root, which supersedes the Apache-2.0 choice PROV-002 recorded. The one exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file (TOOL-007): the Apache-2.0 text is reproduced at LICENSES/Apache-2.0.txt, and that file's header gained a comment saying so, because its original sentence pointed at the root LICENSE of the tree it was written in."
   consequence: "Apache-2.0 was never required, which is the point worth keeping: it is permissive, not copyleft, so an Apache-2.0 file may sit inside an MIT project provided that file keeps its notices and its licence text. The cost of MIT is a mixed-licence repository rather than a uniform one, which is ordinary here - Tang-Phosphor is GPL-3.0 with MIT, BSD-2-Clause and Apache-2.0 files inside it. Two consequences follow and should be known rather than discovered: the express patent grant Apache-2.0 carries is given up, and GPL-3.0 gateware from Tang-Phosphor can no longer be copied into this tree, which a GPL project could do and a permissive one cannot."
@@ -1922,6 +1923,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Project statement recorded with the user, 2026-10-03: a preference for MIT unless Apache-2.0 turned out to be required"
     - "PROV-002, which this record supersedes"
   verification: "Checked that nothing forces a copyleft licence: outside third_party and build, the only file in the tree carrying a licence of its own is the vendored programmer, so the project's inbound licensing is one file wide. Both licence texts are present and were read back after being written."
+  superseded_by: "PROV-005"
+
+- record_id: PROV-005
+  kind: TOOLCHAIN
+  topic_id: PROV
+  title: "MIT with thirteen Apache-2.0 files, and the TangCore lineage stated"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "TinyTang's own code is MIT (LICENSE). Thirteen files are Apache-2.0, with the text at LICENSES/Apache-2.0.txt: ports/bl616/tang_jtag_programmer.c, nand2mario's Gowin JTAG programmer (TOOL-007; in Tang-Control's history 9 of its 10 commits are his); and ae350_play.cpp, ae350_play.h, flac_stream_prefix.h, fpga_debug.cpp, fpga_debug.h, fpga_ext_frame.h, fpga_file_stream.cpp, fpga_file_stream.h, fpga_stream.cpp and fpga_stream.h in ports/bl616/phosphor/ with tools/tests/fpga_ext_frame_test.cpp and flac_stream_prefix_test.cpp, which were added by entries 19 and 20 after PROV-004 was written and whose every Tang-Control commit is this project's author's. Tang-Control is this project's author's fork of nand2mario's TangCore firmware-bl616 (66 of its commits are his), and TinyTang started from its board layer, so TinyTang descends from TangCore: its board knowledge was learned there, the BL616-to-core UART protocol is his design read from nestang (PROT-001), and the NES core is his nestang carried as patches. No other TangCore source file is in the tree."
+  consequence: "PROV-004's 'one exception' went stale when the Phosphor port landed, and the README's earlier claim that TinyTang was 'from-scratch' and did not 'inherit from TangCore' was inaccurate and read as discounting nand2mario's work. As of 2026-10-06 README.md and THIRD_PARTY.md state the lineage and every Apache-2.0 file with its author. The Phosphor files are the project author's own and could be relicensed to MIT if ever wanted; until then they keep Apache-2.0."
+  sources:
+    - "This project's LICENSE, LICENSES/Apache-2.0.txt, README.md, THIRD_PARTY.md and the headers of the thirteen files"
+    - "git log --follow in /run/media/vash/GIT/Tang-Control for fpga/programmer.cpp and utils/ (fpga_*, flac_stream_prefix.h, ae350_play.*), and its README: 'a fork of nand2mario's firmware-bl616'"
+  verification: "On 2026-10-06 every file under ports, tools, scripts and cmake was searched for Apache-2.0 and for nand2mario, TangCore and Tang-Control, and the authorship of each carried-over file was read from Tang-Control's history (core-log entry 38)."
 
 - record_id: BLE-001
   kind: BOARD

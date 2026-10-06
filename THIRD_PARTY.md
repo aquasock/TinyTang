@@ -1,8 +1,10 @@
 # Third-party components
 
-TinyTang's own code is MIT; the text is in `LICENSE`. One vendored file is
-Apache-2.0, and the entry for it below says so — where that happens, that
-file's licence governs it and MIT governs everything else. Reproducing both
+TinyTang's own code is MIT; the text is in `LICENSE`. Thirteen files carried
+over from earlier projects are Apache-2.0, and the entries below name them and
+their authors: nand2mario's JTAG programmer, and ten Phosphor transport files
+and two host tests from Tang-Control. Each says so in its header; that file's
+licence governs it and MIT governs everything else. Reproducing both
 licences is deliberate: an Apache-2.0 file inside an MIT project keeps its own
 terms, and the pointer in its header has to resolve to something true.
 
@@ -22,16 +24,21 @@ from:
 - License: Apache-2.0 for the firmware (`firmware-bl616`). Each core under the
   same repository keeps its own licence; no core is used here.
 
-TinyTang started from Tang-Control's board layer, which is itself a fork of
-TangCore's `firmware-bl616`. Every fact taken from it is called out in the
-source where it is used and recorded in `.ai/core-reference.md`.
+TinyTang descends from TangCore: it started from Tang-Control's board layer,
+and Tang-Control is a fork of TangCore's `firmware-bl616`, whose board layer
+and JTAG programmer are nand2mario's. The board knowledge learned there --
+pins, the SD card's power switch, the USB stack's quirks, the flash layout --
+is his groundwork; every such fact is called out in the source where it is
+used and recorded in `.ai/core-reference.md`. No TangCore source file is
+copied into TinyTang other than the programmer below.
 
 ## Tang-Control
 
-The intermediate project, retired in favour of TinyTang:
+The intermediate project, a fork of TangCore's `firmware-bl616` by this
+project's author, retired in favour of TinyTang:
 
 - Project: https://github.com/aquasock/Tang-Control
-- License: Apache-2.0
+- License: Apache-2.0, as a fork of an Apache-2.0 project
 
 The Tang-Phosphor host side is ported from Tang-Control into
 `ports/bl616/phosphor/`: `fpga_ext_frame.h` and `flac_stream_prefix.h` copied
@@ -39,7 +46,13 @@ unchanged, `fpga_debug`, `fpga_stream` and `fpga_file_stream` ported with only
 their link plumbing changed, and `ae350_play` with its card path changed and a
 settle delay added after the AE350 restart, each saying so in its header. The host tests
 `tools/tests/fpga_ext_frame_test.cpp` and `flac_stream_prefix_test.cpp` are
-copied unchanged. All are Apache-2.0, as this project is.
+copied unchanged. These were written in Tang-Control by this project's author,
+not taken from TangCore, and they keep Tang-Control's Apache-2.0 here; the
+licence text is at `LICENSES/Apache-2.0.txt`. The files: `ae350_play.cpp`,
+`ae350_play.h`, `flac_stream_prefix.h`, `fpga_debug.cpp`, `fpga_debug.h`,
+`fpga_ext_frame.h`, `fpga_file_stream.cpp`, `fpga_file_stream.h`,
+`fpga_stream.cpp` and `fpga_stream.h` in `ports/bl616/phosphor/`, and
+`tools/tests/fpga_ext_frame_test.cpp` and `flac_stream_prefix_test.cpp`.
 
 ## Gowin JTAG programmer (nand2mario)
 
@@ -51,8 +64,9 @@ added comment saying where its licence text lives in this tree;
 documents this provenance.
 
 - Copyright: (c) 2025.2, nand2mario
-- License: Apache-2.0, reproduced at `LICENSES/Apache-2.0.txt`. This is the only
-  file in the tree under a licence other than MIT
+- License: Apache-2.0, reproduced at `LICENSES/Apache-2.0.txt`. It is the one
+  file of nand2mario's in the tree; the other Apache-2.0 files are listed
+  under Tang-Control above
 - Based in part on openFPGALoader by Gwenhael Goavec-Merou,
   https://github.com/trabucayre/openFPGALoader, also Apache-2.0
 

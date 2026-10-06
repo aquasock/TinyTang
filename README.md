@@ -13,9 +13,15 @@ emulator into an 80x45 text layer the FPGA composites over its video, so the
 HDMI output shows the desktop. The same stream also goes down the USB CDC, so a
 terminal on a computer can show and drive the same session.
 
-This is a from-scratch firmware. It does not inherit from TangCore; the only
-thing taken from the previous firmware is board knowledge, and every such fact
-is called out in the source where it is used.
+TinyTang stands on nand2mario's work. Its lineage runs through his TangCore
+firmware for this same BL616 (`firmware-bl616`), by way of Tang-Control, a fork
+of it: the board knowledge TinyTang rests on was learned there, its Gowin JTAG
+programmer is his, the UART protocol between the BL616 and the FPGA cores is his
+design, and the NES core it runs is his nestang. What was written for TinyTang
+is the rest -- the TinyDesk Shell port, the desktop on HDMI, Bluetooth input,
+the crash recorder -- and `THIRD_PARTY.md` says exactly what came from where.
+For a dedicated game launcher with his full library of cores, see
+[TangCore](https://github.com/nand2mario/tangcore).
 
 ## What it does
 
@@ -453,9 +459,15 @@ selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
 
 - **TinyDesk Shell** and **TinyDesk** — MIT — as submodules under
   `third_party/`.
+- **TangCore** (nand2mario) — Apache-2.0 — the firmware this one descends
+  from, through Tang-Control; no TangCore source file is copied except the
+  programmer below.
 - **Gowin JTAG programmer** — Apache-2.0 — `ports/bl616/tang_jtag_programmer.c`
   is nand2mario's GPIO JTAG programmer for Gowin GW5A/GW2A, taken from
   Tang-Control, used unmodified apart from its include list.
+- **Phosphor host transport** — Apache-2.0 — the `fpga_*`, `flac_stream_prefix`
+  and `ae350_play` files in `ports/bl616/phosphor/` and two host tests, written
+  in Tang-Control and keeping its licence here.
 - **nestang** — GPL-3.0 — the FPGA cores, modified by the patches in
   `third_party/patches/`; the patch files carry GPL-3.0 lines. The BL616 end of
   the core's UART protocol was written from nestang's documentation of it, and
