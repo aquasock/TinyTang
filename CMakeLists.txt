@@ -118,8 +118,13 @@ else()
     # The crash recorder takes over the SDK's exception handler, which would
     # otherwise print to an unconnected UART and spin, and the Bluetooth
     # controller library's fatal-error exit, which would jump to address 0
-    # (ports/bl616/tang_crash.h).  Neither is weak, so the linker renames them.
-    sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset)
+    # (ports/bl616/tang_crash.h); and the allocator's four entry points, which
+    # spin with interrupts off when an allocation fails, are replaced by ones
+    # that return NULL (ports/bl616/tang_heap.h).  None is weak, so the linker
+    # renames them.
+    sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset
+                         -Wl,--wrap=bflb_malloc -Wl,--wrap=bflb_malloc_align
+                         -Wl,--wrap=bflb_calloc -Wl,--wrap=bflb_realloc)
 
     # The firmware's build identity: the commit, plus a hash of any uncommitted
     # changes, regenerated on every build so it cannot go stale (see

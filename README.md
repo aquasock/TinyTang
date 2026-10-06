@@ -126,8 +126,9 @@ is called out in the source where it is used.
   desktop's pointer. It has the same `off`, `on`, `forget`, `watch`, address
   and status forms. Proven with a Logitech M750. Pair one device at a time: a
   second is refused until the first is ready.
-- **`ble`** reports the radio, the heap (free now, and what the stack took when
-  it started), the pairings file and both devices.
+- **`ble`** reports the radio, the heap (free now, the largest free block, any
+  allocations refused since boot, and what the stack took when it started), the
+  pairings file and both devices.
 - **`crash`** shows how the previous run ended if it crashed or hung, and
   `crash test trap | spin | hang` causes each kind on purpose. A hardware
   watchdog resets the board 4 s after it stops being fed; an exception, a
@@ -136,7 +137,9 @@ is called out in the source where it is used.
   32 samples of what was running, in the flash's last sector. The board then
   comes back as the FT2232 (a warm reset always does), and after the power
   cycle TinyTang prints the record at boot, appends it to `/sd/crash.log` and
-  clears it. A hang with interrupts held off leaves no record.
+  clears it. A hang with interrupts held off leaves no record. It also reports the heap and how much of its stack the last script used.
+  An allocation that fails now returns NULL and the command reports it; the
+  SDK's allocator used to freeze the board instead.
 - **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
@@ -303,6 +306,8 @@ STM32's own DFU bootloader.
     helpers in `phosphor_media.h`).
   - `tang_crash.c` — the crash and hang recorder: the watchdog, the wrapped
     exception handler and controller exit, and `crash`.
+  - `tang_heap.c` — the allocator's entry points, wrapped to return NULL
+    instead of freezing, and the heap readout.
   - `tang_ble.c` — Bluetooth LE: `blescan`, `ble`, and `blekbd` and
     `blemouse`, the HID-over-GATT client with one keyboard slot and one mouse
     slot, which saves pairings to the card and reconnects them through the

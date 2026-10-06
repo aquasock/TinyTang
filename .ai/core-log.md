@@ -1173,3 +1173,42 @@ The approved next cycle fixes the freeze: allocation failures are to return NULL
 - User Test: PASS
 
 ---
+
+## 35 COMMIT Unreleased 2026-10-05T23:26:37-07:00
+
+#### Coming From:
+
+Unreleased 287391a
+
+#### Purpose:
+
+Stop the board freezing when it runs short of heap with Bluetooth devices connected, by making allocation failure survivable and visible, shrinking the script task's stack and finding what was using the heap up.
+
+#### Outcome:
+
+Entry 34 left the freeze attributed to the SDK's allocator, which spins with interrupts off on any failed allocation (`BL6-008`), and this cycle confirmed it and found the cause. The new `ports/bl616/tang_heap.c` replaces `bflb_malloc`, `bflb_calloc`, `bflb_realloc` and `bflb_malloc_align` through the linker's `--wrap` (`CMakeLists.txt`) with the same TLSF calls under the same lock that return NULL on failure and record the count, size, task and caller; its `bflb_realloc` also counts the new block where the SDK's read the old pointer, and the disassembly shows no reference left to the originals. The FreeRTOS malloc-failed hook in `ports/bl616/tang_crash.c` became empty, since a refusal is now the caller's to handle. `bl616_worker_run` in `ports/bl616/tdsh_platform_bl616.c` caps worker stacks at 16 KB, the shell task's size, against TinyDesk Shell's 32 KB request for each `tdsh run` script, without changing the submodule, and keeps the last script task's stack high-water mark (`FreeRTOSConfig.h` enables it); `ble` and `crash` report free heap, the largest free block and refusals. On the first build, with both devices connected and the mouse moving, `castlevania.tdsh` came up where it had frozen three times in three, the largest free block after it was 25,132 bytes, too small for the old 32 KB stack, and the script used 10,728 of its 16,384 bytes of stack; but free heap fell 4.1 KB per run, and the third run's 4096-byte request was refused and the script stopped with the board still up, which is the new behaviour working. The 4 KB was `fpga_program` in `ports/bl616/tang_jtag_programmer.c`, which allocated a `fbuf_cached` buffer before choosing between its two paths while only the disabled slow path used and freed it, so every `tangload`, the boot script's included, leaked 4 KB; it is now allocated on that path alone. Both findings are recorded as `BL6-009`, and `BLE-014` supersedes `BLE-013`, whose 41,764-byte figure after a desktop session was this leak, not the desktop. The deployed firmware, built with `make CHIP=bl616 BOARD=bl616dk` with no new warnings (the five in `tang_jtag_programmer.c` predate this work), is `tinytang_bl616.bin` at 617,552 bytes, MD5 `43e4acabe127630128e6e5230edefc54`, build identity `287391a-dirty.8ca7103`, installed with `tools/tinytang_flash.py` and confirmed by `platform`. On it, with both devices connected and the mouse moving, five consecutive runs of `castlevania.tdsh` and two more after a desktop session all came up in 8.4 s, and free heap stayed at 64,704 bytes with a 40,536-byte largest block before and after every one, with no refusals. The user confirmed Castlevania running and F12 switching, and accepted the cycle. The discovery stall entry 34 recorded recurred, this time on the K950, and was again cleared with `blekbd off` and `on`. All eight host test scripts pass. The committed tree differs from the deployed build only in `README.md`, which describes the heap readout. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry, `BL6-009` and `BLE-014` with their routing rows and index lines, and `BLE-013` marked superseded, its routing row pointed at `BLE-014` and its index line prefixed, with its statement untouched), confirmed `.ai/core.md` unchanged, validated this entry as number 35 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+The discovery stall when both devices reconnect at the same moment is the next fault, now seen on each device once: one setup stops in `discovering` and only `off` and `on` recovers it, and the likely cause is two setup sequences running at once, against `BLE-005`. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- FreeRTOSConfig.h
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_crash.c
+- ports/bl616/tang_heap.c
+- ports/bl616/tang_heap.h
+- ports/bl616/tang_jtag_programmer.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/tdsh_platform_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

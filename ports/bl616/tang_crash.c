@@ -19,6 +19,8 @@
 #include "ff.h"
 
 #include "tdsh.h"
+#include "tdsh_bl616.h"
+#include "tang_heap.h"
 #include "tinytang_build_id.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -293,10 +295,11 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *name)
     record_and_wait(KIND_STACK, 0, 0, 0, 0, name);
 }
 
+/* A refused allocation is not a crash any more: the allocator returns NULL
+ * and tang_heap.c counts it (BL6-008), and the caller decides what to do.
+ * Defined so the SDK's weak version, which spins, is not used. */
 void vApplicationMallocFailedHook(void)
 {
-    record_and_wait(KIND_MALLOC, 0, 0, 0, (uint32_t)__builtin_return_address(0),
-                    current_task_name());
 }
 
 /* Every few ticks: which task was running, and where.  The tick interrupt has
@@ -522,6 +525,12 @@ static int cmd_crash(tdsh_session_t *session, int argc, char **argv)
                 "reset status 0x%02x (bit 3 low = watchdog)\r\n",
                 TINYTANG_BUILD_ID, s_wdt_running ? "on" : "off",
                 (unsigned long)s_rec.boots, s_reset_sts);
+    tang_heap_print("crash");
+    size_t stack_bytes = 0, stack_free = 0;
+    if (tdsh_bl616_worker_stack(&stack_bytes, &stack_free)) {
+        tdsh_printf("crash: the last script task used %lu of its %lu bytes of stack\r\n",
+                    (unsigned long)(stack_bytes - stack_free), (unsigned long)stack_bytes);
+    }
     if (!s_last_valid) {
         tdsh_printf("crash: no record from a previous run (the last reset was a power-up)\r\n");
     } else if (s_last.state == RUN_CLEAN) {

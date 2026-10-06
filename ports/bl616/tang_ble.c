@@ -54,6 +54,7 @@
 #include "tdsh.h"
 #include "tang_ble.h"
 #include "tang_ble_bonds.h"
+#include "tang_heap.h"
 #include "tang_pad.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -1790,14 +1791,13 @@ static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
     } else {
         tdsh_printf("ble: radio up\r\n");
     }
-    tdsh_printf("ble: heap %lu bytes free of %lu", (unsigned long)kfree_size(),
-                (unsigned long)g_kmemheap.heapsize);
+    tang_heap_print("ble");
     if (s_start_phase == 2 && s_enable_result == 0) {
-        tdsh_printf("; the stack took %lu at start (%lu free before, %lu after)",
+        tdsh_printf("ble: the stack took %lu bytes of heap at start (%lu free before, %lu after)\r\n",
                     (unsigned long)(s_heap_before - s_heap_after),
                     (unsigned long)s_heap_before, (unsigned long)s_heap_after);
     }
-    tdsh_printf("\r\nble: pairings %s (%s)\r\n", s_bonds_state, BLE_BONDS_PATH);
+    tdsh_printf("ble: pairings %s (%s)\r\n", s_bonds_state, BLE_BONDS_PATH);
     for (int i = 0; i < HID_SLOTS; i++) {
         hid_status(&s_hid[i]);
     }

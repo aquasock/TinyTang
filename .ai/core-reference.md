@@ -148,6 +148,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How do I read the CPU clock? | BL6 | BL6-006 |
 | Why is the FPGA link slower than its baud rate? | BL6 | BL6-007 |
 | Why does a crash or out-of-memory freeze the board silently instead of reporting? | BL6 | BL6-008 |
+| What happens now when the heap runs out, and why did loading cores use it up? | BL6 | BL6-009 |
 | What speed does the console negotiate? | USB | USB-001 |
 | Can the OTG block tell me what is on the other end of the cable? | USB | USB-002 |
 | Can the OTG connector power a keyboard? | USB | USB-003 |
@@ -169,7 +170,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does a GATT subscribe fail with -EALREADY after a bonded device reconnects? | BLE | BLE-010 |
 | How does the host reconnect a paired device, and why is there no bt_le_set_auto_conn? | BLE | BLE-011 |
 | Where are Bluetooth pairings kept, and how do devices come back after a reset? | BLE | BLE-012 |
-| How much heap does the running Bluetooth stack take? | BLE | BLE-013 |
+| How much heap does the running Bluetooth stack take? | BLE | BLE-014 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -268,6 +269,7 @@ BL6-005: "There is an HBN always-on RTC counter (HBN_Enable_RTC_Counter, HBN_Get
 BL6-006: "bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) returns the CPU clock"
 BL6-007: "bflb_uart_putchar() reads the millisecond timer before every byte for its 100 ms timeout, costing about 7.5 us of CPU per byte here, which capped UART1 near 133 KB/s at 5 Mbaud; filling the TX FIFO from its free count reaches the wire rate"
 BL6-008: "The SDK fails silently with interrupts off on every fatal path: exception_entry prints to an unconnected UART and spins, vAssertCalled spins, bflb_malloc/calloc/realloc/malloc_align spin on any failed allocation instead of returning NULL, and the Bluetooth controller's btble_ke_malloc calls platform_reset, which jumps to address 0"
+BL6-009: "bflb_malloc, _calloc, _realloc and _malloc_align are replaced with --wrap by versions that return NULL and count the refusal (tang_heap.c); every tangload leaked 4 KB (the JTAG programmer's unused fbuf_cached) until that was fixed; script workers are capped at 16 KB of stack, and a cartridge script uses 10,728 B"
 USB-001: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps (lsusb -t); CONFIG_USB_HS sets CDC_MAX_MPS 512, which is legal only at HS"
 USB-002: "No role signal follows the cable: OTG_CSR's ID bit tracks the forced configuration (PDS IDDIG), not the connector"
 USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing comes out, in both DRVBUS_POL polarities, and a device that reacts to power stayed dark for 60 s"
@@ -367,7 +369,8 @@ BLE-009: "Logitech M750 over BLE: random address that increases by one per pairi
 BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect unless BT_GATT_SUBSCRIBE_FLAG_VOLATILE is set, and re-sends them on reconnect; reusing those params structs for a new subscription rewrites a node still in its list and returns -EALREADY"
 BLE-011: "This SDK's config.h defines CONFIG_BT_WHITELIST, which compiles out bt_le_set_auto_conn and the host's reconnect-after-disconnect; reconnection is one whitelist initiator (bt_conn_create_auto_le) that connects the first whitelisted device to advertise and stops, cannot run beside an explicit scan or connect, and needs the whitelist unchanged while it runs"
 BLE-012: "Pairings are kept on the SD card in /sd/ble/bonds.bin (tang_ble_bonds.c format, keys unencrypted) and put back into the host's key table at boot; the K950 and M750 then reconnect when woken, but the first encryption attempt after a disconnect often fails (level 1, error 8, then HCI 0x3E) and a retry succeeds"
-BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect"
+BLE-013: "Superseded by BLE-014. Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect"
+BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost, and a connection about 700 B; with both devices connected about 64.7 KB stays free (largest block 40.5 KB) across cartridge loads and desktop sessions, and reconnects do not leak"
 ```
 
 ---
@@ -650,6 +653,20 @@ BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free befor
     - "Bouffalo SDK 7f44f9e: drivers/soc/bl616/std/startup/interrupt.c exception_entry(); components/os/freertos/freertos_port.c; components/mm/tlsf/bflb_tlsf.c TLSF_MALLOC_ASSERT; components/mm/mem.h KMEM_HEAP and PMEM_HEAP"
     - "Disassembly of platform_reset and btble_ke_malloc in build/build_out/tinytang_bl616.elf, 2026-10-05"
   verification: "Source read on 2026-10-05. crash test trap was recorded with the right PC after the wrap; three reproductions of the cartridge-script freeze with Bluetooth devices connected left no record with every other path instrumented, which is the TLSF signature (core-log entry 34)."
+
+- record_id: BL6-009
+  kind: TOOLCHAIN
+  topic_id: BL6
+  title: "Allocation failure returns NULL; the core loader leaked 4 KB per load"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The linker renames bflb_malloc, bflb_calloc, bflb_realloc and bflb_malloc_align (CMakeLists.txt) to the versions in ports/bl616/tang_heap.c: the same tlsf_memalign and tlsf_realloc calls under the same bflb_irq_save lock, returning NULL on failure and recording the count, size, task and caller; bflb_realloc's free-byte count also uses the new block rather than the old pointer. vApplicationMallocFailedHook is now empty. fpga_program() in tang_jtag_programmer.c allocated a 4096-byte fbuf_cached before choosing between its two paths, and only the disabled slow path used and freed it, so the compiled fast path leaked 4 KB on every tangload. TinyDesk Shell asks for a 32 KB stack for each `tdsh run` script (TDSH_SCRIPT_TASK_STACK); the port now caps worker stacks at 16 KB, the shell task's own size."
+  consequence: "With the Bluetooth stack up, each core load cost 4 KB of a heap of about 125 KB until a load could not get even its 4 KB buffer, and a script's 32 KB stack failed sooner; under the SDK's allocator either froze the board with interrupts off (BL6-008). Now the buffer is allocated only on the path that frees it, a refused allocation makes the command fail and is counted, and `ble` and `crash` report free heap, the largest free block and refusals. The cap leaves a cartridge script 5.6 KB of stack spare; an overflow would be recorded by the stack-overflow hook (BL6-008)."
+  sources:
+    - "Bouffalo SDK 7f44f9e: components/mm/tlsf/bflb_tlsf.c and tlsf.h (tlsf_walk_pool, tlsf_get_pool)"
+    - "This project's ports/bl616/tang_jtag_programmer.c fpga_program(), ports/bl616/tang_heap.c, ports/bl616/tdsh_platform_bl616.c bl616_worker_run()"
+    - "third_party/tinydesk-shell/include/tdsh.h TDSH_SCRIPT_TASK_STACK and src/core/tdsh_script.c"
+  verification: "On 2026-10-05 with both Bluetooth devices connected and the mouse moving, the build with the wraps and the cap loaded Castlevania, then free heap fell 4.1 KB per run and the third run's 4096-byte buffer was refused, the command failing without a freeze; with the leak fixed, seven runs, two of them after a desktop session, left free heap at 64,704 B and the largest block at 40,536 B every time, with the script using 10,728 of 16,384 bytes of stack (core-log entry 35)."
 
 - record_id: USB-001
   kind: USB
@@ -2030,7 +2047,7 @@ BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free befor
   kind: TOOLCHAIN
   topic_id: BLE
   title: "Heap taken by the running Bluetooth stack"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-05
   statement: "This SDK builds FreeRTOS with heap_3, so heap use is read from its own allocator, kfree_size() and g_kmemheap.heapsize in components/mm/mem.h. In firmware 1cea7b9-dirty.a296b3b the heap is 127,248 B; starting the Bluetooth stack took it from 84,120 B free to 68,292 B, 15,828 B; with the M750 connected 67,592 B were free. After a desktop session with both devices connected 41,764 B were free, 42,464 B with the mouse disconnected, and three off/on cycles of the mouse returned to 41,764 B each time."
   consequence: "Bluetooth costs about 16 KB of heap at run time on top of the static cost BLE-002 recorded, and about 700 B per connection. Reconnecting does not leak. The `ble` command reports these figures. There is no lowest-ever counter in this allocator, so a transient peak is not measured."
@@ -2038,6 +2055,19 @@ BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free befor
     - "Bouffalo SDK 7f44f9e, components/mm/mem.h and mem.c: kfree_size(); components/os/freertos/CMakeLists.txt: heap_3.c"
     - "This project's ports/bl616/tang_ble.c, ble_start_ex() and cmd_ble()"
   verification: "Read from the board with `ble` on 2026-10-05 (core-log entry 33)."
+  superseded_by: "BLE-014"
+
+- record_id: BLE-014
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Heap taken by the running Bluetooth stack, without the loader's leak"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Everything BLE-013 measured about the stack holds: about 15.8 KB of heap to start it (84,120 B free before and 68,292 B after in that build, 82,364 and 66,536 in a later one), about 700 B per connection, and reconnects returning free heap to the same figure. BLE-013's 41,764 B 'after a desktop session' was not the desktop: every tangload, including the boot script's, leaked 4 KB (BL6-009). With that fixed and both devices connected, 64,704 B of the 124,768 B heap stayed free, with a 40,536 B largest block, before and after seven cartridge loads and a desktop session."
+  consequence: "Bluetooth with two devices leaves about 65 KB of heap and a 40 KB largest block for everything else. A request near that size, such as the 32 KB script stack TinyDesk Shell asks for, can still fail once the heap fragments, which is why worker stacks are capped (BL6-009). `ble` reports free heap and the largest block."
+  sources:
+    - "This project's ports/bl616/tang_heap.c tang_heap_info() and ports/bl616/tang_ble.c cmd_ble()"
+  verification: "Read from the board with `ble` and `crash` on 2026-10-05 (core-log entry 35)."
 ```
 
 ---

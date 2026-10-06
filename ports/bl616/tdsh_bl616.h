@@ -47,6 +47,10 @@ int  tdsh_bl616_fs_mount(void);
 bool tdsh_bl616_fs_ready(void);
 int  tdsh_bl616_fs_last_result(void);   /* FRESULT of the last mount attempt */
 
+/* The stack size of the last foreground shell worker (a `tdsh run` script)
+ * and the least it ever had free; false until one has run. */
+bool tdsh_bl616_worker_stack(size_t *bytes, size_t *min_free);
+
 /* Shell lifecycle (tdsh_platform_bl616.c). */
 int  tdsh_bl616_init(const char *hostname);
 int  tdsh_bl616_run(void);

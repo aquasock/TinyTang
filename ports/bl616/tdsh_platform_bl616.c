@@ -79,10 +79,31 @@ typedef struct {
     bool background;
 } bl616_worker_t;
 
+/* The largest stack a worker gets.  TinyDesk Shell asks for 32 KB for each
+ * script (TDSH_SCRIPT_TASK_STACK), in one piece from a heap the Bluetooth
+ * stack leaves small and fragmented; failing that froze the board (BL6-008).
+ * The shell task runs every command typed at the console on 16 KB, so a
+ * script running the same commands gets the same.  The last foreground
+ * worker's high-water mark is kept so the margin can be checked (`crash`). */
+#define BL616_WORKER_STACK_MAX 16384u
+
+static size_t s_worker_stack_bytes;
+static size_t s_worker_stack_free;
+
+bool tdsh_bl616_worker_stack(size_t *bytes, size_t *min_free)
+{
+    *bytes = s_worker_stack_bytes;
+    *min_free = s_worker_stack_free;
+    return s_worker_stack_bytes != 0;
+}
+
 static void bl616_worker_trampoline(void *param)
 {
     bl616_worker_t *w = (bl616_worker_t *)param;
     w->result = w->worker(w->arg);
+    if (!w->background) {
+        s_worker_stack_free = (size_t)uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t);
+    }
     if (w->cleanup) w->cleanup(w->arg);
     if (w->background) {
         vTaskDelete(NULL);
@@ -114,7 +135,15 @@ static int bl616_worker_run(void *context,
     w->arg = arg;
     w->background = background;
 
-    UBaseType_t words = (UBaseType_t)((stack_bytes ? stack_bytes : 4096u) / sizeof(StackType_t));
+    if (stack_bytes == 0) {
+        stack_bytes = 4096u;
+    } else if (stack_bytes > BL616_WORKER_STACK_MAX) {
+        stack_bytes = BL616_WORKER_STACK_MAX;
+    }
+    if (!background) {
+        s_worker_stack_bytes = stack_bytes;
+    }
+    UBaseType_t words = (UBaseType_t)(stack_bytes / sizeof(StackType_t));
     UBaseType_t prio = (UBaseType_t)(priority > 0 ? priority : (int)tskIDLE_PRIORITY + 1);
 
     if (!background) {

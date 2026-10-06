@@ -1011,13 +1011,6 @@ bool fpga_program(const char *fname) {
         goto load_core_close;
     }
 
-    BYTE *fbuf_cached;
-    fbuf_cached = (BYTE*)malloc(BLOCK_SIZE);
-    if (!fbuf_cached) {
-        overlay_printf("Cannot malloc buffer\r\n");
-        goto load_core_close;
-    }
-
 #define JTAG_FAST
 
     extern uint64_t jtag_writetdi_time;
@@ -1049,6 +1042,15 @@ bool fpga_program(const char *fname) {
     }
 
 #else
+    // TinyTang: the bit-reversed copy buffer is only this slow path's, so it
+    // is allocated here.  Allocated above both paths, the fast path never
+    // freed it, and every tangload leaked 4 KB of a heap the Bluetooth stack
+    // already leaves small -- until a load could not get its buffer at all.
+    BYTE *fbuf_cached = (BYTE*)malloc(BLOCK_SIZE);
+    if (!fbuf_cached) {
+        overlay_printf("Cannot malloc buffer\r\n");
+        goto load_core_close;
+    }
     taskENTER_CRITICAL();
     for (;;) {
         uint64_t time_flash_start = bflb_mtimer_get_time_us();
