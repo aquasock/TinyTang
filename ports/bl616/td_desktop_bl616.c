@@ -52,7 +52,7 @@
 int tdsh_printf(const char *fmt, ...);
 
 /* The shell bridge (td_bridge_bl616.c): what fills TinyDesk's Terminal. */
-const td_term_backend_t *td_bridge_bl616_backend(void);
+int tang_td_terminal_start(void);
 void td_bridge_bl616_stop(void);
 void td_phosphor_register(void);   /* phosphor/td_phosphor_app.cpp */
 
@@ -300,7 +300,7 @@ static int sys_tasks(td_task_info_t *out, int max)
 
 /* Runs the desktop until it quits.  Called from the shell command, so the
  * shell task parks here for the duration and gets the prompt back after. */
-static void desktop_run(void)
+static int desktop_run(void)
 {
     static char platform[48];
 
@@ -334,9 +334,13 @@ static void desktop_run(void)
     td_logf('I', "terminal size %dx%d", td_stats()->cols, td_stats()->rows);
     td_logf('I', "files root %s", TD_DESKTOP_ROOT);
 
-    /* The Terminal app has no backend of its own: without this it draws
-     * "No shell backend in this build." and nothing else. */
-    td_terminal_set_backend(td_bridge_bl616_backend());
+    /* Restart the shell even when Terminal remembers a previous desktop.
+     * A failed task allocation must return to a usable console. */
+    if (tang_td_terminal_start() != 0) {
+        td_shutdown();
+        tdsh_printf("desktop: could not start the Terminal shell\r\n");
+        return 1;
+    }
 
     /* Everything else -- Files, Editor, System Monitor, Settings, Log, About
      * -- works against the card. */
@@ -349,6 +353,7 @@ static void desktop_run(void)
      * the redirect is cleared, or it would read the console alongside the
      * outer shell. */
     td_bridge_bl616_stop();
+    return 0;
 }
 
 static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)
@@ -374,12 +379,12 @@ static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)
     /* The pointer is the desktop's, and only for as long as it runs. */
     tang_osd_desk_set_pointer(true);
     tdsh_bl616_console_set_desktop(true);
-    desktop_run();
+    const int rc = desktop_run();
     tdsh_bl616_console_set_desktop(false);
     tang_osd_desk_set_pointer(false);
 
     tdsh_printf("\r\ndesktop: exited\r\n");
-    return 0;
+    return rc;
 }
 
 static const tdsh_command_t s_desktop_commands[] = {

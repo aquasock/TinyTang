@@ -1,5 +1,5 @@
 diff --git a/README.md b/README.md
-index 3c058b6..e346803 100644
+index 3c058b6..26586bd 100644
 --- a/README.md
 +++ b/README.md
 @@ -144,6 +144,32 @@ On Windows add `-DCMAKE_C_COMPILER=gcc` (MinGW-w64); the program is
@@ -23,7 +23,7 @@ index 3c058b6..e346803 100644
 +
 +```bash
 +cmake -S . -B build-small -DTDSH_BUILD_HOST=ON \
-+  -DCMAKE_C_FLAGS="-DTDSH_MAX_VARS=32 -DTDSH_VAR_VALUE_MAX=128"
++  -DCMAKE_C_FLAGS="-DTDSH_MAX_VARS=48 -DTDSH_VAR_VALUE_MAX=128"
 +cmake --build build-small
 +ctest --test-dir build-small --output-on-failure
 +```

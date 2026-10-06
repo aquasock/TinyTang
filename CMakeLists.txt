@@ -64,10 +64,10 @@ else()
 
     # These public limits change tdsh_session_t's layout.  The shell, desktop,
     # bridge and every C/C++ port source must use the same definitions.
-    # 32 entries of 1 + 32 + 128 bytes cost 5152 bytes per session, versus
+    # 48 entries of 1 + 32 + 128 bytes cost 7728 bytes per session, versus
     # 18496 upstream.  Keep the established 16 KB worker stack (BL6-009).
     sdk_add_compile_definitions(
-        -DTDSH_MAX_VARS=32 -DTDSH_VAR_NAME_MAX=32
+        -DTDSH_MAX_VARS=48 -DTDSH_VAR_NAME_MAX=32
         -DTDSH_VAR_VALUE_MAX=128 -DTDSH_SCRIPT_TASK_STACK=16384)
 
     file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")

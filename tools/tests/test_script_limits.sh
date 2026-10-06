@@ -48,21 +48,25 @@ cmp "$work/first.patch" "$work/checkout.patch"
 bash "$root/scripts/apply-tdsh-patches.sh" "$work/desk/third_party/tdsh"
 run_suites defaults ""
 
-# The comprehensive upstream fixture retains more than 32 variables.  Run
-# every upstream test at 48 variables, then the compatible tests at TinyTang's
-# 32.  Linux's libc/pthread worker needs more than a 16 KB stack for these
-# scripts, so keep its native 32 KB default.  The exact TinyTang stack request
-# is checked below with the worker probe and measured on the board.
-small="-DTDSH_MAX_VARS=48 -DTDSH_VAR_NAME_MAX=32 -DTDSH_VAR_VALUE_MAX=128"
-run_suites small "$small"
-tinytang="-DTDSH_MAX_VARS=32 -DTDSH_VAR_NAME_MAX=32 -DTDSH_VAR_VALUE_MAX=128"
-run_suites tinytang "$tinytang" '^tdsh_full_uscript_tests$'
+# All upstream tests fit TinyTang's 48-variable table.  Retain a 32-variable
+# configuration to check that ports can still choose smaller budgets; the
+# comprehensive fixture retains more than 32 variables and runs at 48.
+# Linux's libc/pthread worker needs more than a 16 KB stack for these scripts,
+# so keep its native 32 KB default.  The exact TinyTang stack request is checked
+# below with the worker probe and measured on the board.
+tinytang="-DTDSH_MAX_VARS=48 -DTDSH_VAR_NAME_MAX=32 -DTDSH_VAR_VALUE_MAX=128"
+run_suites tinytang "$tinytang"
+compact="-DTDSH_MAX_VARS=32 -DTDSH_VAR_NAME_MAX=32 -DTDSH_VAR_VALUE_MAX=128"
+run_suites compact "$compact" '^tdsh_full_uscript_tests$'
 
 # Check actual boundaries, isolated scripts, worker requests and cleanup.
-for mode in defaults small shortnames; do
+for mode in defaults tinytang compact shortnames; do
     vars=64 name=32 value=256 stack=32768
     if [[ "$mode" != defaults ]]; then
-        vars=32 value=128 stack=16384
+        vars=48 value=128 stack=16384
+    fi
+    if [[ "$mode" == compact ]]; then
+        vars=32
     fi
     if [[ "$mode" == shortnames ]]; then
         name=16

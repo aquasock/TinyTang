@@ -85,7 +85,7 @@ without changing their defaults, and documents that all components using
 `tdsh.h` must share the overrides because they change the session layout.
 The matching upstream discussion is
 https://github.com/tinydesk-project/tinydesk-shell/issues/2.
-TinyTang sets 32 variables, 32-byte name buffers, 128-byte value buffers and
+TinyTang sets 48 variables, 32-byte name buffers, 128-byte value buffers and
 a 16 KB script stack from `CMakeLists.txt`. Session cloning and script
 isolation follow upstream's implementation. The patch is MIT, as is the
 upstream code it modifies. Remove it when a pinned release provides the guards.

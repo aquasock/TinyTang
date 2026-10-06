@@ -1435,3 +1435,49 @@ Review the prepared upstream diff and pull request text with the user before pus
 - User Test: PASS
 
 ---
+
+## 43 COMMIT Unreleased 2026-10-06T11:42:55-07:00
+
+#### Coming From:
+
+Unreleased f3097e1
+
+#### Purpose:
+
+Increase the script variable budget to 48 while keeping desktop launches reliable across core changes and desktop restarts, with measured headroom for future ID3 metadata and artwork.
+
+#### Outcome:
+
+The 48-variable build is accepted on hardware after fixing two additional causes of failed launches. With the 32-byte name and 128-byte value buffers and 16 KB worker stack unchanged, the target session is 8,328 bytes and its script job 8,584, saving 10,768 bytes per copied session against upstream defaults; both C and C++ flags agree. The README, carried patch's example and fork draft now use 48, which fits the comprehensive upstream fixture; the earlier 32-variable probes remain. All default and 48-variable host suites passed Shell 8/8 and TinyDesk 10/10, with boundary, isolation and stack-request probes. At 48, switching cores while music played with the Phosphor window open initially refused a 16,384-byte xTaskCreate stack allocation in task tdsh, before tangload could reach its playback-stop hook; this was memory pressure, not an intentional busy-core interlock. Separately, reopening TinyDesk left its Terminal without a shell: upstream retains its started flag across td_shutdown while this port stops the shell at desktop exit. The port now explicitly restarts the bridge on entry and returns a visible error and nonzero status on startup failure. USB echo worked when the physical keyboard was disconnected. The Phosphor window also reserved 24,576 bytes for 256 names regardless of folder size; a two-pass FatFs scan now allocates only eligible entries, capped at 256, preserving filtering and sorting and clearing the list on errors. The tested 19-file folder needs 1,824 bytes, recovering 22,752. New regressions against the real app and bridge fail with the original implementations and pass catalog sizing, limits, directory changes, errors and cleanup, plus Terminal reentry, input, shutdown and failed-start retry; the Phosphor transport/media, keyboard and desktop-layer checks also pass. Firmware built with make CHIP=bl616 BOARD=bl616dk, retaining the existing C-standard-option warning for C++, at 618,288 bytes, MD5 ff9e0b950bf1d14feba3f7f775375a90, build identity f3097e1-dirty.a912290, and was installed through the guarded two-wire tool. After the cold start the user reported repeated swaps between both cores working and accepted the result. Platform confirmed the build, no allocations were refused or crash recorded, and the last ordinary and diagnostic script used 10,728/16,384 stack bytes. At the console, free heap increased from 52,292 to 75,044 bytes, exactly the catalog saving, with a 62,072-byte largest block and music playing at 44.1 kHz with zero underruns. The generated Castlevania heap probe then passed from the desktop with music playing, the Phosphor window open and both Bluetooth devices ready: at all three active-worker checkpoints it reported 24,936 bytes free of 135,536 and a 19,372-byte largest block, without refusals; the user confirmed completion. This supports a bounded 16 KB future metadata/artwork budget with 8,552 free bytes beyond it for this configuration, not an allocated reserve or an implemented decoder; docs/phosphor-memory-budget.md records that boundary and reproduction through tools/make_script_heap_probe.py. Final console diagnostics still showed no refusals or crash and the player stopped by the core switch with zero underruns. TDSH-008 supersedes TDSH-007 without changing its settled statement, and TDESK-014 records upstream's retained Terminal state. The matching upstream fork diff remains uncommitted and unpublished, byte-for-byte equal to the carried patch. The committed firmware source matches the deployed image; documentation and tests were finalized afterward. The core-syntax audit re-read core.md and core-syntax.md, inspected the entire .ai diff, confirmed core.md and settled log entries unchanged, checked reference records and lookup pointers, and validated entry 43 of 100 with tools/check_core_log.py.
+
+#### Next Steps:
+
+Review the prepared upstream guards and PR text before publishing the fork branch or pull request, then remove the carried patch when a pinned release includes it. The separate script-loading allocation-error request remains pending. Implement future ID3/artwork within the documented bounded 16 KB budget and requalify its actual decoder and buffers; a full 256-file catalog still costs 24 KB, so the measured headroom does not cover every future combination. The simultaneous Bluetooth discovery stall and the other open items from entry 42 stand.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- docs/upstream/script-limits-pr.md
+- docs/phosphor-memory-budget.md
+- ports/bl616/td_bridge_bl616.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- third_party/patches/tdsh/0001-configurable-script-limits.patch
+- tools/make_script_heap_probe.py
+- tools/tests/test_script_limits.sh
+- tools/tests/tb_terminal_lifecycle.c
+- tools/tests/stubs/terminal_lifecycle.h
+- tools/tests/test_terminal_lifecycle.sh
+- tools/tests/phosphor_catalog_test.cpp
+- tools/tests/stubs/phosphor_catalog/ff.h
+- tools/tests/test_phosphor_catalog.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

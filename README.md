@@ -39,9 +39,9 @@ TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
   recorder.
 - **Leaves out or changes:** no networking (the BL616's Wi-Fi is not used);
   script workers get a 16 KB stack instead of 32 KB, and each session holds
-  at most 32 variables with 31-character names and 127-character values,
-  to fit the heap (tinydesk-project/tinydesk-shell issue #2). The build sets
-  the same limits for all shell, desktop and port sources.
+  at most 48 variables with names of up to 31 bytes and values of up to
+  127 bytes, to fit the heap (tinydesk-project/tinydesk-shell issue #2).
+  The build sets the same limits for all shell, desktop and port sources.
 - **Licence:** MIT, with thirteen Apache-2.0 files listed in `THIRD_PARTY.md`.
 
 Building and flashing are under *Quick start* and *Building requirements*.

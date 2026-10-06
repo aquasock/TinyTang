@@ -76,33 +76,85 @@ int compare(const void *a, const void *b)
     return strcasecmp(static_cast<const entry *>(a)->name, static_cast<const entry *>(b)->name);
 }
 
+bool listable(const FILINFO &info)
+{
+    if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) != 0 ||
+        !phosphor_media::supported(info.fname)) {
+        return false;
+    }
+    if (strlen(info.fname) >= NAME_BYTES) {
+        s_truncated = true;
+        return false;
+    }
+    return true;
+}
+
 void load_folder(void)
 {
+    free(s_entries);
+    s_entries = nullptr;
     s_count = 0;
     s_truncated = false;
+    td_list_set_count(s_list, 0);
     DIR dir;
     FILINFO info;
-    if (f_opendir(&dir, MUSIC_REAL) == FR_OK) {
-        while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
-            if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) != 0 ||
-                !phosphor_media::supported(info.fname)) {
-                continue;
-            }
-            if (s_count == MAX_TRACKS || strlen(info.fname) >= NAME_BYTES) {
-                s_truncated = true;
-                continue;
-            }
-            strcpy(s_entries[s_count++].name, info.fname);
-        }
-        (void)f_closedir(&dir);
-        qsort(s_entries, static_cast<size_t>(s_count), sizeof(entry), compare);
-        char text[64];
-        snprintf(text, sizeof(text), "%s: %d track%s%s", MUSIC_SHOWN, s_count,
-                 s_count == 1 ? "" : "s", s_truncated ? " (some not listed)" : "");
-        set_text(s_folder, text);
-    } else {
+    if (f_opendir(&dir, MUSIC_REAL) != FR_OK) {
         set_text(s_folder, "No /music folder on the card");
+        return;
     }
+
+    // Count before allocating: reserving all 256 names costs 24 KB even for
+    // a small folder, leaving too little heap for a desktop script worker.
+    int capacity = 0;
+    FRESULT result;
+    while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
+        if (listable(info)) {
+            if (capacity < MAX_TRACKS) {
+                ++capacity;
+            } else {
+                s_truncated = true;
+            }
+        }
+    }
+    if (result != FR_OK || f_rewinddir(&dir) != FR_OK) {
+        (void)f_closedir(&dir);
+        set_text(s_folder, "Could not read /music folder");
+        return;
+    }
+    if (capacity != 0) {
+        s_entries = static_cast<entry *>(malloc(sizeof(entry) * capacity));
+        if (s_entries == nullptr) {
+            (void)f_closedir(&dir);
+            set_text(s_folder, "Not enough memory for /music list");
+            return;
+        }
+    }
+    while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
+        if (!listable(info)) {
+            continue;
+        }
+        // The folder may grow between passes. Never exceed the allocation.
+        if (s_count == capacity) {
+            s_truncated = true;
+            continue;
+        }
+        strcpy(s_entries[s_count++].name, info.fname);
+    }
+    (void)f_closedir(&dir);
+    if (result != FR_OK) {
+        free(s_entries);
+        s_entries = nullptr;
+        s_count = 0;
+        set_text(s_folder, "Could not read /music folder");
+        return;
+    }
+    if (s_count > 1) {
+        qsort(s_entries, static_cast<size_t>(s_count), sizeof(entry), compare);
+    }
+    char text[64];
+    snprintf(text, sizeof(text), "%s: %d track%s%s", MUSIC_SHOWN, s_count,
+             s_count == 1 ? "" : "s", s_truncated ? " (some not listed)" : "");
+    set_text(s_folder, text);
     td_list_set_count(s_list, s_count);
 }
 
@@ -358,10 +410,6 @@ void launch(void)
         return;
     }
     (void)phosphor_player_init();
-    s_entries = static_cast<entry *>(malloc(sizeof(entry) * MAX_TRACKS));
-    if (s_entries == nullptr) {
-        return;
-    }
     td_window_desc_t d = {};
     d.title = "Phosphor";
     d.rect = td_rect(-1, -1, 64, 24);

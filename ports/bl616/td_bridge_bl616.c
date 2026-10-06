@@ -184,6 +184,22 @@ const td_term_backend_t *td_bridge_bl616_backend(void)
     return &s_backend;
 }
 
+/* The Terminal app retains its started flag across td_shutdown(), but this
+ * port stops the shell at desktop exit. Start the bridge on every entry;
+ * backend_start is idempotent when Terminal installs it again. */
+int tang_td_terminal_start(void)
+{
+    const int cols = td_stats()->cols;
+    const int rows = td_wm_desktop_rows();
+    const int width = cols - 2 < 82 ? cols - 2 : 82;
+    const int height = rows - 1 < 26 ? rows - 1 : 26;
+    if (backend_start(NULL, width - 2, height - 2) != 0) {
+        return -1;
+    }
+    td_terminal_set_backend(&s_backend);
+    return 0;
+}
+
 /* ------------------------------------------------------------- shutdown */
 
 /* Called from desktop_run() once td_run() has returned.  Without this the

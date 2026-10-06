@@ -210,12 +210,13 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does a song take many seconds to start, and how big a file can Phosphor play? | PHOS | PHOS-010 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-004 |
 | What rules does upstream set for this port: names, commands, patches, pull requests? | TDSH | TDSH-005 |
-| Why did desktop scripts return without running, and how are their memory limits set now? | TDSH | TDSH-007 |
+| Why did desktop scripts return without running, and how are their memory limits set now? | TDSH | TDSH-008 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-013, TDESK-003 |
 | How much RAM does the desktop need? | TDESK | TDESK-002 |
 | Why does the Terminal window say "No shell backend in this build."? | TDESK | TDESK-004 |
 | How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
+| Why did the Terminal stop accepting input after reopening the desktop? | TDESK | TDESK-014 |
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
@@ -317,7 +318,8 @@ TDSH-003: "Superseded by TDSH-004. TinyDesk Shell v0.1.4 at 3b7d7f8, the same la
 TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell): the same language and terminal interface as v0.1.4; board.conf numbers are decimal or 0x hex, never octal, and network mode/autowifi are root only, neither used by this port"
 TDSH-005: "Upstream STANDARDS.md (v0.1.5) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
 TDSH-006: "Superseded by TDSH-007. Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2)"
-TDSH-007: "The carried v0.1.5 patch makes four script-memory limits overridable without changing their defaults or session-copy behavior; every component including tdsh.h must share the definitions. TinyTang uses 32 variables, 32-byte names, 128-byte values and a 16 KB stack, bringing its session to 5,752 B; desktop scripts pass on hardware with no refused allocations"
+TDSH-007: "Superseded by TDSH-008. TinyTang's first smaller configuration used 32 variables, 32-byte names, 128-byte values and a 16 KB stack, bringing its session to 5,752 B"
+TDSH-008: "TinyTang uses 48 variables, 32-byte names, 128-byte values and a 16 KB worker stack, with an 8,328 B session and 8,584 B job; scripts inherit independent copies. Desktop launches pass with a catalog sized to actual files; the active-worker probe leaves 24,936 B free with a 19,372 B largest block"
 TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
@@ -331,6 +333,7 @@ TDESK-010: "Superseded by TDESK-011. Called the Files app's delete dialog a poss
 TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step"
 TDESK-012: "Superseded by TDESK-013. TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
 TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk) pins the shell at 8456dd1, the same as this project; only td.h's version and repository URLs change in code this port builds"
+TDESK-014: "Terminal retains its started flag across td_shutdown(); a port that stops its shell at desktop exit must explicitly restart it on reentry, since reinstalling the same backend does not call start again"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -1131,7 +1134,8 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: EXTERNAL
   topic_id: TDSH
   title: "Configurable session limits let desktop scripts fit the heap"
-  status: VERIFIED
+  status: SUPERSEDED
+  superseded_by: "TDSH-008"
   verified_date: 2026-10-06
   statement: "The carried patch against TinyDesk Shell v0.1.5 (8456dd1) wraps TDSH_MAX_VARS, TDSH_VAR_NAME_MAX, TDSH_VAR_VALUE_MAX and TDSH_SCRIPT_TASK_STACK in #ifndef, preserving defaults of 64, 32, 256 and 32768 and preserving each script's session and variable copy. The header and README require consistent definitions in every component including tdsh.h because the variable limits change tdsh_session_t's layout. Buffers include their terminating NUL. With definitions 32, 32, 128 and 16384, the BL616 ELF's s_session is 5752 B, its variable table is 5152 B and the script job is 6008 B instead of 19352 B; a 64-bit host has a 5768 B session and a 6024 B job. The static session and each script's copied session save 13344 B."
   consequence: "TDSH-006's console-only workaround is no longer needed on this build: the user accepted repeated Castlevania and Phosphor script launches from the desktop and reported no failure. CMake applies the patch idempotently before compilation and sets the same definitions for shell, desktop, bridge and all C/C++ port sources. The port's chosen limits permit 32 variables, 31-character names and 127-character values; larger requirements still need a different memory budget. Remove the carried patch once a pinned upstream release supplies the guards. The separate upstream request for an error on script-loading allocation failure remains pending."
@@ -1141,6 +1145,22 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "https://github.com/tinydesk-project/tinydesk-shell/issues/2: author's 2026-10-06 reply approving guards, consistent overrides and unchanged variable copies"
     - "BL616 ELF s_session symbol and two-wire platform, ble, crash and phosphor status readouts, 2026-10-06"
   verification: "Firmware 4176a68-dirty.92d0758 was flashed and confirmed by platform after a cold power cycle; the user accepted the desktop tests. Afterwards no allocation refusals had been recorded since boot, crash reported 10728 B used of the 16384 B script stack and no previous crash, and Phosphor was playing a 44.1 kHz MP3 with zero underruns. The heap total was 138112 B, with 51280 B free and a 26200 B largest block during playback. Both upstream suites passed with defaults (Shell 8/8, TinyDesk 10/10) and with 48 variables and 128-byte values (8/8 and 10/10), without compiler warnings. At 32 variables, seven compatible Shell tests and all ten desktop tests passed; the full uScript fixture retains more than 32 variables. The native suites retained the default 32 KB stack because Linux pthread runs with 16 KB crashed in the script tests; separate probes checked the exact 16 KB request, variable boundaries, session isolation and cleanup. All eight existing TinyTang regression scripts passed, and reconstruction of the carried patch matched the submodule byte-for-byte with repeat application unchanged."
+
+- record_id: TDSH-008
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "A 48-variable session fits the full test fixture and the desktop heap"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "The carried v0.1.5 patch and consistent-definition requirement from TDSH-007 remain. TinyTang now sets TDSH_MAX_VARS=48, TDSH_VAR_NAME_MAX=32, TDSH_VAR_VALUE_MAX=128 and TDSH_SCRIPT_TASK_STACK=16384. The 7728 B variable table produces an 8328 B target session and 8584 B script job, saving 10768 B per session against upstream defaults; the 64-bit host session and job are 8344 B and 8600 B. Each script still inherits its own session and variable copy. The comprehensive upstream fixture exceeds 32 variables and passes at 48; buffers include their NUL, so the chosen name and value limits are 31 and 127 bytes."
+  consequence: "The larger table is a port choice, not a standard limit or a guarantee for all future scripts. A later desktop launch while the Phosphor window was open failed at xTaskCreate's 16384 B stack allocation before tangload could stop playback; playback was not an intentional core-load interlock. The app previously reserved 24576 B for 256 names regardless of file count. Allocating 96 B per actual eligible file, capped at 256, reduces the tested 19-file catalog to 1824 B and lets those launches fit. The active-worker readouts support a bounded 16384 B future metadata/artwork budget for this configuration, not a reservation or a qualified decoder; docs/phosphor-memory-budget.md states the scope. Remove the carried patch when a pinned release supplies its guards."
+  sources:
+    - "third_party/tinydesk-shell @ 8456dd1 with third_party/patches/tdsh/0001-configurable-script-limits.patch: include/tdsh.h, src/core/tdsh_script.c, tests/test_full_uscript.c and tests/scripts/test_full_uscript_1_1.tdsh"
+    - "CMakeLists.txt; tools/tests/test_script_limits.sh and tb_script_limits.c; BL616 ELF s_session symbol"
+    - "Bouffalo SDK components/os/freertos/tasks.c: xTaskCreate stack allocation, caller 0xa00416d6 in the failed builds"
+    - "ports/bl616/phosphor/td_phosphor_app.cpp: launch, load_folder and on_close; tools/tests/test_phosphor_catalog.sh"
+    - "tools/make_script_heap_probe.py and guarded two-wire ble/crash readouts on 2026-10-06"
+  verification: "Firmware f3097e1-dirty.a912290 was flashed, confirmed by platform and accepted by the user after repeated desktop core swaps while music played with the Phosphor window open. No allocations were refused after those tests and no crash record was present. With both Bluetooth devices ready, the generated Castlevania launcher measured 24936 B free of 135536 B, largest block 19372 B, at all three checkpoints while its copied session, worker stack and interpreter were live; the user confirmed completion. These are sampled values, not an all-time minimum. The final ordinary and diagnostic script stack use was 10728/16384 B. The catalog regression fails against the original scan and passes sizing, filtering, sorting, bounds, directory-change and error cleanup checks against the fix. Upstream host suites pass Shell 8/8 and TinyDesk 10/10 at defaults and at 48 variables/128-byte values; compact 32-variable checks remain. Native suites retain the default 32 KB stack, with the 16 KB request checked separately and on hardware."
 
 - record_id: TDESK-001
   kind: EXTERNAL
@@ -1322,6 +1342,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   sources:
     - "tinydesk-project/tinydesk v0.1.5 (feaf841): include/tinydesk/td.h, RELEASE_NOTES.md, third_party/tdsh at 8456dd1"
   verification: "Diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 10/10 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37)."
+
+- record_id: TDESK-014
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "Terminal's retained started state requires a port restart after desktop exit"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "In TinyDesk v0.1.5, terminal.c retains its static s_started across td_shutdown(). td_terminal_set_backend() calls ensure_vt(), which calls backend->start only when s_started is false. td_shutdown() restores the renderer's terminal state without resetting those app statics. This supports a persistent backend when its window closes, but reinstalling the backend after a port has stopped its task does not restart that task."
+  consequence: "TinyTang ends its inner shell when the whole desktop exits to restore exclusive console ownership. It must explicitly start that bridge on every desktop entry rather than rely on td_terminal_set_backend(). tang_td_terminal_start does this idempotently and installs the backend; a failed task creation clears the redirect and makes the desktop command report failure and return to the console. The physical keyboard's later lack of console input was separately accompanied by a Bluetooth disconnect; USB echo worked and the redirect was cleared."
+  sources:
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): apps/terminal.c ensure_vt and td_terminal_set_backend; src/td.c td_shutdown"
+    - "ports/bl616/td_bridge_bl616.c: backend_start, tang_td_terminal_start and td_bridge_bl616_stop"
+    - "ports/bl616/td_desktop_bl616.c: desktop_run and cmd_desktop; tools/tests/test_terminal_lifecycle.sh"
+  verification: "A host probe of the real upstream Terminal called start once across two backend installations. The lifecycle regression linked against the real upstream Terminal and BL616 bridge fails with the original startup and passes three reentries, keyboard/output rings, idempotent installation, graceful cleanup, failed allocation and retry with the fix. The user accepted the flashed restart fix and subsequent build; listen-only USB capture of a later desktop entry contains the fresh shell greeting and the successful diagnostic launcher, followed by desktop exit and a usable guarded console."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN
