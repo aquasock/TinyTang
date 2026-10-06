@@ -29,7 +29,8 @@ TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
 
 - **Platform:** `bl616/freertos`, on the Sipeed Tang Console 138K.
 - **Built against:** TinyDesk Shell 0.1.5 and TinyDesk 0.1.5, as submodules at
-  their `v0.1.5` tags, unmodified.
+  their `v0.1.5` tags. TinyDesk Shell carries the configurable-limit patch
+  listed in `THIRD_PARTY.md`, applied automatically before building.
 - **Prefix:** `tang` -- `tang_` in C, `TANG_` in macros, and commands such as
   `tangload`, `tangput` and `tangflash`.
 - **Adds:** the desktop drawn over HDMI by the FPGA core and mirrored over USB
@@ -37,8 +38,10 @@ TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
   SD card; music through the Tang-Phosphor core; firmware self-update; a crash
   recorder.
 - **Leaves out or changes:** no networking (the BL616's Wi-Fi is not used);
-  script workers get a 16 KB stack instead of 32 KB, to fit the heap
-  (tinydesk-project/tinydesk-shell issue #2).
+  script workers get a 16 KB stack instead of 32 KB, and each session holds
+  at most 32 variables with 31-character names and 127-character values,
+  to fit the heap (tinydesk-project/tinydesk-shell issue #2). The build sets
+  the same limits for all shell, desktop and port sources.
 - **Licence:** MIT, with thirteen Apache-2.0 files listed in `THIRD_PARTY.md`.
 
 Building and flashing are under *Quick start* and *Building requirements*.

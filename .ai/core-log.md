@@ -1397,3 +1397,41 @@ The approved issue #2 pull request comes next. Work in the fork's clone on a new
 - User Test: N/A
 
 ---
+
+## 42 COMMIT Unreleased 2026-10-06T10:00:49-07:00
+
+#### Coming From:
+
+Unreleased 4176a68
+
+#### Purpose:
+
+Make scripts launched from TinyDesk fit the BL616 heap by carrying the configurable-memory-limit change the upstream author approved and setting smaller limits consistently across TinyTang.
+
+#### Outcome:
+
+Desktop script launches pass. The existing draft was reviewed and finished as `third_party/patches/tdsh/0001-configurable-script-limits.patch` against Shell v0.1.5, applied idempotently during CMake configuration by `scripts/apply-tdsh-patches.sh`; it preserves upstream defaults and each script's copied session and variables, and documents the requirement for consistent definitions in every component including `tdsh.h`. TinyTang sets 32 variables, 32-byte name buffers, 128-byte value buffers and a 16 KB worker stack through the SDK's shared definitions, confirmed in both C and C++ flags. The target ELF's session is 5,752 bytes instead of 19,096, saving 13,344 bytes for the static console session and every script copy, and the board's heap total grew from 124,768 to 138,112 bytes. `tools/tests/test_script_limits.sh` reconstructs the patch byte-for-byte and checks repeat application, both pinned upstream suites, the patch's defaults, smaller tables, boundaries, script isolation and cleanup. Default and 48-variable/128-byte-value suites pass Shell 8/8 and TinyDesk 10/10 without compiler warnings; at 32 variables the seven compatible Shell tests and all ten desktop tests pass. The comprehensive upstream script retains more than 32 variables, and Linux pthread runs with a 16 KB stack crash in the script tests even with default tables, so native suites retain their 32 KB stack and the exact 16 KB request is checked by worker probes and the board's high-water mark. All eight existing TinyTang regression scripts pass; the changed header and probe were formatted with clang-format 16.0.6. The firmware built with `make CHIP=bl616 BOARD=bl616dk`, with existing JTAG-programmer and C-standard-option warnings, at 617,568 bytes, MD5 `a43f16cfd436b569425ca8e3d3abc253`, build identity `4176a68-dirty.92d0758`, and was installed through the guarded two-wire flash tool. After the cold power cycle the user reported every desktop test passing, with nothing they could break, and music playing after Castlevania. The console probe answered 1, `platform` confirmed the build, and `ble` and `crash` showed no allocation refusals since boot, 51,280 bytes free with a 26,200-byte largest block during playback, the last script using 10,728 of its 16,384-byte stack, and no previous crash. `phosphor status` confirmed track 3 playing a 44.1 kHz MP3 with zero underruns; both paired Bluetooth devices had report counts from the test and were waiting when checked. `TDSH-007` supersedes `TDSH-006` without rewriting its failure evidence. The matching upstream change is prepared in the separate fork clone on `configurable-script-limits` from `8456dd1`, with its diff matching the carried patch and its draft description saved in `docs/upstream/script-limits-pr.md`; nothing was published upstream. The committed source matches the deployed build, with the records and PR draft added after deployment. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` unchanged, validated entry 42 of 100 with `tools/check_core_log.py`, checked reference routing and field structure, and confirmed that settled history was changed only by the required supersession metadata and lookup pointers.
+
+#### Next Steps:
+
+Review the prepared upstream diff and pull request text with the user before pushing the fork branch or opening the pull request, then drop the carried patch when a pinned release includes it. The author's separate request for an allocation-error message remains a candidate for a second upstream change. The desktop script memory fault is resolved for the tested limits and paths; no further hardware validation is pending for this cycle. The discovery stall when both Bluetooth devices reconnect at once, Phosphor's load-progress readout and file-size limit, and the other open items from entry 41 stand.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- docs/upstream/script-limits-pr.md
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/apply-tdsh-patches.sh
+- third_party/patches/tdsh/0001-configurable-script-limits.patch
+- tools/tests/tb_script_limits.c
+- tools/tests/test_script_limits.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

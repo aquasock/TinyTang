@@ -1,9 +1,9 @@
 // TinyTang — the BL616 platform port for TinyDesk Shell.
 //
 // Implements tdsh_platform_api_t and drives the portable line editor over the
-// USB CDC console.  The shell core in third_party/tinydesk-shell is compiled
-// unchanged; everything board-specific lives here, which is what the shell's
-// own porting document asks for.
+// USB CDC console.  The shell core in third_party/tinydesk-shell is built from
+// its pinned release plus the documented patches; board-specific code lives
+// here, as the shell's porting document asks for.
 
 #include "tdsh_bl616.h"
 #include "tang_ble.h"
@@ -79,11 +79,11 @@ typedef struct {
     bool background;
 } bl616_worker_t;
 
-/* The largest stack a worker gets.  TinyDesk Shell asks for 32 KB for each
- * script (TDSH_SCRIPT_TASK_STACK), in one piece from a heap the Bluetooth
- * stack leaves small and fragmented; failing that froze the board (BL6-008).
- * The shell task runs every command typed at the console on 16 KB, so a
- * script running the same commands gets the same.  The last foreground
+/* The largest stack a worker gets.  TinyDesk Shell defaults to a 32 KB
+ * script stack (TDSH_SCRIPT_TASK_STACK); this build requests 16 KB, matching
+ * the shell task and this cap.  The Bluetooth stack leaves the heap small
+ * and fragmented, and the old 32 KB allocation froze the board (BL6-008).
+ * The last foreground
  * worker's high-water mark is kept so the margin can be checked (`crash`). */
 #define BL616_WORKER_STACK_MAX 16384u
 

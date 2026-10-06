@@ -52,9 +52,24 @@ if(DEFINED ENV{TINYTANG_REF} OR DEFINED ENV{TINYTANG_RTOS})
     endif()
 else()
     # Our code only.  TinyDesk Shell is consumed as the
-    # third_party/tinydesk-shell submodule: its portable core is compiled here
-    # unchanged, its include tree is on the path, and its platform API,
-    # filesystem and console are implemented under ports/bl616.
+    # third_party/tinydesk-shell submodule: carried patches are applied before
+    # compiling its portable core; its include tree is on the path, and its
+    # platform API, filesystem and console are implemented under ports/bl616.
+    execute_process(
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/apply-tdsh-patches.sh"
+        RESULT_VARIABLE TINYTANG_TDSH_PATCH_RESULT)
+    if(NOT TINYTANG_TDSH_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "TinyDesk Shell patches could not be applied")
+    endif()
+
+    # These public limits change tdsh_session_t's layout.  The shell, desktop,
+    # bridge and every C/C++ port source must use the same definitions.
+    # 32 entries of 1 + 32 + 128 bytes cost 5152 bytes per session, versus
+    # 18496 upstream.  Keep the established 16 KB worker stack (BL6-009).
+    sdk_add_compile_definitions(
+        -DTDSH_MAX_VARS=32 -DTDSH_VAR_NAME_MAX=32
+        -DTDSH_VAR_VALUE_MAX=128 -DTDSH_SCRIPT_TASK_STACK=16384)
+
     file(GLOB TINYTANG_SOURCES "ports/bl616/*.c")
 
     # Tang-Phosphor's host side, ported from Tang-Control as C++ and kept close

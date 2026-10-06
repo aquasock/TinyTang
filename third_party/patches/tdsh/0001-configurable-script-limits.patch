@@ -1,0 +1,85 @@
+diff --git a/README.md b/README.md
+index 3c058b6..e346803 100644
+--- a/README.md
++++ b/README.md
+@@ -144,6 +144,32 @@ On Windows add `-DCMAKE_C_COMPILER=gcc` (MinGW-w64); the program is
+ `build-host/tdsh_host.exe`. `docs/POSIX_HOST.md` and `docs/WINDOWS_HOST.md`
+ explain the host ports.
+ 
++### Memory limits for ports
++
++`TDSH_MAX_VARS`, `TDSH_VAR_NAME_MAX`, `TDSH_VAR_VALUE_MAX` and
++`TDSH_SCRIPT_TASK_STACK` in `tdsh.h` can be set by the build. Their defaults
++are 64 variables, 32-byte name buffers, 256-byte value buffers and 32768
++bytes of stack requested per script worker. The buffers include the final
++NUL. Each script keeps its own copy of the session and its variables.
++
++Apply the same overrides to **every component that includes `tdsh.h`**,
++including the shell core, the platform port and consumers such as TinyDesk.
++The variable limits change the layout of `tdsh_session_t`; mixing defaults
++and overrides between components is incompatible. Set the definitions
++from the build system rather than editing the header. For example, a host
++build with smaller variable tables can use:
++
++```bash
++cmake -S . -B build-small -DTDSH_BUILD_HOST=ON \
++  -DCMAKE_C_FLAGS="-DTDSH_MAX_VARS=32 -DTDSH_VAR_VALUE_MAX=128"
++cmake --build build-small
++ctest --test-dir build-small --output-on-failure
++```
++
++For consumers with C++ sources, pass the same definitions to their C++
++compilation too. Choose the worker stack size for the target and verify
++its margin while running the intended scripts.
++
+ ## Scripts
+ 
+ Put commands in a `.tdsh` file and run it with `tdsh run`. The script
+diff --git a/include/tdsh.h b/include/tdsh.h
+index 92f223a..a8c25b7 100644
+--- a/include/tdsh.h
++++ b/include/tdsh.h
+@@ -18,19 +18,34 @@ extern "C" {
+ #define TDSH_MAX_ARGS      48
+ #define TDSH_MAX_PATH      256
+ #define TDSH_MAX_REAL_PATH (TDSH_MAX_PATH * 2 + 96)
+-#define TDSH_MAX_VARS      64
+-#define TDSH_VAR_NAME_MAX  32
++/* The variable table costs TDSH_MAX_VARS * (1 + TDSH_VAR_NAME_MAX +
++ * TDSH_VAR_VALUE_MAX) bytes in every session, including each script's copy.
++ * Buffer sizes include the terminating NUL.  An override must apply to every
++ * component using tdsh.h (core, ports and consumers such as TinyDesk), since
++ * these limits change tdsh_session_t's layout. */
++#ifndef TDSH_MAX_VARS
++#define TDSH_MAX_VARS 64
++#endif
++#ifndef TDSH_VAR_NAME_MAX
++#define TDSH_VAR_NAME_MAX 32
++#endif
++#ifndef TDSH_VAR_VALUE_MAX
+ #define TDSH_VAR_VALUE_MAX 256
+-#define TDSH_USERNAME_MAX  32
++#endif
++#define TDSH_USERNAME_MAX 32
+ 
+ /* Script files use the .tdsh extension. Each user's startup script, run
+  * when the physical console starts as that user: */
+-#define TDSH_SCRIPT_EXT           ".tdsh"
+-#define TDSH_STARTUP_FILE         ".tdshrc.tdsh"
+-#define TDSH_HOSTNAME_MAX         32
+-#define TDSH_MAX_COMMANDS         128
+-#define TDSH_COPY_BUFFER_SIZE     4096
+-#define TDSH_SCRIPT_TASK_STACK    32768
++#define TDSH_SCRIPT_EXT       ".tdsh"
++#define TDSH_STARTUP_FILE     ".tdshrc.tdsh"
++#define TDSH_HOSTNAME_MAX     32
++#define TDSH_MAX_COMMANDS     128
++#define TDSH_COPY_BUFFER_SIZE 4096
++/* Bytes requested for each script worker's stack, in addition to its
++ * session copy and runtime allocations.  Ports may impose their own cap. */
++#ifndef TDSH_SCRIPT_TASK_STACK
++#define TDSH_SCRIPT_TASK_STACK 32768
++#endif
+ #define TDSH_SCRIPT_TASK_PRIORITY 4
+ 
+ /* Compatibility defaults used by the ESP-IDF reference port. The portable

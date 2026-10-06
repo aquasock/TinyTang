@@ -72,12 +72,23 @@ documents this provenance.
 
 ## TinyDesk Shell
 
-The shell this firmware runs, consumed as `third_party/tinydesk-shell` and
-compiled unchanged:
+The shell this firmware runs, consumed as `third_party/tinydesk-shell`:
 
 - Project: https://github.com/tinydesk-project/tinydesk-shell
 - Commit: `8456dd1d8c2fa88706c065edba483be67fcb3553` (v0.1.5)
 - License: MIT
+
+TinyTang carries `third_party/patches/tdsh/0001-configurable-script-limits.patch`
+against that commit, applied idempotently by `scripts/apply-tdsh-patches.sh`
+during CMake configuration. It wraps four public memory limits in `#ifndef`
+without changing their defaults, and documents that all components using
+`tdsh.h` must share the overrides because they change the session layout.
+The matching upstream discussion is
+https://github.com/tinydesk-project/tinydesk-shell/issues/2.
+TinyTang sets 32 variables, 32-byte name buffers, 128-byte value buffers and
+a 16 KB script stack from `CMakeLists.txt`. Session cloning and script
+isolation follow upstream's implementation. The patch is MIT, as is the
+upstream code it modifies. Remove it when a pinned release provides the guards.
 
 ## TinyDesk
 

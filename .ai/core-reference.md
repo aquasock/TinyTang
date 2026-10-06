@@ -210,7 +210,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does a song take many seconds to start, and how big a file can Phosphor play? | PHOS | PHOS-010 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-004 |
 | What rules does upstream set for this port: names, commands, patches, pull requests? | TDSH | TDSH-005 |
-| Why does a script started from the desktop return without running? | TDSH | TDSH-006 |
+| Why did desktop scripts return without running, and how are their memory limits set now? | TDSH | TDSH-007 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
 | What does TinyDesk need from a port? | TDESK | TDESK-013, TDESK-003 |
 | How much RAM does the desktop need? | TDESK | TDESK-002 |
@@ -316,7 +316,8 @@ TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C
 TDSH-003: "Superseded by TDSH-004. TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
 TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell): the same language and terminal interface as v0.1.4; board.conf numbers are decimal or 0x hex, never octal, and network mode/autowifi are root only, neither used by this port"
 TDSH-005: "Upstream STANDARDS.md (v0.1.5) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
-TDSH-006: "Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2)"
+TDSH-006: "Superseded by TDSH-007. Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2)"
+TDSH-007: "The carried v0.1.5 patch makes four script-memory limits overridable without changing their defaults or session-copy behavior; every component including tdsh.h must share the definitions. TinyTang uses 32 variables, 32-byte names, 128-byte values and a 16 KB stack, bringing its session to 5,752 B; desktop scripts pass on hardware with no refused allocations"
 TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
@@ -1115,7 +1116,8 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: EXTERNAL
   topic_id: TDSH
   title: "A script from the desktop runs out of heap in its first allocations"
-  status: VERIFIED
+  status: SUPERSEDED
+  superseded_by: "TDSH-007"
   verified_date: 2026-10-06
   statement: "tdsh run starts each script with a tdsh_script_job_t holding a full copy of the session, then a worker task with TDSH_SCRIPT_TASK_STACK (32,768 B) of stack, then the script's runtime. On a 32-bit target tdsh_session_t is 19,096 B, of which 18,496 B is vars[TDSH_MAX_VARS], 64 entries of 1 + 32 + 256 bytes, and the job is 19,352 B; none of these limits can be overridden by a build in v0.1.5. This port caps worker stacks at 16 KB (BL6-009). With the Bluetooth stack and two devices connected, the heap at the console is 64,704 B free with a 40,536 B largest block and about 24 KB outside it; with the desktop open it is 48,208 B free with the same largest block and about 7.7 KB outside it. Opened from the desktop's Files app, castlevania.tdsh and phosphor.tdsh returned with no output: a 1,056 B tdsh_realloc of the script's line table (src/core/tdsh_script.c:189) was refused in task tdsh_script, and the task had used 3,704 B of stack. The same scripts run at the console."
   consequence: "Scripts are to be started from the console, or with the desktop closed, until the limits can be sized for this heap. The findings were filed upstream as tinydesk-project/tinydesk-shell issue #2, proposing #ifndef around TDSH_SCRIPT_TASK_STACK, TDSH_MAX_VARS, TDSH_VAR_NAME_MAX and TDSH_VAR_VALUE_MAX (STANDARDS.md sections 3 and 10), with an offer of the pull request; 32 variables of 128-byte values would bring the session to about 5.8 KB."
@@ -1124,6 +1126,22 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "A listen-only capture of the desktop Terminal's output on USB, 2026-10-06, with crash and ble run in the Terminal"
     - "https://github.com/tinydesk-project/tinydesk-shell/issues/2"
   verification: "Measured on this board on 2026-10-06; the session size was computed for a 32-bit target and confirmed at 19,112 B on a 64-bit host build (core-log entry 39)."
+
+- record_id: TDSH-007
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "Configurable session limits let desktop scripts fit the heap"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "The carried patch against TinyDesk Shell v0.1.5 (8456dd1) wraps TDSH_MAX_VARS, TDSH_VAR_NAME_MAX, TDSH_VAR_VALUE_MAX and TDSH_SCRIPT_TASK_STACK in #ifndef, preserving defaults of 64, 32, 256 and 32768 and preserving each script's session and variable copy. The header and README require consistent definitions in every component including tdsh.h because the variable limits change tdsh_session_t's layout. Buffers include their terminating NUL. With definitions 32, 32, 128 and 16384, the BL616 ELF's s_session is 5752 B, its variable table is 5152 B and the script job is 6008 B instead of 19352 B; a 64-bit host has a 5768 B session and a 6024 B job. The static session and each script's copied session save 13344 B."
+  consequence: "TDSH-006's console-only workaround is no longer needed on this build: the user accepted repeated Castlevania and Phosphor script launches from the desktop and reported no failure. CMake applies the patch idempotently before compilation and sets the same definitions for shell, desktop, bridge and all C/C++ port sources. The port's chosen limits permit 32 variables, 31-character names and 127-character values; larger requirements still need a different memory budget. Remove the carried patch once a pinned upstream release supplies the guards. The separate upstream request for an error on script-loading allocation failure remains pending."
+  sources:
+    - "third_party/tinydesk-shell @ 8456dd1 with third_party/patches/tdsh/0001-configurable-script-limits.patch: include/tdsh.h, README.md and src/core/tdsh_script.c"
+    - "CMakeLists.txt, scripts/apply-tdsh-patches.sh and tools/tests/test_script_limits.sh with tb_script_limits.c"
+    - "https://github.com/tinydesk-project/tinydesk-shell/issues/2: author's 2026-10-06 reply approving guards, consistent overrides and unchanged variable copies"
+    - "BL616 ELF s_session symbol and two-wire platform, ble, crash and phosphor status readouts, 2026-10-06"
+  verification: "Firmware 4176a68-dirty.92d0758 was flashed and confirmed by platform after a cold power cycle; the user accepted the desktop tests. Afterwards no allocation refusals had been recorded since boot, crash reported 10728 B used of the 16384 B script stack and no previous crash, and Phosphor was playing a 44.1 kHz MP3 with zero underruns. The heap total was 138112 B, with 51280 B free and a 26200 B largest block during playback. Both upstream suites passed with defaults (Shell 8/8, TinyDesk 10/10) and with 48 variables and 128-byte values (8/8 and 10/10), without compiler warnings. At 32 variables, seven compatible Shell tests and all ten desktop tests passed; the full uScript fixture retains more than 32 variables. The native suites retained the default 32 KB stack because Linux pthread runs with 16 KB crashed in the script tests; separate probes checked the exact 16 KB request, variable boundaries, session isolation and cleanup. All eight existing TinyTang regression scripts passed, and reconstruction of the carried patch matched the submodule byte-for-byte with repeat application unchanged."
+
 - record_id: TDESK-001
   kind: EXTERNAL
   topic_id: TDESK
