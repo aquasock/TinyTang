@@ -23,6 +23,26 @@ the crash recorder -- and `THIRD_PARTY.md` says exactly what came from where.
 For a dedicated game launcher with his full library of cores, see
 [TangCore](https://github.com/nand2mario/tangcore).
 
+## As a TinyDesk Shell port
+
+TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
+
+- **Platform:** `bl616/freertos`, on the Sipeed Tang Console 138K.
+- **Built against:** TinyDesk Shell 0.1.5 and TinyDesk 0.1.5, as submodules at
+  their `v0.1.5` tags, unmodified.
+- **Prefix:** `tang` -- `tang_` in C, `TANG_` in macros, and commands such as
+  `tangload`, `tangput` and `tangflash`.
+- **Adds:** the desktop drawn over HDMI by the FPGA core and mirrored over USB
+  CDC; a Bluetooth LE keyboard and mouse; loading FPGA cores and ROMs from the
+  SD card; music through the Tang-Phosphor core; firmware self-update; a crash
+  recorder.
+- **Leaves out or changes:** no networking (the BL616's Wi-Fi is not used);
+  script workers get a 16 KB stack instead of 32 KB, to fit the heap
+  (tinydesk-project/tinydesk-shell issue #2).
+- **Licence:** MIT, with thirteen Apache-2.0 files listed in `THIRD_PARTY.md`.
+
+Building and flashing are under *Quick start* and *Building requirements*.
+
 ## What it does
 
 - **Boots to a console on the HDMI output.** `/scripts/boot.tdsh` loads the

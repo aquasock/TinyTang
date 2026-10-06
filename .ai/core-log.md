@@ -1337,3 +1337,33 @@ Upstream issue #2 awaits the author's reply, after which the `#ifndef` pull requ
 - User Test: N/A
 
 ---
+
+## 40 COMMIT Unreleased 2026-10-06T08:56:25-07:00
+
+#### Coming From:
+
+Unreleased 6e4570b
+
+#### Purpose:
+
+Make TinyTang's README state what upstream's STANDARDS.md asks of a listed community port, before the pull request that records the `tang` prefix in TinyDesk Shell's Community ports table.
+
+#### Outcome:
+
+STANDARDS.md section 2 asks a listed port's README to state its platform and board, the TinyDesk and TinyDesk Shell versions it is built against, its prefix, what it adds and what it leaves out or changes, how to build and flash it, and its licence (`TDSH-005`). The README already covered the platform, the features and the build and flash steps, but did not state the versions, the prefix, the omissions or changes, or TinyTang's own licence. A new section, "As a TinyDesk Shell port", now states them: `bl616/freertos` on the Tang Console 138K; TinyDesk Shell and TinyDesk 0.1.5 at their tags, unmodified; the prefix `tang`, with `tang_`, `TANG_` and commands such as `tangload`, `tangput` and `tangflash`; what the port adds; that it has no networking and gives script workers a 16 KB stack instead of 32 KB (`TDSH-006`, upstream issue #2); and that it is MIT with thirteen Apache-2.0 files (`PROV-005`). Each claim was checked against the tree: `proj.conf` enables no Wi-Fi, the worker cap is in `tdsh_platform_bl616.c`, the submodules are at `8456dd1` and `feaf841` with no local changes, and the three commands are registered under those names. The prefix follows STANDARDS.md section 1, where the prefix is letters only and each kind of name adds its own separator. No source changed, so nothing was built or deployed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry alone), confirmed `.ai/core.md` unchanged, validated this entry as number 40 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Prepare the upstream pull request in a fork, `aquasock/tinydesk-shell`: TinyTang's Community ports row with the prefix `tang` and its notes brought up to date, the commit titled `README: TinyTang's prefix is tang`, and the description stating that it is documentation only and that the host tests pass; the exact diff is shown to the user before anything is pushed. The other upstream items from entry 39 stand.
+
+#### Files Modified:
+
+- README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
