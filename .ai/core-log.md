@@ -1511,3 +1511,34 @@ Await upstream review of PR #4 and address any requested changes as a new cycle.
 - User Test: N/A
 
 ---
+
+## 45 COMMIT Unreleased 2026-10-06T12:44:14-07:00
+
+#### Coming From:
+
+Unreleased f8d6fdf
+
+#### Purpose:
+
+Carry the TinyTang half of Tang-Phosphor entry 71, so playback selects the AE350 at its new register and the Phosphor script declares the PMOD sockets, making the OLED work under the Phosphor core.
+
+#### Outcome:
+
+The user reported the PMOD OLED dark on the Phosphor core, and it had two causes, both recorded in Tang-Phosphor entry 71: nothing in this firmware declared the sockets, which that core powers up released, and `ae350_play.cpp` selected the AE350 by writing `0xc0 = 1`, which in the merged core is also the socket control word, so every track held the renderer and released both sockets. Tang-Phosphor moved `cpu_mode` to its own word at `0xa8` at register ABI 1.8 in `b7ec367`. Here `ports/bl616/phosphor/ae350_play.cpp` reads the ABI at `0x04`, refuses a core older than 1.8 because that core would ignore `0xa8` and play the file's bytes raw, and writes `0xa8 = 1` on every play instead of only when it restarts the loader; `scripts/phosphor.tdsh` declares `0xc0 = 0x2410`, the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit, after the link probe, overridable with the session's `PMOD`, as the stopgap the user chose over a `/tang.ini` parser. The firmware built with `make CHIP=bl616 BOARD=bl616dk` with no warnings from the changed file, `tinytang_bl616.bin` at 618,432 bytes, MD5 `a6f5d1cb37451c5135b06be69387aacd`, build identity `f8d6fdf-dirty.43c548f`, and all eleven host test scripts pass. Through the guarded tools the ABI 1.8 core went to `/cores/console138k/phosphortang.bin` at 5,031,936 bytes with entry 26's image kept as `phosphortang.bin.bak`, the script to `/scripts/phosphor.tdsh` at 2,657 bytes, and the firmware was installed with `tools/tinytang_flash.py`; during the power cycle the user seated the OLEDrgb in PMOD0 and the encoder in PMOD1, and `platform` then reported the new identity with no crash record. From the console `tdsh run /scripts/phosphor.tdsh` loaded core 80 and declared the sockets, `0x04` read `0x00010008`, `0xa8` read 1, `0xc0` read `0x2410` before, during and after two plays of `/music/test.mp3`, each ending at 441000 samples at 44.1 kHz with zero underruns, the panel frame counter at `0xd8` advanced throughout, and the panel signature matched the source at `0x76491800`. The user confirmed the OLED lit with the core's cell frame and heard the tone perfectly. The reference supersedes `PMOD-003`, whose `0x10` is the bring-up core's address, with `PMOD-004`, and adds `PHOS-011` for the moved register and the firmware's guard; `PHOS-006` is left as written, since it was sourced at `a22ec9c` and is accurate for that commit. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry, `PMOD-004` and `PHOS-011` with their routing rows and index lines, and `PMOD-003` marked superseded with its routing row pointed at `PMOD-004` and its index line prefixed, with its statement untouched), confirmed `.ai/core.md` unchanged, parsed the reference YAML with every record matching an index line, validated this entry as number 45 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+A `/tang.ini` parser (`PMOD-002`) should replace `phosphor.tdsh`'s fixed declaration and also cover cores loaded by other paths, such as the Phosphor app after a `tangload` from the Terminal, which today leaves the sockets released until the script runs. Tang-Phosphor's next cycle restores its `clk_pixel` margin, which entry 71 found closing at one placement of four. The open items from entry 44 stand, and the `.bak` Phosphor core on the card can be removed once the user is satisfied.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/ae350_play.cpp
+- scripts/phosphor.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

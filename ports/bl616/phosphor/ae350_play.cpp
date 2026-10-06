@@ -23,6 +23,13 @@ namespace {
 
 constexpr char PLAYER_TPI[] = "/sd/ae350/resident.tpi";
 
+// Tang-Phosphor register ABI 1.8 moved cpu_mode from bit 0 of 0xc0, which it
+// shared with the PMOD socket declaration, to a word of its own.  An older core
+// ignores a write to 0xa8 and would play the file's bytes raw, so refuse it.
+constexpr uint32_t REG_ABI = 0x00000004u;
+constexpr uint32_t REG_ABI_CPU_MODE = 0x00010008u;
+constexpr uint32_t REG_CPU_MODE = 0x000000a8u;
+
 bool poke32(uint32_t address, uint32_t value)
 {
     fpga_debug_result result;
@@ -50,6 +57,26 @@ bool ae350_play_file(const char *full_path, const char **error_out,
     // state (0x03) while the player waits for the next stream and while it
     // plays.  Only a fresh core (WAIT) or a trapped/crashed player needs a
     // reload, so the player image is streamed at most once per core load.
+    uint32_t abi = 0;
+    if (!read32(REG_ABI, &abi)) {
+        if (error_out != nullptr)
+            *error_out = "core did not respond";
+        return false;
+    }
+    if ((abi >> 16) != (REG_ABI_CPU_MODE >> 16) || abi < REG_ABI_CPU_MODE) {
+        if (error_out != nullptr)
+            *error_out = "core register ABI older than 1.8; rebuild Tang-Phosphor";
+        return false;
+    }
+
+    // Route the stream/debug to the AE350.  Idempotent, so it is asserted on
+    // every play rather than only when the loader is restarted.
+    if (!poke32(REG_CPU_MODE, 1u)) {
+        if (error_out != nullptr)
+            *error_out = "AE350 did not respond";
+        return false;
+    }
+
     uint32_t state = 0;
     if (!read32(0x00004020u, &state)) {
         if (error_out != nullptr)
@@ -58,8 +85,8 @@ bool ae350_play_file(const char *full_path, const char **error_out,
     }
 
     if ((state & 0xffu) != 0x03u) {
-        // Route the stream/debug to the AE350 and restart its loader.
-        if (!poke32(0x000000c0u, 1u) || !poke32(0x000043f0u, 1u)) {
+        // Restart the AE350's loader.
+        if (!poke32(0x000043f0u, 1u)) {
             if (error_out != nullptr)
                 *error_out = "AE350 did not respond";
             return false;

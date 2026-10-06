@@ -60,6 +60,22 @@ if $? != 0
     return 1
 endif
 
+# Declare what is seated in the PMOD sockets.  The core powers up with both
+# released, and only a host declaration drives them; this stands in for the
+# /tang.ini parser until it exists.  The default is the standard pair: the
+# OLEDrgb on PMOD0 and the rotary encoder on PMOD1 with its seating bit
+# (Tang-Phosphor socket control 0xc0).  Set PMOD=0 in the session to declare
+# nothing.
+if "$PMOD" == ""
+    PMOD=0x2410
+endif
+echo "phosphor: sockets $PMOD"
+phosphor poke 0xc0 "$PMOD"
+if $? != 0
+    echo "phosphor: the socket declaration was refused"
+    return 1
+endif
+
 # The core comes out of configuration with its overlay on, which in this core
 # shows the TinyDesk layer; hand the screen to the player instead.  F12 brings
 # TinyDesk back.

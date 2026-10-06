@@ -141,7 +141,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Can a Raspberry Pi HAT go on the dock's 40-pin headers? | BRD | BRD-008 |
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
-| Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-003 |
+| Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-004 |
 | Where are the USB OTG registers, and which bit is which? | BL6 | BL6-001 |
 | How much RAM does the BL616 have? | BL6 | BL6-002 |
 | How do I read free heap? | BL6 | BL6-003 |
@@ -208,6 +208,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which resident player image is the qualified one, and how is it rebuilt? | PHOS | PHOS-008 |
 | How is a track stopped on the merged core, and what do the sink's counters mean? | PHOS | PHOS-009 |
 | Why does a song take many seconds to start, and how big a file can Phosphor play? | PHOS | PHOS-010 |
+| Which register routes the stream to the AE350, and which Phosphor core does the firmware need? | PHOS | PHOS-011 |
 | Which shell revision is this, and what can a script do? | TDSH | TDSH-004 |
 | What rules does upstream set for this port: names, commands, patches, pull requests? | TDSH | TDSH-005 |
 | Why did desktop scripts return without running, and how are their memory limits set now? | TDSH | TDSH-008 |
@@ -269,7 +270,8 @@ BRD-007: "One-wire and two-wire cannot be combined: by the user's account the bo
 BRD-008: "The dock's two 2x20 2.54 mm headers are the SDRAM connectors J9 (SDRAM0) and J10 (SDRAM1), MiSTer-style: FPGA I/O on pins 1-10, 13-28 and 31-40, +5 V on pin 11, ground on pin 12; they are not Raspberry Pi headers, and a Pi HAT fitted directly would put the board's 5 V on a HAT signal and short eight FPGA pins through the HAT's ground pins"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
-PMOD-003: "Socket control register 0x10: bit 0 renderer, bits 4-7 PMOD0 personality and 8-11 PMOD1, bits 12/13 upside-down; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2; 0x14 is scratch"
+PMOD-003: "Superseded by PMOD-004. Recorded the socket control register as 0x10, which is the bring-up core's map only"
+PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them (0x2410 is the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit); 0x10 is the bring-up core's address"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
 BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
 BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and heapsize; PMEM_HEAP is the same heap unless the chip is a BL618"
@@ -365,6 +367,7 @@ PHOS-007: "A resident AE350 player hangs at the start of its first decode depend
 PHOS-008: "The qualified resident player is 863764 bytes, CRC-32 ef1502ed, built by make -C software/rbhost bench-universal BENCH_NAME=resident with ~/.cache/tangcore-dev/toolchain/bin (Xuantie GCC 10.2.0) on PATH; the image left in Tang-Phosphor's build/rbhost/bench was the 863748-byte 3d762d13 that hangs (PHOS-007), so a player is rebuilt and its CRC checked before use"
 PHOS-009: "The merged core's pcm_sink has no stop: an AE350 restart (0x43f0) ends the decode and pause (0x78 bit 0) silences it, but the sink stays in its playing state, and the stopped track's samples (up to 2048 in the sink and 512 in the AE350 stream queue) stay queued ahead of the next START, so a sink kept paused never takes that START; underruns (0x6c) clear only with the core, 0x30 counts STARTs, and elapsed and duration (0x8c, 0x90) read 0"
 PHOS-010: "The whole file is streamed to the AE350 before the first sample plays, about 3.7 s per MB (4,387,971 B in 16,064 ms), so a song loads silently for many seconds; files up to 5.8 MB play, and where the AE350's memory limits file size is not known"
+PHOS-011: "Since Tang-Phosphor register ABI 1.8 (0x04 reads 0x00010008) cpu_mode is its own readable word at 0xa8; before it, it was bit 0 of the socket control word 0xc0, so selecting the AE350 released both PMOD sockets; ae350_play selects the CPU at 0xa8 on every play and refuses an older core"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
 PROV-004: "Superseded by PROV-005. TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
@@ -1865,6 +1868,19 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   sources:
     - "phosphor status on this board, 2026-10-06"
   verification: "Measured on this board on 2026-10-06; the user then played several more songs from the app and all started after the wait (core-log entry 39)."
+
+- record_id: PHOS-011
+  kind: EXTERNAL
+  topic_id: PHOS
+  title: "cpu_mode has its own register at 0xa8 from Tang-Phosphor register ABI 1.8"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "Tang-Phosphor's merged core routes the BL616 stream to the AE350 loader when bit 0 of 0xa8 is set and to the FPGA player when it is clear; 0xa8 reads back, powers up clear, and register 0x04 reads 0x00010008 (ABI 1.8) from that change on. Before ABI 1.8, the state PHOS-006 records at a22ec9c, cpu_mode was bit 0 of 0xc0, which is also the PMOD socket control word (PMOD-004), so writing 0xc0 = 1 to select the AE350 also held the renderer and released both sockets, and declaring the sockets with bit 0 clear deselected the AE350. A core older than ABI 1.8 ignores a write to 0xa8."
+  consequence: "ports/bl616/phosphor/ae350_play.cpp reads 0x04 and refuses a core whose ABI is not 1.8 or later, with the error 'core register ABI older than 1.8; rebuild Tang-Phosphor', because an older core would play the file's bytes raw; it then writes 0xa8 = 1 on every play rather than only when it restarts the loader, so the route is reasserted even if something cleared it between tracks."
+  sources:
+    - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, src/tang_phosphor_top.sv, tests/debug_regs_tb.sv, docs/debug-registers.md; its core-log entry 71"
+    - "ports/bl616/phosphor/ae350_play.cpp: REG_ABI, REG_ABI_CPU_MODE and REG_CPU_MODE"
+  verification: "On this board on 2026-10-06 with firmware f8d6fdf-dirty.43c548f and the ABI 1.8 core, 0x04 read 0x00010008, 0xa8 read 1 during and after playback, and two plays of test.mp3 each completed at 441000 samples with zero underruns; the user heard the tone (core-log entry 45)."
 - record_id: PMOD-001
   kind: BOARD
   topic_id: PMOD
@@ -1894,13 +1910,27 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: EXTERNAL
   topic_id: PMOD
   title: "Register 0x10 is the socket control register the tang.ini parser would write"
-  status: SOURCED
+  status: SUPERSEDED
+  superseded_by: "PMOD-004"
   verified_date: 2026-10-03
   statement: "In Tang-Phosphor the PMOD socket selection is register 0x10: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1. Personality numbering is 0 none, 1 oledrgb, 2 vga J1 and 3 vga J2. Register 0x14 is scratch. Power-on defaults select the panel on PMOD0 and nothing on PMOD1, and the host is the only party that validates a declaration, because it is the only party that knows what the user wrote."
   consequence: "This is the seam the tang.ini contract would write through, and so the register a TinyTang-side parser would target. Note the name collision: extended-protocol legacy frame type 0x10 (EXTCTL-001) is a transport opcode and not this register, and the two must not be conflated."
   sources:
     - "Tang-Phosphor, .ai/core-reference.md, the 0x10 socket control register record"
   verification: "Read from Tang-Phosphor's reference. Not exercised here, and no register write of this kind exists in this tree."
+
+- record_id: PMOD-004
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "On the merged Phosphor core the socket control register is 0xc0, and both sockets power up released"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "PMOD-003's 0x10 is the address in Tang-Phosphor's bring-up core. In its merged player core, the one TinyTang loads as phosphortang.bin, the socket control word is 0xc0 with the same layout: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1, and a read adds the renderer's frame selector at 18:16. Personalities are 0 none, 1 oledrgb, 2 vga J1, 3 vga J2 and 4 rotary encoder. Both sockets power up released, which is that project's safe state, so nothing is driven until a host declares it."
+  consequence: "Until the /tang.ini parser exists, scripts/phosphor.tdsh declares 0xc0 = 0x2410, the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit, after the link probe; a session's PMOD variable overrides it and PMOD=0 declares nothing. Bit 0 must not be used for stream routing, which moved to 0xa8 (PHOS-011)."
+  sources:
+    - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, docs/debug-registers.md, and its .ai/core-reference.md record on socket control and stream routing in the merged player map"
+    - "Tang-Phosphor src/pmod_mirror_core.sv: PERS_NONE through PERS_ENC"
+  verification: "On this board on 2026-10-06 phosphor.tdsh declared 0x2410, 0xc0 read 0x2410 before, during and after two tracks, the panel frame counter at 0xd8 advanced throughout and the panel signature matched the source at 0x76491800; the user confirmed the OLED lit (core-log entry 45)."
 
 - record_id: TCTL-011
   kind: EXTERNAL
