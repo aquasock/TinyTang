@@ -65,7 +65,7 @@ else()
 
     # TinyDesk, the desktop environment.  Its core and apps are compiled here
     # against the shell we already have -- TinyDesk pins the same revision
-    # (3b7d7f8, v0.1.4), so there is no second copy to keep in step.  The filesystem
+    # (8456dd1, v0.1.5), so there is no second copy to keep in step.  The filesystem
     # comes from its own ports/common/td_fs_stdio.c, which is written against
     # stdio, <dirent.h> and <sys/stat.h> and therefore lands on this port's
     # FatFS shim unmodified.

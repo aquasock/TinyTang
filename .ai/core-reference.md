@@ -204,9 +204,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does the resident AE350 player hang before its first decode? | PHOS | PHOS-007 |
 | Which resident player image is the qualified one, and how is it rebuilt? | PHOS | PHOS-008 |
 | How is a track stopped on the merged core, and what do the sink's counters mean? | PHOS | PHOS-009 |
-| Which shell revision is this, and what can a script do? | TDSH | TDSH-003 |
+| Which shell revision is this, and what can a script do? | TDSH | TDSH-004 |
+| What rules does upstream set for this port: names, commands, patches, pull requests? | TDSH | TDSH-005 |
 | Which sequences must a console mirror understand? | TDSH | TDSH-002 |
-| What does TinyDesk need from a port? | TDESK | TDESK-012, TDESK-003 |
+| What does TinyDesk need from a port? | TDESK | TDESK-013, TDESK-003 |
 | How much RAM does the desktop need? | TDESK | TDESK-002 |
 | Why does the Terminal window say "No shell backend in this build."? | TDESK | TDESK-004 |
 | How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
@@ -304,7 +305,9 @@ TCTL-010: "Helper scripts being retired: tangctl.py, liveuart.py, liveuart_draw.
 TCTL-011: "Tang-Control is the architecture of record for the Phosphor core and the cores after it, and is hardware-verified as a whole because this project was built from it; a record's own status still reports whether that specific fact was confirmed here"
 TDSH-001: "Superseded by TDSH-003. Recorded TinyDesk Shell v0.1.3 at 232a39f and its scripting language"
 TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
-TDSH-003: "TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
+TDSH-003: "Superseded by TDSH-004. TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
+TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell): the same language and terminal interface as v0.1.4; board.conf numbers are decimal or 0x hex, never octal, and network mode/autowifi are root only, neither used by this port"
+TDSH-005: "Upstream STANDARDS.md (v0.1.5) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
 TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
@@ -316,7 +319,8 @@ TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock
 TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
 TDESK-010: "Superseded by TDESK-011. Called the Files app's delete dialog a possible TinyDesk bug and suspected it of removing /scripts/boot.tdsh, which the user had deleted themselves"
 TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step"
-TDESK-012: "TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
+TDESK-012: "Superseded by TDESK-013. TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
+TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk) pins the shell at 8456dd1, the same as this project; only td.h's version and repository URLs change in code this port builds"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -1020,7 +1024,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: EXTERNAL
   topic_id: TDSH
   title: "TinyDesk Shell v0.1.4: the same language, and a terminal interface that can carry its width"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-05
   statement: "The shell is TinyDesk Shell v0.1.4 at commit 3b7d7f8aca22af99a57606c1f8297df11ab81889, consumed as the third_party/tinydesk-shell submodule; the core is C11 and MIT licensed, and the script language is unchanged from v0.1.3 (TDSH-001). The line editor now redraws command lines that wrap over several rows. tdsh_terminal_io_t gains two optional members: columns(), the terminal's width read once per line, and read_byte_timeout(), with which the editor may ask the terminal for its width (ESC[6n). With neither, the editor assumes 80 columns."
   consequence: "This port fills columns() from the width TinyDesk's Terminal window reports, through tdsh_bl616_terminal_set_columns() from the bridge's start() and resize(), and returns 0 at the console so the editor keeps 80, the console layer's width. It offers no read_byte_timeout(): at the console the layer and a host terminal would both answer the width query. Without columns() the editor wrapped the 76-column window at 80, which put four characters on the row after every full one."
@@ -1028,6 +1032,31 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "third_party/tinydesk-shell @ 3b7d7f8, include/tdsh_terminal.h: tdsh_terminal_io_t and its comments"
     - "third_party/tinydesk-shell @ 3b7d7f8, src/core/tdsh_terminal.c: terminal_columns()"
   verification: "Built into this firmware on 2026-10-05; the user confirmed long lines wrap correctly in the console and in the Terminal window once columns() was filled, and that Tab completion works."
+  superseded_by: "TDSH-004"
+
+- record_id: TDSH-004
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "TinyDesk Shell v0.1.5: board numbers without octal, root-only network switches"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "The shell is TinyDesk Shell v0.1.5 at commit 8456dd1d8c2fa88706c065edba483be67fcb3553, from its new home github.com/tinydesk-project/tinydesk-shell. Against v0.1.4 (TDSH-003) the core and headers change in two files: tdsh.h's TDSH_VERSION, and tdsh_board_int() in src/core/tdsh_board.c, which reads board configuration numbers as decimal or 0x hexadecimal, never octal (08 is 8 and 010 is 10). The ESP-IDF port makes network mode and network autowifi root-only. The release adds STANDARDS.md (TDSH-005). The script language and tdsh_terminal_io_t are unchanged from TDSH-003, whose columns() behaviour still holds."
+  consequence: "The update needed no change to this port: it does not use board configuration or the network commands. Built in a clean clone, its own host tests pass 8 of 8 with no warnings."
+  sources:
+    - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): CHANGELOG.md, include/tdsh.h, src/core/tdsh_board.c"
+  verification: "Diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 8/8 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37)."
+
+- record_id: TDSH-005
+  kind: EXTERNAL
+  topic_id: TDSH
+  title: "Upstream's standards for ports"
+  status: SOURCED
+  verified_date: 2026-10-06
+  statement: "STANDARDS.md, added in TinyDesk Shell v0.1.5 for both projects, sets rules that apply to community ports. A port is described as 'Name, a port of TinyDesk Shell to platform' (TinyTang is the given example) and must not start its name with TinyDesk. It picks one 2-8 letter prefix for every name it owns -- C symbols, macros, port-only files, build switches, board keys -- recorded in the Community ports table of the TinyDesk Shell README, which lists TinyTang with the prefix 'not chosen yet' while the standard's own examples use tang. Files implementing an upstream interface are named tdsh_platform_<platform>.c, tdsh_fs_<platform>.c, td_hal_<platform>.c and tdsh_bridge_<platform>.c; a port defines no new td_ or tdsh_ symbols except entry points named tdsh_<platform>_<verb>. Upstream code is tracked as submodules at a release tag and never edited in place: a needed change is a patch in third_party/patches/ applied by an idempotent script, listed in THIRD_PARTY.md and matched by an upstream issue or pull request, and both repositories' host tests must pass at the pinned commit. Commands are lowercase without separators, one per subject with verbs as subcommands; upstream's command names and gpio, spi, i2c, uart, adc, pwm, usb, sd, eth, wifi and ota are reserved; a generic port command should carry the prefix. Scripts end in .tdsh and start with #!/bin/tdsh. The platform string is <platform>/<threading>, then ', <port name> <version or build id>'. Commit subjects read 'Area: what changed' without a full stop, and a pull request states what changed for users, the platforms it was built and run on, and that host tests pass without warnings. A system-wide boot script, displays drawn outside the terminal, and audio and media playback commands are listed as not standardised, with ports asked to open issues describing what they did. Limits in tdsh.h are listed as a known deviation because they are not wrapped in #ifndef."
+  consequence: "This port already matches the platform string, the script header, the submodule rules and the tang prefix in practice. It does not yet match the file naming (td_bridge_bl616.c should be tdsh_bridge_bl616.c; fpga_frames.c, usb_cdc_bl616.c, tdsh_tang_flash.c, td_desktop_bl616.c and td_phosphor_app.cpp lack the prefix) or the command naming (blescan, blekbd and blemouse would be ble subcommands; crash and the usb* commands are generic); the standard asks for these when the files are next worked on. Declaring the tang prefix upstream, and an issue or pull request making TDSH_SCRIPT_TASK_STACK overridable (the 32 KB request behind BL6-009), are the obvious first contributions."
+  sources:
+    - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): STANDARDS.md, README.md Community ports, CONTRIBUTING.md"
+  verification: "Read on 2026-10-06; this port's script headers and platform string were checked against it, and the deviations listed come from its file and command names. Not yet discussed with the author."
 
 - record_id: TDESK-001
   kind: EXTERNAL
@@ -1186,7 +1215,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: EXTERNAL
   topic_id: TDESK
   title: "TinyDesk v0.1.4: the same port surface, and a Terminal that reports its width"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-05
   statement: "TinyDesk v0.1.4 at commit f4c1d29f6327df1b3dd40e00fe301cf002021dd6 pins tinydesk-shell at 3b7d7f8, the same revision as this project's submodule, so there is still no second copy to keep in step. td_hal_t is unchanged: read_byte, write, millis and sleep_ms plus a context pointer (TDESK-001). The Terminal app's td_term_backend_t has start(cols, rows), read, write, resize(cols, rows), user and set_user, and the upstream shell bridges pass the window's width from start() and resize() to the line editor through columns() (TDSH-003). Release 0.1.4 also cuts text at character boundaries (td_utf8_copy, td_utf8_pad, td_utf8_skip), keeps the file name when the Editor saves, adds widget and Editor tests, and reformats every source with clang-format 16; its README lists TinyTang as a community port."
   consequence: "The update needed no change to this port's td_hal_t or to the build's source lists; the bridge in ports/bl616/td_bridge_bl616.c gained a resize() and forwards the width. Diffs across the release should be read after formatting both sides with the release's .clang-format, since otherwise the reformatting hides the real changes."
@@ -1196,6 +1225,19 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "third_party/tinydesk commit 5ad7c45: 'the Terminal window gives the shell its width'"
     - "third_party/tinydesk @ f4c1d29, .gitmodules and third_party/tdsh: the shell at 3b7d7f8"
   verification: "Built and run on this board on 2026-10-05; the user confirmed the desktop, the Terminal, Files, the Editor's save and F12, and Castlevania from the Terminal."
+  superseded_by: "TDESK-013"
+
+- record_id: TDESK-013
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "TinyDesk v0.1.5: the projects move to tinydesk-project"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "TinyDesk v0.1.5 is tag v0.1.5 at commit feaf84130f03594845e5e9284817dca785b4d878, from github.com/tinydesk-project/tinydesk; its main branch carries two later documentation commits (docs/VALIDATION.md) that the release does not include. It pins tinydesk-shell at 8456dd1 (TDSH-004), the same revision as this project's submodule, so there is still no second copy. In the code this port builds only include/tinydesk/td.h changes: TD_VERSION becomes 0.1.5 and TD_REPO_URL and TD_SHELL_REPO_URL point at tinydesk-project. td_hal_t and the Terminal backend are unchanged from TDESK-012. The rest of the release is ESP32 over-the-air update work and documentation."
+  consequence: "The update needed no change to this port beyond the pins and the submodule URLs, which .gitmodules now gives as tinydesk-project. Built in a clean recursive clone, its own host tests pass 10 of 10 with no warnings."
+  sources:
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): include/tinydesk/td.h, RELEASE_NOTES.md, third_party/tdsh at 8456dd1"
+  verification: "Diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 10/10 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37)."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

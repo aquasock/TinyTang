@@ -1242,3 +1242,37 @@ None.
 - User Test: N/A
 
 ---
+
+## 37 COMMIT Unreleased 2026-10-06T07:21:49-07:00
+
+#### Coming From:
+
+Unreleased 3b025c1
+
+#### Purpose:
+
+Move TinyDesk and TinyDesk Shell to their 0.1.5 release tags, which the author confirmed as the revision to update to, and follow the projects to their new home.
+
+#### Outcome:
+
+Both submodules are on the `v0.1.5` tags: TinyDesk Shell `8456dd1` and TinyDesk `feaf841`, which pins the same shell commit. The user confirmed the tags rather than TinyDesk's `main`, which carries two later documentation commits. `.gitmodules` now points at `github.com/tinydesk-project`, where both repositories moved, and was synced. Diffing v0.1.4 to v0.1.5 across both cores' `src/` and `include/` found three changed files in code this firmware builds: `tdsh.h` and `td.h` change their version strings and `td.h` its repository URLs, and `tdsh_board.c` stops reading board configuration numbers as octal, which this port does not use; no port change was needed. The release's new `STANDARDS.md` sets rules for ports, recorded as `TDSH-005`: as the standard now requires, both repositories' own host tests were run at the pinned commits in clean clones outside this tree, TinyDesk Shell 8 of 8 and TinyDesk 10 of 10 passing with no warnings. `TDSH-004` and `TDESK-013` supersede `TDSH-003` and `TDESK-012`, and `THIRD_PARTY.md` and the pin comment in `CMakeLists.txt` carry the new commits and URLs. The firmware, built with `make CHIP=bl616 BOARD=bl616dk` with no new warnings, is `tinytang_bl616.bin` at 617,568 bytes, MD5 `e7f16586f00dac884cceacd4e50901a9`, build identity `3b025c1-dirty.0b9ad3e`, with `0.1.5` and the new URLs in the image; it was installed with `tools/tinytang_flash.py`, and after the power cycle `platform` and `version` reported TinyDesk Shell 0.1.5 with that identity, both Bluetooth devices reconnected by themselves, and free heap read 64,704 bytes with a 40,536-byte largest block, unchanged from entry 35. All eight host test scripts pass. The user then reported everything passing: the console, the desktop, the Terminal, Files, F12, and Castlevania and Phosphor started from the command line of TinyDesk's Terminal. That is the case entry 36 left open, scripts started from the desktop not loading their cores, now working on this build; since how the failing scripts were started was never established, the fault is not recorded as fixed. The committed tree differs from the deployed build only in the pin comment in `CMakeLists.txt` and in `THIRD_PARTY.md`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry, `TDSH-004`, `TDSH-005` and `TDESK-013` with their routing rows and index lines, and `TDSH-003` and `TDESK-012` marked superseded with their statements untouched), confirmed `.ai/core.md` unchanged, validated this entry as number 37 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+The first pull request upstream comes next as its own cycle: recording the `tang` prefix and an up-to-date description of TinyTang in TinyDesk Shell's Community ports table, prepared in a fork and shown to the user before anything is pushed. After it, an issue or pull request making `TDSH_SCRIPT_TASK_STACK` overridable (`TDSH-005`, `BL6-009`). If scripts from the desktop fail to load cores again, note how they were started and read `crash` and `ble` at the console. The discovery stall when both devices reconnect at once and the open items from entry 28 stand.
+
+#### Files Modified:
+
+- .gitmodules
+- CMakeLists.txt
+- THIRD_PARTY.md
+- third_party/tinydesk
+- third_party/tinydesk-shell
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
