@@ -1098,3 +1098,41 @@ At the user's direction the other Bluetooth features are on hold: keeping pairin
 - User Test: PASS
 
 ---
+
+## 33 COMMIT Unreleased 2026-10-05T21:53:40-07:00
+
+#### Coming From:
+
+Unreleased 1cea7b9
+
+#### Purpose:
+
+Keep Bluetooth pairings across resets and reconnect paired devices by themselves, pair a device by its kind instead of by address, and measure the heap the running stack takes.
+
+#### Outcome:
+
+The SDK stores pairings only through easyflash (`CONFIG_BT_SETTINGS`), which needs a flash partition this board does not have, so the plan the user approved keeps them on the SD card through the host's key table, gated on a check that a reconnect with a stored key works at all. That check, run on the entry-32 firmware with the M750 near the board, failed once with security level 1, error 8 and HCI 0x3E and then encrypted on the retry without pairing mode, and the same first-attempt failure later recurred on the K950; both are recorded in `BLE-012`. The first build of the plan failed to link because this SDK's `config.h` defines `CONFIG_BT_WHITELIST`, which compiles out `bt_le_set_auto_conn` and the host's own reconnect-after-disconnect (`BLE-011`), so reconnection was rebuilt on the one whitelist initiator: `ble_reconnect_update()` in `ports/bl616/tang_ble.c` keeps the whitelist equal to the paired devices that are waiting, restarts `bt_conn_create_auto_le()` after every connection, disconnection and scan, stops it before `blescan`, `pair` and an explicit connect, retries a failed start every second, and runs under a lock because the shell and a new background task both call it. That task, started once after the boot script so the radio is not starting while `tangload` programs a core, reads `/sd/ble/bonds.bin`, starts the stack quietly if anything is paired, puts the keys back into the host's key table and arms both slots; it also writes the file when `pairing_complete` has captured a device's LTK, IRK, flags and key size. The file's format is the new `ports/bl616/tang_ble_bonds.c`, a magic, version, two 80-byte records and a CRC-32, checked on the host by `tools/tests/tb_bonds.c` (15 checks) through `test_bonds.sh`. Slots gained a `waiting` state, connections the initiator makes are matched to their slot by address, and a connection no slot claims is closed. `blekbd` and `blemouse` gained `pair [name]`, which scans 8 s and pairs the strongest device advertising the slot's GAP appearance (keyboard 0x03C1, mouse 0x03C2) or whose name contains `name`, and `on`, `off` and `forget`; `blescan` shows each device's kind; and the new `ble` command reports the radio, the heap, the pairing file and both slots. `ble_start` now starts once, can run quietly, and records the heap either side, which settled `BLE-002`'s open item as `BLE-013`: the stack took 15,828 B of the 127,248 B heap, a connection about 700 B, and three off/on cycles of the mouse returned free heap to 41,764 B each time, so reconnecting does not leak. The firmware, built with `make CHIP=bl616 BOARD=bl616dk` without warnings, is `tinytang_bl616.bin` at 611,120 bytes, MD5 `3dccab8fd7743103e6512863332be944`, build identity `1cea7b9-dirty.a296b3b`, installed with `tools/tinytang_flash.py` and confirmed by `platform`. On it `blemouse pair` found the M750 by appearance and saved the pairing to the card; `blekbd pair` hit HCI 0x3E once and paired the K950 on the second run. After a power cycle with neither device in pairing mode the user woke both and reports everything working, the desktop and the mouse included, and one device going out of range and reconnecting by itself; `ble` then showed the pairings loaded from the card and both devices ready. All eight host test scripts pass. The committed tree differs from the deployed build only in `README.md`, which describes pairing, reconnection and `ble`, and in `proj.conf`'s comment, which said pairings live in RAM only. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `BLE-011`, `BLE-012` and `BLE-013` with their routing rows and index lines, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 33 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Report-map parsing for report-protocol devices and a Bluetooth LE controller waits for a controller to be in hand. Two behaviours are worth watching: both devices reconnecting at the same moment set up concurrently, which has not shown the `BLE-005` hang but was not deliberately tested, and the first encryption attempt after a reconnect usually fails before a retry succeeds, which costs a second or two and might shorten with an antenna on U35. A `tangload` while Bluetooth devices are connected has not been tested since the stack started coming up at boot. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_ble_bonds.c
+- ports/bl616/tang_ble_bonds.h
+- ports/bl616/tdsh_platform_bl616.c
+- proj.conf
+- tools/tests/tb_bonds.c
+- tools/tests/test_bonds.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

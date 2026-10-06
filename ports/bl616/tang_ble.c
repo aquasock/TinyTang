@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "FreeRTOS.h"
+#include "semphr.h"
 #include "task.h"
 
 #include "bluetooth.h"
@@ -46,8 +47,13 @@
 #include "btble_lib_api.h"
 #include "rfparam_adapter.h"
 
+#include "keys.h"
+#include "ff.h"
+#include "mem.h"
+
 #include "tdsh.h"
 #include "tang_ble.h"
+#include "tang_ble_bonds.h"
 #include "tang_pad.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -62,11 +68,17 @@ int bt_get_local_public_address(bt_addr_le_t *adv_addr);
 #define BLE_MAX_SECS      60
 #define BLE_ENABLE_WAIT_MS 3000
 
+/* GAP appearances (Bluetooth Assigned Numbers, 2.6.2): HID category 0x03C0. */
+#define BLE_APPEARANCE_KEYBOARD 0x03C1
+#define BLE_APPEARANCE_MOUSE    0x03C2
+
 typedef struct {
     bt_addr_le_t addr;
     int8_t rssi_max;
     int8_t rssi_last;
     uint16_t seen;
+    uint16_t appearance;     /* 0 if never advertised */
+    bool hid;                /* advertised the HID service, 0x1812 */
     char name[BLE_NAME_LEN];
 } ble_device_t;
 
@@ -78,22 +90,41 @@ static unsigned s_dropped;
 static uint32_t s_reports;
 
 static volatile int s_enable_result = 1;   /* 1 = pending, else bt_enable's err */
-static bool s_started;
+/* 0 not started, 1 starting, 2 started (or failed: see s_enable_result).  The
+ * stack can be started by a command in the shell and by the boot-time
+ * reconnect task, so the start is claimed once and the other caller waits. */
+static volatile uint8_t s_start_phase;
+/* Free heap just before the radio and stack came up, and just after. */
+static uint32_t s_heap_before;
+static uint32_t s_heap_after;
 
 static void bt_ready(int err)
 {
     s_enable_result = err;
 }
 
-static bool name_cb(struct bt_data *data, void *user_data)
+typedef struct {
+    char name[BLE_NAME_LEN];
+    uint16_t appearance;
+    bool hid;
+} ble_adv_t;
+
+static bool adv_cb(struct bt_data *data, void *user_data)
 {
-    char *name = user_data;
+    ble_adv_t *adv = user_data;
 
     if (data->type == BT_DATA_NAME_COMPLETE || data->type == BT_DATA_NAME_SHORTENED) {
         size_t n = data->data_len < BLE_NAME_LEN - 1 ? data->data_len : BLE_NAME_LEN - 1;
-        memcpy(name, data->data, n);
-        name[n] = '\0';
-        return false;
+        memcpy(adv->name, data->data, n);
+        adv->name[n] = '\0';
+    } else if (data->type == BT_DATA_GAP_APPEARANCE && data->data_len >= 2) {
+        adv->appearance = (uint16_t)(data->data[0] | (data->data[1] << 8));
+    } else if (data->type == BT_DATA_UUID16_SOME || data->type == BT_DATA_UUID16_ALL) {
+        for (unsigned i = 0; i + 1 < data->data_len; i += 2) {
+            if ((data->data[i] | (data->data[i + 1] << 8)) == 0x1812) {
+                adv->hid = true;
+            }
+        }
     }
     return true;
 }
@@ -102,9 +133,9 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
                          struct net_buf_simple *buf)
 {
     (void)evtype;
-    char name[BLE_NAME_LEN] = { 0 };
+    ble_adv_t adv = { 0 };
 
-    bt_data_parse(buf, name_cb, name);
+    bt_data_parse(buf, adv_cb, &adv);
 
     taskENTER_CRITICAL();
     s_reports++;
@@ -132,9 +163,16 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
             dev->rssi_max = rssi;
         }
         /* The name usually arrives in the scan response, not the first
-         * advertisement, so take it whenever one turns up. */
-        if (name[0] && !dev->name[0]) {
-            memcpy(dev->name, name, BLE_NAME_LEN);
+         * advertisement, so take it whenever one turns up; likewise the
+         * appearance and the service list. */
+        if (adv.name[0] && !dev->name[0]) {
+            memcpy(dev->name, adv.name, BLE_NAME_LEN);
+        }
+        if (adv.appearance) {
+            dev->appearance = adv.appearance;
+        }
+        if (adv.hid) {
+            dev->hid = true;
         }
     }
     taskEXIT_CRITICAL();
@@ -142,15 +180,32 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 
 static void hid_register_callbacks(void);
 
-static int ble_start(void)
+/* Bring the radio and the host up, once.  `verbose` prints progress and
+ * errors to the console, for the shell's commands; the boot-time reconnect
+ * task starts it quietly, and `ble` reports the result. */
+static int ble_start_ex(bool verbose)
 {
-    if (s_started) {
+    taskENTER_CRITICAL();
+    const uint8_t phase = s_start_phase;
+    if (phase == 0) {
+        s_start_phase = 1;
+    }
+    taskEXIT_CRITICAL();
+    if (phase != 0) {
+        while (s_start_phase == 1) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
         return s_enable_result;
     }
 
+    s_heap_before = kfree_size();
     int32_t rc = rfparam_init(0, NULL, 0);
     if (rc != 0) {
-        tdsh_printf("blescan: RF init failed (%ld)\r\n", (long)rc);
+        if (verbose) {
+            tdsh_printf("ble: RF init failed (%ld)\r\n", (long)rc);
+        }
+        s_enable_result = (int)rc;
+        s_start_phase = 2;
         return (int)rc;
     }
 
@@ -158,10 +213,12 @@ static int ble_start(void)
     hci_driver_init();
     s_enable_result = 1;
     int err = bt_enable(bt_ready);
-    s_started = true;
     if (err) {
         s_enable_result = err;
-        tdsh_printf("blescan: bt_enable failed (%d)\r\n", err);
+        s_start_phase = 2;
+        if (verbose) {
+            tdsh_printf("ble: bt_enable failed (%d)\r\n", err);
+        }
         return err;
     }
 
@@ -169,23 +226,108 @@ static int ble_start(void)
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     if (s_enable_result == 1) {
-        tdsh_printf("blescan: BLE stack did not come up within %d ms\r\n",
-                    BLE_ENABLE_WAIT_MS);
+        s_enable_result = -1;
+        s_start_phase = 2;
+        if (verbose) {
+            tdsh_printf("ble: BLE stack did not come up within %d ms\r\n",
+                        BLE_ENABLE_WAIT_MS);
+        }
         return -1;
     }
     if (s_enable_result != 0) {
-        tdsh_printf("blescan: BLE stack failed to start (%d)\r\n", s_enable_result);
+        s_start_phase = 2;
+        if (verbose) {
+            tdsh_printf("ble: BLE stack failed to start (%d)\r\n", s_enable_result);
+        }
         return s_enable_result;
     }
 
     hid_register_callbacks();
+    s_heap_after = kfree_size();
+    s_start_phase = 2;
 
-    bt_addr_le_t own;
-    bt_get_local_public_address(&own);
-    tdsh_printf("blescan: radio up, own address %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-                own.a.val[5], own.a.val[4], own.a.val[3],
-                own.a.val[2], own.a.val[1], own.a.val[0]);
+    if (verbose) {
+        bt_addr_le_t own;
+        bt_get_local_public_address(&own);
+        tdsh_printf("ble: radio up, own address %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                    own.a.val[5], own.a.val[4], own.a.val[3],
+                    own.a.val[2], own.a.val[1], own.a.val[0]);
+    }
     return 0;
+}
+
+static int ble_start(void)
+{
+    return ble_start_ex(true);
+}
+
+/* Listen for `secs` seconds, filling s_devices afresh, and return a copy
+ * sorted strongest first.  The reconnect initiator cannot run during an
+ * explicit scan, so it is stopped first and resumed after. */
+static ble_device_t s_snap[BLE_MAX_DEVICES];
+static volatile bool s_scanning;
+static void ble_auto_stop(void);
+static void ble_auto_resume(void);
+
+static int ble_scan(int secs, unsigned *count, unsigned *dropped, uint32_t *reports)
+{
+    taskENTER_CRITICAL();
+    s_count = 0;
+    s_dropped = 0;
+    s_reports = 0;
+    taskEXIT_CRITICAL();
+
+    /* Active scan, so devices answer with a scan response (where the name
+     * usually is); duplicates are kept so the RSSI keeps updating. */
+    struct bt_le_scan_param param = {
+        .type = BT_HCI_LE_SCAN_ACTIVE,
+        .filter_dup = BT_HCI_LE_SCAN_FILTER_DUP_DISABLE,
+        .interval = BT_GAP_SCAN_FAST_INTERVAL,
+        .window = BT_GAP_SCAN_FAST_WINDOW,
+    };
+    s_scanning = true;
+    ble_auto_stop();
+    int err = bt_le_scan_start(&param, device_found);
+    if (err) {
+        s_scanning = false;
+        ble_auto_resume();
+        tdsh_printf("ble: scan start failed (%d)\r\n", err);
+        return err;
+    }
+    vTaskDelay(pdMS_TO_TICKS(secs * 1000));
+    (void)bt_le_scan_stop();
+    s_scanning = false;
+    ble_auto_resume();
+
+    taskENTER_CRITICAL();
+    *count = s_count;
+    *dropped = s_dropped;
+    *reports = s_reports;
+    memcpy(s_snap, s_devices, *count * sizeof(s_snap[0]));
+    taskEXIT_CRITICAL();
+
+    /* Strongest first: the device held next to the board should top the list. */
+    for (unsigned i = 1; i < *count; i++) {
+        ble_device_t t = s_snap[i];
+        unsigned j = i;
+        while (j > 0 && s_snap[j - 1].rssi_max < t.rssi_max) {
+            s_snap[j] = s_snap[j - 1];
+            j--;
+        }
+        s_snap[j] = t;
+    }
+    return 0;
+}
+
+static const char *ble_kind(const ble_device_t *d)
+{
+    if (d->appearance == BLE_APPEARANCE_KEYBOARD) {
+        return "kbd";
+    }
+    if (d->appearance == BLE_APPEARANCE_MOUSE) {
+        return "mouse";
+    }
+    return d->hid ? "hid" : "-";
 }
 
 static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
@@ -205,61 +347,24 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
 
-    taskENTER_CRITICAL();
-    s_count = 0;
-    s_dropped = 0;
-    s_reports = 0;
-    taskEXIT_CRITICAL();
-
-    /* Active scan, so devices answer with a scan response (where the name
-     * usually is); duplicates are kept so the RSSI keeps updating. */
-    struct bt_le_scan_param param = {
-        .type = BT_HCI_LE_SCAN_ACTIVE,
-        .filter_dup = BT_HCI_LE_SCAN_FILTER_DUP_DISABLE,
-        .interval = BT_GAP_SCAN_FAST_INTERVAL,
-        .window = BT_GAP_SCAN_FAST_WINDOW,
-    };
-    int err = bt_le_scan_start(&param, device_found);
-    if (err) {
-        tdsh_printf("blescan: scan start failed (%d)\r\n", err);
-        return 1;
-    }
-    tdsh_printf("blescan: listening for %d s...\r\n", secs);
-    vTaskDelay(pdMS_TO_TICKS(secs * 1000));
-    (void)bt_le_scan_stop();
-
-    static ble_device_t snap[BLE_MAX_DEVICES];
     unsigned count, dropped;
     uint32_t reports;
-    taskENTER_CRITICAL();
-    count = s_count;
-    dropped = s_dropped;
-    reports = s_reports;
-    memcpy(snap, s_devices, count * sizeof(snap[0]));
-    taskEXIT_CRITICAL();
-
-    /* Strongest first: the device held next to the board should top the list. */
-    for (unsigned i = 1; i < count; i++) {
-        ble_device_t t = snap[i];
-        unsigned j = i;
-        while (j > 0 && snap[j - 1].rssi_max < t.rssi_max) {
-            snap[j] = snap[j - 1];
-            j--;
-        }
-        snap[j] = t;
+    tdsh_printf("blescan: listening for %d s...\r\n", secs);
+    if (ble_scan(secs, &count, &dropped, &reports) != 0) {
+        return 1;
     }
 
     tdsh_printf("blescan: %u device(s), %lu report(s)\r\n", count, (unsigned long)reports);
     if (count) {
-        tdsh_printf("  address            type  best  last  seen  name\r\n");
+        tdsh_printf("  address            type  best  last  seen  kind   name\r\n");
     }
     for (unsigned i = 0; i < count; i++) {
-        const ble_device_t *d = &snap[i];
-        tdsh_printf("  %02X:%02X:%02X:%02X:%02X:%02X  %-4s  %4d  %4d  %4u  %s\r\n",
+        const ble_device_t *d = &s_snap[i];
+        tdsh_printf("  %02X:%02X:%02X:%02X:%02X:%02X  %-4s  %4d  %4d  %4u  %-5s  %s\r\n",
                     d->addr.a.val[5], d->addr.a.val[4], d->addr.a.val[3],
                     d->addr.a.val[2], d->addr.a.val[1], d->addr.a.val[0],
                     d->addr.type == BT_ADDR_LE_PUBLIC ? "pub" : "rand",
-                    d->rssi_max, d->rssi_last, d->seen,
+                    d->rssi_max, d->rssi_last, d->seen, ble_kind(d),
                     d->name[0] ? d->name : "-");
     }
     if (dropped) {
@@ -344,18 +449,25 @@ typedef enum {
     HID_SECURING,
     HID_DISCOVERING,
     HID_READY,
+    HID_WAITING,      /* paired and armed: the host reconnects when it appears */
 } hid_state_t;
 
 static const char *const s_state_names[] = {
-    "idle", "connecting", "pairing", "discovering", "ready",
+    "idle", "connecting", "pairing", "discovering", "ready", "waiting",
 };
 
 typedef struct {
     const char *cmd;              /* "blekbd" or "blemouse": the log prefix */
     uint16_t boot_uuid;           /* Boot Keyboard / Boot Mouse Input */
     const char *ready_hint;
+    uint16_t appearance;          /* what `pair` looks for */
 
-    struct bt_conn *conn;
+    struct bt_conn *conn;         /* one reference held while set */
+    char name[TANG_BOND_NAME_LEN];
+    /* The paired device is to be reconnected whenever it is not connected:
+     * while waiting it is on the controller's whitelist, and the reconnect
+     * initiator connects it when it next advertises (ble_reconnect_update). */
+    volatile bool armed;
     volatile hid_state_t state;
     bt_addr_le_t addr;
     bool boot;                    /* boot protocol was written */
@@ -391,10 +503,39 @@ enum { HID_KBD, HID_MOUSE, HID_SLOTS };
 
 static hid_dev_t s_hid[HID_SLOTS] = {
     [HID_KBD] = { .cmd = "blekbd", .boot_uuid = 0x2A22,
-                  .ready_hint = "type on the keyboard" },
+                  .ready_hint = "type on the keyboard",
+                  .appearance = BLE_APPEARANCE_KEYBOARD },
     [HID_MOUSE] = { .cmd = "blemouse", .boot_uuid = 0x2A33,
-                    .ready_hint = "move the mouse" },
+                    .ready_hint = "move the mouse",
+                    .appearance = BLE_APPEARANCE_MOUSE },
 };
+
+/* The pairings, one per slot, as kept in /sd/ble/bonds.bin.  Written by the
+ * pairing callback (keys) and the commands (forget), saved by the task. */
+static tang_bond_t s_bonds[TANG_BOND_SLOTS];
+
+/* The background task's work.  Bluetooth callbacks cannot touch the card or
+ * issue HCI commands of their own without risking the host's own tasks, so
+ * they hand those jobs to this task. */
+#define BLE_EV_BOOT 0x1u     /* load the pairings, start the stack, arm */
+#define BLE_EV_SAVE 0x2u     /* write s_bonds to the card */
+#define BLE_EV_ARM  0x4u     /* arm s_arm_pending, then update the reconnect */
+#define BLE_REARM_MS 500
+#define BLE_RETRY_MS 1000
+
+static TaskHandle_t s_ble_task;
+static volatile uint8_t s_arm_pending;     /* bit per slot */
+static volatile bool s_auto_running;       /* the whitelist initiator is on */
+static void ble_signal(uint32_t ev);
+static int hid_slot(const hid_dev_t *d) { return (int)(d - s_hid); }
+
+static void ble_arm_later(const hid_dev_t *d)
+{
+    taskENTER_CRITICAL();
+    s_arm_pending |= (uint8_t)(1u << hid_slot(d));
+    taskEXIT_CRITICAL();
+    ble_signal(BLE_EV_ARM);
+}
 
 /* The keyboard's current boot report, and the mouse's movement and wheel
  * since the desk layer last asked, with its buttons now.  Written by the
@@ -413,11 +554,22 @@ static void hid_log(const hid_dev_t *d, const char *fmt, ...)
     log_line(line);
 }
 
-static hid_dev_t *hid_by_conn(const struct bt_conn *conn)
+static hid_dev_t *hid_by_conn(struct bt_conn *conn)
 {
     for (int i = 0; i < HID_SLOTS; i++) {
         if (s_hid[i].conn && s_hid[i].conn == conn) {
             return &s_hid[i];
+        }
+    }
+    /* A reconnection made by the whitelist initiator arrives on a connection
+     * object the host created itself: match it to its armed slot by address
+     * and take the slot's reference here. */
+    const bt_addr_le_t *dst = bt_conn_get_dst(conn);
+    for (int i = 0; i < HID_SLOTS; i++) {
+        hid_dev_t *d = &s_hid[i];
+        if (d->armed && !d->conn && dst && bt_addr_le_cmp(dst, &d->addr) == 0) {
+            d->conn = bt_conn_ref(conn);
+            return d;
         }
     }
     return NULL;
@@ -830,15 +982,34 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
 {
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
+        /* Only the slots create connections, so this is one a slot let go of
+         * while it was being made -- `off` racing a reconnect.  Nobody would
+         * set it up or read it, so it is closed rather than left up. */
+        if (!err) {
+            (void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+        }
+        ble_signal(BLE_EV_ARM);
         return;
     }
     if (err) {
         hid_log(d, "connect failed (HCI 0x%02X)", err);
         bt_conn_unref(d->conn);
         d->conn = NULL;
-        d->state = HID_IDLE;
+        if (d->armed) {
+            d->state = HID_WAITING;
+            ble_arm_later(d);
+        } else {
+            d->state = HID_IDLE;
+            ble_signal(BLE_EV_ARM);       /* an explicit connect ended */
+        }
         return;
     }
+    if (d->armed && d->state == HID_WAITING) {
+        /* The whitelist initiator stops once it has connected something, so
+         * it is started again for whatever is still waiting. */
+        s_auto_running = false;
+    }
+    ble_signal(BLE_EV_ARM);
     hid_log(d, "connected; requesting encryption");
     d->state = HID_SECURING;
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
@@ -853,10 +1024,18 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
     if (!d) {
         return;
     }
-    hid_log(d, "disconnected (HCI 0x%02X)", reason);
+    hid_log(d, "disconnected (HCI 0x%02X)%s", reason,
+            d->armed ? "; waiting for it to come back" : "");
     bt_conn_unref(d->conn);
     d->conn = NULL;
-    d->state = HID_IDLE;
+    if (d->armed) {
+        /* Back on the whitelist, to be reconnected when it next advertises. */
+        d->state = HID_WAITING;
+        ble_arm_later(d);
+    } else {
+        d->state = HID_IDLE;
+        ble_signal(BLE_EV_ARM);           /* off the whitelist, if it was on */
+    }
     /* Whatever was held is released: the desk layer sees nothing from this
      * slot from here on, and stale input must not come back on a reconnect. */
     hid_clear_input(d);
@@ -883,11 +1062,47 @@ static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
     }
 }
 
+/* Copy the host's key entry for this device into the slot's pairing record.
+ * Only what a central needs to encrypt to the device again is kept: its LTK
+ * (legacy or LE Secure Connections) and IRK, with their flags. */
+static bool hid_capture_bond(hid_dev_t *d, struct bt_conn *conn)
+{
+    const bt_addr_le_t *dst = bt_conn_get_dst(conn);
+    struct bt_keys *k = bt_keys_find_addr(BT_ID_DEFAULT, dst);
+    if (!k || !(k->keys & (BT_KEYS_LTK | BT_KEYS_LTK_P256))) {
+        return false;
+    }
+    tang_bond_t b;
+    memset(&b, 0, sizeof(b));
+    b.valid = true;
+    b.addr_type = dst->type;
+    memcpy(b.addr, dst->a.val, 6);
+    memcpy(b.name, d->name, sizeof(b.name));
+    b.enc_size = k->enc_size;
+    b.flags = k->flags & (BT_KEYS_AUTHENTICATED | BT_KEYS_SC);
+    b.keys = k->keys & (BT_KEYS_LTK | BT_KEYS_LTK_P256 | BT_KEYS_IRK);
+    memcpy(b.ltk_rand, k->ltk.rand, 8);
+    memcpy(b.ltk_ediv, k->ltk.ediv, 2);
+    memcpy(b.ltk_val, k->ltk.val, 16);
+    memcpy(b.irk_val, k->irk.val, 16);
+    taskENTER_CRITICAL();
+    s_bonds[hid_slot(d)] = b;
+    taskEXIT_CRITICAL();
+    return true;
+}
+
 static void hid_pairing_complete(struct bt_conn *conn, bool bonded)
 {
     hid_dev_t *d = hid_by_conn(conn);
-    if (d) {
-        hid_log(d, "paired (%s)", bonded ? "bonded, in RAM only" : "not bonded");
+    if (!d) {
+        return;
+    }
+    if (bonded && hid_capture_bond(d, conn)) {
+        hid_log(d, "paired (bonded; saving to the card)");
+        ble_signal(BLE_EV_SAVE);
+        ble_arm_later(d);
+    } else {
+        hid_log(d, "paired (%s)", bonded ? "bonded, but no key to keep" : "not bonded");
     }
 }
 
@@ -918,6 +1133,334 @@ static void hid_register_callbacks(void)
     int err = bt_conn_auth_cb_register(&s_auth_cb);
     if (err) {
         tdsh_printf("ble: auth callback registration failed (%d)\r\n", err);
+    }
+}
+
+/* ---- pairings on the card, and reconnecting --------------------------- */
+
+#define BLE_BONDS_DIR  "/sd/ble"
+#define BLE_BONDS_PATH "/sd/ble/bonds.bin"
+
+static const char *volatile s_bonds_state = "not read";
+
+static void bonds_load(void)
+{
+    static FIL f;
+    static uint8_t buf[TANG_BOND_FILE_LEN + 1];
+    tang_bond_t b[TANG_BOND_SLOTS];
+    UINT got = 0;
+
+    if (f_open(&f, BLE_BONDS_PATH, FA_READ) != FR_OK) {
+        s_bonds_state = "none on the card";
+        return;
+    }
+    const FRESULT r = f_read(&f, buf, sizeof(buf), &got);
+    (void)f_close(&f);
+    if (r != FR_OK || tang_bonds_decode(buf, got, b) != 0) {
+        s_bonds_state = "unreadable, ignored";
+        return;
+    }
+    taskENTER_CRITICAL();
+    memcpy(s_bonds, b, sizeof(s_bonds));
+    taskEXIT_CRITICAL();
+    s_bonds_state = "loaded from the card";
+}
+
+static void bonds_save(void)
+{
+    static FIL f;
+    static uint8_t buf[TANG_BOND_FILE_LEN];
+    tang_bond_t b[TANG_BOND_SLOTS];
+
+    taskENTER_CRITICAL();
+    memcpy(b, s_bonds, sizeof(b));
+    taskEXIT_CRITICAL();
+    const size_t n = tang_bonds_encode(b, buf);
+
+    (void)f_mkdir(BLE_BONDS_DIR);              /* FR_EXIST is fine */
+    UINT put = 0;
+    FRESULT r = f_open(&f, BLE_BONDS_PATH, FA_CREATE_ALWAYS | FA_WRITE);
+    if (r == FR_OK) {
+        r = f_write(&f, buf, (UINT)n, &put);
+        const FRESULT c = f_close(&f);
+        if (r == FR_OK) {
+            r = c;
+        }
+    }
+    s_bonds_state = (r == FR_OK && put == n) ? "saved to the card" : "save to the card failed";
+}
+
+static bt_addr_le_t bond_addr(const tang_bond_t *b)
+{
+    bt_addr_le_t a = { .type = b->addr_type };
+    memcpy(a.a.val, b->addr, 6);
+    return a;
+}
+
+/* Put a pairing back into the host's key table, as if the pairing had just
+ * happened, so the next connection encrypts with it instead of pairing. */
+static void hid_restore_keys(int i)
+{
+    tang_bond_t b;
+    taskENTER_CRITICAL();
+    b = s_bonds[i];
+    taskEXIT_CRITICAL();
+    if (!b.valid) {
+        return;
+    }
+    const bt_addr_le_t a = bond_addr(&b);
+    struct bt_keys *k = bt_keys_get_addr(BT_ID_DEFAULT, &a);
+    if (!k) {
+        hid_log(&s_hid[i], "no room in the key table for the pairing");
+        return;
+    }
+    k->enc_size = b.enc_size;
+    k->flags = b.flags;
+    memcpy(k->ltk.rand, b.ltk_rand, 8);
+    memcpy(k->ltk.ediv, b.ltk_ediv, 2);
+    memcpy(k->ltk.val, b.ltk_val, 16);
+    memcpy(k->irk.val, b.irk_val, 16);
+    k->keys |= b.keys;
+}
+
+/* The reconnect initiator.
+ *
+ * This SDK builds the host with CONFIG_BT_WHITELIST, so there is no
+ * per-device auto-connect: there is one initiator, which connects whichever
+ * whitelisted device advertises first and then stops; the whitelist cannot
+ * change while it runs; and it cannot run beside an explicit scan or
+ * connect.  So this keeps the whitelist equal to the paired devices that are
+ * waiting, and starts the initiator again after every connection, every
+ * disconnection and every scan.  The task and the shell both call in, so it
+ * runs under a lock. */
+static SemaphoreHandle_t s_auto_lock;
+static uint8_t s_wl_mask;                  /* slots on the whitelist */
+static volatile bool s_auto_retry;         /* starting it failed: try again */
+
+static void auto_lock(void)
+{
+    if (s_auto_lock) {
+        xSemaphoreTake(s_auto_lock, portMAX_DELAY);
+    }
+}
+
+static void auto_unlock(void)
+{
+    if (s_auto_lock) {
+        xSemaphoreGive(s_auto_lock);
+    }
+}
+
+static bool ble_up(void)
+{
+    return s_start_phase == 2 && s_enable_result == 0;
+}
+
+static void ble_auto_stop(void)
+{
+    if (!ble_up()) {
+        return;
+    }
+    auto_lock();
+    if (s_auto_running) {
+        (void)bt_conn_create_auto_stop();
+        s_auto_running = false;
+    }
+    auto_unlock();
+}
+
+static void ble_auto_resume(void)
+{
+    ble_signal(BLE_EV_ARM);
+}
+
+static void ble_reconnect_update(void)
+{
+    if (!ble_up()) {
+        return;
+    }
+    auto_lock();
+    s_auto_retry = false;
+    bool busy = s_scanning;
+    uint8_t want = 0;
+    for (int i = 0; i < HID_SLOTS; i++) {
+        const hid_dev_t *d = &s_hid[i];
+        if (d->state == HID_CONNECTING && !d->armed) {
+            busy = true;                   /* an explicit connect is pending */
+        }
+        if (d->armed && d->state == HID_WAITING && !d->conn) {
+            want |= (uint8_t)(1u << i);
+        }
+    }
+    if (busy || (s_auto_running && want == s_wl_mask)) {
+        auto_unlock();
+        return;
+    }
+    if (s_auto_running) {
+        (void)bt_conn_create_auto_stop();
+        s_auto_running = false;
+    }
+    (void)bt_le_whitelist_clear();
+    s_wl_mask = 0;
+    for (int i = 0; i < HID_SLOTS; i++) {
+        if ((want & (1u << i)) && bt_le_whitelist_add(&s_hid[i].addr) == 0) {
+            s_wl_mask |= (uint8_t)(1u << i);
+        }
+    }
+    if (s_wl_mask) {
+        const int err = bt_conn_create_auto_le(BT_LE_CONN_PARAM_DEFAULT);
+        if (err == 0 || err == -EALREADY) {
+            s_auto_running = true;
+        } else {
+            s_auto_retry = true;
+        }
+    }
+    auto_unlock();
+}
+
+/* Mark the slot's paired device to be reconnected, from the task or the
+ * shell -- never from a Bluetooth callback, since it issues HCI commands. */
+static void hid_arm(int i)
+{
+    hid_dev_t *d = &s_hid[i];
+    tang_bond_t b;
+    taskENTER_CRITICAL();
+    b = s_bonds[i];
+    taskEXIT_CRITICAL();
+    if (!b.valid) {
+        return;
+    }
+    if (!d->armed) {
+        d->addr = bond_addr(&b);
+        memcpy(d->name, b.name, sizeof(d->name));
+        d->armed = true;
+    }
+    if (!d->conn && d->state == HID_IDLE) {
+        d->state = HID_WAITING;
+    }
+    ble_reconnect_update();
+}
+
+/* Stop reconnecting and let the device go, keeping its pairing. */
+static void hid_off(hid_dev_t *d)
+{
+    d->armed = false;
+    if (!d->conn) {
+        d->state = HID_IDLE;
+        hid_clear_input(d);
+        ble_reconnect_update();            /* off the whitelist */
+        return;
+    }
+    int err = bt_conn_disconnect(d->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+    if (err) {
+        tdsh_printf("%s: disconnect failed (%d)\r\n", d->cmd, err);
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+}
+
+/* Let the device go and delete its pairing from the host and the card. */
+static void hid_forget(hid_dev_t *d)
+{
+    const int i = hid_slot(d);
+    hid_off(d);
+    tang_bond_t b;
+    taskENTER_CRITICAL();
+    b = s_bonds[i];
+    memset(&s_bonds[i], 0, sizeof(s_bonds[i]));
+    taskEXIT_CRITICAL();
+    if (!b.valid) {
+        return;
+    }
+    if (ble_up()) {
+        const bt_addr_le_t a = bond_addr(&b);
+        (void)bt_unpair(BT_ID_DEFAULT, &a);
+    }
+    d->name[0] = '\0';
+    ble_signal(BLE_EV_SAVE);
+}
+
+/* At boot: read the pairings, and if there are any, start the stack quietly,
+ * put the keys back and wait for the devices.  Run after the boot script, so
+ * the radio is not starting while a core is being programmed. */
+static void ble_boot(void)
+{
+    bonds_load();
+    bool any = false;
+    for (int i = 0; i < HID_SLOTS; i++) {
+        any = any || s_bonds[i].valid;
+    }
+    if (!any || ble_start_ex(false) != 0) {
+        return;
+    }
+    for (int i = 0; i < HID_SLOTS; i++) {
+        hid_restore_keys(i);
+        hid_arm(i);
+    }
+}
+
+static void ble_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        uint32_t ev = 0;
+        const TickType_t wait = s_auto_retry ? pdMS_TO_TICKS(BLE_RETRY_MS) : portMAX_DELAY;
+        if (xTaskNotifyWait(0, 0xFFFFFFFFu, &ev, wait) != pdTRUE) {
+            ble_reconnect_update();        /* the retry */
+            continue;
+        }
+        if (ev & BLE_EV_BOOT) {
+            ble_boot();
+        }
+        if (ev & BLE_EV_SAVE) {
+            bonds_save();
+        }
+        if (ev & BLE_EV_ARM) {
+            /* A short pause, so a device that keeps failing to connect is
+             * retried at a walk rather than in a tight loop. */
+            vTaskDelay(pdMS_TO_TICKS(BLE_REARM_MS));
+            taskENTER_CRITICAL();
+            const uint8_t m = s_arm_pending;
+            s_arm_pending = 0;
+            taskEXIT_CRITICAL();
+            for (int i = 0; i < HID_SLOTS; i++) {
+                if (m & (1u << i)) {
+                    hid_arm(i);
+                }
+            }
+            ble_reconnect_update();
+        }
+    }
+}
+
+static bool ble_task_start(void)
+{
+    if (!s_auto_lock) {
+        s_auto_lock = xSemaphoreCreateMutex();
+    }
+    if (!s_ble_task) {
+        if (xTaskCreate(ble_task, "ble", 2048, NULL, 3, &s_ble_task) != pdPASS) {
+            s_ble_task = NULL;
+        }
+    }
+    return s_ble_task != NULL;
+}
+
+static void ble_signal(uint32_t ev)
+{
+    if (s_ble_task) {
+        (void)xTaskNotify(s_ble_task, ev, eSetBits);
+    }
+}
+
+void tang_ble_boot(void)
+{
+    static bool done;
+    if (done) {
+        return;
+    }
+    done = true;
+    if (ble_task_start()) {
+        ble_signal(BLE_EV_BOOT);
     }
 }
 
@@ -984,26 +1527,179 @@ bool tang_ble_mouse(tang_mouse_t *out)
 
 static int hid_usage(const hid_dev_t *d)
 {
-    tdsh_printf("usage: %s <AA:BB:CC:DD:EE:FF> [pub|rand] [seconds]\r\n"
-                "       %s watch [seconds]\r\n"
-                "       %s off\r\n"
-                "       %s            (status)\r\n",
-                d->cmd, d->cmd, d->cmd, d->cmd);
+    tdsh_printf("usage: %s pair [name]       pair the strongest one advertising (or by name)\r\n"
+                "       %s <AA:BB:CC:DD:EE:FF> [pub|rand] [seconds]\r\n"
+                "       %s watch [seconds]   print its reports\r\n"
+                "       %s off | on          stop / resume reconnecting (pairing kept)\r\n"
+                "       %s forget            delete the pairing from the board and the card\r\n"
+                "       %s                   status\r\n",
+                d->cmd, d->cmd, d->cmd, d->cmd, d->cmd, d->cmd);
     return 1;
+}
+
+static void hid_status(const hid_dev_t *d)
+{
+    tang_bond_t b;
+    taskENTER_CRITICAL();
+    b = s_bonds[hid_slot(d)];
+    taskEXIT_CRITICAL();
+
+    tdsh_printf("%s: %s", d->cmd, s_state_names[d->state]);
+    if (d->state != HID_IDLE) {
+        tdsh_printf(", %02X:%02X:%02X:%02X:%02X:%02X", d->addr.a.val[5], d->addr.a.val[4],
+                    d->addr.a.val[3], d->addr.a.val[2], d->addr.a.val[1], d->addr.a.val[0]);
+        if (d->name[0]) {
+            tdsh_printf(" %s", d->name);
+        }
+    }
+    if (d->state == HID_READY) {
+        tdsh_printf(", %s protocol", d->boot ? "boot" : "report");
+    }
+    tdsh_printf(", %lu report(s)", (unsigned long)d->reports);
+    if (b.valid) {
+        tdsh_printf("; paired with %02X:%02X:%02X:%02X:%02X:%02X%s%s%s\r\n",
+                    b.addr[5], b.addr[4], b.addr[3], b.addr[2], b.addr[1], b.addr[0],
+                    b.name[0] ? " " : "", b.name,
+                    d->armed ? ", reconnects by itself" : ", not reconnecting (`on`)");
+    } else {
+        tdsh_printf("; not paired\r\n");
+    }
+}
+
+static bool name_has(const char *name, const char *part)
+{
+    const size_t n = strlen(part);
+    for (const char *p = name; *p; p++) {
+        size_t i = 0;
+        while (i < n && p[i] &&
+               (p[i] | 0x20) == (part[i] | 0x20)) {
+            i++;
+        }
+        if (i == n) {
+            return true;
+        }
+    }
+    return n == 0;
+}
+
+/* Connect to `addr` and pair, into slot `d`, replacing any pairing it had. */
+static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name, int secs)
+{
+    if (d->conn && !d->armed) {
+        tdsh_printf("%s: already %s; use '%s off' first\r\n", d->cmd,
+                    s_state_names[d->state], d->cmd);
+        return 1;
+    }
+    for (int i = 0; i < HID_SLOTS; i++) {
+        const hid_dev_t *o = &s_hid[i];
+        if (o == d || !o->conn) {
+            continue;
+        }
+        if (o->state != HID_READY && o->state != HID_WAITING) {
+            tdsh_printf("%s: %s is still %s; wait for it to be ready\r\n",
+                        d->cmd, o->cmd, s_state_names[o->state]);
+            return 1;
+        }
+        if (bt_addr_le_cmp(&o->addr, addr) == 0) {
+            tdsh_printf("%s: that device is %s's\r\n", d->cmd, o->cmd);
+            return 1;
+        }
+    }
+    if (ble_start() != 0) {
+        return 1;
+    }
+
+    /* One device per slot: whatever this slot had paired is let go. */
+    hid_forget(d);
+
+    d->addr = *addr;
+    d->boot = false;
+    d->boot_value_handle = 0;
+    memset(d->name, 0, sizeof(d->name));
+    if (name) {
+        strncpy(d->name, name, sizeof(d->name) - 1);
+    }
+    hid_clear_input(d);
+    d->state = HID_CONNECTING;             /* holds the initiator off */
+    ble_auto_stop();
+    d->conn = bt_conn_create_le(addr, BT_LE_CONN_PARAM_DEFAULT);
+    if (!d->conn) {
+        d->state = HID_IDLE;
+        ble_auto_resume();
+        tdsh_printf("%s: could not start connection\r\n", d->cmd);
+        return 1;
+    }
+    char text[18];
+    snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X",
+             addr->a.val[5], addr->a.val[4], addr->a.val[3],
+             addr->a.val[2], addr->a.val[1], addr->a.val[0]);
+    tdsh_printf("%s: connecting to %s (%s)%s%s\r\n", d->cmd, text,
+                addr->type == BT_ADDR_LE_PUBLIC ? "pub" : "rand",
+                d->name[0] ? " " : "", d->name);
+    hid_watch(d, secs);
+    return 0;
+}
+
+#define HID_PAIR_SCAN_SECS 8
+#define HID_PAIR_WATCH_SECS 8
+
+static int hid_pair(hid_dev_t *d, const char *part)
+{
+    if (ble_start() != 0) {
+        return 1;
+    }
+    const char *kind = d->appearance == BLE_APPEARANCE_KEYBOARD ? "keyboard" : "mouse";
+    if (part) {
+        tdsh_printf("%s: looking for \"%s\" for %d s...\r\n", d->cmd, part, HID_PAIR_SCAN_SECS);
+    } else {
+        tdsh_printf("%s: looking for a %s in pairing mode for %d s...\r\n", d->cmd, kind,
+                    HID_PAIR_SCAN_SECS);
+    }
+    unsigned count, dropped;
+    uint32_t reports;
+    if (ble_scan(HID_PAIR_SCAN_SECS, &count, &dropped, &reports) != 0) {
+        return 1;
+    }
+    const ble_device_t *pick = NULL;
+    for (unsigned i = 0; i < count && !pick; i++) {
+        const ble_device_t *c = &s_snap[i];
+        if (part ? !name_has(c->name, part) : c->appearance != d->appearance) {
+            continue;
+        }
+        bool taken = false;
+        for (int j = 0; j < HID_SLOTS; j++) {
+            taken = taken || (&s_hid[j] != d && s_hid[j].conn &&
+                              bt_addr_le_cmp(&s_hid[j].addr, &c->addr) == 0);
+        }
+        if (!taken) {
+            pick = c;
+        }
+    }
+    if (!pick) {
+        tdsh_printf("%s: none found; is it in pairing mode and near the board?\r\n", d->cmd);
+        for (unsigned i = 0; i < count; i++) {
+            const ble_device_t *c = &s_snap[i];
+            if (c->hid || c->appearance) {
+                tdsh_printf("  seen: %s %s (%d dBm)\r\n", ble_kind(c),
+                            c->name[0] ? c->name : "-", c->rssi_max);
+            }
+        }
+        if (!part) {
+            tdsh_printf("  a device that does not advertise as a %s can be paired by name: "
+                        "%s pair <name>\r\n", kind, d->cmd);
+        }
+        return 1;
+    }
+    tdsh_printf("%s: found %s (%d dBm)\r\n", d->cmd, pick->name[0] ? pick->name : "-",
+                pick->rssi_max);
+    return hid_connect(d, &pick->addr, pick->name, HID_PAIR_WATCH_SECS);
 }
 
 static int hid_command(hid_dev_t *d, int argc, char **argv)
 {
     if (argc < 2) {
         log_drain();
-        tdsh_printf("%s: %s", d->cmd, s_state_names[d->state]);
-        if (d->state != HID_IDLE) {
-            tdsh_printf(", %02X:%02X:%02X:%02X:%02X:%02X, %s protocol",
-                        d->addr.a.val[5], d->addr.a.val[4], d->addr.a.val[3],
-                        d->addr.a.val[2], d->addr.a.val[1], d->addr.a.val[0],
-                        d->boot ? "boot" : "report");
-        }
-        tdsh_printf(", %lu report(s)\r\n", (unsigned long)d->reports);
+        hid_status(d);
         return 0;
     }
 
@@ -1016,18 +1712,38 @@ static int hid_command(hid_dev_t *d, int argc, char **argv)
         return 0;
     }
 
+    if (strcmp(argv[1], "pair") == 0) {
+        return hid_pair(d, argc >= 3 ? argv[2] : NULL);
+    }
+
     if (strcmp(argv[1], "off") == 0) {
-        if (!d->conn) {
+        if (!d->conn && !d->armed) {
             tdsh_printf("%s: not connected\r\n", d->cmd);
             return 0;
         }
-        int err = bt_conn_disconnect(d->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-        if (err) {
-            tdsh_printf("%s: disconnect failed (%d)\r\n", d->cmd, err);
+        hid_off(d);
+        log_drain();
+        return 0;
+    }
+
+    if (strcmp(argv[1], "on") == 0) {
+        if (!s_bonds[hid_slot(d)].valid) {
+            tdsh_printf("%s: not paired; use '%s pair'\r\n", d->cmd, d->cmd);
             return 1;
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        if (ble_start() != 0) {
+            return 1;
+        }
+        hid_restore_keys(hid_slot(d));
+        hid_arm(hid_slot(d));
+        hid_status(d);
+        return 0;
+    }
+
+    if (strcmp(argv[1], "forget") == 0) {
+        hid_forget(d);
         log_drain();
+        tdsh_printf("%s: pairing deleted\r\n", d->cmd);
         return 0;
     }
 
@@ -1048,46 +1764,43 @@ static int hid_command(hid_dev_t *d, int argc, char **argv)
             }
         }
     }
-
-    if (d->conn) {
-        tdsh_printf("%s: already %s; use '%s off' first\r\n", d->cmd,
-                    s_state_names[d->state], d->cmd);
-        return 1;
+    /* The name, if the last scan saw this address. */
+    const char *name = NULL;
+    for (unsigned i = 0; i < BLE_MAX_DEVICES && !name; i++) {
+        if (s_snap[i].seen && bt_addr_le_cmp(&s_snap[i].addr, &addr) == 0 && s_snap[i].name[0]) {
+            name = s_snap[i].name;
+        }
     }
+    return hid_connect(d, &addr, name, secs);
+}
+
+static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    (void)argc;
+    (void)argv;
+    log_drain();
+    if (s_start_phase == 0) {
+        tdsh_printf("ble: radio off (it starts at boot when a device is paired, "
+                    "or on the first Bluetooth command)\r\n");
+    } else if (s_start_phase == 1) {
+        tdsh_printf("ble: radio starting\r\n");
+    } else if (s_enable_result != 0) {
+        tdsh_printf("ble: radio failed to start (%d)\r\n", s_enable_result);
+    } else {
+        tdsh_printf("ble: radio up\r\n");
+    }
+    tdsh_printf("ble: heap %lu bytes free of %lu", (unsigned long)kfree_size(),
+                (unsigned long)g_kmemheap.heapsize);
+    if (s_start_phase == 2 && s_enable_result == 0) {
+        tdsh_printf("; the stack took %lu at start (%lu free before, %lu after)",
+                    (unsigned long)(s_heap_before - s_heap_after),
+                    (unsigned long)s_heap_before, (unsigned long)s_heap_after);
+    }
+    tdsh_printf("\r\nble: pairings %s (%s)\r\n", s_bonds_state, BLE_BONDS_PATH);
     for (int i = 0; i < HID_SLOTS; i++) {
-        const hid_dev_t *o = &s_hid[i];
-        if (o == d || !o->conn) {
-            continue;
-        }
-        if (o->state != HID_READY) {
-            tdsh_printf("%s: %s is still %s; wait for it to be ready\r\n",
-                        d->cmd, o->cmd, s_state_names[o->state]);
-            return 1;
-        }
-        if (bt_addr_le_cmp(&o->addr, &addr) == 0) {
-            tdsh_printf("%s: that device is already connected as %s\r\n",
-                        d->cmd, o->cmd);
-            return 1;
-        }
+        hid_status(&s_hid[i]);
     }
-    if (ble_start() != 0) {
-        return 1;
-    }
-
-    d->addr = addr;
-    d->boot = false;
-    d->boot_value_handle = 0;
-    hid_clear_input(d);
-    d->state = HID_CONNECTING;
-    d->conn = bt_conn_create_le(&addr, BT_LE_CONN_PARAM_DEFAULT);
-    if (!d->conn) {
-        d->state = HID_IDLE;
-        tdsh_printf("%s: could not start connection\r\n", d->cmd);
-        return 1;
-    }
-    tdsh_printf("%s: connecting to %s (%s)\r\n", d->cmd, argv[1],
-                addr.type == BT_ADDR_LE_PUBLIC ? "pub" : "rand");
-    hid_watch(d, secs);
     return 0;
 }
 
@@ -1104,14 +1817,17 @@ static int cmd_blemouse(tdsh_session_t *session, int argc, char **argv)
 }
 
 static const tdsh_command_t s_ble_commands[] = {
+    { "ble", "ble",
+      "Bluetooth status: the radio, the heap, the pairings and both devices",
+      cmd_ble, 0 },
     { "blescan", "blescan [seconds]",
       "Listen for Bluetooth LE devices and list them by signal strength (dBm)",
       cmd_blescan, 0 },
-    { "blekbd", "blekbd <addr> [pub|rand] [seconds] | watch [seconds] | off",
-      "Connect a Bluetooth LE keyboard as an input; watch prints its key reports",
+    { "blekbd", "blekbd pair [name] | <addr> | watch | off | on | forget",
+      "Pair a Bluetooth LE keyboard as an input; it reconnects by itself after that",
       cmd_blekbd, 0 },
-    { "blemouse", "blemouse <addr> [pub|rand] [seconds] | watch [seconds] | off",
-      "Connect a Bluetooth LE mouse as the desktop's pointer; watch prints its reports",
+    { "blemouse", "blemouse pair [name] | <addr> | watch | off | on | forget",
+      "Pair a Bluetooth LE mouse as the desktop's pointer; it reconnects by itself after that",
       cmd_blemouse, 0 },
 };
 

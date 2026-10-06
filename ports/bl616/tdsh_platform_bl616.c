@@ -6,6 +6,7 @@
 // own porting document asks for.
 
 #include "tdsh_bl616.h"
+#include "tang_ble.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -502,6 +503,10 @@ int tdsh_bl616_run_until(volatile const bool *stop)
         "A Tang core booted from the board. Type 'help' for commands.\r\n\r\n";
     (void)bl616_terminal_write_bytes(NULL, banner, sizeof(banner) - 1);
     run_boot_script();
+    /* Bluetooth devices paired before the reset reconnect from here on.
+     * After the boot script, so the radio is not starting while a core is
+     * being programmed; once only, like the script. */
+    tang_ble_boot();
 
     for (;;) {
         if (stop && *stop) {

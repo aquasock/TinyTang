@@ -101,27 +101,33 @@ is called out in the source where it is used.
   page, the one nand2mario's menu uses. The menu core does not build that page.
 - **`blescan [seconds]`** starts the BL616's own Bluetooth LE radio and lists
   the devices advertising nearby, strongest first, with address, address type,
-  signal (dBm) and name. The radio is started by the first Bluetooth command,
-  not at boot, and stays up until reset.
-- **`blekbd <address> [pub|rand] [seconds]`** connects a Bluetooth LE
-  keyboard (HID over GATT) as an input: it pairs with Just Works, switches the
-  keyboard to boot protocol -- the same 8-byte report the wired keyboard link
-  carries -- and prints its reports for `seconds`. The keyboard stays connected
-  afterwards and types at the console and in the desktop exactly as the wired
-  one does, with F12 and left-alt pointer mode (see *A keyboard* above).
-  `blekbd watch [seconds]` prints the reports again, `blekbd off` disconnects
-  and `blekbd` alone reports the state. Proven with a Logitech K950 (from the
-  MK955 set) in Bluetooth mode. The address comes from `blescan`; the K950's
-  changes every time it enters pairing mode. Pairing is kept in RAM only, so
-  after a reset the keyboard must be put back in pairing mode and connected
-  again. Only Bluetooth LE devices work: the SDK has no Bluetooth Classic HID
-  host.
-- **`blemouse <address> [pub|rand] [seconds]`** does the same for a Bluetooth
-  LE mouse, on its own connection beside the keyboard: boot protocol, whose
-  report is buttons, X, Y and (if the mouse adds it) the wheel, and the mouse
-  then drives the desktop's pointer. It has the same `watch`, `off` and status
-  forms. Proven with a Logitech M750. Connect one device at a time: a second
-  connection is refused until the first is ready.
+  signal (dBm), kind (`kbd` or `mouse` from the advertised appearance, `hid`
+  for the HID service alone) and name. The radio starts at boot when a device
+  is paired, otherwise on the first Bluetooth command, and stays up until
+  reset.
+- **`blekbd pair [name]`** pairs a Bluetooth LE keyboard (HID over GATT) as an
+  input: it listens for 8 s, picks the strongest device advertising as a
+  keyboard (or whose name contains `name`), pairs with Just Works and switches
+  it to boot protocol -- the same 8-byte report the wired keyboard link
+  carries. The keyboard types at the console and in the desktop exactly as the
+  wired one does, with F12 and left-alt pointer mode (see *A keyboard* above).
+  **The pairing is saved to the card** (`/sd/ble/bonds.bin`), so after a
+  reset, or when the keyboard wanders out of range and back, it reconnects by
+  itself as soon as it is woken; pairing mode is needed only the first time.
+  `blekbd off` and `blekbd on` stop and resume reconnecting, `blekbd forget`
+  deletes the pairing, `blekbd watch [seconds]` prints the reports,
+  `blekbd <address> [pub|rand] [seconds]` pairs a given address, and `blekbd`
+  alone reports the state. Proven with a Logitech K950 (from the MK955 set) in
+  Bluetooth mode. Only Bluetooth LE devices work: the SDK has no Bluetooth
+  Classic HID host. The keys are stored unencrypted on the card.
+- **`blemouse pair [name]`** does the same for a Bluetooth LE mouse, on its own
+  connection beside the keyboard: boot protocol, whose report is buttons, X, Y
+  and (if the mouse adds it) the wheel, and the mouse then drives the
+  desktop's pointer. It has the same `off`, `on`, `forget`, `watch`, address
+  and status forms. Proven with a Logitech M750. Pair one device at a time: a
+  second is refused until the first is ready.
+- **`ble`** reports the radio, the heap (free now, and what the stack took when
+  it started), the pairings file and both devices.
 - **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
@@ -286,8 +292,10 @@ STM32's own DFU bootloader.
     in `phosphor_track.h`), the `phosphor` command, and the desktop's
     Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
     helpers in `phosphor_media.h`).
-  - `tang_ble.c` — Bluetooth LE: `blescan`, and `blekbd` and `blemouse`, the
-    HID-over-GATT client with one keyboard slot and one mouse slot.
+  - `tang_ble.c` — Bluetooth LE: `blescan`, `ble`, and `blekbd` and
+    `blemouse`, the HID-over-GATT client with one keyboard slot and one mouse
+    slot, which saves pairings to the card and reconnects them through the
+    controller's whitelist; `tang_ble_bonds.c` is the pairing file's format.
     `tang_osd_desk.c` types the keyboard's boot report like the wired link's,
     with left-alt pointer mode applied by `tang_key_pointer()`, and hands the
     mouse's movement, buttons and wheel to `tang_pad_pointer()`.

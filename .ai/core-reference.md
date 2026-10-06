@@ -165,6 +165,9 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does a Bluetooth keyboard need its own liveness rule and its own pointer mode? | BLE | BLE-008 |
 | What does the Logitech M750 mouse expose over Bluetooth LE? | BLE | BLE-009 |
 | Why does a GATT subscribe fail with -EALREADY after a bonded device reconnects? | BLE | BLE-010 |
+| How does the host reconnect a paired device, and why is there no bt_le_set_auto_conn? | BLE | BLE-011 |
+| Where are Bluetooth pairings kept, and how do devices come back after a reset? | BLE | BLE-012 |
+| How much heap does the running Bluetooth stack take? | BLE | BLE-013 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -358,6 +361,9 @@ BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic
 BLE-008: "A BLE keyboard notifies only when its key state changes, with no heartbeat, so it counts as live while connected and is zeroed on disconnect; its reports bypass the core, so left-alt pointer mode is applied in firmware by tang_key_pointer()"
 BLE-009: "Logitech M750 over BLE: random address that increases by one per pairing, Just Works, Boot Mouse Input at value handle 0x23 (CCC 0x24), Protocol Mode 0x35; its boot report is 4 bytes with the wheel in byte 3, and its 7-byte report-protocol report is 16-bit buttons, 12-bit X and Y packed in 3 bytes, wheel and pan"
 BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect unless BT_GATT_SUBSCRIBE_FLAG_VOLATILE is set, and re-sends them on reconnect; reusing those params structs for a new subscription rewrites a node still in its list and returns -EALREADY"
+BLE-011: "This SDK's config.h defines CONFIG_BT_WHITELIST, which compiles out bt_le_set_auto_conn and the host's reconnect-after-disconnect; reconnection is one whitelist initiator (bt_conn_create_auto_le) that connects the first whitelisted device to advertise and stops, cannot run beside an explicit scan or connect, and needs the whitelist unchanged while it runs"
+BLE-012: "Pairings are kept on the SD card in /sd/ble/bonds.bin (tang_ble_bonds.c format, keys unencrypted) and put back into the host's key table at boot; the K950 and M750 then reconnect when woken, but the first encryption attempt after a disconnect often fails (level 1, error 8, then HCI 0x3E) and a retry succeeds"
+BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect"
 ```
 
 ---
@@ -1963,6 +1969,45 @@ BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect un
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/gatt.c: remove_subscriptions(), bt_gatt_subscribe()"
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: BT_GATT_SUBSCRIBE_FLAG_VOLATILE"
   verification: "On 2026-10-05, without the flag, the M750's re-pairing after a dropout logged 'subscribe 0x002C failed (-120)', and its failed reconnect showed the host completing a CCC write nobody had issued. With the flag the next pairing subscribed all three inputs (core-log entry 32)."
+
+- record_id: BLE-011
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Reconnection in this SDK is the whitelist initiator only"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "blestack/src/port/include/config.h defines CONFIG_BT_WHITELIST 1 unless it is already defined. In host/conn.c bt_le_set_auto_conn() is compiled only under !CONFIG_BT_WHITELIST, and in host/hci_core.c so is the disconnect path that puts an auto-connect object back to scanning; a build that calls bt_le_set_auto_conn() fails to link. What remains is bt_le_whitelist_add(), _rem() and _clear(), and bt_conn_create_auto_le(), which starts the controller's initiator with the whitelist filter policy. It returns -EINVAL during an explicit scan (BT_DEV_EXPLICIT_SCAN), while another connection is being made or with an empty whitelist, and -EALREADY while it is already running (BT_DEV_AUTO_CONN). When it connects a device, enh_conn_complete() clears BT_DEV_AUTO_CONN, so it stops after one connection; bt_conn_create_auto_stop() cancels it; and bt_conn_create_le() returns NULL while it runs."
+  consequence: "ports/bl616/tang_ble.c keeps the whitelist equal to the paired devices that are waiting and restarts the initiator after every connection, disconnection and scan (ble_reconnect_update), under a lock because the shell and the background task both call it. It stops the initiator before blescan, pair and an explicit connect, and retries a failed start every second. A reconnection arrives on a connection object the host made itself, which hid_by_conn() matches to its slot by address."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/port/include/config.h: CONFIG_BT_WHITELIST"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/conn.c: bt_conn_create_auto_le(), bt_le_set_auto_conn(), bt_conn_create_le(); host/hci_core.c: enh_conn_complete(), hci_disconn_complete()"
+  verification: "The first build of entry 33 failed to link on bt_le_set_auto_conn. With the whitelist initiator the K950 and M750 reconnected after a power cycle and after going out of range, and three off/on cycles of the M750 each reconnected (core-log entry 33)."
+
+- record_id: BLE-012
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Pairings are kept on the SD card"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "With CONFIG_BT_SETTINGS 0 the host keeps no keys across a reset (BLE-002), and its settings backend (host/settings.c) stores through easyflash, which needs a key-value partition this board's flash layout does not have (FLS-002). The host's key table is reachable instead: bt_keys_find_addr() after pairing_complete gives the device's entry, and bt_keys_get_addr() at boot makes one that can be filled with the saved LTK (legacy or LE Secure Connections), IRK, flags and key size, after which a connection encrypts with it without pairing. Both the K950 and the M750 accepted that. On a reconnect, with the device near the board, the first encryption attempt often fails with security level 1, error 8 and then a disconnect with HCI 0x3E, and a following attempt succeeds: seen on the M750 at the gate check, where the second try encrypted, and on the K950 after the power cycle, where the third did."
+  consequence: "tang_ble.c captures the entry on pairing_complete into a record per slot, and the background task writes /sd/ble/bonds.bin (format in ports/bl616/tang_ble_bonds.h: magic, version, two 80-byte records, CRC-32; a damaged file means no pairings), reads it after the boot script, starts the stack quietly, restores the keys and puts the devices on the reconnect whitelist (BLE-011). The keys are stored unencrypted, so whoever holds the card can impersonate the board to those devices. Because a failed first attempt goes back to waiting, the retry needs no special handling."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/keys.h: struct bt_keys, bt_keys_find_addr(), bt_keys_get_addr(); host/settings.c: easyflash backend"
+    - "This project's ports/bl616/tang_ble.c, hid_capture_bond() and hid_restore_keys(); ports/bl616/tang_ble_bonds.c"
+  verification: "tools/tests/test_bonds.sh checks the file format (15 checks). On 2026-10-05 the user paired both devices once with blemouse pair and blekbd pair, power-cycled the board without pairing mode and woke them, and both reconnected; the user also saw one go out of range and come back (core-log entry 33)."
+
+- record_id: BLE-013
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Heap taken by the running Bluetooth stack"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "This SDK builds FreeRTOS with heap_3, so heap use is read from its own allocator, kfree_size() and g_kmemheap.heapsize in components/mm/mem.h. In firmware 1cea7b9-dirty.a296b3b the heap is 127,248 B; starting the Bluetooth stack took it from 84,120 B free to 68,292 B, 15,828 B; with the M750 connected 67,592 B were free. After a desktop session with both devices connected 41,764 B were free, 42,464 B with the mouse disconnected, and three off/on cycles of the mouse returned to 41,764 B each time."
+  consequence: "Bluetooth costs about 16 KB of heap at run time on top of the static cost BLE-002 recorded, and about 700 B per connection. Reconnecting does not leak. The `ble` command reports these figures. There is no lowest-ever counter in this allocator, so a transient peak is not measured."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/mm/mem.h and mem.c: kfree_size(); components/os/freertos/CMakeLists.txt: heap_3.c"
+    - "This project's ports/bl616/tang_ble.c, ble_start_ex() and cmd_ble()"
+  verification: "Read from the board with `ble` on 2026-10-05 (core-log entry 33)."
 ```
 
 ---
