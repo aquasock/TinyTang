@@ -1212,3 +1212,33 @@ The discovery stall when both devices reconnect at the same moment is the next f
 - User Test: PASS
 
 ---
+
+## 36 COMMIT Unreleased 2026-10-06T00:45:52-07:00
+
+#### Coming From:
+
+Unreleased 4240cef
+
+#### Purpose:
+
+Hand the project over to the next agent with the board's state, the fault the user reported after entry 35 and the evidence still needed to diagnose it.
+
+#### Outcome:
+
+After entry 35 the user reported that cartridge scripts no longer boot their cores: the script is started, the TinyDesk Terminal comes up and nothing else happens, and F12 shows the menu core still running, so no `tangload` ran. That was from the desktop; whether the script was opened from the Files app or typed as `tdsh run` in the Terminal window, and whether the Terminal printed anything, was asked and not yet answered. The leading hypothesis, unconfirmed, is memory inside the desktop: since entry 35 a refused allocation returns NULL instead of freezing, and `tdsh run` then prints `tdsh: failed to start script worker` and returns, which is exactly a script that does nothing; the script task now needs 16 KB of stack plus its job and cloned session, while the desktop holds a large part of a heap that the Bluetooth stack and two connections already reduce to about 64.7 KB free with a 40.5 KB largest block at the console (`BLE-014`). All of entry 35's passing runs were from the console, never from inside the desktop, so this path was untested. An attempt to read the evidence at the close found the board off USB, with neither the CDC console nor the FT2232 present, so nothing was gathered. The live state for the next agent is this. The repository is at `4240cef`, clean and pushed. The board runs firmware `287391a-dirty.8ca7103` (617,552 bytes, MD5 `43e4acabe127630128e6e5230edefc54`), whose source is `4240cef` apart from `README.md`. The card holds `/sd/ble/bonds.bin` with the K950 at `DB:88:A7:81:D9:D9` and the M750 at `D6:86:9C:53:2B:5C`, which reconnect by themselves after a power cycle once woken, and `/sd/crash.log` with the deliberate trap and spin test records from entry 34. The crash recorder is active: a board found as the FT2232 has reset itself, and after a power cycle `crash` or `/sd/crash.log` says why, or nothing if interrupts were held off (`BL6-008`, `FLS-003`). Every host tool still refuses to send unless the status probe answers 1 (`TOOL-011`), so the desktop must be exited before anything is sent. No file changed in this cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry alone, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 36 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Power the board in two-wire, let both devices reconnect, reproduce the fault from the desktop, exit to the console, and read `crash` and `ble`: a non-zero refusal count with the last request sized near 16 KB or the job's size in task `tdsh` confirms the memory hypothesis, and the user's answer to how the script was started and what the Terminal printed narrows the path. If confirmed, the candidates are, in order of preference: run a foreground script on the calling shell task when its worker cannot be created, since that task already has a 16 KB stack (`td_bridge_bl616.c`, `SHELL_TASK_WORDS` 4096) and the script used 10,728 bytes (`BL6-009`); lower the worker stack towards 12 KB with the high-water mark as the guide; and measure what the desktop itself holds. After that, the discovery stall when both devices reconnect at the same moment (entries 34 and 35) remains, and the open items from entry 28 stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
