@@ -23,6 +23,7 @@
 // and 0x64, a CRC-32 of the first 252 bytes at 0xFC, and a body length at
 // 0x84 that counts bytes after the 4 KiB header region.
 
+#include "tang_crash.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
 
@@ -278,6 +279,9 @@ static int cmd_tangflash(tdsh_session_t *session, int argc, char **argv)
      * the new image (FLS-001), so the user has to power-cycle the board. */
     tdsh_printf("tangflash: OK committing; power-cycle the board to run the new firmware\r\n");
     vTaskDelay(pdMS_TO_TICKS(80));   /* let the message reach the host */
+    /* The commit runs with interrupts off for longer than the watchdog's
+     * timeout; a reset in the middle of it would leave no application. */
+    tang_crash_suspend();
     commit_staged_image(image_size);
     return 0;
 }

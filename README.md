@@ -128,6 +128,15 @@ is called out in the source where it is used.
   second is refused until the first is ready.
 - **`ble`** reports the radio, the heap (free now, and what the stack took when
   it started), the pairings file and both devices.
+- **`crash`** shows how the previous run ended if it crashed or hung, and
+  `crash test trap | spin | hang` causes each kind on purpose. A hardware
+  watchdog resets the board 4 s after it stops being fed; an exception, a
+  FreeRTOS assert, a stack overflow, a Bluetooth controller fatal error or a
+  task that never yields is recorded first, with the task, the PC and the last
+  32 samples of what was running, in the flash's last sector. The board then
+  comes back as the FT2232 (a warm reset always does), and after the power
+  cycle TinyTang prints the record at boot, appends it to `/sd/crash.log` and
+  clears it. A hang with interrupts held off leaves no record.
 - **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
@@ -292,6 +301,8 @@ STM32's own DFU bootloader.
     in `phosphor_track.h`), the `phosphor` command, and the desktop's
     Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
     helpers in `phosphor_media.h`).
+  - `tang_crash.c` — the crash and hang recorder: the watchdog, the wrapped
+    exception handler and controller exit, and `crash`.
   - `tang_ble.c` — Bluetooth LE: `blescan`, `ble`, and `blekbd` and
     `blemouse`, the HID-over-GATT client with one keyboard slot and one mouse
     slot, which saves pairings to the card and reconnects them through the

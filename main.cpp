@@ -14,6 +14,7 @@ extern "C" {
 #include "bflb_mtimer.h"
 
 #include "tdsh_bl616.h"
+#include "tang_crash.h"
 }
 
 // 16 KB of stack for the shell task: the line editor, the parser and uScript
@@ -48,6 +49,10 @@ int main(void)
 {
     board_init();
 
+    // First: take the previous run's crash or hang record aside before
+    // anything can overwrite it (ports/bl616/tang_crash.h).
+    tang_crash_init();
+
     // USB comes up first, before any storage work: the stack registers its
     // endpoints and its event handler here, and enumeration then proceeds
     // independently of anything that follows.  Card probing is deliberately
@@ -69,6 +74,8 @@ int main(void)
 #else
     xTaskCreate(shell_task, "shell", SHELL_TASK_STACK_WORDS, NULL,
                 SHELL_TASK_PRIORITY, NULL);
+    // The watchdog and its heartbeat; the watchdog arms when its task runs.
+    tang_crash_start();
 
     vTaskStartScheduler();
 #endif

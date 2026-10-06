@@ -7,6 +7,7 @@
 
 #include "tdsh_bl616.h"
 #include "tang_ble.h"
+#include "tang_crash.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -382,6 +383,9 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_ble_register();
     if (rc) return rc;
 
+    rc = tang_crash_register();
+    if (rc) return rc;
+
     rc = tdsh_session_init(&s_session, "root", true);
     if (rc) return rc;
     s_session.terminal_caps = TDSH_TERM_CAP_ANSI | TDSH_TERM_CAP_COLOR;
@@ -502,6 +506,9 @@ int tdsh_bl616_run_until(volatile const bool *stop)
         "\r\n\033[1;36mTinyTang\033[0m " TINYTANG_BUILD_ID " — TinyDesk Shell " TDSH_VERSION "\r\n"
         "A Tang core booted from the board. Type 'help' for commands.\r\n\r\n";
     (void)bl616_terminal_write_bytes(NULL, banner, sizeof(banner) - 1);
+    /* How the previous run ended, if it crashed or hung: first on screen,
+     * before the boot script can scroll it away. */
+    tang_crash_report();
     run_boot_script();
     /* Bluetooth devices paired before the reset reconnect from here on.
      * After the boot script, so the radio is not starting while a core is

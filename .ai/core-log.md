@@ -1136,3 +1136,40 @@ Report-map parsing for report-protocol devices and a Bluetooth LE controller wai
 - User Test: PASS
 
 ---
+
+## 34 COMMIT Unreleased 2026-10-05T23:11:45-07:00
+
+#### Coming From:
+
+Unreleased e9e12ed
+
+#### Purpose:
+
+Give the board a crash and hang recorder, because loading a cartridge with both Bluetooth devices connected froze it with no way to see why.
+
+#### Outcome:
+
+The freeze was first reproduced with diagnostics on the entry-33 firmware: `castlevania.tdsh` with the K950 and M750 connected froze the board, once during `Load SRAM` and once before the script's first `echo`, with HDMI stopped, both devices dropped and the console not answering, while plain `tangload` passed with the radio idle, with the mouse alone and with both connected, which ruled out the JTAG loader's critical sections. Reading the SDK then showed that every fatal path on this board ends the same way, recorded as `BL6-008`: `exception_entry` prints to a UART the board does not expose and spins, `vAssertCalled` spins, the TLSF allocator spins with interrupts off on any failed allocation instead of returning NULL, and the Bluetooth controller library's `platform_reset`, called only from its own `btble_ke_malloc`, disables interrupts and jumps to address 0. The new `ports/bl616/tang_crash.c` makes those leave evidence: a hardware watchdog (4 s) is fed by a task at priority 30, which stops feeding if a priority-1 heartbeat has been silent for 30 s; the tick hook samples the running task and its PC every 4 ms into a 32-entry trail and records the watchdog task itself being starved; `exception_entry` and `platform_reset` are taken over with the linker's `--wrap` (`CMakeLists.txt`), and `vAssertCalled`, the stack-overflow hook and the malloc-failed hook are defined here, each recording and resetting. The first design kept the record in `.noinit` RAM, and `crash test trap` showed why that cannot work: a watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, and the power cycle that brings TinyTang back scrambles RAM, recorded as `FLS-003`. With the user's approval the record and trail are now written to the flash's last sector, `0x3FF000`, before the reset, and the next boot prints them, appends them to `/sd/crash.log` and erases the sector; `tangflash` calls `tang_crash_suspend()` before its commit, which runs with interrupts off for longer than the watchdog's timeout. `main.cpp` takes the previous record aside first thing and starts the watchdog tasks, the shell prints the record before the boot script runs, `FreeRTOSConfig.h` turns on the tick hook, and `crash` shows the record and offers `crash test trap`, `spin` and `hang`. On hardware the trap test was recorded with the faulting PC at `tang_crash.c:448` in task `shell`, the spin test was recorded about 30 s in with the trail at the spin loop, `tang_crash.c:462`, and the hang test was reset by the watchdog and left no record, as designed; the reset status reads `0x7d` after a power-up, its bits active low. The firmware, built with `make CHIP=bl616 BOARD=bl616dk` with no new warnings (the `tang_jtag_programmer.c` warnings that rebuilding everything surfaced predate this cycle), is `tinytang_bl616.bin` at 616,688 bytes, MD5 `792c3a1b3e8342c36bd4e34fe13d1012`, build identity `e9e12ed-dirty.aeb051c`, and its install exercised `tang_crash_suspend()` in the previous build's `tangflash`. Three further reproductions of the cartridge-script freeze with every other path instrumented left no record and reset about 4 s after the script started, which is the TLSF signature: `tdsh run` starts each script on a task with a 32 KB stack, against about 61 KB of fragmented free heap with both devices connected. One reproduction also found the M750 stuck in `discovering` after both devices reconnected at the same moment, cleared by `blemouse off` and `on`. The user accepted the recorder. The committed tree differs from the deployed build only in `README.md`, which describes `crash`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `BL6-008` and `FLS-003` with their routing rows and index lines, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 34 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+The approved next cycle fixes the freeze: allocation failures are to return NULL and be recorded instead of spinning, worker stacks are capped at the shell's 16 KB in the port without touching the TinyDesk Shell submodule, and `ble` and `crash` are to report the largest free block so fragmentation is measured; it is then tested by running `castlevania.tdsh` repeatedly with both devices connected, after a desktop session as well. The discovery stall when both devices reconnect at once is a separate fault for its own cycle. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- FreeRTOSConfig.h
+- README.md
+- main.cpp
+- ports/bl616/tang_crash.c
+- ports/bl616/tang_crash.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

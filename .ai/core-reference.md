@@ -147,6 +147,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Is there any real-time clock? | BL6 | BL6-005 |
 | How do I read the CPU clock? | BL6 | BL6-006 |
 | Why is the FPGA link slower than its baud rate? | BL6 | BL6-007 |
+| Why does a crash or out-of-memory freeze the board silently instead of reporting? | BL6 | BL6-008 |
 | What speed does the console negotiate? | USB | USB-001 |
 | Can the OTG block tell me what is on the other end of the cable? | USB | USB-002 |
 | Can the OTG connector power a keyboard? | USB | USB-003 |
@@ -155,6 +156,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How do I tell whether a host is attached? | USB | USB-006 |
 | Why is TinyDesk on HDMI laggy with the computer attached? | USB | USB-007 |
 | Where does the application live in flash, and what does a soft reset do? | FLS | FLS-002 |
+| What does a watchdog reset do, and where is a crash record kept across it? | FLS | FLS-003 |
 | Where is the Bluetooth antenna, and how well does the radio work without one? | BLE | BLE-001 |
 | Which SDK Bluetooth library does this firmware need, and what does Bluetooth cost? | BLE | BLE-002 |
 | Why does a UUID-filtered GATT discovery find nothing? | BLE | BLE-003 |
@@ -265,6 +267,7 @@ BL6-004: "xPortGetFreeHeapSize() and xPortGetMinimumEverFreeHeapSize() do not ex
 BL6-005: "There is an HBN always-on RTC counter (HBN_Enable_RTC_Counter, HBN_Get_RTC_Timer_Val) with a selectable 32 kHz source: a counter, not a calendar, and no battery"
 BL6-006: "bflb_clk_get_system_clock(BFLB_SYSTEM_CPU_CLK) returns the CPU clock"
 BL6-007: "bflb_uart_putchar() reads the millisecond timer before every byte for its 100 ms timeout, costing about 7.5 us of CPU per byte here, which capped UART1 near 133 KB/s at 5 Mbaud; filling the TX FIFO from its free count reaches the wire rate"
+BL6-008: "The SDK fails silently with interrupts off on every fatal path: exception_entry prints to an unconnected UART and spins, vAssertCalled spins, bflb_malloc/calloc/realloc/malloc_align spin on any failed allocation instead of returning NULL, and the Bluetooth controller's btble_ke_malloc calls platform_reset, which jumps to address 0"
 USB-001: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps (lsusb -t); CONFIG_USB_HS sets CDC_MAX_MPS 512, which is legal only at HS"
 USB-002: "No role signal follows the cable: OTG_CSR's ID bit tracks the forced configuration (PDS IDDIG), not the connector"
 USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing comes out, in both DRVBUS_POL polarities, and a device that reacts to power stayed dark for 60 s"
@@ -274,6 +277,7 @@ USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DI
 USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
 FLS-001: "Superseded by FLS-002. Recorded the application slot as at most 0x80000 bytes with staging at 0x100000, a limit Tang-Control chose rather than one the flash or the vendor loader imposes"
 FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000 (the backup shows 0x76000-0x200000 erased), commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
+FLS-003: "A watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, so only a power cycle (which scrambles RAM) brings TinyTang back; the crash recorder keeps its record in the last flash sector, 0x3FF000"
 PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
 PROT-002: "Commands: 01 core ID, 02 config string, 03 joypad (core to BL616), 04 cursor, 05 text, 06 loading state, 07 ROM data, 08 overlay, 09 HID, 0a/0b floppy, 0c PS/2"
 PROT-003: "BL616 UART1, TX GPIO 28, RX GPIO 27, 2,000,000 baud, 8N1"
@@ -634,6 +638,19 @@ BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free befor
     - "Bouffalo SDK, drivers/lhal/include/hardware/uart_reg.h: UART_FIFO_CONFIG_1_OFFSET, UART_FIFO_WDATA_OFFSET, UART_TX_FIFO_CNT_MASK"
   verification: "Measured on this board on 2026-10-05 with timers around the send: 692 frames of 1036 bytes took 5364 ms through putchar at 5 Mbaud, and 1394 ms (about 2.0 ms a frame, the wire rate) through the FIFO fill, the stream then paced by the core's acknowledgements. Castlevania's ROM load and the desktop were re-tested on the new path and pass."
 
+- record_id: BL6-008
+  kind: TOOLCHAIN
+  topic_id: BL6
+  title: "Every fatal path in the SDK ends in a silent spin with interrupts off"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "In Bouffalo SDK 7f44f9e: exception_entry() (drivers/soc/bl616/std/startup/interrupt.c, called from vector.S and the FreeRTOS portASM.S trap handler) prints mcause, mepc and mtval with printf and then loops in while(1) for anything but an environment call; it is not weak. vAssertCalled() (components/os/freertos/freertos_port.c, the end of this project's configASSERT) is weak and loops in while(1); vApplicationStackOverflowHook and vApplicationMallocFailedHook are weak too. bflb_malloc(), bflb_realloc(), bflb_calloc() and bflb_malloc_align() (components/mm/tlsf/bflb_tlsf.c) wrap every allocation in TLSF_MALLOC_ASSERT, which on a NULL result prints, calls bflb_irq_save() and loops in while(1): an allocation never fails, it hangs with interrupts off. FreeRTOS is built with heap_3, so pvPortMalloc reaches the same allocator. The Bluetooth controller library's platform_reset() (arch_main.c.o in libbtblecontroller_bl616_ble1m10s1bredr0.a), whose only caller in this firmware is btble_ke_malloc on the controller's own heap, clears MIE, stores its error code and, unless the code is 0xC3C3C3C3 or 0xA5A5A5A5, jumps to address 0. printf goes to a UART this board does not expose."
+  consequence: "On this board a crash, a FreeRTOS assert, an out-of-memory and a controller allocation failure all looked like the same freeze: HDMI stopped, Bluetooth dropped, USB stayed enumerated and the console stopped answering. ports/bl616/tang_crash.c takes over exception_entry and platform_reset with the linker's --wrap (CMakeLists.txt) and defines vAssertCalled and the stack and malloc hooks, so each of those records and resets (FLS-003). The TLSF spin is not covered by the recorder, because it disables interrupts before any hook could run; only the watchdog ends it, with no record."
+  sources:
+    - "Bouffalo SDK 7f44f9e: drivers/soc/bl616/std/startup/interrupt.c exception_entry(); components/os/freertos/freertos_port.c; components/mm/tlsf/bflb_tlsf.c TLSF_MALLOC_ASSERT; components/mm/mem.h KMEM_HEAP and PMEM_HEAP"
+    - "Disassembly of platform_reset and btble_ke_malloc in build/build_out/tinytang_bl616.elf, 2026-10-05"
+  verification: "Source read on 2026-10-05. crash test trap was recorded with the right PC after the wrap; three reproductions of the cartridge-script freeze with Bluetooth devices connected left no record with every other path instrumented, which is the TLSF signature (core-log entry 34)."
+
 - record_id: USB-001
   kind: USB
   topic_id: USB
@@ -753,6 +770,19 @@ BLE-013: "Starting the Bluetooth stack takes 15,828 B of heap (84,120 free befor
     - "This project's ports/bl616/tdsh_tang_flash.c: FW_APP_MAX_SIZE, FW_STAGING_BASE, FW_VENDOR_DATA and the static assertions"
     - "FLS-001, which this record supersedes"
   verification: "On 2026-10-05 a non-Bluetooth image built with the new limits was installed by the old tangflash and booted, then the 582,256-byte Bluetooth image was installed by the new one and booted after a power cycle, and later 594,400-byte builds (the last cb9e7d4-dirty.aee808e) installed and booted the same way, each confirmed by platform."
+
+- record_id: FLS-003
+  kind: FLASH
+  topic_id: FLS
+  title: "A watchdog reset lands in the vendor loader; crash records live at 0x3FF000"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The BL616's watchdog (bflb_wdg, 32 kHz clock divided by 32, reset mode) resets the chip into the vendor loader, which, as after a software reset (FLS-001, FLS-002), starts SIPEED's FT2232 debugger instead of the application, so the board re-enumerates as /dev/ttyUSB0 and /dev/ttyUSB1 and needs a power cycle to run TinyTang again; the power cycle leaves RAM unusable, so a .noinit record does not survive. The reset recorder register GLB_RESET_STS0 reads 0x7D after a power-up; its bits are active low (wdt_rst_n is bit 3). The last 4 KB sector of the 4 MiB flash, 0x3FF000, lies in the region the full read-back of FLS-002 found erased, above the application slot, the staging area and the vendor data record at 0x200000."
+  consequence: "ports/bl616/tang_crash.c writes its record and the last 32 (task, PC) samples to 0x3FF000 with interrupts off before resetting, and the next boot prints them, appends them to /sd/crash.log and erases the sector. tangflash calls tang_crash_suspend() before its commit, which runs with interrupts off for longer than the watchdog's 4 s."
+  sources:
+    - "Bouffalo SDK 7f44f9e: drivers/lhal/include/bflb_wdg.h, examples/peripherals/wdg/wdg_reset; drivers/soc/bl616/std/src/bl616_glb.c GLB_Get_Reset_Reason()"
+    - "FLS-002's full flash read-back of 2026-09-26"
+  verification: "On 2026-10-05 crash test trap, crash test spin and crash test hang each reset the board to the FT2232; after a power cycle the trap and spin records were read back from flash with the right task and PC, and the hang, which runs no code before the reset, left none, as designed. A later tangflash run with the recorder installed committed and booted (core-log entry 34)."
 
 - record_id: PROT-001
   kind: PROTOCOL

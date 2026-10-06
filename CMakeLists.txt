@@ -115,6 +115,12 @@ else()
                                third_party/tinydesk/ports/common/td_fs_stdio.c)
     sdk_set_main_file(main.cpp)
 
+    # The crash recorder takes over the SDK's exception handler, which would
+    # otherwise print to an unconnected UART and spin, and the Bluetooth
+    # controller library's fatal-error exit, which would jump to address 0
+    # (ports/bl616/tang_crash.h).  Neither is weak, so the linker renames them.
+    sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset)
+
     # The firmware's build identity: the commit, plus a hash of any uncommitted
     # changes, regenerated on every build so it cannot go stale (see
     # cmake/tinytang_build_id.cmake).  `platform` and the startup banner print
