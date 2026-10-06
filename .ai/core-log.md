@@ -1061,3 +1061,40 @@ The remaining Bluetooth work from entry 29 stands: keep pairings across resets w
 - User Test: PASS
 
 ---
+
+## 32 COMMIT Unreleased 2026-10-05T21:21:35-07:00
+
+#### Coming From:
+
+Unreleased 89ffac8
+
+#### Purpose:
+
+Add a Bluetooth LE mouse as the desktop's pointer, connected beside the Bluetooth keyboard on its own connection.
+
+#### Outcome:
+
+The user's mouse is a Logitech M750, not the M650 named in entry 29's Next Steps, and a probe with the entry-31 firmware's `blekbd` established what it exposes, recorded as `BLE-009`: a Boot Mouse Input beside a 7-byte report-protocol report whose 12-bit X and Y were decoded from a watch while the user moved it in a known pattern, after a first watch held off the desk had shown no motion at all. The user chose boot protocol for this cycle over parsing the report map. `ports/bl616/tang_ble.c` was restructured from one keyboard's global state into two slots, `blekbd` and `blemouse`, each with its own connection, discovery, subscriptions and one-at-a-time setup sequence (`BLE-005`); callbacks find their slot by connection, a second connect is refused while the other slot is still setting up or already holds that address, each slot logs to the shared ring with its command's name and only while its own watch runs, and the mouse slot accumulates boot reports for `tang_ble_mouse()` in `tang_ble.h`, which hands movement and wheel over once per call and zeroes everything while no mouse is ready. `ports/bl616/tang_pad.c` gained `tang_mouse_boot_add()` and `tang_pad_pointer()`, which adds the mouse to the same pointer the pad and left-alt keys drive, at 16 counts per cell with the remainder kept and dropped at an edge, merges its left and right buttons with A and B, and sends its middle button as SGR button 1 and its wheel as 64 and 65, at most four per step; `tang_pad_step()` is now that function without a mouse. `ports/bl616/tang_osd_desk.c` takes the mouse every poll and uses it only while the desktop's pointer is on screen, so movement in console mode or under a game is neither applied nor saved up, and `desk_in_push()` now drops a push that does not fit whole rather than cutting an escape sequence short. Host tests: `tools/tests/tb_pad.c` 43 checks (21 new) and `tools/tests/tb_osd_desk.c` 70 (9 new), which fail with the mouse not passed to the pointer and with the old byte-wise push; all seven host test scripts pass. The first build, `89ffac8-dirty.a1d5612`, connected the M750 in boot protocol with a 4-byte report carrying the wheel and the K950 beside it, and testing then found a fault recorded as `BLE-010`: after the user carried the mouse out of range it dropped with HCI 0x08, a reconnect on the RAM bond failed encryption and then HCI 0x3E, and the fresh pairing that followed logged `subscribe 0x002C failed (-120)`, because the host keeps a bonded peer's subscriptions linked across a disconnect while setup memsets and reuses the same structs; `hid_add_sub()` now marks subscriptions volatile. The final firmware, built with `make CHIP=bl616 BOARD=bl616dk` without warnings, is `tinytang_bl616.bin` at 600,960 bytes, MD5 `65f81902730886e36c2184f520193d76`, build identity `89ffac8-dirty.0c533f3`, installed with `tools/tinytang_flash.py` and confirmed by `platform` after the power cycle; on it the M750 at `D6:86:9C:53:2B:5A` subscribed all three inputs and the K950 at `DB:88:A7:81:D9:D8` connected beside it, both in boot protocol. The user reported everything passing: nothing from the mouse at the console, motion, left click, right-click menus, dragging, middle button and wheel in the desktop, the mouse and left-alt arrows sharing one pointer while typing in the Terminal, F12 with the mouse inert under the core, and a drag ending when the mouse was dropped. The committed tree differs from the deployed build only in `README.md`, which now describes `blemouse` and the shared pointer. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry and `BLE-009` and `BLE-010` with their routing rows and index lines, with no deletions), confirmed `.ai/core.md` unchanged, validated this entry as number 32 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+At the user's direction the other Bluetooth features are on hold: keeping pairings across resets and reconnecting automatically, finding devices by name instead of by address, measuring the stack's heap, report-map parsing for report-protocol devices and controllers. Until pairings persist, every power cycle needs each device put back in pairing mode and connected with `blescan`, then `blemouse` and `blekbd` in turn. An antenna on U35 would widen the range that dropped the mouse here and remove the 0x3E failures. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_pad.c
+- ports/bl616/tang_pad.h
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_pad.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -16,14 +16,16 @@
 // then the HCI driver and host.  The controller cannot be shut down again, so
 // once started it stays up until reset.
 //
-// `blekbd` is the next step: connect to one BLE keyboard (HID over GATT),
-// pair with Just Works and put it in boot protocol.  Boot protocol gives the
-// same 8-byte report (modifiers, reserved, six keycodes) the wired keyboard
-// link already carries, and tang_ble_keyboard() hands it to the desktop
-// layer's poll, which types it exactly as it types the wired link's.
-// `blekbd watch` prints the reports as well.  Keys are held in RAM only
-// (CONFIG_BT_SETTINGS is 0), so after a reset the keyboard must be put back
-// in pairing mode.
+// `blekbd` and `blemouse` connect one BLE keyboard and one BLE mouse (HID over
+// GATT), each on its own connection: pair with Just Works and put the device
+// in boot protocol.  The keyboard's boot report (modifiers, reserved, six
+// keycodes) is the one the wired keyboard link already carries, and
+// tang_ble_keyboard() hands it to the desktop layer's poll, which types it
+// exactly as it types the wired link's.  The mouse's boot report (buttons, X,
+// Y, and a wheel byte if the mouse adds one) is gathered by tang_ble_mouse()
+// and drives the desktop's pointer.  `watch` prints the reports as well.  Keys
+// are held in RAM only (CONFIG_BT_SETTINGS is 0), so after a reset each
+// device must be put back in pairing mode.
 
 #include <errno.h>
 #include <stdarg.h>
@@ -46,6 +48,7 @@
 
 #include "tdsh.h"
 #include "tang_ble.h"
+#include "tang_pad.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -137,7 +140,7 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
     taskEXIT_CRITICAL();
 }
 
-static void kbd_register_callbacks(void);
+static void hid_register_callbacks(void);
 
 static int ble_start(void)
 {
@@ -175,7 +178,7 @@ static int ble_start(void)
         return s_enable_result;
     }
 
-    kbd_register_callbacks();
+    hid_register_callbacks();
 
     bt_addr_le_t own;
     bt_get_local_public_address(&own);
@@ -266,44 +269,45 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
-/* ---- blekbd: one BLE keyboard over HID-over-GATT ---------------------- */
+/* ---- blekbd / blemouse: HID-over-GATT devices ------------------------- */
 
-#define KBD_LOG_LINES     48
-#define KBD_LOG_LEN       96
-#define KBD_MAX_CHRCS     24
-#define KBD_MAX_SUBS      8
-#define KBD_DEFAULT_SECS  30
-#define KBD_MAX_SECS      600
+/* Two slots, one keyboard and one mouse, each its own connection with its
+ * own discovery, subscriptions and setup sequence.  The Bluetooth callbacks
+ * find their slot by connection.  Only one slot sets up at a time: setup is a
+ * chain of ATT requests issued one by one (BLE-005), and two chains at once
+ * would put that back in doubt. */
+
+#define HID_LOG_LINES     48
+#define HID_LOG_LEN       96
+#define HID_MAX_CHRCS     24
+#define HID_MAX_SUBS      8
+#define HID_MAX_READS     10
+#define HID_DEFAULT_SECS  30
+#define HID_MAX_SECS      600
 
 /* Bluetooth callbacks run on the BLE host's tasks.  They only append lines
  * here; the shell task drains and prints them, so the console is only ever
- * written from the shell. */
-static char s_log[KBD_LOG_LINES][KBD_LOG_LEN];
+ * written from the shell.  Each line carries its command's name. */
+static char s_log[HID_LOG_LINES][HID_LOG_LEN];
 static unsigned s_log_head;
 static unsigned s_log_tail;
 static unsigned s_log_lost;
 
-static void kbd_log(const char *fmt, ...)
+static void log_line(const char *line)
 {
-    char line[KBD_LOG_LEN];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(line, sizeof(line), fmt, ap);
-    va_end(ap);
-
     taskENTER_CRITICAL();
-    if (s_log_head - s_log_tail >= KBD_LOG_LINES) {
+    if (s_log_head - s_log_tail >= HID_LOG_LINES) {
         s_log_tail++;
         s_log_lost++;
     }
-    memcpy(s_log[s_log_head % KBD_LOG_LINES], line, KBD_LOG_LEN);
+    memcpy(s_log[s_log_head % HID_LOG_LINES], line, HID_LOG_LEN);
     s_log_head++;
     taskEXIT_CRITICAL();
 }
 
-static void kbd_log_drain(void)
+static void log_drain(void)
 {
-    char line[KBD_LOG_LEN];
+    char line[HID_LOG_LEN];
     unsigned lost;
 
     for (;;) {
@@ -312,18 +316,18 @@ static void kbd_log_drain(void)
         lost = s_log_lost;
         s_log_lost = 0;
         if (s_log_tail != s_log_head) {
-            memcpy(line, s_log[s_log_tail % KBD_LOG_LINES], KBD_LOG_LEN);
+            memcpy(line, s_log[s_log_tail % HID_LOG_LINES], HID_LOG_LEN);
             s_log_tail++;
             have = true;
         }
         taskEXIT_CRITICAL();
         if (lost) {
-            tdsh_printf("blekbd: (%u line(s) lost)\r\n", lost);
+            tdsh_printf("ble: (%u line(s) lost)\r\n", lost);
         }
         if (!have) {
             return;
         }
-        tdsh_printf("blekbd: %s\r\n", line);
+        tdsh_printf("%s\r\n", line);
     }
 }
 
@@ -332,43 +336,104 @@ typedef struct {
     uint16_t value_handle;
     uint16_t ccc_handle;
     uint8_t props;
-} kbd_chrc_t;
+} hid_chrc_t;
 
 typedef enum {
-    KBD_IDLE,
-    KBD_CONNECTING,
-    KBD_SECURING,
-    KBD_DISCOVERING,
-    KBD_READY,
-} kbd_state_t;
+    HID_IDLE,
+    HID_CONNECTING,
+    HID_SECURING,
+    HID_DISCOVERING,
+    HID_READY,
+} hid_state_t;
 
 static const char *const s_state_names[] = {
     "idle", "connecting", "pairing", "discovering", "ready",
 };
 
-static struct bt_conn *s_kbd_conn;
-static volatile kbd_state_t s_kbd_state;
-static bt_addr_le_t s_kbd_addr;
-static bool s_kbd_boot;
+typedef struct {
+    const char *cmd;              /* "blekbd" or "blemouse": the log prefix */
+    uint16_t boot_uuid;           /* Boot Keyboard / Boot Mouse Input */
+    const char *ready_hint;
 
-static uint16_t s_hids_start;
-static uint16_t s_hids_end;
-static kbd_chrc_t s_chrcs[KBD_MAX_CHRCS];
-static unsigned s_nchrcs;
-static uint16_t s_boot_value_handle;
+    struct bt_conn *conn;
+    volatile hid_state_t state;
+    bt_addr_le_t addr;
+    bool boot;                    /* boot protocol was written */
+    volatile bool watching;       /* log every report while `watch` runs */
+    volatile uint32_t reports;
 
-static struct bt_gatt_discover_params s_disc_primary;
-static struct bt_gatt_discover_params s_disc_chrc;
-static struct bt_gatt_discover_params s_disc_ccc;
-static struct bt_gatt_subscribe_params s_subs[KBD_MAX_SUBS];
-static unsigned s_nsubs;
+    uint16_t hids_start;
+    uint16_t hids_end;
+    hid_chrc_t chrcs[HID_MAX_CHRCS];
+    unsigned nchrcs;
+    uint16_t boot_value_handle;
 
-static volatile uint32_t s_kbd_reports;
+    struct bt_gatt_discover_params disc_primary;
+    struct bt_gatt_discover_params disc_chrc;
+    struct bt_gatt_discover_params disc_ccc;
+    struct bt_gatt_subscribe_params subs[HID_MAX_SUBS];
+    unsigned nsubs;
+    struct bt_gatt_read_params reads[HID_MAX_READS];
+    unsigned nreads;
+
+    /* Setup after discovery is a sequence of ATT operations: every
+     * subscription, then the read-backs.  They are issued one at a time, each
+     * from the previous one's completion callback.  Issuing them all at once
+     * from a host callback exhausts the ATT transmit buffers, and the
+     * allocation then waits forever on the very task that would free them. */
+    unsigned setup_sub;
+    unsigned setup_read;
+    bool setup_active;
+    const void *setup_pending;
+} hid_dev_t;
+
+enum { HID_KBD, HID_MOUSE, HID_SLOTS };
+
+static hid_dev_t s_hid[HID_SLOTS] = {
+    [HID_KBD] = { .cmd = "blekbd", .boot_uuid = 0x2A22,
+                  .ready_hint = "type on the keyboard" },
+    [HID_MOUSE] = { .cmd = "blemouse", .boot_uuid = 0x2A33,
+                    .ready_hint = "move the mouse" },
+};
+
+/* The keyboard's current boot report, and the mouse's movement and wheel
+ * since the desk layer last asked, with its buttons now.  Written by the
+ * notify callback, read by tang_ble_keyboard() and tang_ble_mouse(). */
 static uint8_t s_kbd_report[8];
-/* Reports are logged only while `blekbd` is watching.  The keyboard is an
- * input now, so outside a watch every keystroke would only fill the log ring
- * and come out as "lines lost" at the next command. */
-static volatile bool s_kbd_watching;
+static tang_mouse_t s_mouse;
+
+static void hid_log(const hid_dev_t *d, const char *fmt, ...)
+{
+    char line[HID_LOG_LEN];
+    int n = snprintf(line, sizeof(line), "%s: ", d->cmd);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line + n, sizeof(line) - (size_t)n, fmt, ap);
+    va_end(ap);
+    log_line(line);
+}
+
+static hid_dev_t *hid_by_conn(const struct bt_conn *conn)
+{
+    for (int i = 0; i < HID_SLOTS; i++) {
+        if (s_hid[i].conn && s_hid[i].conn == conn) {
+            return &s_hid[i];
+        }
+    }
+    return NULL;
+}
+
+/* The input a slot hands the desk layer, cleared so nothing stays held. */
+static void hid_clear_input(const hid_dev_t *d)
+{
+    taskENTER_CRITICAL();
+    if (d == &s_hid[HID_KBD]) {
+        memset(s_kbd_report, 0, sizeof(s_kbd_report));
+    } else {
+        memset(&s_mouse, 0, sizeof(s_mouse));
+    }
+    taskEXIT_CRITICAL();
+}
 
 static const char *kbd_key_name(uint8_t code, char *buf)
 {
@@ -402,12 +467,12 @@ static const char *kbd_key_name(uint8_t code, char *buf)
     return buf;
 }
 
-static void kbd_log_boot_report(const uint8_t *r)
+static void kbd_log_boot_report(const hid_dev_t *d, const uint8_t *r)
 {
     static const char *const mods[] = {
         "LCtrl", "LShift", "LAlt", "LGui", "RCtrl", "RShift", "RAlt", "RGui",
     };
-    char text[KBD_LOG_LEN];
+    char text[HID_LOG_LEN];
     char name[8];
     int n = snprintf(text, sizeof(text), "%02X %02X %02X %02X %02X %02X %02X %02X |",
                      r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
@@ -425,217 +490,239 @@ static void kbd_log_boot_report(const uint8_t *r)
     if (n < (int)sizeof(text) && !(r[0] | r[2] | r[3] | r[4] | r[5] | r[6] | r[7])) {
         snprintf(text + n, sizeof(text) - n, " (released)");
     }
-    kbd_log("%s", text);
+    hid_log(d, "%s", text);
 }
 
-static void kbd_setup_step_done(struct bt_conn *conn, const void *op);
+static void mouse_log_boot_report(const hid_dev_t *d, const uint8_t *r, u16_t length)
+{
+    hid_log(d, "len %u buttons %c%c%c dx %+d dy %+d wheel %+d", length,
+            (r[0] & TANG_MOUSE_LEFT) ? 'L' : '-',
+            (r[0] & TANG_MOUSE_MIDDLE) ? 'M' : '-',
+            (r[0] & TANG_MOUSE_RIGHT) ? 'R' : '-',
+            (int8_t)r[1], (int8_t)r[2], length >= 4 ? (int8_t)r[3] : 0);
+}
 
-static u8_t kbd_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *params,
+static void hid_setup_step_done(struct bt_conn *conn, const void *op);
+
+static u8_t hid_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *params,
                        const void *data, u16_t length)
 {
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_CONTINUE;
+    }
     if (!data) {
         /* The SDK's BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP calls this with no
          * data when the CCC write completes, as well as on failure or
          * unsubscribe, so it is reported but the subscription is kept. */
-        kbd_log("CCC write for 0x%04X completed", params->value_handle);
-        kbd_setup_step_done(conn, params);
+        hid_log(d, "CCC write for 0x%04X completed", params->value_handle);
+        hid_setup_step_done(conn, params);
         return BT_GATT_ITER_CONTINUE;
     }
 
     const uint8_t *p = data;
-    s_kbd_reports++;
-    if (params->value_handle == s_boot_value_handle && length >= 8) {
+    d->reports++;
+    if (params->value_handle == d->boot_value_handle && d == &s_hid[HID_KBD] &&
+        length >= 8) {
         taskENTER_CRITICAL();
         memcpy(s_kbd_report, p, 8);
         taskEXIT_CRITICAL();
-        if (s_kbd_watching) {
-            kbd_log_boot_report(p);
+        if (d->watching) {
+            kbd_log_boot_report(d, p);
         }
-    } else if (s_kbd_watching) {
-        char text[KBD_LOG_LEN];
+    } else if (params->value_handle == d->boot_value_handle && d == &s_hid[HID_MOUSE] &&
+               length >= 3) {
+        taskENTER_CRITICAL();
+        tang_mouse_boot_add(&s_mouse, p, length);
+        taskEXIT_CRITICAL();
+        if (d->watching) {
+            mouse_log_boot_report(d, p, length);
+        }
+    } else if (d->watching) {
+        char text[HID_LOG_LEN];
         int n = snprintf(text, sizeof(text), "report 0x%04X len %u:",
                          params->value_handle, length);
         for (unsigned i = 0; i < length && n < (int)sizeof(text) - 3; i++) {
             n += snprintf(text + n, sizeof(text) - n, " %02X", p[i]);
         }
-        kbd_log("%s", text);
+        hid_log(d, "%s", text);
     }
     return BT_GATT_ITER_CONTINUE;
 }
 
-static kbd_chrc_t *kbd_find_chrc(uint16_t uuid)
+static hid_chrc_t *hid_find_chrc(hid_dev_t *d, uint16_t uuid)
 {
-    for (unsigned i = 0; i < s_nchrcs; i++) {
-        if (s_chrcs[i].uuid == uuid) {
-            return &s_chrcs[i];
+    for (unsigned i = 0; i < d->nchrcs; i++) {
+        if (d->chrcs[i].uuid == uuid) {
+            return &d->chrcs[i];
         }
     }
     return NULL;
 }
 
-#define KBD_MAX_READS 10
-
-static struct bt_gatt_read_params s_reads[KBD_MAX_READS];
-static unsigned s_nreads;
-
-/* Setup after discovery is a sequence of ATT operations: every subscription,
- * then the read-backs.  They are issued one at a time, each from the
- * previous one's completion callback.  Issuing them all at once from a host
- * callback exhausts the ATT transmit buffers, and the allocation then waits
- * forever on the very task that would free them. */
-static unsigned s_setup_sub;
-static unsigned s_setup_read;
-static bool s_setup_active;
-static const void *s_setup_pending;
-
-static u8_t kbd_read_done(struct bt_conn *conn, u8_t err,
+static u8_t hid_read_done(struct bt_conn *conn, u8_t err,
                           struct bt_gatt_read_params *params,
                           const void *data, u16_t length)
 {
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_STOP;
+    }
     if (err) {
-        kbd_log("read 0x%04X failed (ATT 0x%02X)", params->single.handle, err);
+        hid_log(d, "read 0x%04X failed (ATT 0x%02X)", params->single.handle, err);
     } else if (data) {
         const uint8_t *p = data;
-        kbd_log("read 0x%04X: %u byte(s) %02X %02X", params->single.handle, length,
+        hid_log(d, "read 0x%04X: %u byte(s) %02X %02X", params->single.handle, length,
                 length > 0 ? p[0] : 0, length > 1 ? p[1] : 0);
     }
-    kbd_setup_step_done(conn, params);
+    hid_setup_step_done(conn, params);
     return BT_GATT_ITER_STOP;
 }
 
-static void kbd_setup_next(struct bt_conn *conn)
+static void hid_setup_next(hid_dev_t *d)
 {
-    while (s_setup_active) {
-        if (s_setup_sub < s_nsubs) {
-            struct bt_gatt_subscribe_params *sp = &s_subs[s_setup_sub++];
-            s_setup_pending = sp;
-            int err = bt_gatt_subscribe(conn, sp);
+    while (d->setup_active) {
+        if (d->setup_sub < d->nsubs) {
+            struct bt_gatt_subscribe_params *sp = &d->subs[d->setup_sub++];
+            d->setup_pending = sp;
+            int err = bt_gatt_subscribe(d->conn, sp);
             if (err == 0) {
                 return;
             }
-            kbd_log("subscribe 0x%04X failed (%d)", sp->value_handle, err);
+            hid_log(d, "subscribe 0x%04X failed (%d)", sp->value_handle, err);
             continue;
         }
-        if (s_setup_read < s_nreads) {
-            struct bt_gatt_read_params *rp = &s_reads[s_setup_read++];
-            s_setup_pending = rp;
-            int err = bt_gatt_read(conn, rp);
+        if (d->setup_read < d->nreads) {
+            struct bt_gatt_read_params *rp = &d->reads[d->setup_read++];
+            d->setup_pending = rp;
+            int err = bt_gatt_read(d->conn, rp);
             if (err == 0) {
                 return;
             }
-            kbd_log("read 0x%04X not sent (%d)", rp->single.handle, err);
+            hid_log(d, "read 0x%04X not sent (%d)", rp->single.handle, err);
             continue;
         }
-        s_setup_active = false;
-        s_setup_pending = NULL;
-        s_kbd_state = KBD_READY;
-        kbd_log("ready - type on the keyboard");
+        d->setup_active = false;
+        d->setup_pending = NULL;
+        d->state = HID_READY;
+        hid_log(d, "ready - %s", d->ready_hint);
     }
 }
 
-static void kbd_setup_step_done(struct bt_conn *conn, const void *op)
+static void hid_setup_step_done(struct bt_conn *conn, const void *op)
 {
-    if (s_setup_active && op == s_setup_pending) {
-        kbd_setup_next(conn);
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d && d->setup_active && op == d->setup_pending) {
+        hid_setup_next(d);
     }
 }
 
-static void kbd_add_read(uint16_t handle)
+static void hid_add_read(hid_dev_t *d, uint16_t handle)
 {
-    if (!handle || s_nreads >= KBD_MAX_READS) {
+    if (!handle || d->nreads >= HID_MAX_READS) {
         return;
     }
-    struct bt_gatt_read_params *rp = &s_reads[s_nreads++];
+    struct bt_gatt_read_params *rp = &d->reads[d->nreads++];
     memset(rp, 0, sizeof(*rp));
-    rp->func = kbd_read_done;
+    rp->func = hid_read_done;
     rp->handle_count = 1;
     rp->single.handle = handle;
 }
 
-static void kbd_add_sub(const kbd_chrc_t *c)
+static void hid_add_sub(hid_dev_t *d, const hid_chrc_t *c)
 {
-    if (s_nsubs >= KBD_MAX_SUBS) {
+    if (d->nsubs >= HID_MAX_SUBS) {
         return;
     }
-    struct bt_gatt_subscribe_params *sp = &s_subs[s_nsubs++];
+    struct bt_gatt_subscribe_params *sp = &d->subs[d->nsubs++];
     memset(sp, 0, sizeof(*sp));
-    sp->notify = kbd_notify;
+    sp->notify = hid_notify;
     sp->value_handle = c->value_handle;
     sp->ccc_handle = c->ccc_handle;
     sp->value = BT_GATT_CCC_NOTIFY;
+    /* Volatile: dropped from the host's list on disconnect.  For a bonded
+     * peer the host otherwise keeps the subscription linked and re-sends it
+     * on reconnect, while setup here memsets and re-subscribes these same
+     * structs on every connection -- rewriting a node still in the host's
+     * list, which showed as -EALREADY on the M750's second pairing. */
+    atomic_set_bit(sp->flags, BT_GATT_SUBSCRIBE_FLAG_VOLATILE);
 }
 
 /* With every characteristic and its CCC known: switch to boot protocol if
- * the keyboard offers it, and subscribe to every notifying input in the HID
- * service (the boot keyboard input and all input reports), so reports are
- * seen whichever way the keyboard actually sends them.  The protocol mode
- * and each CCC are then read back to show what the keyboard accepted. */
-static void kbd_setup_reports(struct bt_conn *conn)
+ * the device offers this slot's boot input, and subscribe to that input and
+ * every notifying input report in the HID service, so reports are seen
+ * whichever way the device actually sends them.  The protocol mode and each
+ * CCC are then read back to show what the device accepted. */
+static void hid_setup_reports(hid_dev_t *d)
 {
-    kbd_chrc_t *boot = kbd_find_chrc(0x2A22);
-    kbd_chrc_t *mode = kbd_find_chrc(0x2A4E);
+    hid_chrc_t *boot = hid_find_chrc(d, d->boot_uuid);
+    hid_chrc_t *mode = hid_find_chrc(d, 0x2A4E);
 
-    for (unsigned i = 0; i < s_nchrcs; i++) {
-        kbd_log("  chrc 0x%04X value 0x%04X ccc 0x%04X props 0x%02X",
-                s_chrcs[i].uuid, s_chrcs[i].value_handle,
-                s_chrcs[i].ccc_handle, s_chrcs[i].props);
+    for (unsigned i = 0; i < d->nchrcs; i++) {
+        hid_log(d, "  chrc 0x%04X value 0x%04X ccc 0x%04X props 0x%02X",
+                d->chrcs[i].uuid, d->chrcs[i].value_handle,
+                d->chrcs[i].ccc_handle, d->chrcs[i].props);
     }
 
-    s_nsubs = 0;
-    s_nreads = 0;
-    s_kbd_boot = false;
+    d->nsubs = 0;
+    d->nreads = 0;
+    d->boot = false;
     if (boot && boot->ccc_handle && mode) {
         static const uint8_t boot_protocol = 0;
-        int err = bt_gatt_write_without_response(conn, mode->value_handle,
+        int err = bt_gatt_write_without_response(d->conn, mode->value_handle,
                                                  &boot_protocol, 1, false);
         if (err) {
-            kbd_log("protocol mode write failed (%d)", err);
+            hid_log(d, "protocol mode write failed (%d)", err);
         } else {
-            s_kbd_boot = true;
+            d->boot = true;
         }
-        s_boot_value_handle = boot->value_handle;
+        d->boot_value_handle = boot->value_handle;
     }
-    for (unsigned i = 0; i < s_nchrcs; i++) {
-        const kbd_chrc_t *c = &s_chrcs[i];
-        if ((c->uuid == 0x2A22 || c->uuid == 0x2A4D) &&
+    for (unsigned i = 0; i < d->nchrcs; i++) {
+        const hid_chrc_t *c = &d->chrcs[i];
+        if ((c->uuid == d->boot_uuid || c->uuid == 0x2A4D) &&
             (c->props & BT_GATT_CHRC_NOTIFY) && c->ccc_handle) {
-            kbd_add_sub(c);
+            hid_add_sub(d, c);
         }
     }
     if (mode) {
-        kbd_add_read(mode->value_handle);
+        hid_add_read(d, mode->value_handle);
     }
-    for (unsigned i = 0; i < s_nsubs; i++) {
-        kbd_add_read(s_subs[i].ccc_handle);
+    for (unsigned i = 0; i < d->nsubs; i++) {
+        hid_add_read(d, d->subs[i].ccc_handle);
     }
-    kbd_log("%s protocol requested; subscribing to %u input(s)",
-            s_kbd_boot ? "boot" : "report", s_nsubs);
+    hid_log(d, "%s protocol requested; subscribing to %u input(s)",
+            d->boot ? "boot" : "report", d->nsubs);
 
-    s_setup_sub = 0;
-    s_setup_read = 0;
-    s_setup_active = true;
-    kbd_setup_next(conn);
+    d->setup_sub = 0;
+    d->setup_read = 0;
+    d->setup_active = true;
+    hid_setup_next(d);
 }
 
-static u8_t kbd_discover_ccc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+static u8_t hid_discover_ccc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                              struct bt_gatt_discover_params *params)
 {
     (void)params;
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_STOP;
+    }
     if (!attr) {
-        kbd_setup_reports(conn);
+        hid_setup_reports(d);
         return BT_GATT_ITER_STOP;
     }
     /* Discovery runs unfiltered (filtering by UUID found nothing on the
-     * Logitech K950), so pick the CCCs out here. */
+     * Logitech K950, BLE-003), so pick the CCCs out here. */
     if (attr->uuid->type != BT_UUID_TYPE_16 || BT_UUID_16(attr->uuid)->val != 0x2902) {
         return BT_GATT_ITER_CONTINUE;
     }
     /* A CCC belongs to the characteristic whose value handle precedes it. */
-    kbd_chrc_t *owner = NULL;
-    for (unsigned i = 0; i < s_nchrcs; i++) {
-        if (s_chrcs[i].value_handle < attr->handle &&
-            (!owner || s_chrcs[i].value_handle > owner->value_handle)) {
-            owner = &s_chrcs[i];
+    hid_chrc_t *owner = NULL;
+    for (unsigned i = 0; i < d->nchrcs; i++) {
+        if (d->chrcs[i].value_handle < attr->handle &&
+            (!owner || d->chrcs[i].value_handle > owner->value_handle)) {
+            owner = &d->chrcs[i];
         }
     }
     if (owner && !owner->ccc_handle) {
@@ -644,27 +731,31 @@ static u8_t kbd_discover_ccc(struct bt_conn *conn, const struct bt_gatt_attr *at
     return BT_GATT_ITER_CONTINUE;
 }
 
-static u8_t kbd_discover_chrc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+static u8_t hid_discover_chrc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                               struct bt_gatt_discover_params *params)
 {
     (void)params;
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_STOP;
+    }
     if (!attr) {
-        kbd_log("found %u characteristic(s); finding CCC descriptors", s_nchrcs);
-        memset(&s_disc_ccc, 0, sizeof(s_disc_ccc));
-        s_disc_ccc.uuid = NULL;
-        s_disc_ccc.func = kbd_discover_ccc;
-        s_disc_ccc.start_handle = s_hids_start + 1;
-        s_disc_ccc.end_handle = s_hids_end;
-        s_disc_ccc.type = BT_GATT_DISCOVER_DESCRIPTOR;
-        int err = bt_gatt_discover(conn, &s_disc_ccc);
+        hid_log(d, "found %u characteristic(s); finding CCC descriptors", d->nchrcs);
+        memset(&d->disc_ccc, 0, sizeof(d->disc_ccc));
+        d->disc_ccc.uuid = NULL;
+        d->disc_ccc.func = hid_discover_ccc;
+        d->disc_ccc.start_handle = d->hids_start + 1;
+        d->disc_ccc.end_handle = d->hids_end;
+        d->disc_ccc.type = BT_GATT_DISCOVER_DESCRIPTOR;
+        int err = bt_gatt_discover(conn, &d->disc_ccc);
         if (err) {
-            kbd_log("descriptor discovery failed (%d)", err);
+            hid_log(d, "descriptor discovery failed (%d)", err);
         }
         return BT_GATT_ITER_STOP;
     }
     const struct bt_gatt_chrc *chrc = attr->user_data;
-    if (s_nchrcs < KBD_MAX_CHRCS) {
-        kbd_chrc_t *c = &s_chrcs[s_nchrcs++];
+    if (d->nchrcs < HID_MAX_CHRCS) {
+        hid_chrc_t *c = &d->chrcs[d->nchrcs++];
         c->uuid = chrc->uuid->type == BT_UUID_TYPE_16 ? BT_UUID_16(chrc->uuid)->val : 0;
         c->value_handle = chrc->value_handle;
         c->ccc_handle = 0;
@@ -673,157 +764,164 @@ static u8_t kbd_discover_chrc(struct bt_conn *conn, const struct bt_gatt_attr *a
     return BT_GATT_ITER_CONTINUE;
 }
 
-static void kbd_start_chrc_discovery(struct bt_conn *conn)
+static void hid_start_chrc_discovery(hid_dev_t *d)
 {
-    s_nchrcs = 0;
-    memset(&s_disc_chrc, 0, sizeof(s_disc_chrc));
-    s_disc_chrc.uuid = NULL;
-    s_disc_chrc.func = kbd_discover_chrc;
-    s_disc_chrc.start_handle = s_hids_start + 1;
-    s_disc_chrc.end_handle = s_hids_end;
-    s_disc_chrc.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-    int err = bt_gatt_discover(conn, &s_disc_chrc);
+    d->nchrcs = 0;
+    memset(&d->disc_chrc, 0, sizeof(d->disc_chrc));
+    d->disc_chrc.uuid = NULL;
+    d->disc_chrc.func = hid_discover_chrc;
+    d->disc_chrc.start_handle = d->hids_start + 1;
+    d->disc_chrc.end_handle = d->hids_end;
+    d->disc_chrc.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+    int err = bt_gatt_discover(d->conn, &d->disc_chrc);
     if (err) {
-        kbd_log("characteristic discovery failed (%d)", err);
+        hid_log(d, "characteristic discovery failed (%d)", err);
     }
 }
 
 /* Every primary service is listed (useful while bringing up a new device);
  * the HID service's range is kept and walked once the list is complete. */
-static u8_t kbd_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                                  struct bt_gatt_discover_params *params)
 {
     (void)params;
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_STOP;
+    }
     if (!attr) {
-        if (!s_hids_end) {
-            kbd_log("no HID service on this device");
+        if (!d->hids_end) {
+            hid_log(d, "no HID service on this device");
             return BT_GATT_ITER_STOP;
         }
-        kbd_log("HID service 0x%04X-0x%04X", s_hids_start, s_hids_end);
-        kbd_start_chrc_discovery(conn);
+        hid_log(d, "HID service 0x%04X-0x%04X", d->hids_start, d->hids_end);
+        hid_start_chrc_discovery(d);
         return BT_GATT_ITER_STOP;
     }
     const struct bt_gatt_service_val *svc = attr->user_data;
     uint16_t uuid = svc->uuid->type == BT_UUID_TYPE_16 ? BT_UUID_16(svc->uuid)->val : 0;
-    kbd_log("  service 0x%04X-0x%04X uuid %s0x%04X", attr->handle, svc->end_handle,
+    hid_log(d, "  service 0x%04X-0x%04X uuid %s0x%04X", attr->handle, svc->end_handle,
             svc->uuid->type == BT_UUID_TYPE_16 ? "" : "(128-bit) ", uuid);
-    if (uuid == 0x1812 && !s_hids_end) {
-        s_hids_start = attr->handle;
-        s_hids_end = svc->end_handle;
+    if (uuid == 0x1812 && !d->hids_end) {
+        d->hids_start = attr->handle;
+        d->hids_end = svc->end_handle;
     }
     return BT_GATT_ITER_CONTINUE;
 }
 
-static void kbd_start_discovery(struct bt_conn *conn)
+static void hid_start_discovery(hid_dev_t *d)
 {
-    s_kbd_state = KBD_DISCOVERING;
-    s_hids_start = 0;
-    s_hids_end = 0;
-    memset(&s_disc_primary, 0, sizeof(s_disc_primary));
-    s_disc_primary.uuid = NULL;
-    s_disc_primary.func = kbd_discover_primary;
-    s_disc_primary.start_handle = 0x0001;
-    s_disc_primary.end_handle = 0xFFFF;
-    s_disc_primary.type = BT_GATT_DISCOVER_PRIMARY;
-    int err = bt_gatt_discover(conn, &s_disc_primary);
+    d->state = HID_DISCOVERING;
+    d->hids_start = 0;
+    d->hids_end = 0;
+    memset(&d->disc_primary, 0, sizeof(d->disc_primary));
+    d->disc_primary.uuid = NULL;
+    d->disc_primary.func = hid_discover_primary;
+    d->disc_primary.start_handle = 0x0001;
+    d->disc_primary.end_handle = 0xFFFF;
+    d->disc_primary.type = BT_GATT_DISCOVER_PRIMARY;
+    int err = bt_gatt_discover(d->conn, &d->disc_primary);
     if (err) {
-        kbd_log("service discovery failed (%d)", err);
+        hid_log(d, "service discovery failed (%d)", err);
     }
 }
 
-static void kbd_connected(struct bt_conn *conn, u8_t err)
+static void hid_connected(struct bt_conn *conn, u8_t err)
 {
-    if (conn != s_kbd_conn) {
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
         return;
     }
     if (err) {
-        kbd_log("connect failed (HCI 0x%02X)", err);
-        bt_conn_unref(s_kbd_conn);
-        s_kbd_conn = NULL;
-        s_kbd_state = KBD_IDLE;
+        hid_log(d, "connect failed (HCI 0x%02X)", err);
+        bt_conn_unref(d->conn);
+        d->conn = NULL;
+        d->state = HID_IDLE;
         return;
     }
-    kbd_log("connected; requesting encryption");
-    s_kbd_state = KBD_SECURING;
+    hid_log(d, "connected; requesting encryption");
+    d->state = HID_SECURING;
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (rc) {
-        kbd_log("set_security failed (%d)", rc);
+        hid_log(d, "set_security failed (%d)", rc);
     }
 }
 
-static void kbd_disconnected(struct bt_conn *conn, u8_t reason)
+static void hid_disconnected(struct bt_conn *conn, u8_t reason)
 {
-    if (conn != s_kbd_conn) {
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
         return;
     }
-    kbd_log("disconnected (HCI 0x%02X)", reason);
-    bt_conn_unref(s_kbd_conn);
-    s_kbd_conn = NULL;
-    s_kbd_state = KBD_IDLE;
-    /* Whatever was held is released: tang_ble_keyboard() reports nothing
-     * from here on, and a stale report must not come back on a reconnect. */
-    taskENTER_CRITICAL();
-    memset(s_kbd_report, 0, sizeof(s_kbd_report));
-    taskEXIT_CRITICAL();
-    s_boot_value_handle = 0;
-    s_nsubs = 0;
-    s_setup_active = false;
-    s_setup_pending = NULL;
+    hid_log(d, "disconnected (HCI 0x%02X)", reason);
+    bt_conn_unref(d->conn);
+    d->conn = NULL;
+    d->state = HID_IDLE;
+    /* Whatever was held is released: the desk layer sees nothing from this
+     * slot from here on, and stale input must not come back on a reconnect. */
+    hid_clear_input(d);
+    d->boot_value_handle = 0;
+    d->nsubs = 0;
+    d->setup_active = false;
+    d->setup_pending = NULL;
 }
 
-static void kbd_security_changed(struct bt_conn *conn, bt_security_t level,
+static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
                                  enum bt_security_err err)
 {
-    if (conn != s_kbd_conn) {
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
         return;
     }
     if (err) {
-        kbd_log("security failed (level %d, err %d)", level, err);
+        hid_log(d, "security failed (level %d, err %d)", level, err);
         return;
     }
-    kbd_log("encrypted (level %d)", level);
-    if (level >= BT_SECURITY_L2 && s_kbd_state == KBD_SECURING) {
-        kbd_start_discovery(conn);
+    hid_log(d, "encrypted (level %d)", level);
+    if (level >= BT_SECURITY_L2 && d->state == HID_SECURING) {
+        hid_start_discovery(d);
     }
 }
 
-static void kbd_pairing_complete(struct bt_conn *conn, bool bonded)
+static void hid_pairing_complete(struct bt_conn *conn, bool bonded)
 {
-    if (conn == s_kbd_conn) {
-        kbd_log("paired (%s)", bonded ? "bonded, in RAM only" : "not bonded");
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d) {
+        hid_log(d, "paired (%s)", bonded ? "bonded, in RAM only" : "not bonded");
     }
 }
 
-static void kbd_pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
+static void hid_pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 {
-    if (conn == s_kbd_conn) {
-        kbd_log("pairing failed (%d)", reason);
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d) {
+        hid_log(d, "pairing failed (%d)", reason);
     }
 }
 
 static struct bt_conn_cb s_conn_cb = {
-    .connected = kbd_connected,
-    .disconnected = kbd_disconnected,
-    .security_changed = kbd_security_changed,
+    .connected = hid_connected,
+    .disconnected = hid_disconnected,
+    .security_changed = hid_security_changed,
 };
 
 /* Only completion callbacks, no passkey ones, so the stack reports
  * NoInputNoOutput and pairs with Just Works. */
 static struct bt_conn_auth_cb s_auth_cb = {
-    .pairing_complete = kbd_pairing_complete,
-    .pairing_failed = kbd_pairing_failed,
+    .pairing_complete = hid_pairing_complete,
+    .pairing_failed = hid_pairing_failed,
 };
 
-static void kbd_register_callbacks(void)
+static void hid_register_callbacks(void)
 {
     bt_conn_cb_register(&s_conn_cb);
     int err = bt_conn_auth_cb_register(&s_auth_cb);
     if (err) {
-        tdsh_printf("blekbd: auth callback registration failed (%d)\r\n", err);
+        tdsh_printf("ble: auth callback registration failed (%d)\r\n", err);
     }
 }
 
-static bool kbd_parse_addr(const char *text, bt_addr_le_t *addr)
+static bool hid_parse_addr(const char *text, bt_addr_le_t *addr)
 {
     unsigned v[6];
     if (sscanf(text, "%2x:%2x:%2x:%2x:%2x:%2x", &v[5], &v[4], &v[3],
@@ -836,28 +934,28 @@ static bool kbd_parse_addr(const char *text, bt_addr_le_t *addr)
     return true;
 }
 
-static void kbd_watch(int secs)
+static void hid_watch(hid_dev_t *d, int secs)
 {
-    uint32_t start_reports = s_kbd_reports;
+    uint32_t start_reports = d->reports;
     TickType_t end = xTaskGetTickCount() + pdMS_TO_TICKS(secs * 1000);
 
-    tdsh_printf("blekbd: watching for %d s\r\n", secs);
-    s_kbd_watching = true;
+    tdsh_printf("%s: watching for %d s\r\n", d->cmd, secs);
+    d->watching = true;
     while ((int32_t)(end - xTaskGetTickCount()) > 0) {
-        kbd_log_drain();
+        log_drain();
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    s_kbd_watching = false;
-    kbd_log_drain();
-    tdsh_printf("blekbd: %s, %lu report(s) in this watch\r\n",
-                s_state_names[s_kbd_state],
-                (unsigned long)(s_kbd_reports - start_reports));
+    d->watching = false;
+    log_drain();
+    tdsh_printf("%s: %s, %lu report(s) in this watch\r\n", d->cmd,
+                s_state_names[d->state],
+                (unsigned long)(d->reports - start_reports));
 }
 
 bool tang_ble_keyboard(uint8_t out[8])
 {
     taskENTER_CRITICAL();
-    const bool live = s_kbd_state == KBD_READY;
+    const bool live = s_hid[HID_KBD].state == HID_READY;
     if (live) {
         memcpy(out, s_kbd_report, 8);
     } else {
@@ -867,60 +965,76 @@ bool tang_ble_keyboard(uint8_t out[8])
     return live;
 }
 
-static int kbd_usage(void)
+bool tang_ble_mouse(tang_mouse_t *out)
 {
-    tdsh_printf("usage: blekbd <AA:BB:CC:DD:EE:FF> [pub|rand] [seconds]\r\n"
-                "       blekbd watch [seconds]\r\n"
-                "       blekbd off\r\n"
-                "       blekbd            (status)\r\n");
+    taskENTER_CRITICAL();
+    const bool live = s_hid[HID_MOUSE].state == HID_READY;
+    if (live) {
+        *out = s_mouse;
+    } else {
+        memset(out, 0, sizeof(*out));
+    }
+    /* Movement and wheel are handed over once; the buttons stay as they are. */
+    s_mouse.dx = 0;
+    s_mouse.dy = 0;
+    s_mouse.wheel = 0;
+    taskEXIT_CRITICAL();
+    return live;
+}
+
+static int hid_usage(const hid_dev_t *d)
+{
+    tdsh_printf("usage: %s <AA:BB:CC:DD:EE:FF> [pub|rand] [seconds]\r\n"
+                "       %s watch [seconds]\r\n"
+                "       %s off\r\n"
+                "       %s            (status)\r\n",
+                d->cmd, d->cmd, d->cmd, d->cmd);
     return 1;
 }
 
-static int cmd_blekbd(tdsh_session_t *session, int argc, char **argv)
+static int hid_command(hid_dev_t *d, int argc, char **argv)
 {
-    (void)session;
-
     if (argc < 2) {
-        kbd_log_drain();
-        tdsh_printf("blekbd: %s", s_state_names[s_kbd_state]);
-        if (s_kbd_state != KBD_IDLE) {
+        log_drain();
+        tdsh_printf("%s: %s", d->cmd, s_state_names[d->state]);
+        if (d->state != HID_IDLE) {
             tdsh_printf(", %02X:%02X:%02X:%02X:%02X:%02X, %s protocol",
-                        s_kbd_addr.a.val[5], s_kbd_addr.a.val[4], s_kbd_addr.a.val[3],
-                        s_kbd_addr.a.val[2], s_kbd_addr.a.val[1], s_kbd_addr.a.val[0],
-                        s_kbd_boot ? "boot" : "report");
+                        d->addr.a.val[5], d->addr.a.val[4], d->addr.a.val[3],
+                        d->addr.a.val[2], d->addr.a.val[1], d->addr.a.val[0],
+                        d->boot ? "boot" : "report");
         }
-        tdsh_printf(", %lu report(s)\r\n", (unsigned long)s_kbd_reports);
+        tdsh_printf(", %lu report(s)\r\n", (unsigned long)d->reports);
         return 0;
     }
 
     if (strcmp(argv[1], "watch") == 0) {
-        int secs = argc >= 3 ? atoi(argv[2]) : KBD_DEFAULT_SECS;
-        if (secs < 1 || secs > KBD_MAX_SECS) {
-            return kbd_usage();
+        int secs = argc >= 3 ? atoi(argv[2]) : HID_DEFAULT_SECS;
+        if (secs < 1 || secs > HID_MAX_SECS) {
+            return hid_usage(d);
         }
-        kbd_watch(secs);
+        hid_watch(d, secs);
         return 0;
     }
 
     if (strcmp(argv[1], "off") == 0) {
-        if (!s_kbd_conn) {
-            tdsh_printf("blekbd: not connected\r\n");
+        if (!d->conn) {
+            tdsh_printf("%s: not connected\r\n", d->cmd);
             return 0;
         }
-        int err = bt_conn_disconnect(s_kbd_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+        int err = bt_conn_disconnect(d->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
         if (err) {
-            tdsh_printf("blekbd: disconnect failed (%d)\r\n", err);
+            tdsh_printf("%s: disconnect failed (%d)\r\n", d->cmd, err);
             return 1;
         }
         vTaskDelay(pdMS_TO_TICKS(500));
-        kbd_log_drain();
+        log_drain();
         return 0;
     }
 
     bt_addr_le_t addr = { .type = BT_ADDR_LE_RANDOM };
-    int secs = KBD_DEFAULT_SECS;
-    if (!kbd_parse_addr(argv[1], &addr)) {
-        return kbd_usage();
+    int secs = HID_DEFAULT_SECS;
+    if (!hid_parse_addr(argv[1], &addr)) {
+        return hid_usage(d);
     }
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "pub") == 0) {
@@ -929,38 +1043,64 @@ static int cmd_blekbd(tdsh_session_t *session, int argc, char **argv)
             addr.type = BT_ADDR_LE_RANDOM;
         } else {
             secs = atoi(argv[i]);
-            if (secs < 1 || secs > KBD_MAX_SECS) {
-                return kbd_usage();
+            if (secs < 1 || secs > HID_MAX_SECS) {
+                return hid_usage(d);
             }
         }
     }
 
-    if (s_kbd_conn) {
-        tdsh_printf("blekbd: already %s; use 'blekbd off' first\r\n",
-                    s_state_names[s_kbd_state]);
+    if (d->conn) {
+        tdsh_printf("%s: already %s; use '%s off' first\r\n", d->cmd,
+                    s_state_names[d->state], d->cmd);
         return 1;
+    }
+    for (int i = 0; i < HID_SLOTS; i++) {
+        const hid_dev_t *o = &s_hid[i];
+        if (o == d || !o->conn) {
+            continue;
+        }
+        if (o->state != HID_READY) {
+            tdsh_printf("%s: %s is still %s; wait for it to be ready\r\n",
+                        d->cmd, o->cmd, s_state_names[o->state]);
+            return 1;
+        }
+        if (bt_addr_le_cmp(&o->addr, &addr) == 0) {
+            tdsh_printf("%s: that device is already connected as %s\r\n",
+                        d->cmd, o->cmd);
+            return 1;
+        }
     }
     if (ble_start() != 0) {
         return 1;
     }
 
-    s_kbd_addr = addr;
-    s_kbd_boot = false;
-    s_boot_value_handle = 0;
-    taskENTER_CRITICAL();
-    memset(s_kbd_report, 0, sizeof(s_kbd_report));
-    taskEXIT_CRITICAL();
-    s_kbd_state = KBD_CONNECTING;
-    s_kbd_conn = bt_conn_create_le(&addr, BT_LE_CONN_PARAM_DEFAULT);
-    if (!s_kbd_conn) {
-        s_kbd_state = KBD_IDLE;
-        tdsh_printf("blekbd: could not start connection\r\n");
+    d->addr = addr;
+    d->boot = false;
+    d->boot_value_handle = 0;
+    hid_clear_input(d);
+    d->state = HID_CONNECTING;
+    d->conn = bt_conn_create_le(&addr, BT_LE_CONN_PARAM_DEFAULT);
+    if (!d->conn) {
+        d->state = HID_IDLE;
+        tdsh_printf("%s: could not start connection\r\n", d->cmd);
         return 1;
     }
-    tdsh_printf("blekbd: connecting to %s (%s)\r\n", argv[1],
+    tdsh_printf("%s: connecting to %s (%s)\r\n", d->cmd, argv[1],
                 addr.type == BT_ADDR_LE_PUBLIC ? "pub" : "rand");
-    kbd_watch(secs);
+    hid_watch(d, secs);
     return 0;
+}
+
+static int cmd_blekbd(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    return hid_command(&s_hid[HID_KBD], argc, argv);
+}
+
+static int cmd_blemouse(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    return hid_command(&s_hid[HID_MOUSE], argc, argv);
 }
 
 static const tdsh_command_t s_ble_commands[] = {
@@ -970,6 +1110,9 @@ static const tdsh_command_t s_ble_commands[] = {
     { "blekbd", "blekbd <addr> [pub|rand] [seconds] | watch [seconds] | off",
       "Connect a Bluetooth LE keyboard as an input; watch prints its key reports",
       cmd_blekbd, 0 },
+    { "blemouse", "blemouse <addr> [pub|rand] [seconds] | watch [seconds] | off",
+      "Connect a Bluetooth LE mouse as the desktop's pointer; watch prints its reports",
+      cmd_blemouse, 0 },
 };
 
 int tang_ble_register(void)

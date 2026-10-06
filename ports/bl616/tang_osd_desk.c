@@ -119,16 +119,18 @@ static void palette_init(void)
 
 /* ------------------------------------------------- the emulator's answers */
 
+/* All or nothing: a push is one key or one batch of pointer reports, and
+ * cutting it short where the ring fills would leave half an escape sequence
+ * for the parser to read the rest of the input through. */
 static void desk_in_push(const char *data, int len)
 {
     taskENTER_CRITICAL();
-    for (int i = 0; i < len; i++) {
-        const int next = (s_in_tail + 1) % DESK_IN_MAX;
-        if (next == s_in_head) {
-            break;              /* full: dropped, never blocked */
+    const int used = (s_in_tail - s_in_head + DESK_IN_MAX) % DESK_IN_MAX;
+    if (len <= DESK_IN_MAX - 1 - used) {    /* else full: dropped, never blocked */
+        for (int i = 0; i < len; i++) {
+            s_in[s_in_tail] = data[i];
+            s_in_tail = (s_in_tail + 1) % DESK_IN_MAX;
         }
-        s_in[s_in_tail] = data[i];
-        s_in_tail = next;
     }
     taskEXIT_CRITICAL();
 }
@@ -387,6 +389,12 @@ static void desk_poll(void)
     const bool bfresh = tang_ble_keyboard(brep);
     joy1 |= tang_key_pointer(brep[0], &brep[2]);
 
+    /* The Bluetooth mouse: movement and wheel since the last poll, handed
+     * over once, so they are taken every poll and used only where the pointer
+     * is -- in the desktop, on screen. */
+    tang_mouse_t mouse;
+    (void)tang_ble_mouse(&mouse);
+
     /* The session switch: L on the pad, or F12 on the keyboard, the key
      * reserved for it the way MiSTer reserves F12 for its menu.  It does not
      * stop the layer or the desktop: it flips the overlay, which is the same
@@ -404,15 +412,17 @@ static void desk_poll(void)
 
     if (tang_osd_shown()) {
         if (s_pointer) {
-            char seq[96];
+            char seq[192];
             bool ignored = false;
-            const int n = tang_pad_step(&s_pad, joy1, seq, sizeof(seq), &ignored);
+            const int n = tang_pad_pointer(&s_pad, joy1, &mouse, seq, sizeof(seq),
+                                           &ignored);
             if (n > 0) {
                 desk_in_push(seq, n);
             }
         } else {
-            /* Console mode: the pad moves nothing, and its mouse reports would
-             * reach the shell as text.  Tracking it keeps L's edge. */
+            /* Console mode: the pad and the mouse move nothing, and their
+             * mouse reports would reach the shell as text.  Tracking the pad
+             * keeps L's edge. */
             s_pad.prev = joy1;
         }
 

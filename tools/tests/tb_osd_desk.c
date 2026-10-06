@@ -102,6 +102,21 @@ bool tang_ble_keyboard(uint8_t out[8])
     return g_ble_live;
 }
 
+/* The Bluetooth mouse: what the next poll takes, live while "connected". */
+static tang_mouse_t g_mouse;
+static bool         g_mouse_live;
+
+bool tang_ble_mouse(tang_mouse_t *out)
+{
+    if (g_mouse_live) {
+        *out = g_mouse;
+    } else {
+        memset(out, 0, sizeof(*out));
+    }
+    g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
+    return g_mouse_live;
+}
+
 static void ble_report(uint8_t mods, uint8_t key)
 {
     memset(g_ble_rep, 0, sizeof(g_ble_rep));
@@ -487,6 +502,74 @@ int main(void)
         read_typed(got, sizeof(got));
         check(got[0] == '\0', "a Bluetooth key typed while the core had the screen");
         g_ble_live = false;
+    }
+
+    /* ---- the Bluetooth mouse drives the desktop's pointer ---------------- */
+    {
+        char got[256];
+
+        g_osd_last = true;
+        tang_osd_desk_set_pointer(true);
+        g_mouse_live = true;
+        while (tang_osd_desk_read_byte() >= 0) { }
+
+        const int x0 = s_pad.x;
+        g_mouse.dx = 32;                         /* two cells right */
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strncmp(got, "\x1b[<35;", 6) == 0, "the mouse did not move the pointer");
+        check(s_pad.x == x0 + 2, "32 counts did not move two cells");
+
+        g_mouse.buttons = TANG_MOUSE_LEFT;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strncmp(got, "\x1b[<0;", 5) == 0 && got[strlen(got) - 1] == 'M',
+              "the mouse's left button did not press");
+
+        /* The link drops with the button held: released, not left down. */
+        g_mouse_live = false;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strncmp(got, "\x1b[<0;", 5) == 0 && got[strlen(got) - 1] == 'm',
+              "a button held when the mouse dropped was not released");
+        g_mouse.buttons = 0;
+
+        /* Console mode: the mouse moves nothing and sends nothing. */
+        g_mouse_live = true;
+        tang_osd_desk_set_pointer(false);
+        const int x1 = s_pad.x;
+        g_mouse.dx = 64;
+        g_mouse.wheel = 1;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "the mouse sent reports in console mode");
+        check(s_pad.x == x1, "the mouse moved the pointer in console mode");
+
+        /* Movement made in console mode is not saved up for the desktop. */
+        tang_osd_desk_set_pointer(true);
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "console-mode movement came out in the desktop");
+
+        /* The wheel. */
+        g_mouse.wheel = -1;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strncmp(got, "\x1b[<65;", 6) == 0, "the wheel did not scroll down");
+        tang_osd_desk_set_pointer(false);
+        g_mouse_live = false;
+    }
+
+    /* ---- a push that does not fit is dropped whole ----------------------- */
+    {
+        char got[DESK_IN_MAX + 8];
+        char big[DESK_IN_MAX];
+        while (tang_osd_desk_read_byte() >= 0) { }
+        memset(big, 'x', sizeof(big));
+        desk_in_push(big, DESK_IN_MAX - 10);
+        desk_in_push("\x1b[<0;1;1M", 11);       /* one byte too many */
+        read_typed(got, sizeof(got));
+        check(strlen(got) == DESK_IN_MAX - 10, "a push that did not fit was cut short");
     }
 
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);

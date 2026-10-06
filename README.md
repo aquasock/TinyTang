@@ -45,9 +45,11 @@ is called out in the source where it is used.
   front USB-A port and does the same. It is not USB: the keyboard drives its
   own D+ line as a UART and the core receives it (see *Keyboard* below). Both
   can be used at once.
-- **A pointer in the desktop.** The D-pad on controller 1, or the arrows with
-  left-alt held, moves it; A or Enter is the left button, B or Esc the right,
-  and holding the left button while moving drags. The pointer exists only while
+- **A pointer in the desktop.** A Bluetooth LE mouse connected with
+  `blemouse`, the D-pad on controller 1, or the arrows with left-alt held,
+  moves it; the mouse's buttons, A or Enter are the left button, B or Esc the
+  right, and holding the left button while moving drags. The mouse's middle
+  button and wheel are passed on too. All of them drive the same pointer. The pointer exists only while
   the desktop runs: at the bare console nothing is drawn and nothing moves.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
   `rm`, `mkdir`, `cp`, `mv` all work on the card. FatFS is built reentrant
@@ -114,6 +116,12 @@ is called out in the source where it is used.
   after a reset the keyboard must be put back in pairing mode and connected
   again. Only Bluetooth LE devices work: the SDK has no Bluetooth Classic HID
   host.
+- **`blemouse <address> [pub|rand] [seconds]`** does the same for a Bluetooth
+  LE mouse, on its own connection beside the keyboard: boot protocol, whose
+  report is buttons, X, Y and (if the mouse adds it) the wheel, and the mouse
+  then drives the desktop's pointer. It has the same `watch`, `off` and status
+  forms. Proven with a Logitech M750. Connect one device at a time: a second
+  connection is refused until the first is ready.
 - **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
@@ -278,9 +286,11 @@ STM32's own DFU bootloader.
     in `phosphor_track.h`), the `phosphor` command, and the desktop's
     Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
     helpers in `phosphor_media.h`).
-  - `tang_ble.c` — Bluetooth LE: `blescan`, and `blekbd`, the HID-over-GATT
-    keyboard client whose boot report `tang_osd_desk.c` types like the wired
-    link's, with left-alt pointer mode applied by `tang_key_pointer()`.
+  - `tang_ble.c` — Bluetooth LE: `blescan`, and `blekbd` and `blemouse`, the
+    HID-over-GATT client with one keyboard slot and one mouse slot.
+    `tang_osd_desk.c` types the keyboard's boot report like the wired link's,
+    with left-alt pointer mode applied by `tang_key_pointer()`, and hands the
+    mouse's movement, buttons and wheel to `tang_pad_pointer()`.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every

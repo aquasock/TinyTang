@@ -1,4 +1,4 @@
-// TinyTang — the Bluetooth LE keyboard as an input source.  See tang_ble.c.
+// TinyTang — the Bluetooth LE keyboard and mouse as input sources.  See tang_ble.c.
 //
 // SPDX-License-Identifier: MIT
 
@@ -7,6 +7,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "tang_pad.h"
 
 /* The connected keyboard's current HID boot report: byte 0 the modifiers,
  * byte 1 reserved, bytes 2..7 the usages -- the layout the wired link's 0x08
@@ -19,5 +21,14 @@
  * all-zero report, so a key held at the moment the link died is released
  * rather than repeated. */
 bool tang_ble_keyboard(uint8_t out[8]);
+
+/* The connected mouse: its movement and wheel since the last call, and its
+ * buttons now (tang_pad.h's tang_mouse_t, from the HID boot mouse report).
+ * Movement and wheel are handed over once and then cleared, so nothing moved
+ * between two polls is lost and nothing is applied twice.
+ *
+ * Returns true while a mouse is connected and set up; otherwise everything is
+ * zero, so a button held when the link dropped is released. */
+bool tang_ble_mouse(tang_mouse_t *out);
 
 #endif /* TANG_BLE_H */

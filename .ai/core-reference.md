@@ -163,6 +163,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What does the Logitech K950 expose over Bluetooth LE? | BLE | BLE-006 |
 | Which Bluetooth input devices can the board use? | BLE | BLE-007 |
 | Why does a Bluetooth keyboard need its own liveness rule and its own pointer mode? | BLE | BLE-008 |
+| What does the Logitech M750 mouse expose over Bluetooth LE? | BLE | BLE-009 |
+| Why does a GATT subscribe fail with -EALREADY after a bonded device reconnects? | BLE | BLE-010 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -354,6 +356,8 @@ BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host 
 BLE-006: "Logitech K950 in Bluetooth mode is HID over GATT on BLE: a random address that changes each time it enters pairing mode, Just Works pairing, boot protocol supported (Boot Keyboard Input value handle 0x23, CCC 0x24, Protocol Mode 0x4D) and the standard 8-byte boot report"
 BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device such as the Rii K06 (Bluetooth 3.0) cannot connect"
 BLE-008: "A BLE keyboard notifies only when its key state changes, with no heartbeat, so it counts as live while connected and is zeroed on disconnect; its reports bypass the core, so left-alt pointer mode is applied in firmware by tang_key_pointer()"
+BLE-009: "Logitech M750 over BLE: random address that increases by one per pairing, Just Works, Boot Mouse Input at value handle 0x23 (CCC 0x24), Protocol Mode 0x35; its boot report is 4 bytes with the wheel in byte 3, and its 7-byte report-protocol report is 16-bit buttons, 12-bit X and Y packed in 3 bytes, wheel and pan"
+BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect unless BT_GATT_SUBSCRIBE_FLAG_VOLATILE is set, and re-sends them on reconnect; reusing those params structs for a new subscription rewrites a node still in its list and returns -EALREADY"
 ```
 
 ---
@@ -1933,6 +1937,32 @@ BLE-008: "A BLE keyboard notifies only when its key state changes, with no heart
     - "blekbd watch of the K950 on this board, 2026-10-05"
     - "This project's ports/bl616/tang_key.h, TANG_KEY_REPORT_TIMEOUT_MS; third_party/patches/0006-pointer-mode.patch, link_key_to_pad"
   verification: "Host tests tools/tests/test_osd_desk.sh and test_key.sh cover repeat past 300 ms while live, release on disconnect, and pointer mode in console and desktop, and fail when the live flag or tang_key_pointer() is removed. The user confirmed on hardware on 2026-10-05 typing, repeat, release on power-off mid-hold, left-alt pointer and clicks and F12 (core-log entry 31)."
+
+- record_id: BLE-009
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "Logitech M750 mouse over Bluetooth LE"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The Logitech M750 mouse in Bluetooth mode is a HID over GATT device on Bluetooth LE advertising as 'Logi M750'. Like the K950 it uses a random address that increases by one each time it is put into pairing mode (seen as D6:86:9C:53:2B:57 to 2B:5A) and accepts Just Works pairing at security level 2. Its HID service is 0x001F-0x0035: HID Information at value handle 0x21, Boot Mouse Input at 0x23 (notify, CCC 0x24), the Report Map at 0x26, Reports at 0x28 (notify, CCC 0x29), 0x2C (notify, CCC 0x2D) and 0x30, the Control Point at 0x33 and Protocol Mode at 0x35. In report protocol, which it starts in, the report on 0x28 is 7 bytes: buttons in bytes 0-1 (bit 0 left, bit 1 right), X and Y as 12-bit signed values packed in bytes 2-4 (X = b2 | (b3 & 0x0F) << 8, Y = b3 >> 4 | b4 << 4), the wheel in byte 5 and, by position, horizontal pan in byte 6. Writing 0 to Protocol Mode puts it in boot protocol, which reads back as 00, and its boot report is then 4 bytes: buttons, X and Y as signed bytes, and the wheel as a signed byte. Like the K950 it sends one 19-byte notification beginning FF 04 00 01 01 01 on its vendor report, 0x2C."
+  consequence: "Boot protocol gives the mouse everything the desktop uses, the wheel included, without parsing the report map; tang_mouse_boot_add() in ports/bl616/tang_pad.c reads it. The 7-byte report-protocol layout was decoded from motion and is not taken from the report map, so it must not be relied on for other mice. Out of range of the bare U35 jack (BLE-001) the link drops with HCI 0x08, a supervision timeout, and a reconnect using the RAM bond once failed encryption (security level 1, error 8) and then HCI 0x3E, after which the mouse no longer reconnected until it was put back in pairing mode."
+  sources:
+    - "blemouse and blekbd discovery, read-backs and watches of this M750 by this project's ports/bl616/tang_ble.c, 2026-10-05"
+    - "Bluetooth SIG HID over GATT Profile 1.0: Protocol Mode, Boot Mouse Input Report; USB HID 1.11 Appendix B.2, the boot mouse report"
+  verification: "On this board on 2026-10-05 a report-protocol watch while the user moved the mouse right, left, down and up gave the 7-byte layout above, and a boot-protocol watch gave 268 four-byte reports with motion and the wheel in both directions. The user then confirmed motion, clicks, drag, middle button, wheel and release on dropout in the desktop (core-log entry 32)."
+
+- record_id: BLE-010
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Bonded subscriptions outlive the connection unless volatile"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "In the SDK's Bluetooth host, remove_subscriptions() in blestack/src/host/gatt.c removes a subscription on disconnect only if the peer is not bonded or the subscription's flags carry BT_GATT_SUBSCRIBE_FLAG_VOLATILE; otherwise the bt_gatt_subscribe_params stays linked in the host's subscriptions list and is re-sent when the peer reconnects. bt_gatt_subscribe() returns -EALREADY (-120 here) when the params struct passed is already in that list."
+  consequence: "A client that re-subscribes on every connection from its own params structs must mark them volatile, or a reconnect from a bonded peer (or a new pairing of the same device within one boot) finds them still linked: re-initialising one rewrites a list node the host is using, and subscribing it fails with -EALREADY. hid_add_sub() in ports/bl616/tang_ble.c sets the flag. Bonds are in RAM only here (BLE-002), so this arises within one boot."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/gatt.c: remove_subscriptions(), bt_gatt_subscribe()"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: BT_GATT_SUBSCRIBE_FLAG_VOLATILE"
+  verification: "On 2026-10-05, without the flag, the M750's re-pairing after a dropout logged 'subscribe 0x002C failed (-120)', and its failed reconnect showed the host completing a CCC write nobody had issued. With the flag the next pairing subscribed all three inputs (core-log entry 32)."
 ```
 
 ---

@@ -100,6 +100,103 @@ int main(void)
               step(&p, TANG_PAD_LEFT | TANG_PAD_RIGHT, &toggle), "");
     check_int("x unchanged", p.x, 40);
 
+    /* ---- the mouse ---- */
+
+    /* A boot report: buttons, X, Y as signed bytes, then an optional wheel.
+     * Movement and wheel add up between steps; the buttons are replaced. */
+    {
+        tang_mouse_t m = { 0 };
+        const uint8_t r1[4] = { 0x01, 0x05, 0xFD, 0x01 };   /* left, +5, -3, +1 */
+        const uint8_t r2[3] = { 0x00, 0xF6, 0x02 };         /* none, -10, +2 */
+        tang_mouse_boot_add(&m, r1, sizeof(r1));
+        tang_mouse_boot_add(&m, r2, sizeof(r2));
+        check_int("boot: dx adds up", m.dx, -5);
+        check_int("boot: dy adds up", m.dy, -1);
+        check_int("boot: wheel from the 4th byte", m.wheel, 1);
+        check_int("boot: buttons replaced", m.buttons, 0);
+        const uint8_t shrt[2] = { 0x01, 0x05 };
+        tang_mouse_boot_add(&m, shrt, sizeof(shrt));
+        check_int("boot: a short report is ignored", m.dx, -5);
+    }
+
+    /* Counts become cells, 16 to a cell, and the remainder is kept. */
+    {
+        tang_pad_reset(&p, 80, 45);
+        static char out[256];
+        tang_mouse_t m = { .dx = 10 };
+        int n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: 10 counts is not a cell yet", out, "");
+        m.dx = 10;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: 20 counts is one cell", out, "\x1b[<35;42;23M");
+        check_int("mouse: remainder kept", p.fx, 4);
+        m.dx = 0;
+        m.dy = -40;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: -40 counts up is two cells", out, "\x1b[<35;42;21M");
+        check_int("mouse: negative remainder kept", p.fy, -8);
+
+        /* Pushing into an edge stores nothing up. */
+        m.dy = -16 * 100;
+        (void)tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        check_int("mouse: clamped at the top", p.y, 0);
+        check_int("mouse: no remainder at an edge", p.fy, 0);
+    }
+
+    /* Mouse buttons are the pad's buttons: either holds left; middle is 1. */
+    {
+        tang_pad_reset(&p, 80, 45);
+        static char out[256];
+        tang_mouse_t m = { .buttons = TANG_MOUSE_LEFT };
+        int n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: left press", out, "\x1b[<0;41;23M");
+        /* The pad's A held as well and then the mouse let go: still held. */
+        m.buttons = 0;
+        n = tang_pad_pointer(&p, TANG_PAD_A, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: A keeps left held", out, "");
+        m.dx = 16;
+        n = tang_pad_pointer(&p, TANG_PAD_A, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: moving with left held drags", out, "\x1b[<32;42;23M");
+        m.dx = 0;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: left release", out, "\x1b[<0;42;23m");
+        m.buttons = TANG_MOUSE_RIGHT;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: right press", out, "\x1b[<2;42;23M");
+        m.buttons = TANG_MOUSE_MIDDLE;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: right release, middle press", out,
+                  "\x1b[<2;42;23m\x1b[<1;42;23M");
+        m.buttons = 0;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: middle release", out, "\x1b[<1;42;23m");
+    }
+
+    /* The wheel: 64 up, 65 down, one per detent, at most four per step. */
+    {
+        tang_pad_reset(&p, 80, 45);
+        static char out[256];
+        tang_mouse_t m = { .wheel = 2 };
+        int n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: wheel up twice", out, "\x1b[<64;41;23M\x1b[<64;41;23M");
+        m.wheel = -9;
+        n = tang_pad_pointer(&p, 0, &m, out, sizeof(out) - 1, &toggle);
+        out[n] = '\0';
+        check_str("mouse: wheel down clamped to four", out,
+                  "\x1b[<65;41;23M\x1b[<65;41;23M\x1b[<65;41;23M\x1b[<65;41;23M");
+    }
+
     printf("tang_pad: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;
 }
