@@ -991,3 +991,36 @@ Feed the Bluetooth keyboard's boot reports into the same path as the wired keybo
 - User Test: PASS
 
 ---
+
+## 30 COMMIT Unreleased 2026-10-05T20:08:00-07:00
+
+#### Coming From:
+
+Unreleased c882c28
+
+#### Purpose:
+
+Attribute the Bluetooth stack that `blescan` and `blekbd` linked into the firmware, as the licences of its components require.
+
+#### Outcome:
+
+The user asked whether the Bluetooth stack used in entry 29 needs attribution, and it does, since `THIRD_PARTY.md` and `TOOL-008` named only FreeRTOS, CherryUSB and FatFs. The objects actually linked were taken from `build/build_out/tinytang_bl616.map` and each one's source header was read from the SDK at `7f44f9e`. The Zephyr-derived host `libblestack.a` is Apache-2.0 (Intel, Nordic, Wind River, Oticon, Vinayak Kariappa Chettimada, plus Bouffalo port files), already covered by `LICENSES/Apache-2.0.txt`. Inside it, TinyCrypt (Intel, 2017, BSD-3-Clause), micro-ecc (Kenneth MacKay, 2014, BSD-2-Clause) and `ctr_prng.c` (Chris Morrison, 2016, BSD-2-Clause) each require a binary distribution to reproduce its notice, conditions and disclaimer in the documentation. Their texts were extracted verbatim from the SDK into `LICENSES/BSD-3-Clause-tinycrypt.txt`, `LICENSES/BSD-2-Clause-micro-ecc.txt` and `LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt`. The controller `libbtblecontroller_bl616_ble1m10s1bredr0.a` and the radio libraries `libbl616_phyrf.a` and `librfparam.a` are prebuilt binaries with no licence of their own. The controller's port file reads "Copyright (C) RivieraWaves 2009-2015", so it is CEVA RivieraWaves IP, and the SDK's root Apache-2.0 is the only grant found for redistributing it. `THIRD_PARTY.md` gained a Bluetooth LE section naming all of this, and `TOOL-016` supersedes `TOOL-008` with its routing row pointed there and a new routing row for Bluetooth attribution. No firmware source changed, so nothing was built or deployed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md` and inspected the complete `.ai/` diff: this entry, `TOOL-016` and its index and routing lines, and `TOOL-008` marked superseded. It confirmed `.ai/core.md` unchanged, parsed the reference YAML with records matching index lines, and validated this entry as number 30 of 100 with `tools/check_core_log.py`. No settled history was rewritten beyond the superseding mark.
+
+#### Next Steps:
+
+Feed the Bluetooth keyboard's boot reports into the same path as the wired keyboard link, then the remaining Bluetooth work from entry 29's Next Steps, which stand unchanged. Anyone publishing a firmware image should ship `THIRD_PARTY.md` and `LICENSES/` with it. If a release ever depends on terms for the controller blob beyond the SDK's Apache-2.0, ask Bouffalo rather than infer them.
+
+#### Files Modified:
+
+- LICENSES/BSD-2-Clause-micro-ecc.txt
+- LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt
+- LICENSES/BSD-3-Clause-tinycrypt.txt
+- THIRD_PARTY.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

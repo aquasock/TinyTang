@@ -9,8 +9,8 @@ terms, and the pointer in its header has to resolve to something true.
 The components below are inherited, vendored, or consulted. Where a source was
 read as a specification rather than copied, that is said plainly, because that
 distinction is what decides which obligations attach. The same facts are kept
-as records in `.ai/core-reference.md` (`PROV`, `TOOL-007`, `TDSH-001`,
-`TDESK-001`, `PROT-001`).
+as records in `.ai/core-reference.md` (`PROV`, `TOOL-007`, `TOOL-016`,
+`TDSH-001`, `TDESK-001`, `PROT-001`).
 
 ## TangCore firmware (nand2mario)
 
@@ -154,6 +154,42 @@ because a bundle's licence does not cover what is bundled inside it:
   narrower than the two above: a redistribution of *source* must retain the
   notice and its condition. This project ships no FatFS source — it builds
   against the SDK's — but the filesystem the shell sees is FatFS
+
+### Bluetooth LE
+
+`blescan` and `blekbd` (`ports/bl616/tang_ble.c`) link the SDK's Bluetooth
+stack. It comes in three parts, and two of them carry licences the line above
+does not cover:
+
+- **Bluetooth host (`blestack`)** — Apache-2.0, derived from Zephyr's
+  Bluetooth host. The linked files carry `SPDX-License-Identifier: Apache-2.0`
+  and these copyrights: (c) 2015-2018 Intel Corporation; (c) 2016-2017 Nordic
+  Semiconductor ASA; (c) 2011-2014, 2016-2017 Wind River Systems, Inc.;
+  (c) 2019 Oticon A/S; (c) 2016 Vinayak Kariappa Chettimada. Bouffalo's own
+  port files (Copyright (C) Bouffalo Lab 2018, 2019) carry no licence header
+  and fall under the SDK's Apache-2.0. The licence text is at
+  `LICENSES/Apache-2.0.txt`
+- **TinyCrypt and micro-ecc, inside the host** — BSD. This is the Bluetooth
+  host's cryptography for pairing (AES, CCM, CMAC, HMAC, SHA-256, the PRNGs and
+  P-256 ECDH). Each of these licences requires a distribution *in binary form*
+  to reproduce its copyright notice, conditions and disclaimer in the
+  documentation, and this firmware's image is such a distribution. The texts
+  are reproduced verbatim from the SDK's source:
+  - Copyright (C) 2017 by Intel Corporation, All Rights Reserved — BSD-3-Clause,
+    `LICENSES/BSD-3-Clause-tinycrypt.txt`
+  - Copyright (c) 2014, Kenneth MacKay (micro-ecc, in `ecc.c`, `ecc_dh.c`,
+    `ecc_dsa.c` and `ecc_platform_specific.c`) — BSD-2-Clause,
+    `LICENSES/BSD-2-Clause-micro-ecc.txt`
+  - Copyright (c) 2016, Chris Morrison (`ctr_prng.c`) — BSD-2-Clause,
+    `LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt`
+- **Bluetooth controller and radio** — supplied as prebuilt binaries only:
+  `libbtblecontroller_bl616_ble1m10s1bredr0.a`, a controller based on CEVA's
+  RivieraWaves IP (its port file `btblecontroller_port_uart.c` reads
+  "Copyright (C) RivieraWaves 2009-2015"), and the PHY/RF libraries
+  `libbl616_phyrf.a` and `librfparam.a`. None carries a licence of its own,
+  so the SDK's root Apache-2.0 is the only grant that covers redistributing
+  them. This project ships none of them; they are linked from the SDK at
+  build time
 
 Not linked into this firmware, and therefore not named: the SDK's LVGL,
 TJpgDec, mbedTLS, littlefs and multimedia codecs.

@@ -212,12 +212,13 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where is the USB-enumeration bisection kept? | TOOL | TOOL-005 |
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
-| Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-008 |
+| Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-016 |
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
 | How is a core deployed, debugged and exercised entirely over one-wire? | TOOL | TOOL-013 |
 | Is there a JTAG path to the FPGA other than the BL616 and the FT2232? | TOOL | TOOL-014 |
 | Can a FatFS call be made inside a critical section? | TOOL | TOOL-015 |
+| Does the Bluetooth stack need attribution, and where are its notices? | TOOL | TOOL-016 |
 | Why does the patch applier stop recognising a patch? | TOOL | TOOL-010 |
 | Who is upstream of this project, and in what order? | PROV | PROV-001 |
 | Does this project carry the licences and notices it owes? | PROV | PROV-004 |
@@ -311,7 +312,7 @@ TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is 
 TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib.conf and proj.rtos.conf plus ref/, selected by TINYTANG_MIN, TINYTANG_RTOS, TINYTANG_NONEWLIB, TINYTANG_REF, TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL"
 TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
 TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
-TOOL-008: "Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
+TOOL-008: "Superseded by TOOL-016. Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
 TOOL-009: "Superseded by TOOL-011. Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending"
 TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
 TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
@@ -319,6 +320,7 @@ TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 
 TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs over JTAG with Tang-Phosphor's scripts/flash-otg.sh (17 s for the merged Phosphor image), then identify, peek, poke and stream to it on /dev/ttyUSB1 at 2 Mbaud with tools/fpga_uart.py and scripts/play_stream.py; an MP3 played through the AE350 this way gave 441000 samples, 0 underruns, 44100 Hz"
 TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
 TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
+TOOL-016: "Linked out of the SDK under their own licences: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com), CherryUSB (Apache-2.0), FatFs R0.15 w/patch3 (ChaN), and since blescan/blekbd the Bluetooth stack: the Zephyr-derived host (Apache-2.0; Intel, Nordic, Wind River, Oticon, Chettimada), TinyCrypt (BSD-3-Clause, Intel 2017), micro-ecc (BSD-2-Clause, Kenneth MacKay 2014) and ctr_prng (BSD-2-Clause, Chris Morrison 2016), whose binary-form notices are reproduced in LICENSES/, plus the binary-only RivieraWaves-based controller and PHY libraries under the SDK's Apache-2.0 alone"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -1231,7 +1233,7 @@ BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic
   kind: TOOLCHAIN
   topic_id: TOOL
   title: "The SDK components this firmware actually links, and their licences"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "The Bouffalo SDK is Apache-2.0 for its own code but bundles third-party components under their own licences, and three of those are linked into this firmware. FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates, selected by CONFIG_FREERTOS in proj.conf. CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu, which is the device CDC console and the FreeRTOS OSAL hosting it. And FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition obliges only a redistribution of source to retain its notice. Not linked into this firmware: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
   consequence: "This is the part PROV-002's list does not reach: naming the SDK is not naming what the SDK carries, and FreeRTOS's MIT text has to travel with copies and substantial portions, which is what this firmware's binary is. THIRD_PARTY.md now names all three. Anyone enabling a further SDK component - mbedTLS for the network apps, LVGL for graphics - inherits that component's licence at the moment they enable it."
@@ -1241,6 +1243,7 @@ BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic
     - "Bouffalo SDK components/fs/fatfs/ff.c: 'FatFs - Generic FAT Filesystem Module R0.15 w/patch3' and ChaN's condition"
     - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
   verification: "Read from the SDK's own source headers at ~/.cache/tangcore-dev/sdk, and the FreeRTOS selection confirmed in proj.conf. The not-linked list was checked against this project's configuration and sources rather than the SDK's inventory."
+  superseded_by: "TOOL-016"
 
 - record_id: TOOL-009
   kind: TOOLCHAIN
@@ -1340,6 +1343,22 @@ BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic
     - "FreeRTOS kernel reference, taskENTER_CRITICAL(): FreeRTOS API functions must not be called from within a critical section, https://www.freertos.org/Documentation/02-Kernel/04-API-references/04-RTOS-kernel-control/01-taskENTER_CRITICAL_taskEXIT_CRITICAL"
     - "ports/bl616/tang_jtag_programmer.c, fpga_program, the JTAG_FAST path"
   verification: "Observed on this board on 2026-10-05: with FF_FS_REENTRANT on, tangload of phosphortang.bin failed from TinyDesk's Terminal and succeeded at the bare console; after the reads were moved out of the critical section it succeeded at the console and, by the user's test, from the desktop. Which of the blocked take or the yielding give broke the load was not traced; either is outside what FreeRTOS allows."
+
+- record_id: TOOL-016
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The SDK components this firmware links, and their licences, now including the Bluetooth stack"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Everything TOOL-008 recorded still holds: FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates; CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu; FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition reaches only source redistribution. Since blescan and blekbd (BLE-002) the firmware also links the SDK's Bluetooth stack, in three parts. The host, libblestack.a built from the SDK's source, is derived from Zephyr's Bluetooth host: its linked files are Apache-2.0 by SPDX tag, copyright Intel Corporation 2015-2018, Nordic Semiconductor ASA 2016-2017, Wind River Systems 2011-2014 and 2016-2017, Oticon A/S 2019 and Vinayak Kariappa Chettimada 2016, with Bouffalo Lab port files (2018, 2019) that carry no licence header. Inside the host, pairing's cryptography is TinyCrypt, Copyright (C) 2017 Intel Corporation under a BSD-3-Clause text; micro-ecc, Copyright (c) 2014 Kenneth MacKay under a BSD-2-Clause text, in ecc.c, ecc_dh.c, ecc_dsa.c and ecc_platform_specific.c; and ctr_prng.c, Copyright (c) 2016 Chris Morrison under a BSD-2-Clause text. All three BSD texts require a distribution in binary form to reproduce the notice, conditions and disclaimer in its documentation. The controller, libbtblecontroller_bl616_ble1m10s1bredr0.a, and the radio's libbl616_phyrf.a and librfparam.a are prebuilt binaries with no licence of their own; the controller's port file btblecontroller_port_uart.c reads 'Copyright (C) RivieraWaves 2009-2015', so the controller is CEVA RivieraWaves IP, and the SDK's root Apache-2.0 is the only grant found covering its redistribution. Not linked: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
+  consequence: "The firmware image is a binary distribution of all of these, so the BSD notices must travel with it: their texts are reproduced verbatim in LICENSES/BSD-3-Clause-tinycrypt.txt, LICENSES/BSD-2-Clause-micro-ecc.txt and LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt, and THIRD_PARTY.md names every part of the stack and its holders. Anyone publishing a firmware image should ship THIRD_PARTY.md and LICENSES/ with it. Whether CEVA or Bouffalo place any condition on the controller blob beyond the SDK's Apache-2.0 is not stated anywhere in the SDK; if a release ever depends on that, ask Bouffalo rather than infer it. Enabling CONFIG_BT_SETTINGS, mbedTLS or another SDK component later adds that component's licence at that moment."
+  sources:
+    - "build/build_out/tinytang_bl616.map: the 38 libblestack.a objects linked, and the controller, phyrf and rfparam archives"
+    - "Bouffalo SDK at 7f44f9e (TOOL-003), components/wireless/bluetooth/blestack/src: the copyright and SPDX lines of each linked object's source; src/common/tinycrypt/source/aes_encrypt.c, ecc.c and ctr_prng.c for the three BSD texts"
+    - "Bouffalo SDK components/wireless/bluetooth/btblecontroller/btblecontroller_port/btblecontroller_port_uart.c: 'Copyright (C) RivieraWaves 2009-2015'"
+    - "Bouffalo SDK root LICENSE: Apache-2.0; the SDK's only per-component licence files are for MQTT-C, TinyMaix, cmake and pikapython, none linked here"
+    - "TOOL-008 for FreeRTOS, CherryUSB and FatFs"
+  verification: "The linked-object list was taken from this build's map, and each object's source header was read from the SDK; the LICENSES texts were extracted programmatically from the SDK files named above, comment markers removed and wording unchanged. strings over the controller and PHY archives found no licence or copyright text."
 
 - record_id: TCTL-004
   kind: EXTERNAL
