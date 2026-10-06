@@ -95,7 +95,20 @@ is called out in the source where it is used.
   the core, `status` reports cells and rows sent and any refused.
 - **`osd on | off | clear | at | menu`** draw on the NES core's own 32x28 text
   page, the one nand2mario's menu uses. The menu core does not build that page.
-- **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
+- **`blescan [seconds]`** starts the BL616's own Bluetooth LE radio and lists
+  the devices advertising nearby, strongest first, with address, address type,
+  signal (dBm) and name. The radio is started by the first Bluetooth command,
+  not at boot, and stays up until reset.
+- **`blekbd <address> [pub|rand] [seconds]`** connects to a Bluetooth LE
+  keyboard (HID over GATT), pairs with Just Works, switches it to boot
+  protocol and prints its key reports -- the same 8-byte report the wired
+  keyboard link carries. `blekbd watch [seconds]` prints them again,
+  `blekbd off` disconnects and `blekbd` alone reports the state. Proven with a
+  Logitech K950 (from the MK955 set) in Bluetooth mode. The address comes from
+  `blescan`; the K950's changes every time it enters pairing mode. Pairing is
+  kept in RAM only, so after a reset the keyboard must be put back in pairing
+  mode. Only Bluetooth LE devices work: the SDK has no Bluetooth Classic HID
+  host. The reports do not reach the console or the desktop yet. and switch the
   OTG connector's role. They exist to establish facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
   from a file on the SD, and put a file on the card over the console, with no
@@ -259,6 +272,8 @@ STM32's own DFU bootloader.
     in `phosphor_track.h`), the `phosphor` command, and the desktop's
     Phosphor app (`td_phosphor_app.cpp`, with its header parsing and time
     helpers in `phosphor_media.h`).
+  - `tang_ble.c` — Bluetooth LE: `blescan`, and `blekbd`, the HID-over-GATT
+    keyboard client.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every
@@ -305,8 +320,9 @@ session. `.ai/core-reference.md` holds the full records and their sources.
    init does not touch it, and without it `f_mount` returns `FR_NOT_READY`.
 4. **The FPGA's JTAG pins are GPIO 0/1/2/3** (TMS/TCK/TDO/TDI), driven for the
    vendored programmer's fast bit-bang path.
-5. **The application lives at flash `0x40000`.** The vendor loader below it is
-   never touched; `tangflash` stages an image at `0x100000`, verifies it, and
+5. **The application lives at flash `0x40000`, up to 896 KB (`0xE0000`).**
+   The vendor loader below it and the vendor data record at `0x200000` are
+   never touched; `tangflash` stages an image at `0x120000`, verifies it, and
    only then commits it from TCM.
 6. **A `tangflash` normally needs a power cycle.** Its soft reset usually lands
    in the vendor loader, and the board shows up as an FT2232 until it is
@@ -360,6 +376,12 @@ session. `.ai/core-reference.md` holds the full records and their sources.
     up each pixel four pixels ahead, wrapping at the frame edges. Before patch
     0007 it did not, and the top-left character's left column was painted down
     the whole left edge of the screen.
+17. **The board has no Bluetooth antenna, only a jack for one.** The BL616's
+    antenna pin runs to U35, a U.FL socket marked ANT on the dock's underside
+    beside the upper USB-A port. With nothing fitted the radio still works at
+    arm's length, at about -76 to -94 dBm, but a connection attempt sometimes
+    fails (HCI 0x3E, connection failed to be established) and `blekbd` has to
+    be run again.
 
 ## Diagnostics
 

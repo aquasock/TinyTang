@@ -956,3 +956,38 @@ The fourth step of the agreed sequence is done; the next is packaging the deskto
 - User Test: PASS
 
 ---
+
+## 29 COMMIT Unreleased 2026-10-05T20:02:08-07:00
+
+#### Coming From:
+
+Unreleased cb9e7d4
+
+#### Purpose:
+
+Bring up the BL616's own Bluetooth LE radio as the standard input path, prove it with a scan, and connect a Bluetooth LE keyboard far enough to print its key reports, growing the application slot to make room.
+
+#### Outcome:
+
+The user asked for Bluetooth on the BL616 to replace low-speed USB and the custom wired keyboard link. The dock schematics show the BL616's antenna pin running to U35, a U.FL jack with nothing fitted (`BLE-001`). The new `ports/bl616/tang_ble.c` adds `blescan`, which starts the radio on first use with the SDK's all-roles controller library `ble1m10s1bredr0` (`proj.conf`; `BLE-002`) and lists advertisers by signal strength. Bluetooth took the image from 346,160 to 582,256 bytes, over the 0x80000 slot, and cost 52.6 KB of boot heap (`BLE-002`). A read-back of the whole flash showed 0x76000-0x200000 erased and the old limit to be Tang-Control's choice, so the slot became 0xE0000 with staging at 0x120000 in `tdsh_tang_flash.c` and `tools/tinytang_flash.py`, with static assertions against the vendor data at 0x200000 (`FLS-002`, superseding `FLS-001`). It was installed in two steps because the old `tangflash` refuses anything over 0x80000: a non-Bluetooth image with the new limits, then the Bluetooth image, both booting after a power cycle. With no antenna `blescan` found the user's phone. Research on the user's candidate devices found the Rii K06 to be Classic-only, and the SDK has no Classic HID host, so only Bluetooth LE HID over GATT devices can be used (`BLE-007`); the user chose the Logitech MK955 set, and its K950 keyboard was the first target. `blekbd` connects to a given address, pairs with Just Works, discovers the HID service, writes boot protocol, subscribes to every input report, reads back the protocol mode and each CCC, and prints decoded boot reports from a ring the Bluetooth callbacks fill and the shell drains. Hardware runs found three SDK behaviours, each fixed and recorded: filtered GATT discovery returned nothing against the K950, so discovery is unfiltered and filtered in the callback (`BLE-003`); a vendor patch reports a successful CCC write as a NULL notification, which the first version took for an unsubscribe (`BLE-004`); and issuing all the setup requests at once deadlocked the host, so they now run one at a time through a sequencer (`BLE-005`). Connection attempts sometimes failed with HCI 0x3E on the bare jack and succeeded when run again. The final build `cb9e7d4-dirty.aee808e`, 594,400 bytes, MD5 `5ef6cb9460c72c062f3585c54efdbf5c`, was built with `make` without new warnings, installed with `tools/tinytang_flash.py` and confirmed by `platform` after a power cycle. On it `blekbd` paired with the K950 at a random address that changes with every pairing (`BLE-006`), read back boot protocol and all seven CCCs enabled, and decoded 404 boot reports in a 40-second watch while the user typed letters, Space, Enter, punctuation and the right-hand modifiers, with rollover and releases correct; the user confirmed it works. The committed tree differs from that build only in comments in `proj.conf` and in `README.md`, which describes `blescan`, `blekbd`, `tang_ble.c`, the new slot and the antenna as fact 17. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff (this entry, the BLE topic, `FLS-002` with `FLS-001` marked superseded, `BLE-001` through `BLE-007`, and their routing and index lines), confirmed `.ai/core.md` unchanged, validated this entry as number 29 of 100 with `tools/check_core_log.py`, and confirmed no settled history was rewritten.
+
+#### Next Steps:
+
+Feed the Bluetooth keyboard's boot reports into the same path as the wired keyboard link, so the K950 types at the console and drives the desktop's pointer, with arrows, Esc and the function keys checked, since they have not been typed yet. After that: keep pairings across resets with `CONFIG_BT_SETTINGS` and storage for the keys; reconnect after a dropout; find the keyboard by name or HID appearance instead of by address, which changes with every pairing; measure the heap the running stack takes, for which there is no shell command yet; then the M650 mouse and a Bluetooth LE controller such as the Xbox Series, which will need report protocol and report-map parsing. An antenna on U35 would remove the 0x3E connection failures. The open items from entry 28 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- proj.conf
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

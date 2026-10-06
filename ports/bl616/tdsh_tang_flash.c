@@ -5,7 +5,7 @@
 //
 //   * The application lives at flash offset 0x40000, and the code executes
 //     from that same XIP flash.  The image therefore cannot be written in
-//     place: it is staged in an erased region at 0x100000 first, verified, and
+//     place: it is staged in an erased region at 0x120000 first, verified, and
 //     only then copied into the application slot.
 //   * The copy itself must run from TCM.  The moment the first application
 //     sector is erased, no instruction may be fetched from the application's
@@ -42,11 +42,17 @@
 #include "tdsh.h"
 
 #define FW_APP_BASE        0x00040000u
-#define FW_APP_MAX_SIZE    0x00080000u
-#define FW_STAGING_BASE    0x00100000u
+#define FW_APP_MAX_SIZE    0x000E0000u
+#define FW_STAGING_BASE    0x00120000u
+#define FW_VENDOR_DATA     0x00200000u
 #define FW_SECTOR_SIZE     0x1000u
 #define FW_BOOT_HEADER     0x100u
 #define FW_HEADER_REGION   0x1000u
+
+/* The slot and the staging area share the erased gap below the vendor's data
+ * record at 0x200000 (FLS-002). */
+_Static_assert(FW_APP_BASE + FW_APP_MAX_SIZE <= FW_STAGING_BASE, "app slot overlaps staging");
+_Static_assert(FW_STAGING_BASE + FW_APP_MAX_SIZE <= FW_VENDOR_DATA, "staging overlaps vendor data");
 
 static uint8_t s_sector[FW_SECTOR_SIZE];
 static uint8_t s_stage[FW_SECTOR_SIZE];

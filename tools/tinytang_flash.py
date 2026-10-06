@@ -29,7 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 REMOTE_PATH = "/tinytang-upload.bin"
-FW_APP_MAX = 0x80000
+# Must match FW_APP_MAX_SIZE in ports/bl616/tdsh_tang_flash.c (FLS-002). A
+# board still running a pre-FLS-002 build refuses anything over 0x80000 itself.
+FW_APP_MAX = 0xE0000
 
 
 def wait_for(port, needle, timeout, echo=True):

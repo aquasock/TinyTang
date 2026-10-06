@@ -110,6 +110,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
   name: "Tang-PSX (external project)"
   description: "Facts harvested from Tang-PSX's reference as that project is archived: the device revision and resources, the FPGA end of the core link, the module's JTAG and UART header, the dock's SDRAM, and the measured core-state behaviour of the transport."
 
+- topic_id: BLE
+  name: "Bluetooth LE on the BL616"
+  description: "The BL616's own radio: the board's antenna path, the SDK's controller libraries and host stack, how its GATT client behaves against a real HID device, and which input devices can be used at all."
+
 - topic_id: TOOL
   name: "Toolchain behaviour"
   description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness, plus the provenance and licence of code vendored into this project."
@@ -150,7 +154,14 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why is there no host deinit, and what must be done by hand? | USB | USB-005 |
 | How do I tell whether a host is attached? | USB | USB-006 |
 | Why is TinyDesk on HDMI laggy with the computer attached? | USB | USB-007 |
-| Where does the application live in flash, and what does a soft reset do? | FLS | FLS-001 |
+| Where does the application live in flash, and what does a soft reset do? | FLS | FLS-002 |
+| Where is the Bluetooth antenna, and how well does the radio work without one? | BLE | BLE-001 |
+| Which SDK Bluetooth library does this firmware need, and what does Bluetooth cost? | BLE | BLE-002 |
+| Why does a UUID-filtered GATT discovery find nothing? | BLE | BLE-003 |
+| Why does a subscription's notify callback get a NULL report? | BLE | BLE-004 |
+| Why does the BLE host hang partway through setting up a device? | BLE | BLE-005 |
+| What does the Logitech K950 expose over Bluetooth LE? | BLE | BLE-006 |
+| Which Bluetooth input devices can the board use? | BLE | BLE-007 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -254,7 +265,8 @@ USB-004: "usbd_add_endpoint() assigns by endpoint index, not by appending, and u
 USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-only, and usb_hc_low_level_init() has no counterpart, so the port must be returned to device mode by hand"
 USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
 USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
-FLS-001: "Application at 0x40000, staging at 0x100000, commit runs from .tcm_code with interrupts off; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
+FLS-001: "Superseded by FLS-002. Recorded the application slot as at most 0x80000 bytes with staging at 0x100000, a limit Tang-Control chose rather than one the flash or the vendor loader imposes"
+FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000 (the backup shows 0x76000-0x200000 erased), commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
 PROT-002: "Commands: 01 core ID, 02 config string, 03 joypad (core to BL616), 04 cursor, 05 text, 06 loading state, 07 ROM data, 08 overlay, 09 HID, 0a/0b floppy, 0c PS/2"
 PROT-003: "BL616 UART1, TX GPIO 28, RX GPIO 27, 2,000,000 baud, 8N1"
@@ -331,6 +343,13 @@ PSX-003: "50 MHz oscillator on FPGA pin V22; the BL616 control UART reaches the 
 PSX-004: "Module connector U1201, 8-pin JST SH: 1 5V0 via diode (~4.4 V), 2 TMS T13, 3 TDO U13, 4 TCK V12, 5 TDI R13, 6 RX V14, 7 TX U15, 8 GND; the JTAG nets are shared with the BL616, so an external adapter must be released during a tangload, pins 6 and 7 stay unconnected, and pin 1 must not reach a 3.3 V adapter"
 PSX-005: "Dock SDRAM is Winbond W9825G6KH-6, 32 MB x16 at 166 MHz, on connectors J9 and J10, separate from the SOM's 1 GiB x32 DDR3; neither is the BL616's memory, which is 320 KB of on-chip OCRAM (BL6-002)"
 PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID (0x01 nestang, 0x50 Phosphor, 0x51 Gate 1), not by core_running, which reads no while a core answers; uploads are refused while a core runs; the link is 2 Mbaud with a 5 Mbaud fast mode and needs an iosys clock at least 8x the baud"
+BLE-001: "The BL616's antenna pin runs through L9 (0 ohm) to U35, a U.FL jack marked ANT on the dock's underside, and nothing is fitted to it; bare, the radio still scans and connects at arm's length at -76 to -94 dBm, with occasional HCI 0x3E connection failures that a retry clears"
+BLE-002: "Scanning and connecting need the SDK's ble1m10s1bredr0 controller library (central, observer, 10 links); ble1m0s1bredr0 has neither role; Bluetooth costs 236,096 B of image, 32 KB of RAM the linker reserves and 52.6 KB of boot heap, the controller cannot be shut down once started, and CONFIG_BT_SETTINGS 0 keeps pairing keys in RAM only"
+BLE-003: "Against the K950, bt_gatt_discover by service UUID (0x1812) and descriptor discovery by UUID (0x2902) found nothing, while unfiltered discovery found the same attributes; discover everything in range and filter in the callback"
+BLE-004: "With BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP on, the SDK calls a subscription's notify callback with data NULL when the CCC write enabling it succeeds, the same signal gatt.h documents as the subscription being removed; a NULL report there is not an unsubscribe"
+BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host on ATT TX buffer allocation for ever; issue one request at a time, each from the previous one's completion"
+BLE-006: "Logitech K950 in Bluetooth mode is HID over GATT on BLE: a random address that changes each time it enters pairing mode, Just Works pairing, boot protocol supported (Boot Keyboard Input value handle 0x23, CCC 0x24, Protocol Mode 0x4D) and the standard 8-byte boot report"
+BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device such as the Rii K06 (Bluetooth 3.0) cannot connect"
 ```
 
 ---
@@ -696,7 +715,7 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
   kind: FLASH
   topic_id: FLS
   title: "Application at 0x40000, staging at 0x100000, and a soft reset lands in the vendor loader"
-  status: VERIFIED
+  status: SUPERSEDED
   verified_date: 2026-10-03
   statement: "The application occupies flash from 0x40000 with a maximum of 0x80000 bytes. A new image is staged in an erased region at 0x100000, verified against the file, and only then copied into the application slot. The copy must run from .tcm_code with interrupts disabled, because once the first application sector is erased no instruction may be fetched from the application's XIP flash. The boot header carries magic at 0x00, 0x08 and 0x64, a CRC-32 of the first 252 bytes at 0xFC, and a body length at 0x84 counting bytes after the 4 KiB header region. A soft reset lands in the vendor loader."
   consequence: "tangflash validates the header and the file's length against it before erasing anything, and the user power-cycles afterwards. The vendor loader below 0x40000 is never touched."
@@ -704,6 +723,22 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Tang-Control, utils/firmware_update.cpp: FW_APP_BASE, FW_STAGING_BASE, the sector helpers and the erase/write/verify loops"
     - "This project's ports/bl616/tdsh_tang_flash.c: the constants and check_boot_header()"
   verification: "tangflash has been run roughly a dozen times this session, each time followed by a power cycle and a working console."
+  superseded_by: "FLS-002"
+
+- record_id: FLS-002
+  kind: FLASH
+  topic_id: FLS
+  title: "The application slot is 0xE0000 bytes, staged at 0x120000 below the vendor data record"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The application occupies flash from 0x40000 with a maximum of 0xE0000 bytes (917,504), ending at 0x120000. A new image is staged at 0x120000, which with the same maximum ends exactly at 0x200000, where the vendor's data record begins. A read-back of the whole 4 MiB flash taken on 2026-09-26 holds data only at 0x0-0x1C000 (the vendor loader), 0x40000-0x76000 (the application then installed) and 0x200000-0x201000 (the vendor data record), and is erased everywhere else, so 0x76000-0x200000 held nothing to preserve. The 0x80000 maximum FLS-001 recorded was Tang-Control's choice of layout (utils/firmware_image.h, whose own static assertions require only that the slot and the staging area fit below 0x200000), and the vendor loader does not enforce it: it booted images of 582,256 and 594,400 bytes, whose header body lengths exceed 0x80000. Everything else FLS-001 recorded holds unchanged: the header layout and CRC, the copy run from .tcm_code with interrupts off, and the soft reset landing in the vendor loader."
+  consequence: "ports/bl616/tdsh_tang_flash.c sets FW_APP_MAX_SIZE 0xE0000 and FW_STAGING_BASE 0x120000, with static assertions that the slot stays below the staging area and the staging area below 0x200000, and tools/tinytang_flash.py's FW_APP_MAX matches. A board still running a build from before this change refuses an image over 0x80000 itself, so moving such a board across takes two installs: first an image under 0x80000 built with the new limits, then the large one. Bluetooth LE alone took the image past the old limit (BLE-002), and the new slot leaves about 323 KB of room above a 594,400-byte image."
+  sources:
+    - "Full flash read-back /home/vash/Desktop/tang-console138k-bl616-backup-20260926.bin (4,194,304 bytes), mapped in 4 KiB sectors on 2026-10-05"
+    - "Tang-Control, utils/firmware_image.h: the flash-layout comment and the static assertions on the application and staging regions"
+    - "This project's ports/bl616/tdsh_tang_flash.c: FW_APP_MAX_SIZE, FW_STAGING_BASE, FW_VENDOR_DATA and the static assertions"
+    - "FLS-001, which this record supersedes"
+  verification: "On 2026-10-05 a non-Bluetooth image built with the new limits was installed by the old tangflash and booted, then the 582,256-byte Bluetooth image was installed by the new one and booted after a power cycle, and later 594,400-byte builds (the last cb9e7d4-dirty.aee808e) installed and booted the same way, each confirmed by platform."
 
 - record_id: PROT-001
   kind: PROTOCOL
@@ -1767,6 +1802,103 @@ PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID
     - "Project statement recorded with the user, 2026-10-03: a preference for MIT unless Apache-2.0 turned out to be required"
     - "PROV-002, which this record supersedes"
   verification: "Checked that nothing forces a copyleft licence: outside third_party and build, the only file in the tree carrying a licence of its own is the vendored programmer, so the project's inbound licensing is one file wide. Both licence texts are present and were read back after being written."
+
+- record_id: BLE-001
+  kind: BOARD
+  topic_id: BLE
+  title: "The Bluetooth antenna is a bare U.FL jack, and the radio works close up without one"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The BL616 on the dock is U9, BL616C-50-Q2I-QFN40. Its antenna pin, net BL616_ANT, runs through L9 (0 ohm) to U35, an IPEX U.FL Gen1 jack; C186 and C187 on that net are not fitted, and the board carries no antenna of its own. The jack is fitted, on the dock's underside, marked ANT, to the left of the upper USB-A port beside the RETRO READY logo. With nothing on it the radio received a phone and a Logitech K950 at arm's length, the K950 at -76 to -94 dBm, and connected to the K950, but some connection attempts ended with HCI status 0x3E (connection failed to be established), each cleared by trying again."
+  consequence: "Bluetooth works on this board as delivered for a device near it, which is enough for a keyboard or controller in front of the console. A connection attempt can fail on signal alone, so a client must expect 0x3E and try again rather than treat it as the device refusing. An antenna on U35 (a U.FL 2.4 GHz whip, or about 31 mm of wire on the centre pin) is the remedy if range or reliability matters; none has been tried."
+  sources:
+    - "Sipeed Tang Mega NEO dock schematics 31004 and 31005, Rev 1.4, page 8 (USB-JTAG & UART): U9, BL616_ANT, L9, U35, C186, C187"
+    - "Photographs of this board's underside supplied by the user, 2026-10-05, showing the fitted jack"
+    - "This project's ports/bl616/tang_ble.c: blescan's RSSI table and blekbd's connection-failure report"
+  verification: "Observed on this board on 2026-10-05 with nothing on U35: blescan listed the user's phone and the K950 by name, and blekbd failed with 0x3E on several attempts and connected on a later one each time."
+
+- record_id: BLE-002
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "The SDK's Bluetooth build: which controller library, how it starts, and what it costs"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The SDK selects the BL616's Bluetooth controller by CONFIG_BTBLECONTROLLER_LIB. ble1m10s1bredr0 is the all-roles build: central, peripheral, broadcaster and observer, 10 connections, no BR/EDR, and the one examples/btble/central uses. ble1m0s1bredr0 has no central and no observer role and one connection, and ble1m0s1sbredr1 adds BR/EDR but still has no central role. The stack is brought up in the order examples/btble/central uses: rfparam_init, btble_controller_init, hci_driver_init, then bt_enable, whose ready callback reports the result; there is no call to shut the controller down again. CONFIG_BT_SETTINGS defaults to 0, in which case the host keeps nothing in flash, so pairing keys last only until reset. Built into this firmware, against the same tree without Bluetooth, ble1m10s1bredr0 with CONFIG_RF 1 grows the image from 346,160 to 582,256 bytes (+236,096: the controller library 113,954, the host stack libblestack 69,615, libbl616_phyrf 35,744, librfparam 6,639, about 10 KB else), shrinks the linker's ram_memory region from 447 KB to 415 KB, adds 17.4 KB of .bss and 0.8 KB of ITCM, and cuts the heap available at boot (__HeapLimit - __HeapBase) from 192,196 to 139,588 bytes."
+  consequence: "proj.conf sets CONFIG_BLUETOOTH 1, CONFIG_BTBLECONTROLLER_LIB ble1m10s1bredr0, CONFIG_RF 1 and CONFIG_BLE_USE_MAC2 0, because scanning and connecting to a keyboard need the observer and central roles. ports/bl616/tang_ble.c starts the stack on the first blescan or blekbd rather than at boot, so a board that never uses Bluetooth runs as before, and once started it stays up until reset. The image no longer fitted the 0x80000 slot, which is why the slot grew (FLS-002). The heap the running stack takes after bring-up has not been measured. Keeping a pairing across resets needs CONFIG_BT_SETTINGS and somewhere to store it."
+  sources:
+    - "Bouffalo SDK 7f44f9e (2025-04-27), components/wireless/bluetooth/ble_common.cmake: the role settings for each CONFIG_BTBLECONTROLLER_LIB value"
+    - "Bouffalo SDK 7f44f9e, examples/btble/central/proj.conf and its main: the library choice and bring-up order"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/btblecontroller/lib: libbtblecontroller_bl616_ble1m10s1bredr0.a, ble1m0s1bredr0.a and ble1m0s1sbredr1.a"
+    - "This project's proj.conf and ports/bl616/tang_ble.c: ble_start()"
+    - "Linker maps of this firmware at cb9e7d4 with and without the Bluetooth block, compared on 2026-10-05"
+  verification: "Both builds were made from the same tree on 2026-10-05 and their maps and images compared; the Bluetooth build ran blescan and blekbd on this board."
+
+- record_id: BLE-003
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "UUID-filtered GATT discovery found nothing against a real keyboard"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Against the Logitech K950, bt_gatt_discover with BT_GATT_DISCOVER_PRIMARY and the HID service UUID 0x1812 as the filter returned no attribute, though the device has that service; the same call with no UUID returned all seven of its primary services, the HID service among them at handles 0x001F-0x004D. Descriptor discovery filtered on the CCC UUID 0x2902 likewise returned nothing, while unfiltered descriptor discovery over the HID range returned every CCC. The cause in the SDK's host was not established."
+  consequence: "ports/bl616/tang_ble.c discovers every primary service and every descriptor in range and filters on the UUID in its own callback, assigning each CCC to the characteristic with the highest value handle below it. Expect the same of any other HID device until a filtered discovery is shown to work."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: struct bt_gatt_discover_params"
+    - "This project's ports/bl616/tang_ble.c: the discovery callbacks"
+  verification: "Observed on this board on 2026-10-05 in consecutive blekbd builds against the same K950: the filtered forms ended discovery with nothing found, and the unfiltered forms found the service and the CCCs."
+
+- record_id: BLE-004
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "A subscription's notify callback is called with NULL data when its CCC write succeeds"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The SDK's blestack is built with BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP, which adds a final branch to gatt_write_ccc_rsp: when a write enabling notifications succeeds, it calls the subscription's notify callback with data NULL and length 0. The unpatched branches remain: a failed write removes the subscription, and a successful write of 0 (an unsubscribe) also calls the callback with NULL. The SDK's own gatt.h documents the callback's data parameter as 'If NULL then subscription was removed', so the patch gives NULL a second meaning the header does not mention."
+  consequence: "A NULL report in the notify callback cannot be read as an unsubscribe: tang_ble.c logs it and keeps the subscription, after its first version cleared the value handle on it and so stopped matching every report that followed. The real confirmation is reading the CCC back, which returned 01 00 for each of the K950's subscriptions."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/port/include/config.h: BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/gatt.c: gatt_write_ccc_rsp()"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: bt_gatt_notify_func_t's data parameter"
+  verification: "Observed on this board on 2026-10-05: each of the K950's seven CCC writes produced a NULL callback, and the reports arrived once the code stopped treating it as an unsubscribe."
+
+- record_id: BLE-005
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Too many ATT requests issued at once from host callbacks deadlock the host"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "Issuing about fifteen ATT operations (subscribes, writes and reads) back to back from inside a host callback left the host stopped for good: the requests beyond the stack's few ATT TX buffers wait for a buffer, and the buffers are released by the same host context that is waiting, so none is ever freed. Issuing one operation at a time, each from the completion callback of the one before, completed the whole set."
+  consequence: "ports/bl616/tang_ble.c queues the setup of a device (protocol mode, every subscription, the read-backs) and runs it through kbd_setup_next and kbd_setup_step_done, one operation in flight at a time. Any further GATT client work, such as a mouse or a controller, must go through the same kind of sequencer."
+  sources:
+    - "This project's ports/bl616/tang_ble.c: kbd_setup_reports(), kbd_setup_next() and kbd_setup_step_done()"
+  verification: "Observed on this board on 2026-10-05: the build that issued everything at once stalled in the discovering state with no further callbacks, and the sequenced build completed setup and reached ready on the next run."
+
+- record_id: BLE-006
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "Logitech K950 over Bluetooth LE"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The Logitech K950 keyboard (the keyboard of the MK955 Signature Slim set), in Bluetooth mode rather than on its Bolt receiver, is a HID over GATT device on Bluetooth LE advertising as 'Logi K950'. It uses a random address that increases by one each time it is put into pairing mode by holding an Easy-Switch key (seen as DB:88:A7:81:D9:CF to D9:D4). It accepts Just Works pairing at security level 2. Its primary services are 0x1800, 0x1801, 0x180A, 0x180F (battery), the HID service 0x1812 at 0x001F-0x004D, Logitech's 0xFD72 and a 128-bit vendor service from 0x005B. In the HID service, HID Information is at value handle 0x21, Boot Keyboard Input at 0x23 (notify, CCC 0x24), Boot Keyboard Output at 0x26, the Report Map at 0x28, Reports at 0x2A, 0x2E, 0x31, 0x34, 0x38, 0x3C, 0x40, 0x44 and 0x48 (notifying at 0x2A, 0x34, 0x38, 0x3C, 0x40 and 0x44), the Control Point at 0x4B and Protocol Mode at 0x4D. Writing 0 to Protocol Mode puts it in boot protocol, which reads back as 00, and it then sends the standard 8-byte boot report: modifiers, a reserved byte and six keycodes."
+  consequence: "The boot report is byte-for-byte the format the wired keyboard link carries, so the existing translation in tang_key.c applies to it unchanged. Because the address changes with every pairing and pairings are not kept across a reset (BLE-002), the device must be found by blescan before each blekbd; connecting by name or by the HID appearance would remove that step. In boot protocol it still sent one 19-byte notification on 0x0044 beginning FF 04 00 01 01 01, presumably Logitech's own report, which a client should ignore."
+  sources:
+    - "Logitech MK955 Signature Slim product specifications: Bluetooth Low Energy connection beside the Logi Bolt receiver"
+    - "GATT discovery and read-backs of this K950 by this project's ports/bl616/tang_ble.c (blekbd), 2026-10-05"
+    - "Bluetooth SIG HID over GATT Profile 1.0: Protocol Mode, Boot Keyboard Input Report"
+  verification: "On this board on 2026-10-05 blekbd paired with the K950, set boot protocol, wrote all seven CCCs and read them back as 01 00, and decoded 404 boot reports while the user typed: letters, Space, Enter, punctuation, right Shift, right Ctrl and right Alt, up to four keys held at once and every release. The user confirmed the result. Arrows, Esc and the function keys were not typed."
+
+- record_id: BLE-007
+  kind: TOOLCHAIN
+  topic_id: BLE
+  title: "Only Bluetooth LE HID devices can be used; Classic HID has no host in the SDK"
+  status: SOURCED
+  verified_date: 2026-10-05
+  statement: "The SDK's Bluetooth Classic support is a BR/EDR controller library, libbtblecontroller_bl616_ble1m0s1sbredr1, and the btprofile library, whose headers are a2dp, a2dp-codec, avdtp, avctp, avrcp, hfp_hf, rfcomm and sdp. There is no HID profile, host or device. The Rii K06 (Rii Mini Bluetooth Keyboard with IR learning) is listed as Bluetooth 3.0, which is Classic only."
+  consequence: "The board can use keyboards, mice and controllers that implement HID over GATT on Bluetooth LE, and nothing that speaks only Classic Bluetooth HID; the K06 cannot be used, and the same applies to any other Classic-only device. A Classic HID host would have to be written on L2CAP over the BR/EDR library, and that library has no central role and is a separate build choice from the one this firmware needs (BLE-002)."
+  sources:
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/btprofile/include/bluetooth: the profile headers listed"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/ble_common.cmake: ble1m0s1sbredr1 with CONFIG_BT_BREDR 1 and CONFIG_BT_CENTRAL 0"
+    - "Amazon product listing for the Rii K06 supplied by the user as a PDF, 2026-10-05"
+  verification: "The SDK tree was read on 2026-10-05. No Classic device has been tried on this board."
 ```
 
 ---
