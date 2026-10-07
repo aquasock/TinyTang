@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "tang_ble_bonds.h"
 #include "tang_pad.h"
 
 /* The connected keyboard's current HID boot report: byte 0 the modifiers,
@@ -36,5 +37,41 @@ bool tang_ble_mouse(tang_mouse_t *out);
  * host reconnect each device when it next advertises.  Returns at once; the
  * work runs on a background task.  Called once, after the boot script. */
 void tang_ble_boot(void);
+
+/* What `ble` reports, as data, for the desktop's Bluetooth window. */
+typedef enum {
+    TANG_BLE_RADIO_OFF,       /* starts at boot when paired, or on a command */
+    TANG_BLE_RADIO_STARTING,
+    TANG_BLE_RADIO_UP,
+    TANG_BLE_RADIO_FAILED,    /* see enable_error */
+} tang_ble_radio_t;
+
+/* One slot: what is connected to it now, and what is paired to it.
+ * Addresses are least significant byte first, as tang_bond_t keeps them. */
+typedef struct {
+    const char *state;              /* idle, connecting, pairing, discovering, ready, waiting */
+    bool     ready;                 /* connected and delivering input */
+    bool     active;                /* not idle: addr and name are set */
+    uint8_t  addr[6];
+    char     name[TANG_BOND_NAME_LEN];
+    bool     boot_protocol;         /* while ready: boot rather than report protocol */
+    uint32_t reports;
+    bool     paired;                /* paired_addr and paired_name are set */
+    uint8_t  paired_addr[6];
+    char     paired_name[TANG_BOND_NAME_LEN];
+    bool     reconnects;            /* reconnected by itself when it advertises */
+} tang_ble_slot_info_t;
+
+typedef struct {
+    tang_ble_radio_t radio;
+    int      enable_error;          /* bt_enable's error while FAILED */
+    uint32_t stack_heap;            /* heap the stack took at start, while UP */
+    const char *pairings;           /* the card file's state, as `ble` words it */
+    tang_ble_slot_info_t slot[TANG_BOND_SLOTS];   /* 0 keyboard, 1 mouse */
+} tang_ble_info_t;
+
+/* A snapshot of the radio and both slots.  Never blocks and starts nothing,
+ * so a window may call it from its tick. */
+void tang_ble_info(tang_ble_info_t *out);
 
 #endif /* TANG_BLE_H */

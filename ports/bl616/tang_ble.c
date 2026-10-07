@@ -1816,6 +1816,50 @@ static int cmd_blemouse(tdsh_session_t *session, int argc, char **argv)
     return hid_command(&s_hid[HID_MOUSE], argc, argv);
 }
 
+void tang_ble_info(tang_ble_info_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (s_start_phase == 0) {
+        out->radio = TANG_BLE_RADIO_OFF;
+    } else if (s_start_phase == 1) {
+        out->radio = TANG_BLE_RADIO_STARTING;
+    } else if (s_enable_result != 0) {
+        out->radio = TANG_BLE_RADIO_FAILED;
+        out->enable_error = s_enable_result;
+    } else {
+        out->radio = TANG_BLE_RADIO_UP;
+        out->stack_heap = s_heap_before - s_heap_after;
+    }
+    out->pairings = s_bonds_state;
+
+    for (int i = 0; i < HID_SLOTS; i++) {
+        const hid_dev_t *d = &s_hid[i];
+        tang_ble_slot_info_t *o = &out->slot[i];
+        /* The name and address are written from the host's callbacks, and
+         * the pairing by the task: copy each as a whole, as hid_status does. */
+        taskENTER_CRITICAL();
+        const hid_state_t state = d->state;
+        memcpy(o->addr, d->addr.a.val, sizeof(o->addr));
+        memcpy(o->name, d->name, sizeof(o->name));
+        const tang_bond_t b = s_bonds[i];
+        taskEXIT_CRITICAL();
+
+        o->name[sizeof(o->name) - 1] = '\0';
+        o->state = s_state_names[state];
+        o->ready = state == HID_READY;
+        o->active = state != HID_IDLE;
+        o->boot_protocol = d->boot;
+        o->reports = d->reports;
+        o->paired = b.valid;
+        if (b.valid) {
+            memcpy(o->paired_addr, b.addr, sizeof(o->paired_addr));
+            memcpy(o->paired_name, b.name, sizeof(o->paired_name));
+            o->paired_name[sizeof(o->paired_name) - 1] = '\0';
+        }
+        o->reconnects = d->armed;
+    }
+}
+
 static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
       "Bluetooth status: the radio, the heap, the pairings and both devices",

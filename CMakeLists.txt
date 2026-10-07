@@ -61,6 +61,14 @@ else()
     if(NOT TINYTANG_TDSH_PATCH_RESULT EQUAL 0)
         message(FATAL_ERROR "TinyDesk Shell patches could not be applied")
     endif()
+    # The same for third_party/tinydesk: Settings opens this port's Bluetooth
+    # window instead of the Network app it leaves out.
+    execute_process(
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/apply-tinydesk-patches.sh"
+        RESULT_VARIABLE TINYTANG_TINYDESK_PATCH_RESULT)
+    if(NOT TINYTANG_TINYDESK_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "TinyDesk patches could not be applied")
+    endif()
 
     # These public limits change tdsh_session_t's layout.  The shell, desktop,
     # bridge and every C/C++ port source must use the same definitions.

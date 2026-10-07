@@ -98,6 +98,14 @@ The desktop environment, consumed as `third_party/tinydesk`:
 - Commit: `feaf84130f03594845e5e9284817dca785b4d878` (v0.1.5)
 - License: MIT
 
+TinyTang carries `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`
+against that commit, applied idempotently by `scripts/apply-tinydesk-patches.sh`
+during CMake configuration. It changes Settings' Network button, whose app this
+port leaves out, into a Bluetooth button that launches TinyTang's own Bluetooth
+window (`ports/bl616/td_bluetooth_app.c`), and moves the Date & time button
+two columns right to make room. The patch is MIT, as is the upstream code it
+modifies.
+
 ## nestang core UART protocol (read as a specification, no code copied)
 
 The frame format and command set implemented by `ports/bl616/tang_fpga_uart.c`

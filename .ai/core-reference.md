@@ -220,6 +220,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does the Terminal window say "No shell backend in this build."? | TDESK | TDESK-004 |
 | How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
 | Why did the Terminal stop accepting input after reopening the desktop? | TDESK | TDESK-014 |
+| How does TinyDesk launch the Network app, and how does this port put a Bluetooth window there? | TDESK | TDESK-015 |
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
@@ -338,6 +339,7 @@ TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop ico
 TDESK-012: "Superseded by TDESK-013. TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
 TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk) pins the shell at 8456dd1, the same as this project; only td.h's version and repository URLs change in code this port builds"
 TDESK-014: "Terminal retains its started flag across td_shutdown(); a port that stops its shell at desktop exit must explicitly restart it on reentry, since reinstalling the same backend does not call start again"
+TDESK-015: "TinyDesk launches apps by registered name: Settings' Network... button and the taskbar's network tray both call td_app_launch(\"Network\"), which does nothing when no app has that name, and the tray is drawn only when the port supplies td_net_ops_t; TinyTang's carried patch makes the button Bluetooth... launching its own Bluetooth app"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -1363,6 +1365,18 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "ports/bl616/td_bridge_bl616.c: backend_start, tang_td_terminal_start and td_bridge_bl616_stop"
     - "ports/bl616/td_desktop_bl616.c: desktop_run and cmd_desktop; tools/tests/test_terminal_lifecycle.sh"
   verification: "A host probe of the real upstream Terminal called start once across two backend installations. The lifecycle regression linked against the real upstream Terminal and BL616 bridge fails with the original startup and passes three reentries, keyboard/output rings, idempotent installation, graceful cleanup, failed allocation and retry with the fix. The user accepted the flashed restart fix and subsequent build; listen-only USB capture of a later desktop entry contains the fresh shell greeting and the successful diagnostic launcher, followed by desktop exit and a usable guarded console."
+- record_id: TDESK-015
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "Settings' Network button and the network tray launch an app by name"
+  status: VERIFIED
+  verified_date: 2026-10-07
+  statement: "In TinyDesk v0.1.5, apps are found by the name they register with td_app_register(), and td_app_launch() does nothing when no app has that name. apps/settings.c's Network... button (x 1, y 15, beside Date & time... at x 16) calls td_app_launch(\"Network\"), as its Software update... button calls td_app_launch(\"Software Update\"). src/wm.c's taskbar also launches \"Network\" from its network tray, but draw_tray_net() draws that tray only when td_sysinfo()->net supplies a status callback. A button is as wide as its caption plus four columns."
+  consequence: "This port leaves apps/network.c out (TDESK-008) and supplies no td_net_ops_t, so the tray never appears and the Settings button was the only way in, silently doing nothing. third_party/patches/tinydesk/0001-settings-bluetooth-button.patch, applied by scripts/apply-tinydesk-patches.sh at configure, makes that button Bluetooth... calling td_app_launch(\"Bluetooth\"), and moves Date & time... to x 18 because the longer caption is 16 columns wide; ports/bl616/td_bluetooth_app.c registers the app under that name. The Software Update window (core-log entry 50) used the same by-name launch without a patch, since its name already matched."
+  sources:
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): apps/settings.c on_network and launch; src/wm.c td_app_launch, draw_tray_net and taskbar_click; src/widgets.c td_button"
+    - "third_party/patches/tinydesk/0001-settings-bluetooth-button.patch; tools/tests/test_tinydesk_patches.sh"
+  verification: "On this board on 2026-10-07 with firmware f1b66ab-dirty.6090e46 the user confirmed the Bluetooth... and Date & time... buttons side by side and the Bluetooth window opening from Settings (core-log entry 53); TinyDesk's host suite passes 10 of 10 with the patch applied."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

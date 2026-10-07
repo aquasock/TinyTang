@@ -399,3 +399,42 @@ None.
 - User Test: N/A
 
 ---
+
+## 53 COMMIT Unreleased 2026-10-07T13:27:43-07:00
+
+#### Coming From:
+
+Unreleased f1b66ab
+
+#### Purpose:
+
+Give TinyDesk a Bluetooth window of TinyTang's own, opened from Settings through a renamed Bluetooth button, which shows the radio and both paired devices, after the TinyDesk author's go-ahead for this port to build its own Bluetooth app.
+
+#### Outcome:
+
+Settings' Network... button called `td_app_launch("Network")`, which did nothing because this port leaves TinyDesk's network app out (`TDESK-008`), and the network tray that also launches it is never drawn without network ops (`TDESK-015`). The user chose to name the button for what it opens and to make the first version status only. The new carried patch `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch` against TinyDesk v0.1.5 makes the button Bluetooth... launching `Bluetooth`, and moves Date & time... from column 16 to 18 because the longer caption is 16 columns wide. `scripts/apply-tinydesk-patches.sh` applies it idempotently at CMake configuration, as the shell's patches are applied, and `THIRD_PARTY.md` and `README.md` describe it. `ports/bl616/tang_ble.c` gained `tang_ble_info()`, declared in `tang_ble.h`, which returns the radio state, the stack's heap cost, the card pairings' state, and for each slot the connection state, address, name, protocol, report count, pairing and whether it reconnects, copying shared fields under a critical section as `hid_status` does; it never blocks and starts nothing, and the shell commands are unchanged. The new `ports/bl616/td_bluetooth_app.c` registers `Bluetooth`, called from `td_apps_register_all()` in `ports/bl616/td_desktop_bl616.c`, and draws those values with free heap and the largest block, refreshed every second, naming `blekbd` and `blemouse` for pairing and forgetting; opening it does not start the radio. The new `tools/tests/test_tinydesk_patches.sh` checks that the patch applies once to a clone of the pinned commit, reproduces the submodule checkout exactly, and leaves TinyDesk's host suite passing 10 of 10 without diagnostics, and all twelve host test scripts pass. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `f1b66ab` carrying only these files, with no warnings from the changed files beyond the existing JTAG-programmer ones, giving identity `f1b66ab-dirty.6090e46`, 626960 bytes, MD5 `4e15af76c07917ed921ff79a46b5cfaa`, and was installed with `tools/tinytang_flash.py`. After the power cycle the user reported every check passing: the two buttons side by side, the window opening from Settings with the radio, pairings, heap and both devices, the K950 and M750 rows following power cycles of the devices, `blemouse off` and `on` shown in the window, and a second launch focusing the open window. On the console afterwards `platform` reported `f1b66ab-dirty.6090e46`, `ble` showed the radio up with the stack having taken 15828 bytes, the pairings loaded from the card and both devices paired, reconnecting by themselves and waiting, 74952 bytes free of 133616 with a 60152-byte largest block, and `crash` showed no record from a previous run and 10920 of 16384 bytes of script stack used. `TDESK-015` records the launch-by-name behaviour and the patch. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only `TDESK-015` with its routing row and index line and this entry, parsed every YAML block of `.ai/core-reference.md` and found its 144 records unique with an index line each, confirmed that `.ai/core.md` is unchanged and that no settled entry or record was rewritten, and validated this entry as number 53 with 13 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+The window's next version can add pairing from a scanned list, forgetting, and reconnect on and off, which needs the blocking `blekbd` and `blemouse` work moved into non-blocking calls driven by the `ble` task, with a heap check before a scan starts the radio and a confirmation before the device driving the desktop is forgotten. The `/tang.ini` parser (`PMOD-002`) and the open items of entry 52 stand. Any upstream contribution of this work is for the user to make.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/td_bluetooth_app.c
+- ports/bl616/td_desktop_bl616.c
+- scripts/apply-tinydesk-patches.sh
+- third_party/patches/tinydesk/0001-settings-bluetooth-button.patch
+- tools/tests/test_tinydesk_patches.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -56,7 +56,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor and About. Quitting returns to
   the prompt. The network apps (Network, MQTT, Modbus, OTA) are left out because
-  they are built on POSIX sockets and mbedTLS.
+  they are built on POSIX sockets and mbedTLS. In their place, Settings'
+  **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
+  and the paired keyboard and mouse with their connection state, refreshed
+  every second; pairing and forgetting stay with `blekbd` and `blemouse`. The
+  button is TinyTang's, from the carried patch
+  `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
 - **The Terminal window runs the shell.** It is the same session as the
   console, reached through a bridge over two ring buffers, so
   `tdsh run /scripts/boot-cart.tdsh` typed into a desktop window boots a core
