@@ -20,6 +20,7 @@ extern "C" {
 #include "tdsh.h"
 }
 
+#include "ae350_file_server.h"
 #include "ae350_play.h"
 #include "fpga_debug.h"
 #include "phosphor_track.h"
@@ -46,6 +47,9 @@ constexpr uint32_t POLL_MS = 250;
 // While a track is held paused for its START (start_track), look more often so
 // the sound follows the START promptly.
 constexpr uint32_t HOLD_POLL_MS = 50;
+// How often the player's file-request mailbox is read while a track plays,
+// as Tang-Control's disc service reads Tang-PSX's.
+constexpr uint32_t SERVE_POLL_MS = 1;
 // A stopped track's tail is at most the sink's 2048 samples and the stream
 // queue's 512, under 60 ms at 44.1 kHz; drain() gives it a generous bound.
 constexpr uint32_t DRAIN_STEP_MS = 10;
@@ -78,6 +82,12 @@ uint32_t s_underruns_before;
 // The listener's pause as last written to the core.  While the track is held
 // the hold owns the control register, and its release writes this instead.
 bool s_paused;
+
+// The playing track's file, served to the player on demand
+// (ae350_file_server) between looks at the track; and when the play was
+// asked for, for the time to its first sample.
+ae350_file_server s_server;
+uint64_t s_track_started;
 
 void lock() { (void)xSemaphoreTake(s_mutex, portMAX_DELAY); }
 void unlock() { (void)xSemaphoreGive(s_mutex); }
@@ -171,6 +181,7 @@ bool drain()
 bool start_track(uint32_t track, const char *real)
 {
     const uint64_t started = now_ms();
+    s_track_started = started;
     const char *error = nullptr;
     s_paused = false;
     s_held = drain() && write_reg(PHOSPHOR_PLAYBACK_CONTROL, 1) &&
@@ -182,7 +193,11 @@ bool start_track(uint32_t track, const char *real)
     if (!ok) {
         error = "the core did not answer (is a Phosphor core loaded?)";
     } else {
-        ok = ae350_play_file(real, &error, cancelled, nullptr);
+        uint32_t baseline = 0;
+        ok = ae350_start_player(&baseline, &error, cancelled, nullptr);
+        if (ok) {
+            ae350_file_server_begin(s_server, real, baseline);
+        }
     }
     if (!ok) {
         if (s_cancel) {
@@ -289,6 +304,9 @@ bool poll_track(uint32_t track, phosphor_track::tracker &t)
         s_status.rate = rate;
         s_status.underruns = underruns;
         s_status.result = result;
+        if (s_status.first_sample_ms == 0 && samples != 0) {
+            s_status.first_sample_ms = static_cast<uint32_t>(now_ms() - s_track_started);
+        }
         s_status.paused = next == phosphor_player_state::PLAYING && s_paused;
         set_error(s_status, error);
     }
@@ -302,9 +320,11 @@ void player_task(void *)
     bool running = false;
     uint32_t track = 0;
     phosphor_track::tracker tracker;
+    uint64_t next_poll = 0;
     for (;;) {
-        const TickType_t wait =
-            running ? pdMS_TO_TICKS(s_held ? HOLD_POLL_MS : POLL_MS) : portMAX_DELAY;
+        // While a track plays the task wakes every millisecond to answer the
+        // player's file requests, and looks at the track every POLL_MS.
+        const TickType_t wait = running ? pdMS_TO_TICKS(SERVE_POLL_MS) : portMAX_DELAY;
         (void)ulTaskNotifyTake(pdTRUE, wait);
         lock();
         const command c = s_command;
@@ -335,9 +355,20 @@ void player_task(void *)
             running = start_track(track, real);
             if (running) {
                 phosphor_track::begin(tracker, now_ms());
+                next_poll = now_ms();
             }
         } else if (running) {
-            running = poll_track(track, tracker);
+            bool served = false;
+            if (!ae350_file_server_step(s_server, cancelled, nullptr, nullptr, nullptr,
+                                        &served)) {
+                halt();
+                running = false;
+                finish(track, phosphor_player_state::FAILED,
+                       "the core stopped answering the player's file requests");
+            } else if (now_ms() >= next_poll) {
+                running = poll_track(track, tracker);
+                next_poll = now_ms() + (s_held ? HOLD_POLL_MS : POLL_MS);
+            }
         }
     }
 }

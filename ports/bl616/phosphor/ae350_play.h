@@ -13,16 +13,16 @@ constexpr uint32_t AE350_REG_RESULT = 0x0000402cu;   // last program's return va
 constexpr uint32_t AE350_REG_USER0 = 0x00004040u;    // USER(n) at + 4 * n
 constexpr uint32_t AE350_REG_RESTART = 0x000043f0u;
 
-// Stream the resident AE350 player image and then the SD audio file at
-// full_path (a FatFS path such as "/sd/music/track.flac"), leaving cpu_mode
-// set so the decoded PCM reaches the pcm_sink and playback proceeds
-// asynchronously.  Returns true on success.  On failure returns false and,
-// when error_out is non-null, sets it to a short message.  `cancel`, when
-// given, is polled between stream frames of both files, as fpga_file_stream
-// does; a cancelled send fails with "cancelled".
-bool ae350_play_file(const char *full_path, const char **error_out,
-                     fpga_file_stream_cancel cancel = nullptr,
-                     void *cancel_context = nullptr);
+// Restart the AE350's loader and send it the resident player
+// (/ae350/resident.tpi), leaving cpu_mode set so the decoded PCM reaches the
+// pcm_sink.  *baseline is the request mailbox's sequence from before the
+// player was sent, for serving its requests (ae350_file_server).  Returns
+// true on success; on failure returns false and, when error_out is non-null,
+// sets it to a short message.  `cancel`, when given, is polled between stream
+// frames, as fpga_file_stream does; a cancelled send fails with "cancelled".
+bool ae350_start_player(uint32_t *baseline, const char **error_out,
+                        fpga_file_stream_cancel cancel = nullptr,
+                        void *cancel_context = nullptr);
 
 // Register access over the extended protocol; false when the core does not
 // answer or reports an error.

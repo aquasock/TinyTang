@@ -23,7 +23,8 @@ struct phosphor_player_status {
     uint32_t track;      // which play this is; each play request takes the next
     char path[128];      // the path as it was given, cut to fit
     char real[192];      // the FatFS path, for reading the file's header
-    uint32_t load_ms;    // how long the send took, once it is done
+    uint32_t load_ms;    // how long sending the player took, once it is done
+    uint32_t first_sample_ms;  // from the play to its first sample, once heard
     uint32_t samples;    // samples presented so far
     uint32_t rate;       // HDMI audio rate in hertz, 0 until known
     uint32_t underruns;

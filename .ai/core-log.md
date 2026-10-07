@@ -1577,3 +1577,41 @@ Step 2 has the playback task serve the resident player's requests for the length
 - User Test: PASS
 
 ---
+
+## 47 COMMIT Unreleased 2026-10-06T18:24:39-07:00
+
+#### Coming From:
+
+Unreleased 3d86aea
+
+#### Purpose:
+
+Serve the Phosphor player's file requests for the length of each track, instead of sending the track's file whole after the player, so that playback starts as soon as the player has been sent.
+
+#### Outcome:
+
+This is step 2 of the plan recorded in Tang-Phosphor entries 75 and 76, whose player now asks for its input on demand. `ports/bl616/phosphor/ae350_file_server.cpp` is now built around a non-blocking `ae350_file_server_step`, which reads the request mailbox once and answers a new request, and `ae350_serve_file`, used by `phosphor run`, loops over it; a request of length 0 is answered with the file's size as a four-byte session sent with `fpga_stream_send`, a changed sequence is served only while the loader is in RUN because a trap writes the mailbox's words, and a send cancelled by Ctrl-C ends the service. `ports/bl616/phosphor/ae350_play.cpp` replaces `ae350_play_file` with `ae350_start_player`, which restarts the loader, takes the mailbox baseline and sends only the player, since the player still returns after each track. `ports/bl616/phosphor/phosphor_player.cpp` begins serving the track's file after the player is sent and, while the track plays, wakes every millisecond to answer requests and looks at the track every 250 ms as before, failing the track if the core stops answering; the status gained `first_sample_ms`, the time from the play to the first sample, which `phosphor play` and `phosphor status` print in `ports/bl616/phosphor/phosphor_cmd.cpp`, the send time now being the player's alone. `phosphor_track.h`'s comment and `README.md` follow the change. The firmware built with `make CHIP=bl616 BOARD=bl616dk`, `tinytang_bl616.bin` at 621,520 bytes, MD5 `e7b5bb27c322935c0358beb690aa9fc8`, with no warnings from the changed files beyond the build-wide `-std=gnu11` notice for C++ sources, and all eleven host test scripts pass. It was installed with `tools/tinytang_flash.py`, and after the user's power cycle `platform` reported `3d86aea-dirty.34645d2`. Tang-Phosphor's on-demand player went onto the card as `/ae350/resident.tpi`, 865816 bytes, with the qualified player kept as `/ae350/resident-qualified.tpi`, 863764 bytes. On the entry 72 core, `tools/phosphor_format_sweep.py` passed all thirteen plays with zero underruns and FLAC now at exactly 441000 samples, short files reached their first sample 2723 ms after the play, and `Fleetwood Mac - Landslide.mp3`, 3236120 bytes, started at 2733 ms against 31 s before and played its full 3:19 with zero underruns; the user heard them play correctly and accepted the result. The required `.ai` core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `.ai/core.md` is unchanged, validated this entry as number 47 of 100 with exactly six sections, and confirmed that no settled history was rewritten.
+
+#### Next Steps:
+
+Step 3 keeps the player resident between tracks, so a play sends no player and starts in well under a second, and plays consecutive tracks gaplessly; the task will hand the player its next track through the mailbox. The `/tang.ini` parser (`PMOD-002`) follows, so the sockets are declared after every core load rather than only by `phosphor.tdsh`. The open items from entry 45 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/ae350_file_server.cpp
+- ports/bl616/phosphor/ae350_file_server.h
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- ports/bl616/phosphor/phosphor_player.cpp
+- ports/bl616/phosphor/phosphor_player.h
+- ports/bl616/phosphor/phosphor_track.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

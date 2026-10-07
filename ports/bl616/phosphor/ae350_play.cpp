@@ -16,6 +16,7 @@ extern "C" {
 #include "task.h"
 }
 
+#include "ae350_file_server.h"
 #include "fpga_debug.h"
 #include "fpga_file_stream.h"
 
@@ -110,41 +111,24 @@ bool ae350_restart_loader(const char **error_out)
     return false;
 }
 
-bool ae350_play_file(const char *full_path, const char **error_out,
-                     fpga_file_stream_cancel cancel, void *cancel_context)
+bool ae350_start_player(uint32_t *baseline, const char **error_out,
+                        fpga_file_stream_cancel cancel, void *cancel_context)
 {
-    // The resident player loops forever once loaded: the loader stays in RUN
-    // state (0x03) while the player waits for the next stream and while it
-    // plays.  Only a fresh core (WAIT) or a trapped/crashed player needs a
-    // reload, so the player image is streamed at most once per core load.
-    if (!ae350_select(error_out)) {
+    // The player plays one track and returns, so every track restarts the
+    // loader and sends it again; the track's file is then read on demand
+    // through the request mailbox, whose baseline is taken in between.
+    if (!ae350_select(error_out) || !ae350_restart_loader(error_out)) {
         return false;
     }
-
-    uint32_t state = 0;
-    if (!ae350_read32(AE350_REG_STATE, &state)) {
+    if (!ae350_request_baseline(baseline)) {
         if (error_out != nullptr)
             *error_out = "AE350 did not respond";
         return false;
     }
-
-    if ((state & 0xffu) != 0x03u) {
-        if (!ae350_restart_loader(error_out)) {
-            return false;
-        }
-
-        const fpga_file_stream_result player = fpga_file_stream(PLAYER_TPI, cancel, cancel_context);
-        if (player.status != fpga_file_stream_status::OK) {
-            if (error_out != nullptr)
-                *error_out = fpga_file_stream_status_text(player.status);
-            return false;
-        }
-    }
-
-    const fpga_file_stream_result audio = fpga_file_stream(full_path, cancel, cancel_context);
-    if (audio.status != fpga_file_stream_status::OK) {
+    const fpga_file_stream_result player = fpga_file_stream(PLAYER_TPI, cancel, cancel_context);
+    if (player.status != fpga_file_stream_status::OK) {
         if (error_out != nullptr)
-            *error_out = fpga_file_stream_status_text(audio.status);
+            *error_out = fpga_file_stream_status_text(player.status);
         return false;
     }
 

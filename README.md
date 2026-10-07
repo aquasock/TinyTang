@@ -97,7 +97,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
   plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
   Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
   resident Rockbox player `/ae350/resident.tpi` onto the core's AE350 and
-  streaming the file to it. A playback task owns the track, so the shell is
+  serving the file to it on demand, as the player asks for each part, so a
+  track starts as soon as the player is sent. A playback task owns the
+  track, so the shell is
   free: `nowait` returns at once and the track plays in the background, while
   plain `play` waits for it and Ctrl-C stops the track itself, not just the
   wait. `phosphor status` shows the state (idle, loading, playing, ended,

@@ -159,7 +159,7 @@ int wait_for_track(uint32_t track)
             return 1;
         }
         if (!reported_send && s.load_ms != 0) {
-            tdsh_printf("phosphor: player and file sent in %lu ms\r\n",
+            tdsh_printf("phosphor: player sent in %lu ms\r\n",
                         static_cast<unsigned long>(s.load_ms));
             reported_send = true;
         }
@@ -171,6 +171,8 @@ int wait_for_track(uint32_t track)
                         static_cast<unsigned long>(s.underruns),
                         static_cast<unsigned long>(s.rate),
                         static_cast<unsigned long>(s.result));
+            tdsh_printf("phosphor: first sample %lu ms after the play\r\n",
+                        static_cast<unsigned long>(s.first_sample_ms));
             return 0;
         case phosphor_player_state::FAILED:
         case phosphor_player_state::STOPPED:
@@ -225,12 +227,13 @@ int cmd_status(void)
     if (s.load_ms != 0) {
         const uint32_t seconds = s.rate != 0 ? s.samples / s.rate : 0;
         tdsh_printf("phosphor: %lu:%02lu, %lu samples at %lu Hz, %lu underruns, "
-                    "sent in %lu ms\r\n",
+                    "player sent in %lu ms, first sample at %lu ms\r\n",
                     static_cast<unsigned long>(seconds / 60),
                     static_cast<unsigned long>(seconds % 60),
                     static_cast<unsigned long>(s.samples), static_cast<unsigned long>(s.rate),
                     static_cast<unsigned long>(s.underruns),
-                    static_cast<unsigned long>(s.load_ms));
+                    static_cast<unsigned long>(s.load_ms),
+                    static_cast<unsigned long>(s.first_sample_ms));
     }
     // A plain stop's reason repeats the state already shown on the first line.
     if (s.error[0] != '\0' && strcmp(s.error, phosphor_player_state_name(s.state)) != 0) {
@@ -283,6 +286,12 @@ int cmd_stats(void)
 // is where test programs such as Tang-Phosphor's fileread publish results.
 void report_request(const ae350_file_request &r, void *)
 {
+    if (r.length == 0 && r.result.status == fpga_file_stream_status::OK) {
+        tdsh_printf("phosphor: request %lu: size query answered, %lu ms\r\n",
+                    static_cast<unsigned long>(r.sequence),
+                    static_cast<unsigned long>(r.result.elapsed_ms));
+        return;
+    }
     if (r.result.status == fpga_file_stream_status::INVALID_ARGUMENT) {
         tdsh_printf("phosphor: request %lu refused: offset %lu length %lu\r\n",
                     static_cast<unsigned long>(r.sequence),
@@ -348,13 +357,15 @@ int cmd_run(tdsh_session_t *session, const char *image, const char *file)
                 static_cast<unsigned long>(sent.bytes),
                 static_cast<unsigned long>(sent.elapsed_ms));
 
-    const ae350_file_serve_result served = ae350_serve_file(
-        file != nullptr ? real_file : nullptr, baseline, ctrl_c, nullptr, report_request, nullptr);
+    ae350_file_server server;
+    ae350_file_server_begin(server, file != nullptr ? real_file : nullptr, baseline);
+    const ae350_file_serve_result served =
+        ae350_serve_file(server, ctrl_c, nullptr, report_request, nullptr);
     tdsh_printf("phosphor: %lu requests, %lu bytes, %lu failed, %lu refused%s\r\n",
-                static_cast<unsigned long>(served.requests),
-                static_cast<unsigned long>(served.bytes),
-                static_cast<unsigned long>(served.failed),
-                static_cast<unsigned long>(served.refused),
+                static_cast<unsigned long>(server.requests),
+                static_cast<unsigned long>(server.bytes),
+                static_cast<unsigned long>(server.failed),
+                static_cast<unsigned long>(server.refused),
                 served.cancelled ? " (Ctrl-C)" : "");
     if (served.link_failed) {
         tdsh_printf("phosphor: AE350 did not respond\r\n");
@@ -379,7 +390,7 @@ int cmd_run(tdsh_session_t *session, const char *image, const char *file)
         tdsh_printf("%s0x%08lx%s", i == 0 ? "phosphor: user " : " ",
                     static_cast<unsigned long>(user[i]), i == 12u ? "\r\n" : "");
     }
-    return served.cancelled || served.failed != 0 || served.refused != 0 ? 1 : 0;
+    return served.cancelled || server.failed != 0 || server.refused != 0 ? 1 : 0;
 }
 
 int usage(void)

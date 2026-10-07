@@ -5,8 +5,8 @@
 //
 // The player register can still say "complete" from the previous track until
 // this one starts playing, so completion alone proves nothing.  What does is
-// the loader's run count (0x4020, bits 31:16): ae350_play_file restarts the
-// loader, which zeroes it, and the player returns -- bumping it -- only after
+// the loader's run count (0x4020, bits 31:16): ae350_start_player restarts
+// the loader, which zeroes it, and the player returns -- bumping it -- only after
 // it has queued all of its audio.  So the track is done when the run count has
 // moved and the player then reports complete.  Decoding happens before any
 // sample plays, so the first sample is given longer than the stall rule allows
