@@ -473,3 +473,36 @@ The Bluetooth window is complete for two slots. An antenna on `U35` (`BLE-001`) 
 - User Test: PASS
 
 ---
+
+## 55 COMMIT Unreleased 2026-10-07T15:25:13-07:00
+
+#### Coming From:
+
+Unreleased 268021f
+
+#### Purpose:
+
+Halve the heap TinyDesk's Editor takes while open by setting its text and undo limits from this build, as the upstream author advised in tinydesk issue #6.
+
+#### Outcome:
+
+The user had reported that opening the Editor cost 20 to 25 KB of the 132 KB heap; the author confirmed in issue #6 that it allocates its whole 16,385-byte text buffer and an undo history of about 8.7 KB on opening, whatever the file's size, and suggested smaller limits, recorded as `TDESK-016`. `CMakeLists.txt` now defines `TD_EDITOR_MAX=8192` and `TD_EDITOR_UNDO=2048` for every translation unit, so the Editor needs about 12.8 KB; files over 8 KB open read-only. TinyDesk's own `test_history_limits` pastes 10,001 bytes and cannot pass at these limits, so the new `tools/tests/test_editor_limits.sh` includes upstream's `tests/test_editor.c` and runs its other Editor tests at the limits it reads from `CMakeLists.txt`, with checks in that test's place that a file one byte short of 8 KB grows to exactly 8 KB, that typing at 8 KB is refused with "The file is full", that a file of 8,193 bytes opens read-only and is never written, that a paste past 8 KB is refused whole, and that a 1 KB paste undoes while one over 2 KB stays but cannot be undone; its 98 checks pass, it refused to build with the limit changed back to 16 KB, and all fourteen host test scripts pass. `tools/make_editor_test_files.py` writes the 7,000-byte and 9,000-byte files the hardware test used, identical on every run, which were copied to the card root with `tools/tinytang_put.py`. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `268021f` carrying only these files, with both definitions confirmed in the build flags and no new warnings, giving identity `268021f-dirty.bab3b26`, 633296 bytes, MD5 `c8400170003c77ed08bc66891db4a964`, the same size as entry 54's since the buffers are heap allocations, and was installed with `tools/tinytang_flash.py`. After the power cycle the user read System Monitor at 54 KB free on the desktop and 50 KB with Files open, 38 KB with the Editor open on `/editor-7k.txt`, so 12 KB for the Editor, back to 50 KB each time it closed; the file took three typed characters, kept them across a reopen, and `/editor-9k.txt` opened read-only and could not be edited; the user accepted the result. On the console afterwards `platform` reported `268021f-dirty.bab3b26`, `crash` showed no record from a previous run and 73160 bytes free of 131824 with a 58360-byte largest block, unchanged from entry 54, and the card held `/editor-7k.txt` at 7,003 bytes and `/editor-9k.txt` at its original 9,000. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only `TDESK-016` with its routing row and index line and this entry, parsed every YAML block of `.ai/core-reference.md` and found its 145 records unique with an index line each, confirmed that `.ai/core.md` is unchanged and that no settled entry or record was rewritten, and validated this entry as number 55 with 15 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+The card's `/bl616-firmware.bin` is still entry 50's `5564baa-dirty.14d42e6`, so Settings > Software update would install it and roll the board back; it should be replaced with the current build or removed, at the user's choice. The Bluetooth interface is to follow the shape of TinyDesk's `td_net_ops_t`, as the author asked in tinydesk issue #7, before the controller work; `peek` and `poke` wait for tinydesk-shell's next release or a decision to pin its `main`; the controller phases begin when the user's controller arrives, and the open items of entry 54 stand. `/editor-7k.txt` and `/editor-9k.txt` may be removed from the card.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- tools/make_editor_test_files.py
+- tools/tests/tb_editor_limits.c
+- tools/tests/test_editor_limits.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

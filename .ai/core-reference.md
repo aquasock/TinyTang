@@ -221,6 +221,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | How is a shell hosted in the Terminal window? | TDESK | TDESK-005 |
 | Why did the Terminal stop accepting input after reopening the desktop? | TDESK | TDESK-014 |
 | How does TinyDesk launch the Network app, and how does this port put a Bluetooth window there? | TDESK | TDESK-015 |
+| Why does the Editor take so much heap, and what limits does this port set? | TDESK | TDESK-016 |
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
@@ -340,6 +341,7 @@ TDESK-012: "Superseded by TDESK-013. TinyDesk v0.1.4 at f4c1d29 pins the shell a
 TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk) pins the shell at 8456dd1, the same as this project; only td.h's version and repository URLs change in code this port builds"
 TDESK-014: "Terminal retains its started flag across td_shutdown(); a port that stops its shell at desktop exit must explicitly restart it on reentry, since reinstalling the same backend does not call start again"
 TDESK-015: "TinyDesk launches apps by registered name: Settings' Network... button and the taskbar's network tray both call td_app_launch(\"Network\"), which does nothing when no app has that name, and the tray is drawn only when the port supplies td_net_ops_t; TinyTang's carried patch makes the button Bluetooth... launching its own Bluetooth app"
+TDESK-016: "TinyDesk's Editor allocates TD_EDITOR_MAX + 1 bytes of text and an undo history of TD_EDITOR_UNDO bytes plus 128 records when it opens, about 25 KB at the 16 KB and 6 KB defaults, freed on close; TinyTang sets 8 KB and 2 KB, measured at 12 KB on the board, and larger files open read-only"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -1377,6 +1379,20 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "tinydesk-project/tinydesk v0.1.5 (feaf841): apps/settings.c on_network and launch; src/wm.c td_app_launch, draw_tray_net and taskbar_click; src/widgets.c td_button"
     - "third_party/patches/tinydesk/0001-settings-bluetooth-button.patch; tools/tests/test_tinydesk_patches.sh"
   verification: "On this board on 2026-10-07 with firmware f1b66ab-dirty.6090e46 the user confirmed the Bluetooth... and Date & time... buttons side by side and the Bluetooth window opening from Settings (core-log entry 53); TinyDesk's host suite passes 10 of 10 with the patch applied."
+
+- record_id: TDESK-016
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "The Editor's fixed buffers and the limits this port sets"
+  status: VERIFIED
+  verified_date: 2026-10-07
+  statement: "In TinyDesk v0.1.5, apps/editor.c allocates its whole text buffer, malloc(TD_EDITOR_MAX + 1), and its undo history, TD_EDITOR_UNDO bytes of undone text plus 128 undo records, when the Editor opens, whatever the file's size, and frees both when it closes. The defaults are TD_EDITOR_MAX 16384 and TD_EDITOR_UNDO 6144, about 25 KB, and both may be set from the build. A file longer than TD_EDITOR_MAX opens read-only with 'File too large: read-only'; an edit that would take the text past it is refused with 'The file is full'; a single change larger than TD_EDITOR_UNDO stays in the text but cannot be undone, and the oldest undo steps are dropped first when the history is full. The upstream author confirmed this as expected in tinydesk issue #6 and suggested -DTD_EDITOR_MAX=8192 -DTD_EDITOR_UNDO=2048, leaving the issue open for an Editor that sizes its buffer to the file."
+  consequence: "CMakeLists.txt sets TD_EDITOR_MAX=8192 and TD_EDITOR_UNDO=2048 for every translation unit, so the Editor takes about 12.8 KB instead of 25 KB; files over 8 KB open read-only, which leaves this project's scripts, playlists and configuration files editable. TinyDesk's test_history_limits pastes 10,001 bytes and so cannot pass at these limits; tools/tests/test_editor_limits.sh runs the rest of upstream's Editor tests at TinyTang's limits, read from CMakeLists.txt, with boundary checks in its place. When upstream sizes the buffer to the file, these limits become a ceiling rather than a fixed cost."
+  sources:
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): apps/editor.c TD_EDITOR_MAX, TD_EDITOR_UNDO, insert_text, the file load and the Editor's launch; tests/test_editor.c test_history_limits"
+    - "github.com/tinydesk-project/tinydesk/issues/6, the author's reply of 2026-10-07T20:42Z"
+    - "CMakeLists.txt; tools/tests/test_editor_limits.sh; tools/make_editor_test_files.py"
+  verification: "On this board on 2026-10-07 with firmware 268021f-dirty.bab3b26 the user read System Monitor at 50 KB free with Files open and 38 KB with the Editor open on a 7,000-byte file, back to 50 KB on each close, against the 20 to 25 KB the Editor took before; the 7,000-byte file took an edit and kept it, and a 9,000-byte file opened read-only and stayed 9,000 bytes on the card (core-log entry 55)."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

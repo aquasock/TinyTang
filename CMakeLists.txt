@@ -125,6 +125,10 @@ else()
     sdk_add_compile_definitions(
         -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45
         -DTD_VT_SCROLLBACK=12 -DTD_MAX_WIDGETS=96)
+    # The Editor allocates its whole buffer and undo history when it opens,
+    # about 25 KB at the defaults (16 KB + 8.7 KB).  8 KB files and 2 KB of
+    # undo text halve that; larger files open read-only (TDESK-016).
+    sdk_add_compile_definitions(-DTD_EDITOR_MAX=8192 -DTD_EDITOR_UNDO=2048)
 
     # The shell prints with printf; with CONFIG_NEWLIB off that resolves to the
     # SDK's UART printf.  Redirect only the shell's translation units to this
