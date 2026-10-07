@@ -305,3 +305,37 @@ None.
 - User Test: PASS
 
 ---
+
+## 50 COMMIT Unreleased 2026-10-07T09:25:33-07:00
+
+#### Coming From:
+
+Unreleased 5564baa
+
+#### Purpose:
+
+Make TinyDesk's Settings > Software update button install new BL616 firmware from `/bl616-firmware.bin` on the card behind a red warning window.
+
+#### Outcome:
+
+The button called `td_app_launch("Software Update")`, which found nothing because TinyDesk's own `apps/update.c` is network OTA and is left out of this port with the other socket apps (`TDESK-008`), so it silently did nothing. `tangflash`'s header check, staging, verification and TCM commit moved unchanged in substance into `ports/bl616/tang_fw_update.c`, a stepwise engine that opens and validates an image, then stages and verifies it one 4 KiB sector per call and reports progress, with the commit last; staging now erases and writes each sector in turn instead of erasing the whole area first, which leaves the same staged contents. `tangflash` in `ports/bl616/tdsh_tang_flash.c` drives that engine and still prints `OK committing`, which `tools/tinytang_flash.py` waits for, while its error lines now read `tangflash: <path>: <reason>`. The new `ports/bl616/td_update_app.c` registers an app named "Software Update" through `td_update_register()`, called from `td_apps_register_all()` in `ports/bl616/td_desktop_bl616.c`, so the unchanged Settings button opens it. It only ever installs `/bl616-firmware.bin` from the card root: a bright red window warns that the Tang may be bricked, must not lose power, and would then need recovery over USB in BOOT mode, shows the image size, and offers Cancel, focused, and I understand, or names the reason and offers only Close when the file is missing or invalid; I understand stages and verifies with a progress bar and refuses to close, a failure there leaves the firmware unchanged and says so, and after verification the window goes full screen with "WRITING FIRMWARE - DO NOT POWER OFF" and an instruction to wait a minute and power-cycle, and commits 1.5 s later so that screen reaches HDMI and remains after the BL616 resets. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `5564baa` with its submodules initialised, carrying only these files and excluding the four uncommitted resident-player files, giving identity `5564baa-dirty.14d42e6`, 624384 bytes, MD5 `af905bd0d06ffa78fe08ff4822aa336e`, with no warnings in the changed files and `commit_staged_image` still inside `.tcm_code`. A rebuild of entry 49's `f893906` reproduced identity `f893906-dirty.a217ee5` and its 621520 bytes, though not its MD5, because the SDK embeds the build date and time. On hardware, `tools/tinytang_flash.py` installed the new firmware; the window showed the missing-file message with no image on the card; with the `f893906` rebuild placed as `/bl616-firmware.bin`, the window installed it and `platform` reported `f893906-dirty.a217ee5` after the power cycle; `tinytang_flash.py` restored the new firmware; on it the refactored `tangflash` refused a missing file and a WAV, then installed the new firmware through `tinytang_flash.py` and the board returned as `5564baa-dirty.14d42e6`. The card's `/bl616-firmware.bin` is now that build, and the user installed it through the window, after which `platform` again reported `5564baa-dirty.14d42e6`. The user accepted the window and its behaviour. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete staged `.ai` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 50 with 10 entries in the active log and exactly six sections.
+
+#### Next Steps:
+
+Entry 49's next steps stand: the resident player with gapless track changes, whose BL616 side remains uncommitted in `ports/bl616/phosphor/ae350_file_server.cpp`, `ae350_file_server.h`, `phosphor_cmd.cpp` and `phosphor_player.cpp`, then the `/tang.ini` parser (`PMOD-002`), and for Tang-Phosphor's one-visualizer-per-core plan a measured core switch and resume-at-offset in the player. A future firmware can now be installed by copying it to `/bl616-firmware.bin` and using Settings > Software update.
+
+#### Files Modified:
+
+- ports/bl616/tang_fw_update.c
+- ports/bl616/tang_fw_update.h
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_update_app.c
+- ports/bl616/tdsh_tang_flash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

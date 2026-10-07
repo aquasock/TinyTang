@@ -23,6 +23,8 @@
 //     time_now() reports "not set" rather than inventing a date.
 //   * The network apps (Network, MQTT, Modbus, OTA) are left out, because they
 //     are built on POSIX sockets and mbedTLS; see td_apps_register_all() below.
+//     Software Update is this port's own, installing an image from the card
+//     (td_update_app.c).
 //   * There is one user and one session.  The Terminal window shares both with
 //     the console shell instead of starting its own; see td_bridge_bl616.c.
 //
@@ -206,6 +208,7 @@ void td_apps_register_all(void)
     td_settings_register();
     td_counter_register();
     td_phosphor_register();
+    td_update_register();       /* td_update_app.c: from the card, not the network */
     td_about_register();
     td_datetime_install_clock();
     td_session_init();
