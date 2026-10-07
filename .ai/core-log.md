@@ -506,3 +506,33 @@ The card's `/bl616-firmware.bin` is still entry 50's `5564baa-dirty.14d42e6`, so
 - User Test: PASS
 
 ---
+
+## 56 COMMIT Unreleased 2026-10-07T15:34:32-07:00
+
+#### Coming From:
+
+Unreleased 4aba99a
+
+#### Purpose:
+
+Bring the board back to the current firmware after a restore from Settings installed the stale card backup, and make that backup the current build, exercising Software Update in both directions.
+
+#### Outcome:
+
+The user restored the firmware through Settings > Software update while `/bl616-firmware.bin` still held entry 50's image, 624384 bytes, as entry 55's next steps had warned. The install itself worked: the board came back cleanly as `5564baa-dirty.14d42e6`, `crash` showed no record from a previous run and the heap at 75208 bytes free of 133872, entry 50's layout, but that rolled back entries 53 to 55, taking away the Bluetooth window and the Editor limits, while the pairings on the card and the shell's Bluetooth commands were unaffected. Entry 55's qualified image, `268021f-dirty.bab3b26`, 633296 bytes, MD5 `c8400170003c77ed08bc66891db4a964`, kept from that cycle's deployment, was checked by MD5 and its build identity and copied to `/bl616-firmware.bin` with `tools/tinytang_put.py`, which placed 633296 bytes, and the card listing confirmed the size. The user then installed it through Settings > Software update, with the window showing 633296 bytes, and after the power cycle confirmed that Settings again had the Bluetooth button opening the Bluetooth window, accepting the result. On the console `platform` reported `268021f-dirty.bab3b26`, `crash` showed no record from a previous run and 73160 bytes free of 131824 with a 58360-byte largest block, entry 55's figures, and `ble` showed the pairings loaded from the card and both devices paired and reconnecting by themselves. Nothing was built. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only this entry, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 56 with 16 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+The card's backup now matches the running firmware. Software Update installs whatever `/bl616-firmware.bin` holds, so a future cycle that deploys new firmware should also copy its qualified image there, or the next restore rolls the board back. The Bluetooth interface in the shape of TinyDesk's `td_net_ops_t` (tinydesk issue #7), `peek` and `poke` after tinydesk-shell's next release, and the controller phases stand, as do the open items of entry 54; `/editor-7k.txt` and `/editor-9k.txt` may be removed from the card.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
