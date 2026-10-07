@@ -79,6 +79,8 @@ C and C++ firmware sources
 
 - You have explicit permission to read and write access to the users local GitHub repository and may run build tools in the user's local enviroment.
 
+- Never push anything onto any Github repos for any reason except for ones under the username "aquasock".
+
 ---
 
 ## Standard Workflow:
