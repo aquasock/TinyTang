@@ -1542,3 +1542,38 @@ A `/tang.ini` parser (`PMOD-002`) should replace `phosphor.tdsh`'s fixed declara
 - User Test: PASS
 
 ---
+
+## 46 COMMIT Unreleased 2026-10-06T18:00:42-07:00
+
+#### Coming From:
+
+Unreleased bbe5651
+
+#### Purpose:
+
+Let a program on Tang-Phosphor's AE350 request byte ranges of a file from the card on demand, as Tang-PSX requests disc sectors from Tang-Control, so Phosphor can stop sending every track whole before it decodes.
+
+#### Outcome:
+
+This is step 1 of a plan the user approved in Tang-Phosphor, recorded there as entry 75, to play tracks by reading them on demand. The new `ports/bl616/phosphor/ae350_file_server.cpp` is Tang-Control's Tang-PSX disc service (`core/tangpsx.cpp`, Apache-2.0) cut down to one file and one caller: it polls the sequence word of a mailbox in the AE350's result words at `0x4074`, reads the offset at `0x4078` and the length at `0x407c`, accepts the request only if the sequence reads the same before and after them, and answers it with `fpga_file_stream` using that offset and length, while the loader is in RUN; a length of 0 or over 16 MiB, or a request with no file to serve, is refused, and a cancelled send ends the service because the shell's Ctrl-C reader consumes the keystroke. `ports/bl616/phosphor/ae350_play.cpp` now exposes its register helpers, the ABI check and `0xa8` selection as `ae350_select`, and the loader restart with its settle delay as `ae350_restart_loader`, with the register addresses in `ae350_play.h`, and `ae350_play_file` uses them unchanged in behaviour. The new `phosphor run <image.tpi> [file]` in `ports/bl616/phosphor/phosphor_cmd.cpp` refuses to run while a track plays, restarts the loader, takes the mailbox baseline before sending the image, serves the program's requests, and prints each request with its byte count, CRC and time, then the loader state, the result and USER(0..12); `README.md` documents it. The firmware built with `make CHIP=bl616 BOARD=bl616dk` with no warnings from the changed files, `tinytang_bl616.bin` at 620,656 bytes, MD5 `c151e42333eab53bc78752f11651b401`, was installed with `tools/tinytang_flash.py`, and after the user's power cycle `platform` reported `bbe5651-dirty.3473ba7`. On the entry 72 Phosphor core, `phosphor run /ae350/fileread.tpi /music/test.wav` served Tang-Phosphor's probe six requests with no failures or refusals, and the AE350's CRC of every range equalled the CRC this firmware sent and a CRC of a copy regenerated on the PC, including an unaligned 100001-byte range, a range running past the end that correctly returned 10 bytes, and the whole 1764044-byte file in 5179 ms, about 340 KB/s, with a request of a few bytes taking about 10 ms in total; the user accepted the result. The required `.ai` core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `.ai/core.md` is unchanged, validated this entry as number 46 of 100 with exactly six sections, and confirmed that no settled history was rewritten.
+
+#### Next Steps:
+
+Step 2 has the playback task serve the resident player's requests for the length of a track instead of sending the file whole, once Tang-Phosphor's player reads its input through the mailbox and plays as it decodes; it is qualified by `tools/phosphor_format_sweep.py`. The open items from entry 45 stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/ae350_file_server.cpp
+- ports/bl616/phosphor/ae350_file_server.h
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/phosphor_cmd.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

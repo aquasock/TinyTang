@@ -30,14 +30,16 @@ constexpr uint32_t REG_ABI = 0x00000004u;
 constexpr uint32_t REG_ABI_CPU_MODE = 0x00010008u;
 constexpr uint32_t REG_CPU_MODE = 0x000000a8u;
 
-bool poke32(uint32_t address, uint32_t value)
+} // namespace
+
+bool ae350_poke32(uint32_t address, uint32_t value)
 {
     fpga_debug_result result;
     return fpga_debug_request(FPGA_EXT_WRITE32, address, value, &result) &&
            result.status == 0;
 }
 
-bool read32(uint32_t address, uint32_t *value)
+bool ae350_read32(uint32_t address, uint32_t *value)
 {
     fpga_debug_result result;
     if (!fpga_debug_request(FPGA_EXT_READ32, address, 0, &result) ||
@@ -48,17 +50,10 @@ bool read32(uint32_t address, uint32_t *value)
     return true;
 }
 
-} // namespace
-
-bool ae350_play_file(const char *full_path, const char **error_out,
-                     fpga_file_stream_cancel cancel, void *cancel_context)
+bool ae350_select(const char **error_out)
 {
-    // The resident player loops forever once loaded: the loader stays in RUN
-    // state (0x03) while the player waits for the next stream and while it
-    // plays.  Only a fresh core (WAIT) or a trapped/crashed player needs a
-    // reload, so the player image is streamed at most once per core load.
     uint32_t abi = 0;
-    if (!read32(REG_ABI, &abi)) {
+    if (!ae350_read32(REG_ABI, &abi)) {
         if (error_out != nullptr)
             *error_out = "core did not respond";
         return false;
@@ -71,54 +66,70 @@ bool ae350_play_file(const char *full_path, const char **error_out,
 
     // Route the stream/debug to the AE350.  Idempotent, so it is asserted on
     // every play rather than only when the loader is restarted.
-    if (!poke32(REG_CPU_MODE, 1u)) {
+    if (!ae350_poke32(REG_CPU_MODE, 1u)) {
+        if (error_out != nullptr)
+            *error_out = "AE350 did not respond";
+        return false;
+    }
+    return true;
+}
+
+bool ae350_restart_loader(const char **error_out)
+{
+    if (!ae350_poke32(AE350_REG_RESTART, 1u)) {
         if (error_out != nullptr)
             *error_out = "AE350 did not respond";
         return false;
     }
 
+    // The restart is not immediate: the request crosses into the AE350's
+    // clock domain and holds the CPU in reset for a 16-bit counter's worth
+    // of transport clocks (about 0.9 ms) before the boot loader runs again
+    // (ae350_subsystem.sv).  A loader that had just finished a track is
+    // already in WAIT, so polling for WAIT straight away sees the old state
+    // and sends the player into a CPU that is about to be reset -- which is
+    // what back-to-back plays did here.  Tang-Control's slower transport
+    // hid it.  Twenty milliseconds is far beyond reset plus boot.
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    // Wait for the loader to reach WAIT (state 0x01).
+    for (int i = 0; i < 100; ++i) {
+        uint32_t state = 0;
+        if (!ae350_read32(AE350_REG_STATE, &state)) {
+            if (error_out != nullptr)
+                *error_out = "AE350 did not respond";
+            return false;
+        }
+        if ((state & 0xffu) == 0x01u) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (error_out != nullptr)
+        *error_out = "AE350 loader did not reach WAIT";
+    return false;
+}
+
+bool ae350_play_file(const char *full_path, const char **error_out,
+                     fpga_file_stream_cancel cancel, void *cancel_context)
+{
+    // The resident player loops forever once loaded: the loader stays in RUN
+    // state (0x03) while the player waits for the next stream and while it
+    // plays.  Only a fresh core (WAIT) or a trapped/crashed player needs a
+    // reload, so the player image is streamed at most once per core load.
+    if (!ae350_select(error_out)) {
+        return false;
+    }
+
     uint32_t state = 0;
-    if (!read32(0x00004020u, &state)) {
+    if (!ae350_read32(AE350_REG_STATE, &state)) {
         if (error_out != nullptr)
             *error_out = "AE350 did not respond";
         return false;
     }
 
     if ((state & 0xffu) != 0x03u) {
-        // Restart the AE350's loader.
-        if (!poke32(0x000043f0u, 1u)) {
-            if (error_out != nullptr)
-                *error_out = "AE350 did not respond";
-            return false;
-        }
-
-        // The restart is not immediate: the request crosses into the AE350's
-        // clock domain and holds the CPU in reset for a 16-bit counter's worth
-        // of transport clocks (about 0.9 ms) before the boot loader runs again
-        // (ae350_subsystem.sv).  A loader that had just finished a track is
-        // already in WAIT, so polling for WAIT straight away sees the old state
-        // and sends the player into a CPU that is about to be reset -- which is
-        // what back-to-back plays did here.  Tang-Control's slower transport
-        // hid it.  Twenty milliseconds is far beyond reset plus boot.
-        vTaskDelay(pdMS_TO_TICKS(20));
-
-        // Wait for the loader to reach WAIT (state 0x01).
-        bool waited = false;
-        for (int i = 0; i < 100; ++i) {
-            if (!read32(0x00004020u, &state)) {
-                if (error_out != nullptr)
-                    *error_out = "AE350 did not respond";
-                return false;
-            }
-            if ((state & 0xffu) == 0x01u) {
-                waited = true;
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-        if (!waited) {
-            if (error_out != nullptr)
-                *error_out = "AE350 loader did not reach WAIT";
+        if (!ae350_restart_loader(error_out)) {
             return false;
         }
 

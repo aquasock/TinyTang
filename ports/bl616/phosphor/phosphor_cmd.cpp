@@ -27,6 +27,8 @@ int tdsh_printf(const char *fmt, ...);
 int tang_phosphor_register(void);
 }
 
+#include "ae350_file_server.h"
+#include "ae350_play.h"
 #include "fpga_debug.h"
 #include "fpga_file_stream.h"
 #include "phosphor_player.h"
@@ -275,12 +277,118 @@ int cmd_stats(void)
     return 0;
 }
 
+// `phosphor run` loads an AE350 program image and serves the program's file
+// requests (ae350_file_server) from `file` until it returns, printing each
+// request and then the loader state, the result word and USER(0..12), which
+// is where test programs such as Tang-Phosphor's fileread publish results.
+void report_request(const ae350_file_request &r, void *)
+{
+    if (r.result.status == fpga_file_stream_status::INVALID_ARGUMENT) {
+        tdsh_printf("phosphor: request %lu refused: offset %lu length %lu\r\n",
+                    static_cast<unsigned long>(r.sequence),
+                    static_cast<unsigned long>(r.offset),
+                    static_cast<unsigned long>(r.length));
+        return;
+    }
+    const bool ok = r.result.status == fpga_file_stream_status::OK;
+    tdsh_printf("phosphor: request %lu offset %lu length %lu: %lu bytes, crc 0x%08lx, "
+                "%lu ms%s%s\r\n",
+                static_cast<unsigned long>(r.sequence), static_cast<unsigned long>(r.offset),
+                static_cast<unsigned long>(r.length), static_cast<unsigned long>(r.result.bytes),
+                static_cast<unsigned long>(r.result.crc32),
+                static_cast<unsigned long>(r.result.elapsed_ms), ok ? "" : ", ",
+                ok ? "" : fpga_file_stream_status_text(r.result.status));
+}
+
+int cmd_run(tdsh_session_t *session, const char *image, const char *file)
+{
+    phosphor_player_status s;
+    phosphor_player_get(&s);
+    if (phosphor_player_active(s)) {
+        tdsh_printf("phosphor: a track is playing; phosphor stop first\r\n");
+        return 1;
+    }
+    char real_image[TDSH_MAX_REAL_PATH];
+    char real_file[TDSH_MAX_REAL_PATH];
+    FILINFO info;
+    if (!resolve_for_playback(session, image, real_image, sizeof(real_image))) {
+        return 1;
+    }
+    if (f_stat(real_image, &info) != FR_OK || (info.fattrib & AM_DIR) != 0) {
+        tdsh_printf("phosphor: no file at %s\r\n", image);
+        return 1;
+    }
+    if (file != nullptr) {
+        if (!resolve_for_playback(session, file, real_file, sizeof(real_file))) {
+            return 1;
+        }
+        if (f_stat(real_file, &info) != FR_OK || (info.fattrib & AM_DIR) != 0) {
+            tdsh_printf("phosphor: no file at %s\r\n", file);
+            return 1;
+        }
+    }
+
+    const char *error = nullptr;
+    uint32_t baseline = 0;
+    if (!ae350_select(&error) || !ae350_restart_loader(&error)) {
+        tdsh_printf("phosphor: %s\r\n", error);
+        return 1;
+    }
+    if (!ae350_request_baseline(&baseline)) {
+        tdsh_printf("phosphor: AE350 did not respond\r\n");
+        return 1;
+    }
+    const fpga_file_stream_result sent = fpga_file_stream(real_image, ctrl_c, nullptr);
+    if (sent.status != fpga_file_stream_status::OK) {
+        tdsh_printf("phosphor: sending %s: %s\r\n", image,
+                    fpga_file_stream_status_text(sent.status));
+        return 1;
+    }
+    tdsh_printf("phosphor: %s sent, %lu bytes in %lu ms\r\n", image,
+                static_cast<unsigned long>(sent.bytes),
+                static_cast<unsigned long>(sent.elapsed_ms));
+
+    const ae350_file_serve_result served = ae350_serve_file(
+        file != nullptr ? real_file : nullptr, baseline, ctrl_c, nullptr, report_request, nullptr);
+    tdsh_printf("phosphor: %lu requests, %lu bytes, %lu failed, %lu refused%s\r\n",
+                static_cast<unsigned long>(served.requests),
+                static_cast<unsigned long>(served.bytes),
+                static_cast<unsigned long>(served.failed),
+                static_cast<unsigned long>(served.refused),
+                served.cancelled ? " (Ctrl-C)" : "");
+    if (served.link_failed) {
+        tdsh_printf("phosphor: AE350 did not respond\r\n");
+        return 1;
+    }
+
+    uint32_t state = served.state;
+    uint32_t result = 0;
+    uint32_t user[13] = {};
+    bool read = ae350_read32(AE350_REG_STATE, &state) &&
+                ae350_read32(AE350_REG_RESULT, &result);
+    for (uint32_t i = 0; read && i < 13u; ++i) {
+        read = ae350_read32(AE350_REG_USER0 + 4u * i, &user[i]);
+    }
+    if (!read) {
+        tdsh_printf("phosphor: AE350 did not respond\r\n");
+        return 1;
+    }
+    tdsh_printf("phosphor: loader state 0x%08lx, result 0x%08lx\r\n",
+                static_cast<unsigned long>(state), static_cast<unsigned long>(result));
+    for (uint32_t i = 0; i < 13u; ++i) {
+        tdsh_printf("%s0x%08lx%s", i == 0 ? "phosphor: user " : " ",
+                    static_cast<unsigned long>(user[i]), i == 12u ? "\r\n" : "");
+    }
+    return served.cancelled || served.failed != 0 || served.refused != 0 ? 1 : 0;
+}
+
 int usage(void)
 {
     tdsh_printf("usage: phosphor caps | peek <addr> | poke <addr> <value> | stats\r\n"
                 "       phosphor play <file> [nowait]  any format, on the AE350 Rockbox player\r\n"
                 "       phosphor status | stop         the track playing in the background\r\n"
-                "       phosphor pause | resume        silence it and carry on\r\n");
+                "       phosphor pause | resume        silence it and carry on\r\n"
+                "       phosphor run <image.tpi> [file] an AE350 program, serving its file requests\r\n");
     return 1;
 }
 
@@ -320,11 +428,14 @@ int cmd_phosphor(tdsh_session_t *session, int argc, char **argv)
     if (strcmp(sub, "resume") == 0 && argc == 2) {
         return cmd_pause(false);
     }
+    if (strcmp(sub, "run") == 0 && (argc == 3 || argc == 4)) {
+        return cmd_run(session, argv[2], argc == 4 ? argv[3] : nullptr);
+    }
     return usage();
 }
 
 const tdsh_command_t s_commands[] = {
-    { "phosphor", "phosphor caps|peek|poke|play|status|stop|pause|resume|stats",
+    { "phosphor", "phosphor caps|peek|poke|play|status|stop|pause|resume|run|stats",
       "Drive a loaded Tang-Phosphor core over the extended protocol", cmd_phosphor, 0 },
 };
 

@@ -90,7 +90,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   link's liveness proof. This project's cores answer 1; the core the FPGA comes
   up with on its own answers 0.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
-- **`phosphor caps | peek | poke | play | pause | resume | status | stop | stats`**
+- **`phosphor caps | peek | poke | play | pause | resume | status | stop | run | stats`**
   drives a loaded
   Tang-Phosphor core over its extended protocol (register access on frame
   type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
@@ -106,7 +106,10 @@ Building and flashing are under *Quick start* and *Building requirements*.
   loading) and `phosphor resume` carries on, without the pause counting as a
   stall; `phosphor stop` silences the track at once and restarts the AE350. A new
   `play` replaces the current track, and `tangload` stops it before it
-  reprograms the FPGA. The core,
+  reprograms the FPGA. `phosphor run <image.tpi> [file]` loads any AE350
+  program and serves the byte ranges of `file` that it requests through its
+  result-word mailbox (Tang-Phosphor `ae350_request.h`), printing each request
+  with its CRC and then the program's result words. The core,
   `/cores/console138k/phosphortang.bin`, carries the desktop layer, the
   keyboard link and F12 the way the NES core does, so it runs under TinyDesk
   with the layer left on. The merged core has no WAV or FLAC decoder in the
