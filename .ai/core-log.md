@@ -275,3 +275,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 49 COMMIT Unreleased 2026-10-07T02:31:50-07:00
+
+#### Coming From:
+
+Unreleased f893906
+
+#### Purpose:
+
+Replace the board's firmware, whose source could not be reproduced from any recorded tree, with firmware built entirely from committed source, and requalify the Phosphor cores on it.
+
+#### Outcome:
+
+The board ran `fd2933e-dirty.d2b8b07`, the firmware Tang-Phosphor entries 78 and 81 qualified with, and `build/build_out/tinytang_bl616.bin`, 621520 bytes, MD5 `067a494fed8d6d394b4a0aeab0e2c71e`, carries that identity, but no TinyTang log entry records it and its source is not recoverable: `cmake/tinytang_build_id.cmake` hashes the uncommitted diff, and recomputing that hash from the current working tree under every combination of the log trim, the untracked archive and `backups/` being present at build time gave no match, so the current uncommitted changes to `ports/bl616/phosphor/ae350_file_server.cpp`, `ae350_file_server.h`, `phosphor_cmd.cpp` and `phosphor_player.cpp`, which are the resident player's BL616 side and unqualified, are not provably what was flashed. That binary is kept as `build/rollback-fd2933e-dirty.d2b8b07.bin`. The `third_party/tinydesk-shell` modification that entry 48 listed as outside its commit is not uncommitted work: it is `third_party/patches/tdsh/0001-configurable-script-limits.patch`, which `scripts/apply-tdsh-patches.sh` applies at every configure, so every build's identity carries a deterministic `-dirty` hash from it. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `f893906` with its submodules initialised, excluding the four experimental files, giving identity `f893906-dirty.a217ee5`, whose diff is the submodule patch line alone, 621520 bytes, MD5 `4ab5a3c8632f02cab95f0d1ce36e2b0c`, with only the build-wide `-std=gnu11` notices and existing SDK warnings. It was installed with `tools/tinytang_flash.py`, and after the user's power cycle `platform` reported `f893906-dirty.a217ee5`. On Tang-Phosphor's entry 81 scope core with the qualified on-demand player, the ABI read 1.10, Tang-Phosphor's `tools/oscope_check.py` passed all seven fixtures with exact sample counts, zero underruns, zero visual drops and exact native MCLK counts, and `tools/i2s2_format_sweep.py` passed all thirteen plays with Tang-Phosphor entry 76's sample counts and both rate transitions; the user then accepted the shell, TinyDesk, the Bluetooth keyboard and mouse, and normal playback. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete staged `.ai` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 49 with 9 entries in the active log and exactly six sections.
+
+#### Next Steps:
+
+Entry 47's next steps stand, with the open items from entry 45: the resident player with gapless track changes, whose BL616 side remains uncommitted in the four files above and is summarised in Tang-Phosphor's `docs/experiment-resident-player.md`, then the `/tang.ini` parser (`PMOD-002`). For Tang-Phosphor's plan of one visualizer per core, measure a core switch and add resume-at-offset to the player. Firmware deployed for qualification must be built from a tree whose identity a log entry records.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
