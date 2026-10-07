@@ -99,6 +99,60 @@ static volatile uint8_t s_start_phase;
 static uint32_t s_heap_before;
 static uint32_t s_heap_after;
 
+/* The Bluetooth window's requests run on the ble task as jobs
+ * (tang_ble_scan_start and the rest), and the shell's commands on the shell's
+ * task; both use the same code below.  What that code has to say goes to the
+ * console from the shell, and is kept as the job's message, for the window to
+ * show, from the ble task. */
+static TaskHandle_t s_ble_task;
+static char s_job_msg[96];
+
+static void ble_say(const char *fmt, ...)
+{
+    char line[sizeof(s_job_msg)];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (s_ble_task == NULL || xTaskGetCurrentTaskHandle() != s_ble_task) {
+        tdsh_printf("%s\r\n", line);
+        return;
+    }
+    /* Without the command's name ("blekbd: "): the window shows the slot. */
+    const char *text = line;
+    const char *colon = strstr(line, ": ");
+    if (colon != NULL && colon - line <= 8) {
+        text = colon + 2;
+    }
+    char kept[sizeof(s_job_msg)];
+    strncpy(kept, text, sizeof(kept) - 1);
+    kept[sizeof(kept) - 1] = '\0';
+    taskENTER_CRITICAL();
+    memcpy(s_job_msg, kept, sizeof(s_job_msg));
+    taskEXIT_CRITICAL();
+}
+
+/* One change at a time: a command that scans, pairs or lets a device go, or a
+ * job of the window's, claims Bluetooth until it is done, and whichever comes
+ * second is refused rather than queued behind a scan the user cannot see. */
+static volatile bool s_busy;
+
+static bool ble_claim(void)
+{
+    taskENTER_CRITICAL();
+    const bool ok = !s_busy;
+    if (ok) {
+        s_busy = true;
+    }
+    taskEXIT_CRITICAL();
+    return ok;
+}
+
+static void ble_release(void)
+{
+    s_busy = false;
+}
+
 static void bt_ready(int err)
 {
     s_enable_result = err;
@@ -203,7 +257,7 @@ static int ble_start_ex(bool verbose)
     int32_t rc = rfparam_init(0, NULL, 0);
     if (rc != 0) {
         if (verbose) {
-            tdsh_printf("ble: RF init failed (%ld)\r\n", (long)rc);
+            ble_say("ble: RF init failed (%ld)", (long)rc);
         }
         s_enable_result = (int)rc;
         s_start_phase = 2;
@@ -218,7 +272,7 @@ static int ble_start_ex(bool verbose)
         s_enable_result = err;
         s_start_phase = 2;
         if (verbose) {
-            tdsh_printf("ble: bt_enable failed (%d)\r\n", err);
+            ble_say("ble: bt_enable failed (%d)", err);
         }
         return err;
     }
@@ -230,15 +284,14 @@ static int ble_start_ex(bool verbose)
         s_enable_result = -1;
         s_start_phase = 2;
         if (verbose) {
-            tdsh_printf("ble: BLE stack did not come up within %d ms\r\n",
-                        BLE_ENABLE_WAIT_MS);
+            ble_say("ble: BLE stack did not come up within %d ms", BLE_ENABLE_WAIT_MS);
         }
         return -1;
     }
     if (s_enable_result != 0) {
         s_start_phase = 2;
         if (verbose) {
-            tdsh_printf("ble: BLE stack failed to start (%d)\r\n", s_enable_result);
+            ble_say("ble: BLE stack failed to start (%d)", s_enable_result);
         }
         return s_enable_result;
     }
@@ -250,7 +303,7 @@ static int ble_start_ex(bool verbose)
     if (verbose) {
         bt_addr_le_t own;
         bt_get_local_public_address(&own);
-        tdsh_printf("ble: radio up, own address %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+        ble_say("ble: radio up, own address %02X:%02X:%02X:%02X:%02X:%02X",
                     own.a.val[5], own.a.val[4], own.a.val[3],
                     own.a.val[2], own.a.val[1], own.a.val[0]);
     }
@@ -266,7 +319,9 @@ static int ble_start(void)
  * sorted strongest first.  The reconnect initiator cannot run during an
  * explicit scan, so it is stopped first and resumed after. */
 static ble_device_t s_snap[BLE_MAX_DEVICES];
+static unsigned s_snap_count;
 static volatile bool s_scanning;
+static volatile TickType_t s_scan_until;   /* while scanning: when it ends */
 static void ble_auto_stop(void);
 static void ble_auto_resume(void);
 
@@ -292,9 +347,10 @@ static int ble_scan(int secs, unsigned *count, unsigned *dropped, uint32_t *repo
     if (err) {
         s_scanning = false;
         ble_auto_resume();
-        tdsh_printf("ble: scan start failed (%d)\r\n", err);
+        ble_say("ble: scan start failed (%d)", err);
         return err;
     }
+    s_scan_until = xTaskGetTickCount() + pdMS_TO_TICKS(secs * 1000);
     vTaskDelay(pdMS_TO_TICKS(secs * 1000));
     (void)bt_le_scan_stop();
     s_scanning = false;
@@ -317,6 +373,9 @@ static int ble_scan(int secs, unsigned *count, unsigned *dropped, uint32_t *repo
         }
         s_snap[j] = t;
     }
+    taskENTER_CRITICAL();
+    s_snap_count = *count;
+    taskEXIT_CRITICAL();
     return 0;
 }
 
@@ -344,14 +403,21 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
         }
     }
 
+    if (!ble_claim()) {
+        tdsh_printf("blescan: Bluetooth is busy with the Bluetooth window; try again\r\n");
+        return 1;
+    }
     if (ble_start() != 0) {
+        ble_release();
         return 1;
     }
 
     unsigned count, dropped;
     uint32_t reports;
     tdsh_printf("blescan: listening for %d s...\r\n", secs);
-    if (ble_scan(secs, &count, &dropped, &reports) != 0) {
+    const int err = ble_scan(secs, &count, &dropped, &reports);
+    ble_release();
+    if (err != 0) {
         return 1;
     }
 
@@ -521,10 +587,10 @@ static tang_bond_t s_bonds[TANG_BOND_SLOTS];
 #define BLE_EV_BOOT 0x1u     /* load the pairings, start the stack, arm */
 #define BLE_EV_SAVE 0x2u     /* write s_bonds to the card */
 #define BLE_EV_ARM  0x4u     /* arm s_arm_pending, then update the reconnect */
+#define BLE_EV_JOB  0x8u     /* run s_job, a request of the Bluetooth window's */
 #define BLE_REARM_MS 500
 #define BLE_RETRY_MS 1000
 
-static TaskHandle_t s_ble_task;
 static volatile uint8_t s_arm_pending;     /* bit per slot */
 static volatile bool s_auto_running;       /* the whitelist initiator is on */
 static void ble_signal(uint32_t ev);
@@ -544,6 +610,9 @@ static void ble_arm_later(const hid_dev_t *d)
 static uint8_t s_kbd_report[8];
 static tang_mouse_t s_mouse;
 
+/* Each slot's latest line, without the command's name, for the window. */
+static char s_slot_msg[HID_SLOTS][HID_LOG_LEN];
+
 static void hid_log(const hid_dev_t *d, const char *fmt, ...)
 {
     char line[HID_LOG_LEN];
@@ -553,6 +622,9 @@ static void hid_log(const hid_dev_t *d, const char *fmt, ...)
     vsnprintf(line + n, sizeof(line) - (size_t)n, fmt, ap);
     va_end(ap);
     log_line(line);
+    taskENTER_CRITICAL();
+    memcpy(s_slot_msg[hid_slot(d)], line + n, sizeof(line) - (size_t)n);
+    taskEXIT_CRITICAL();
 }
 
 static hid_dev_t *hid_by_conn(struct bt_conn *conn)
@@ -1354,7 +1426,7 @@ static void hid_off(hid_dev_t *d)
     }
     int err = bt_conn_disconnect(d->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
     if (err) {
-        tdsh_printf("%s: disconnect failed (%d)\r\n", d->cmd, err);
+        ble_say("%s: disconnect failed (%d)", d->cmd, err);
     }
     vTaskDelay(pdMS_TO_TICKS(500));
 }
@@ -1399,6 +1471,8 @@ static void ble_boot(void)
     }
 }
 
+static void ble_run_job(void);
+
 static void ble_task(void *arg)
 {
     (void)arg;
@@ -1414,6 +1488,9 @@ static void ble_task(void *arg)
         }
         if (ev & BLE_EV_SAVE) {
             bonds_save();
+        }
+        if (ev & BLE_EV_JOB) {
+            ble_run_job();
         }
         if (ev & BLE_EV_ARM) {
             /* A short pause, so a device that keeps failing to connect is
@@ -1583,12 +1660,13 @@ static bool name_has(const char *name, const char *part)
     return n == 0;
 }
 
-/* Connect to `addr` and pair, into slot `d`, replacing any pairing it had. */
+/* Connect to `addr` and pair, into slot `d`, replacing any pairing it had,
+ * then watch it for `secs` seconds (none for a job of the window's). */
 static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name, int secs)
 {
     if (d->conn && !d->armed) {
-        tdsh_printf("%s: already %s; use '%s off' first\r\n", d->cmd,
-                    s_state_names[d->state], d->cmd);
+        ble_say("%s: already %s; use '%s off' first", d->cmd,
+                s_state_names[d->state], d->cmd);
         return 1;
     }
     for (int i = 0; i < HID_SLOTS; i++) {
@@ -1597,12 +1675,12 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
             continue;
         }
         if (o->state != HID_READY && o->state != HID_WAITING) {
-            tdsh_printf("%s: %s is still %s; wait for it to be ready\r\n",
-                        d->cmd, o->cmd, s_state_names[o->state]);
+            ble_say("%s: %s is still %s; wait for it to be ready",
+                    d->cmd, o->cmd, s_state_names[o->state]);
             return 1;
         }
         if (bt_addr_le_cmp(&o->addr, addr) == 0) {
-            tdsh_printf("%s: that device is %s's\r\n", d->cmd, o->cmd);
+            ble_say("%s: that device is %s's", d->cmd, o->cmd);
             return 1;
         }
     }
@@ -1627,17 +1705,19 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
     if (!d->conn) {
         d->state = HID_IDLE;
         ble_auto_resume();
-        tdsh_printf("%s: could not start connection\r\n", d->cmd);
+        ble_say("%s: could not start connection", d->cmd);
         return 1;
     }
     char text[18];
     snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X",
              addr->a.val[5], addr->a.val[4], addr->a.val[3],
              addr->a.val[2], addr->a.val[1], addr->a.val[0]);
-    tdsh_printf("%s: connecting to %s (%s)%s%s\r\n", d->cmd, text,
-                addr->type == BT_ADDR_LE_PUBLIC ? "pub" : "rand",
-                d->name[0] ? " " : "", d->name);
-    hid_watch(d, secs);
+    ble_say("%s: connecting to %s (%s)%s%s", d->cmd, text,
+            addr->type == BT_ADDR_LE_PUBLIC ? "pub" : "rand",
+            d->name[0] ? " " : "", d->name);
+    if (secs > 0) {
+        hid_watch(d, secs);                /* the shell's; a job returns at once */
+    }
     return 0;
 }
 
@@ -1696,7 +1776,7 @@ static int hid_pair(hid_dev_t *d, const char *part)
     return hid_connect(d, &pick->addr, pick->name, HID_PAIR_WATCH_SECS);
 }
 
-static int hid_command(hid_dev_t *d, int argc, char **argv)
+static int hid_command_claimed(hid_dev_t *d, int argc, char **argv)
 {
     if (argc < 2) {
         log_drain();
@@ -1775,6 +1855,195 @@ static int hid_command(hid_dev_t *d, int argc, char **argv)
     return hid_connect(d, &addr, name, secs);
 }
 
+static int hid_command(hid_dev_t *d, int argc, char **argv)
+{
+    /* Status and watch only read; everything else may scan, connect or let a
+     * device go, and must not overlap a job of the Bluetooth window's. */
+    if (argc < 2 || strcmp(argv[1], "watch") == 0) {
+        return hid_command_claimed(d, argc, argv);
+    }
+    if (!ble_claim()) {
+        tdsh_printf("%s: Bluetooth is busy with the Bluetooth window; try again\r\n", d->cmd);
+        return 1;
+    }
+    const int rc = hid_command_claimed(d, argc, argv);
+    ble_release();
+    return rc;
+}
+
+/* ---- the Bluetooth window's jobs ------------------------------------------ */
+
+#define BLE_WINDOW_SCAN_SECS 8
+/* Starting the radio takes about 15.8 KB of heap for good (BLE-002, BLE-014);
+ * the window will not start it with less than this free. */
+#define BLE_START_MIN_FREE   (32u * 1024u)
+
+typedef struct {
+    tang_ble_job_t kind;
+    int slot;
+    bt_addr_le_t addr;
+    char name[BLE_NAME_LEN];
+} ble_job_t;
+
+static ble_job_t s_job;
+static volatile tang_ble_job_t s_job_kind;
+static volatile bool s_job_running;
+static volatile bool s_job_failed;
+static char s_reason[96];
+
+/* On the ble task, holding the claim its request took. */
+static void ble_run_job(void)
+{
+    const ble_job_t j = s_job;
+    hid_dev_t *d = &s_hid[j.slot];
+    int rc = 0;
+    switch (j.kind) {
+    case TANG_BLE_JOB_SCAN: {
+        rc = ble_start();
+        unsigned count = 0, dropped;
+        uint32_t reports;
+        if (rc == 0) {
+            rc = ble_scan(BLE_WINDOW_SCAN_SECS, &count, &dropped, &reports);
+        }
+        if (rc == 0) {
+            ble_say("%u device(s) found", count);
+        }
+        break;
+    }
+    case TANG_BLE_JOB_PAIR:
+        rc = hid_connect(d, &j.addr, j.name[0] ? j.name : NULL, 0);
+        break;
+    case TANG_BLE_JOB_ON:
+        if (!s_bonds[j.slot].valid) {
+            ble_say("not paired");
+            rc = 1;
+        } else if ((rc = ble_start()) == 0) {
+            hid_restore_keys(j.slot);
+            hid_arm(j.slot);
+            ble_say("reconnects by itself");
+        }
+        break;
+    case TANG_BLE_JOB_OFF:
+        hid_off(d);
+        ble_say("not reconnecting; pairing kept");
+        break;
+    case TANG_BLE_JOB_FORGET:
+        hid_forget(d);
+        ble_say("pairing deleted");
+        break;
+    case TANG_BLE_JOB_NONE:
+        break;
+    }
+    s_job_failed = rc != 0;
+    s_job_running = false;
+    ble_release();
+}
+
+static const char *job_submit(const ble_job_t *j)
+{
+    if (s_ble_task == NULL) {
+        return "Bluetooth did not start at boot";
+    }
+    if (!ble_claim()) {
+        return "Bluetooth is busy; try again when it has finished";
+    }
+    s_job = *j;
+    s_job_kind = j->kind;
+    s_job_failed = false;
+    taskENTER_CRITICAL();
+    s_job_msg[0] = '\0';
+    taskEXIT_CRITICAL();
+    s_job_running = true;
+    ble_signal(BLE_EV_JOB);
+    return NULL;
+}
+
+static bool slot_ok(int slot)
+{
+    return slot >= 0 && slot < HID_SLOTS;
+}
+
+const char *tang_ble_scan_start(void)
+{
+    /* A scan beside a connection still being set up would collide with it,
+     * as an explicit connect holds the reconnect initiator off. */
+    for (int i = 0; i < HID_SLOTS; i++) {
+        const hid_state_t st = s_hid[i].state;
+        if (st == HID_CONNECTING || st == HID_SECURING || st == HID_DISCOVERING) {
+            snprintf(s_reason, sizeof(s_reason), "wait for the %s to finish %s",
+                     i == HID_KBD ? "keyboard" : "mouse", s_state_names[st]);
+            return s_reason;
+        }
+    }
+    if (s_start_phase == 2 && s_enable_result != 0) {
+        return "the radio failed to start; see ble in the Terminal";
+    }
+    if (s_start_phase == 0) {
+        const uint32_t free_now = kfree_size();
+        if (free_now < BLE_START_MIN_FREE) {
+            snprintf(s_reason, sizeof(s_reason),
+                     "starting the radio needs %u KB free; %lu KB is free",
+                     BLE_START_MIN_FREE / 1024u, (unsigned long)(free_now / 1024u));
+            return s_reason;
+        }
+    }
+    const ble_job_t j = { .kind = TANG_BLE_JOB_SCAN };
+    return job_submit(&j);
+}
+
+int tang_ble_scan_results(tang_ble_device_t *out, int max)
+{
+    int n = 0;
+    taskENTER_CRITICAL();
+    const unsigned count = s_scanning ? 0 : s_snap_count;
+    for (unsigned i = 0; i < count && n < max; i++, n++) {
+        const ble_device_t *d = &s_snap[i];
+        tang_ble_device_t *o = &out[n];
+        memcpy(o->addr, d->addr.a.val, sizeof(o->addr));
+        o->addr_type = d->addr.type;
+        o->rssi = d->rssi_max;
+        o->kind = d->appearance == BLE_APPEARANCE_KEYBOARD ? TANG_BLE_KIND_KEYBOARD
+                : d->appearance == BLE_APPEARANCE_MOUSE    ? TANG_BLE_KIND_MOUSE
+                : d->hid                                   ? TANG_BLE_KIND_HID
+                                                           : TANG_BLE_KIND_OTHER;
+        memcpy(o->name, d->name, sizeof(o->name));
+        o->name[sizeof(o->name) - 1] = '\0';
+    }
+    taskEXIT_CRITICAL();
+    return n;
+}
+
+const char *tang_ble_pair_start(int slot, const tang_ble_device_t *dev)
+{
+    if (!slot_ok(slot) || dev == NULL) {
+        return "no such device";
+    }
+    ble_job_t j = { .kind = TANG_BLE_JOB_PAIR, .slot = slot };
+    j.addr.type = dev->addr_type;
+    memcpy(j.addr.a.val, dev->addr, sizeof(dev->addr));
+    memcpy(j.name, dev->name, sizeof(j.name));
+    j.name[sizeof(j.name) - 1] = '\0';
+    return job_submit(&j);
+}
+
+const char *tang_ble_set_reconnect(int slot, bool on)
+{
+    if (!slot_ok(slot)) {
+        return "no such slot";
+    }
+    const ble_job_t j = { .kind = on ? TANG_BLE_JOB_ON : TANG_BLE_JOB_OFF, .slot = slot };
+    return job_submit(&j);
+}
+
+const char *tang_ble_forget(int slot)
+{
+    if (!slot_ok(slot)) {
+        return "no such slot";
+    }
+    const ble_job_t j = { .kind = TANG_BLE_JOB_FORGET, .slot = slot };
+    return job_submit(&j);
+}
+
 static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
@@ -1831,6 +2100,20 @@ void tang_ble_info(tang_ble_info_t *out)
         out->stack_heap = s_heap_before - s_heap_after;
     }
     out->pairings = s_bonds_state;
+    out->busy = s_busy;
+    out->job = s_job_kind;
+    out->job_running = s_job_running;
+    out->job_failed = s_job_failed;
+    taskENTER_CRITICAL();
+    memcpy(out->job_msg, s_job_msg, sizeof(out->job_msg));
+    const TickType_t until = s_scan_until;
+    const bool scanning = s_scanning;
+    taskEXIT_CRITICAL();
+    out->job_msg[sizeof(out->job_msg) - 1] = '\0';
+    const TickType_t now = xTaskGetTickCount();
+    if (scanning && (int32_t)(until - now) > 0) {
+        out->scan_ms_left = (uint32_t)(until - now) * portTICK_PERIOD_MS;
+    }
 
     for (int i = 0; i < HID_SLOTS; i++) {
         const hid_dev_t *d = &s_hid[i];
@@ -1842,7 +2125,9 @@ void tang_ble_info(tang_ble_info_t *out)
         memcpy(o->addr, d->addr.a.val, sizeof(o->addr));
         memcpy(o->name, d->name, sizeof(o->name));
         const tang_bond_t b = s_bonds[i];
+        memcpy(o->last, s_slot_msg[i], sizeof(o->last));
         taskEXIT_CRITICAL();
+        o->last[sizeof(o->last) - 1] = '\0';
 
         o->name[sizeof(o->name) - 1] = '\0';
         o->state = s_state_names[state];

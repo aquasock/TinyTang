@@ -46,6 +46,16 @@ typedef enum {
     TANG_BLE_RADIO_FAILED,    /* see enable_error */
 } tang_ble_radio_t;
 
+/* A request of the Bluetooth window's, run on the ble task. */
+typedef enum {
+    TANG_BLE_JOB_NONE,
+    TANG_BLE_JOB_SCAN,
+    TANG_BLE_JOB_PAIR,
+    TANG_BLE_JOB_ON,
+    TANG_BLE_JOB_OFF,
+    TANG_BLE_JOB_FORGET,
+} tang_ble_job_t;
+
 /* One slot: what is connected to it now, and what is paired to it.
  * Addresses are least significant byte first, as tang_bond_t keeps them. */
 typedef struct {
@@ -60,6 +70,7 @@ typedef struct {
     uint8_t  paired_addr[6];
     char     paired_name[TANG_BOND_NAME_LEN];
     bool     reconnects;            /* reconnected by itself when it advertises */
+    char     last[96];              /* its latest event, as blekbd/blemouse log it */
 } tang_ble_slot_info_t;
 
 typedef struct {
@@ -68,10 +79,53 @@ typedef struct {
     uint32_t stack_heap;            /* heap the stack took at start, while UP */
     const char *pairings;           /* the card file's state, as `ble` words it */
     tang_ble_slot_info_t slot[TANG_BOND_SLOTS];   /* 0 keyboard, 1 mouse */
+    bool     busy;                  /* a command or a job holds Bluetooth */
+    tang_ble_job_t job;             /* the window's latest job */
+    bool     job_running;
+    bool     job_failed;
+    char     job_msg[96];           /* what it last said */
+    uint32_t scan_ms_left;          /* while a scan runs */
 } tang_ble_info_t;
 
 /* A snapshot of the radio and both slots.  Never blocks and starts nothing,
  * so a window may call it from its tick. */
 void tang_ble_info(tang_ble_info_t *out);
+
+/* The window's requests.  Each returns at once: NULL when the job was handed
+ * to the ble task, or why it was refused -- Bluetooth busy with a shell
+ * command or another job, or too little heap to start the radio.  Progress
+ * and the outcome are read with tang_ble_info(). */
+
+/* Listen for 8 s, starting the radio if it is off. */
+const char *tang_ble_scan_start(void);
+
+typedef enum {
+    TANG_BLE_KIND_OTHER,
+    TANG_BLE_KIND_HID,              /* advertises the HID service */
+    TANG_BLE_KIND_KEYBOARD,         /* appearance keyboard */
+    TANG_BLE_KIND_MOUSE,            /* appearance mouse */
+} tang_ble_kind_t;
+
+typedef struct {
+    uint8_t  addr[6];               /* least significant byte first */
+    uint8_t  addr_type;             /* bt_addr_le_t.type */
+    int8_t   rssi;                  /* the strongest heard, dBm */
+    tang_ble_kind_t kind;
+    char     name[TANG_BOND_NAME_LEN];
+} tang_ble_device_t;
+
+#define TANG_BLE_MAX_DEVICES 24
+
+/* The last scan's devices, strongest first; none while a scan runs. */
+int tang_ble_scan_results(tang_ble_device_t *out, int max);
+
+/* Connect to `dev` and pair it into `slot`, replacing that slot's pairing. */
+const char *tang_ble_pair_start(int slot, const tang_ble_device_t *dev);
+
+/* Reconnect the slot's paired device by itself, or let it go and stop. */
+const char *tang_ble_set_reconnect(int slot, bool on);
+
+/* Let the slot's device go and delete its pairing from the board and card. */
+const char *tang_ble_forget(int slot);
 
 #endif /* TANG_BLE_H */

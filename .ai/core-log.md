@@ -438,3 +438,38 @@ The window's next version can add pairing from a scanned list, forgetting, and r
 - User Test: PASS
 
 ---
+
+## 54 COMMIT Unreleased 2026-10-07T13:59:07-07:00
+
+#### Coming From:
+
+Unreleased 3c9d3c8
+
+#### Purpose:
+
+Let the Bluetooth window pair, turn off and on, and forget each slot's device without blocking the desktop, by running that work as jobs on the Bluetooth task.
+
+#### Outcome:
+
+`blekbd pair` blocked its caller for about 20 s (radio start, an 8 s scan, an 8 s watch) and `off` for 500 ms, all printing straight to the console, so the window could not call them. `ports/bl616/tang_ble.c` now runs the window's requests as jobs on its existing `ble` task: `tang_ble_scan_start`, `tang_ble_pair_start`, `tang_ble_set_reconnect` and `tang_ble_forget`, declared in `tang_ble.h`, return at once or with the reason they were refused, and `tang_ble_info` reports the job, its message, a scan's remaining time and each slot's latest event, while `tang_ble_scan_results` returns the last scan strongest first. The scan, connect, off and forget code is shared with the shell; a new `ble_say` prints to the console when called from the shell and keeps the line as the job's message when called on the `ble` task, so the commands' output is unchanged, and `hid_connect` skips its watch for a job. One claim is taken by `blescan`, by every `blekbd` and `blemouse` subcommand other than status and `watch`, and by each job, so the window and the shell cannot overlap and whichever comes second is refused. A scan is refused while either slot is connecting, pairing or discovering, and one that would start the radio is refused below 32 KB of free heap. `ports/bl616/td_bluetooth_app.c` gives each slot Pair..., Off or On, and Forget, a line with its latest event, and a bottom line with the job's progress or the refusal; Pair... runs an 8 s scan and lists the slot's own kind first, then other HID devices, then other named devices, leaving unnamed ones out. Forget always asks, Off asks when the device is connected, and pairing over a different paired device asks to replace it, each warning that a connected device stops at once and pointing to the USB keyboard or a controller. The new `tools/tests/test_bluetooth_app.sh` builds the real window with TinyDesk's real core and a recording stand-in for the engine on an 80x45 screen, and checks the confirmations and their cancellation, the requests made, the list order and exclusions, the countdown and a refusal; it failed against a reversed list order and against a missing connected-device warning before passing, and all thirteen host test scripts pass. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `3c9d3c8` carrying only these files, with no warnings from the changed files beyond the existing ones, giving identity `3c9d3c8-dirty.a4d7471`, 633296 bytes, MD5 `a91ff997d974ed981d9233bbb9a926cb`, installed with `tools/tinytang_flash.py`. After the power cycle the user reported every check passing: Off with its confirmation and On for the M750, Forget cancelled and then confirmed, a fresh M750 pairing from the scan list followed through connecting, pairing, discovering and ready, a `blekbd` command refused as busy during a window scan, and the K950 re-paired over its own pairing through the Replace confirmation. On the console afterwards `platform` reported `3c9d3c8-dirty.a4d7471`; `ble` showed the radio up, the pairings saved to the card, the K950 now at `DB:88:A7:81:D9:DA` after re-pairing as `BLE-006` describes, both devices reconnecting by themselves, and 73160 bytes free of 131824 with a 58360-byte largest block, the heap total being 1792 bytes below entry 53's for the new static state; `crash` showed no record from a previous run. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only this entry, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 54 with 14 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+The Bluetooth window is complete for two slots. An antenna on `U35` (`BLE-001`) may remove the occasional HCI 0x3E connection failures and is the user's purchase; the stall when both devices reconnect at once remains open, as do the `/tang.ini` parser (`PMOD-002`) and the open items of entry 52.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/td_bluetooth_app.c
+- tools/tests/tb_bluetooth_app.c
+- tools/tests/test_bluetooth_app.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

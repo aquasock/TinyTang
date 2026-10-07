@@ -58,9 +58,13 @@ Building and flashing are under *Quick start* and *Building requirements*.
   the prompt. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS. In their place, Settings'
   **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
-  and the paired keyboard and mouse with their connection state, refreshed
-  every second; pairing and forgetting stay with `blekbd` and `blemouse`. The
-  button is TinyTang's, from the carried patch
+  and the keyboard and mouse slots with their connection state and latest
+  event. Each slot pairs from an 8-second scan (its own kind listed first),
+  turns reconnecting off and on, and forgets its pairing, asking first before
+  letting go of a connected device; the work runs on the Bluetooth task, so the
+  desktop never waits, and a `blekbd`, `blemouse` or `blescan` started while the
+  window is busy is refused rather than queued. A scan that would start the
+  radio needs 32 KB of heap free. The button is TinyTang's, from the carried patch
   `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
 - **The Terminal window runs the shell.** It is the same session as the
   console, reached through a bridge over two ring buffers, so
