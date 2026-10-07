@@ -369,3 +369,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 52 COMMIT Unreleased 2026-10-07T11:36:59-07:00
+
+#### Coming From:
+
+Unreleased b22cb4e
+
+#### Purpose:
+
+Record what the uncommitted resident gapless player experiment established in `.ai/core-reference.md` and then discard its BL616 code, at the user's direction that the lessons matter and the code does not.
+
+#### Outcome:
+
+The four uncommitted files `ports/bl616/phosphor/ae350_file_server.cpp`, `ae350_file_server.h`, `phosphor_cmd.cpp` and `phosphor_player.cpp` were reviewed against Tang-Phosphor's uncommitted `software/rbhost/host/platform_ae350.c` and untracked `docs/experiment-resident-player.md` at its `7cf9ede`. They held TinyTang's side of step 3 of Tang-Phosphor entry 75's plan, a player that stays resident and plays consecutive tracks gaplessly, and had never been built, deployed or tested. Two reference records now carry what they established. `PHOS-012` records the contract: a length-0 mailbox request is a question selected by its offset, SIZE, NEXT and POLL, with STOP as `0xffffffff` answered once, and the player publishes RES1 and its begun, finished, samples and decode-status words at `0x4040` to `0x4050`. `PHOS-013` records the BL616-side rules, which are residency as loader RUN plus RES1, a track numbered as tracks begun plus one and over when tracks finished reaches it, a soft stop through the mailbox with a 2 s halt fallback, and copied paths, together with one defect found in review: a resident player the BL616 did not start in this boot leaves the mailbox baseline at 0, so a stale sequence would be served. `PHOS-013` also records Tang-Phosphor's order of work, which settles `PHOS-007` and the RAM bridge before qualifying such a player. Both records are `INFERRED` because neither side was run and their sources were never committed, so the records themselves are now the durable copy. The user directed that the code itself not be kept, and the four files were then restored to `b22cb4e` with `git checkout`, leaving the committed on-demand player of entry 47 as TinyTang's playback path; the Tang-Phosphor side was left untouched for that project. Nothing was built, deployed or tested. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only `PHOS-012` and `PHOS-013` with their routing rows and index lines and this entry, confirmed by parsing every YAML block of `.ai/core-reference.md` that its 143 records are unique and each has an index line, confirmed that `.ai/core.md` is unchanged and that no settled entry or record was rewritten, and validated this entry as number 52 with 12 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+The `/tang.ini` parser (`PMOD-002`) is the next TinyTang work, so the PMOD sockets are declared after every core load rather than only by `phosphor.tdsh`. A resident gapless player is deferred until Tang-Phosphor settles `PHOS-007` and its RAM bridge experiment, and would then be rebuilt from `PHOS-012` and `PHOS-013`, including the baseline fix. For Tang-Phosphor's one-visualizer-per-core plan, a measured core switch and resume-at-offset in the player remain open, as do the open items of entry 51.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
