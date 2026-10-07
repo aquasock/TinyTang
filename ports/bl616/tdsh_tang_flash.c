@@ -154,6 +154,7 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
  * It loads the FPGA's SRAM directly, so this is what "boot our core" means
  * on this board: the .bin is a bitstream, not anything the BL616 executes. */
 bool fpga_program(const char *fname);
+void tang_ini_core_loaded(void);
 
 /* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
 void tang_phosphor_core_replacing(void);
@@ -182,6 +183,9 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
          * desktop layer included.  Tell it, or the layer stays gone with no
          * sign of why. */
         tang_osd_desk_core_reloaded();
+        /* A core with the PMOD sockets brings them up released; declare
+         * what /tang.ini says is seated (phosphor/pmod_sockets.cpp). */
+        tang_ini_core_loaded();
     }
     return ok ? 0 : 1;
 }

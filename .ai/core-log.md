@@ -536,3 +536,43 @@ None.
 - User Test: PASS
 
 ---
+
+## 57 COMMIT Unreleased 2026-10-07T16:00:02-07:00
+
+#### Coming From:
+
+Unreleased 969e6ff
+
+#### Purpose:
+
+Read /tang.ini after every core load and declare the PMOD sockets from it, replacing phosphor.tdsh's fixed declaration, and hand the cycle to the next agent built and deployed but not yet tested on hardware.
+
+#### Outcome:
+
+The user's decisions for the design were: TinyTang keeps its own table of module names copied from Tang-Phosphor's numbering; `pmodN_flip` is applied as declared with no flip-safety check for now; unknown keys are warned about and ignored; `phosphor.tdsh`'s `PMOD` override is removed; the file is edited in the Editor, and a file past its 8 KB limit is edited on a PC. `ports/bl616/tang_ini.c` and `tang_ini.h` parse the file with no card or core access, line by line in any size of chunk, into the socket control word for `0xc0` and up to eight problems with their lines. The contract's names `oledrgb`, `vga_j1` and `vga_j2` are accepted, with this project's names `encoder` for personality 4 and `i2s2` for personality 5, the I2S2 that Tang-Phosphor's merged core now has (`PMOD-005`), plus `none`. A missing file or entry leaves a socket released. An unknown module, a flip other than yes or no, and one PmodVGA half without the other each release that socket with a message, and a later valid line does not cancel a bad flip. Unknown keys, other sections and keys outside `[tang]` are warned about and ignored, the last of a repeated key wins with a warning, and comments may follow a value. The new `ports/bl616/phosphor/pmod_sockets.cpp` runs from `tangload` in `ports/bl616/tdsh_tang_flash.c` after every successful load: it asks the core for its ID, and for ID `0x50` at register ABI 1.8 or later it prints the declaration and any problems, writes the word to `0xc0` and reads it back with the frame selector masked; it writes nothing to other cores. The new shell command `tangini`, registered in `ports/bl616/tdsh_platform_bl616.c`, shows the file's declaration against the loaded core's `0xc0`, and `tangini apply` sends it again without a reload. `scripts/phosphor.tdsh` no longer declares the sockets. `docs/tang.ini` is a commented example of the OLEDrgb-and-encoder layout, `0x2410`, and `README.md` documents the file and the command. The new `tools/tests/test_ini.sh` builds the parser with AddressSanitizer and UBSan and checks the contract's example, an empty file, CRLF, spacing, case and comments, every personality on either socket, the VGA pairing in both orders, a refused partner, each refusal, repeated keys, unknown keys and sections, an overlong line, a note overflow, input fed a byte at a time, and that `docs/tang.ini` parses to `0x2410` with nothing to report. It failed with the VGA pairing rule removed, with the bad-flip refusal removed and with a typo in the example, and all fifteen host test scripts pass. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` in a clean detached worktree of `969e6ff` carrying only these files, with no warnings from them, giving identity `969e6ff-dirty.71fe989`, 637872 bytes, MD5 `2fab6aba64c72324a53710c981369de9`; it was committed to flash with `tools/tinytang_flash.py`, and `/scripts/phosphor.tdsh` on the card was replaced with this version, 2220 bytes. The handoff came before the power cycle: the board was off USB, waiting for it, so `platform` has not yet reported the new identity, and no hardware test has run. There is no `/tang.ini` on the card, deliberately, since what is seated was not known: entry 45 seated the OLEDrgb in PMOD0 and the encoder in PMOD1, and entry 49's I2S2 work used PMOD0 since. The card's `/bl616-firmware.bin` is entry 55's `268021f-dirty.bab3b26`, so Settings > Software update would remove this cycle's firmware. `docs/upstream/editor-limits-reply.md`, a draft of the user's reply on tinydesk issue #6 with the Editor results of entry 55, is included unposted for the user to review and post. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, which adds only `PMOD-005` with its routing row and index line and this entry, parsed every YAML block of `.ai/core-reference.md` and found its 146 records unique with an index line each, confirmed that `.ai/core.md` is unchanged and that no settled entry or record was rewritten, and validated this entry as number 57 with 17 entries in the active log and exactly six sections; `tools/check_core_log.py` again reported only its numbering rule, as entry 51 records.
+
+#### Next Steps:
+
+Power-cycle the board with both cables and confirm with `platform` that it runs `969e6ff-dirty.71fe989`, then run the qualification the user planned for the rotary encoder, the OLEDrgb, the I2S2 and the PmodVGA, writing `/tang.ini` for each layout and loading the Phosphor core with `tdsh run /scripts/phosphor.tdsh` or resending with `tangini apply`. With no file, expect `0xc0 = 0x0000`. For the OLEDrgb in PMOD0 and the encoder in PMOD1 with `pmod1_flip = yes`, expect `0x2410`. For the I2S2 in PMOD0 with JP1 at SLV and the encoder in PMOD1 flipped, expect `0x2450` and audio while a track plays. For `vga_j1` in PMOD0 and `vga_j2` in PMOD1, expect `0x0320` and a picture. With `pmod0 = oled`, expect a line-2 message and PMOD0 released. A module that fails while `0xc0` holds the declared word points at the core rather than the parser. After the user accepts, copy the qualified image to `/bl616-firmware.bin` (entry 56) and record the result in a new entry, superseding `PMOD-005`'s verification with a hardware record. Still open: the Bluetooth interface in the shape of TinyDesk's `td_net_ops_t` (tinydesk issue #7); `peek` and `poke` once tinydesk-shell's next release carries them; the controller phases when the user's controller arrives; the reconnect stall when both Bluetooth devices return at once; the antenna on `U35`; and removing `/editor-7k.txt` and `/editor-9k.txt` from the card. Upstream threads are the user's to answer, and agents push only to `aquasock` repositories.
+
+#### Files Modified:
+
+- README.md
+- docs/tang.ini
+- docs/upstream/editor-limits-reply.md
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- scripts/phosphor.tdsh
+- tools/tests/tb_ini.c
+- tools/tests/test_ini.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

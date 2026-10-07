@@ -142,6 +142,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
 | Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-004 |
+| How does this firmware read /tang.ini, which module names does it accept, and is I2S2 a personality? | PMOD | PMOD-005 |
 | Where are the USB OTG registers, and which bit is which? | BL6 | BL6-001 |
 | How much RAM does the BL616 have? | BL6 | BL6-002 |
 | How do I read free heap? | BL6 | BL6-003 |
@@ -276,6 +277,7 @@ PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D2
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
 PMOD-003: "Superseded by PMOD-004. Recorded the socket control register as 0x10, which is the bring-up core's map only"
 PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them (0x2410 is the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit); 0x10 is the bring-up core's address"
+PMOD-005: "Tang-Phosphor's merged core adds personality 5, I2S2 stereo PCM playback; TinyTang parses /tang.ini (tang_ini.c) and sends it to a core with ID 0x50 at ABI 1.8 or later after every tangload, accepting none, oledrgb, encoder, i2s2, vga_j1 and vga_j2, refusing per the contract and warning about unknown keys; flip is applied as declared, with no flip-safety check yet; on the board only through host tests so far"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
 BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
 BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and heapsize; PMEM_HEAP is the same heap unless the chip is a BL618"
@@ -1992,6 +1994,19 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, docs/debug-registers.md, and its .ai/core-reference.md record on socket control and stream routing in the merged player map"
     - "Tang-Phosphor src/pmod_mirror_core.sv: PERS_NONE through PERS_ENC"
   verification: "On this board on 2026-10-06 phosphor.tdsh declared 0x2410, 0xc0 read 0x2410 before, during and after two tracks, the panel frame counter at 0xd8 advanced throughout and the panel signature matched the source at 0x76491800; the user confirmed the OLED lit (core-log entry 45)."
+
+- record_id: PMOD-005
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "Personality 5 is the I2S2, and how TinyTang applies /tang.ini"
+  status: SOURCED
+  verified_date: 2026-10-07
+  statement: "Tang-Phosphor's merged core, at register ABI 1.10 (0x0001000a), adds personality 5 to PMOD-004's socket control word 0xc0: I2S2 stereo PCM playback, present when the I2S2 backend is compiled in, which the merged core enables; Tang-Phosphor's own launch declared it as 0xc0 = 0x50, PMOD0 with JP1 at SLV. The tang.ini contract (PMOD-002) names oledrgb, vga_j1 and vga_j2 only; TinyTang names personality 4 encoder and personality 5 i2s2."
+  consequence: "This supersedes PMOD-002's consequence that nothing here reads /tang.ini. ports/bl616/tang_ini.c parses the file with no card or core access, so tools/tests/test_ini.sh checks it on the host, including that docs/tang.ini parses to 0x2410. After every successful tangload, ports/bl616/phosphor/pmod_sockets.cpp asks the core for its ID and, for ID 0x50 at ABI 1.8 or later, writes the word to 0xc0 and reads it back, masking the frame selector at 18:16; other cores, including the bring-up core whose 0x04 is not an ABI, get nothing. A missing file or entry releases the socket; an unknown module, a flip other than yes or no, or one VGA half without the other releases that socket with a console line; unknown keys, other sections and keys outside [tang] are warned about and ignored. Flip is applied as declared for any module: the user chose to defer flip-safety enforcement. tangini shows the declaration and the loaded core's sockets, tangini apply resends it, and scripts/phosphor.tdsh no longer declares the sockets or reads PMOD. The module table is TinyTang's own copy of Tang-Phosphor's numbering until the core reports its personalities."
+  sources:
+    - "Tang-Phosphor 7cf9ede: docs/debug-registers.md (0x04 ABI 1.10, 0x00c0 personality 5), src/pmod_mirror_core.sv PERS_I2S2, docs/i2s2-bringup.md (socket and setup)"
+    - "ports/bl616/tang_ini.c, ports/bl616/tang_ini.h, ports/bl616/phosphor/pmod_sockets.cpp, docs/tang.ini; tools/tests/test_ini.sh"
+  verification: "The parser passes its host test under AddressSanitizer and UBSan, which failed when the VGA pairing rule and the bad-flip refusal were each removed. Firmware 969e6ff-dirty.71fe989 carrying it was installed on 2026-10-07, but no hardware test has run (core-log entry 57)."
 
 - record_id: TCTL-011
   kind: EXTERNAL

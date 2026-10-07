@@ -127,8 +127,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
   the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
   desktop up, probes it, hands it the screen and starts `/music/test.mp3` (or
-  `$FILE`) without waiting; F12 then switches between the player and TinyDesk,
-  during the track and after it.
+  `$FILE`) without waiting, with the PMOD sockets as `/tang.ini` declares
+  them; F12 then switches between the player and TinyDesk, during the track
+  and after it.
 - **The Phosphor app** in the desktop's start menu is a player for `/music`:
   a sorted list of the playable files, the title and status of the current
   track, a progress bar (WAV and FLAC, whose length is read from the file's
@@ -137,6 +138,19 @@ Building and flashing are under *Quick start* and *Building requirements*.
   drives the same playback task as the `phosphor` command, so closing the
   window leaves the track playing and reopening it picks the track back up.
   Without the Phosphor core loaded it says so and its buttons are disabled.
+- **`/tang.ini` declares the PMOD sockets.** PMOD modules cannot be detected,
+  so a core with the sockets (the Phosphor core, at register ABI 1.8 or later)
+  drives only what the file says is seated. `tangload` sends it after every
+  core load, whichever way the core arrives, and leaves cores without sockets
+  alone. Under `[tang]`, `pmod0` and `pmod1` take `none`, `oledrgb`,
+  `encoder`, `i2s2`, `vga_j1` or `vga_j2`, and `pmod0_flip`/`pmod1_flip` take
+  `yes` for a module seated upside down; `docs/tang.ini` is a commented
+  example. No file, or no entry, leaves a socket released. An unknown module,
+  a flip that is not yes or no, or one half of the PmodVGA without the other
+  releases that socket and says why on the console; unknown keys and sections
+  are reported and ignored. `tangini` shows the declaration, its problems and
+  the loaded core's sockets, and `tangini apply` sends it again without
+  reloading the core.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.

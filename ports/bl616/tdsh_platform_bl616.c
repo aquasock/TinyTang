@@ -392,6 +392,10 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_phosphor_register();
     if (rc) return rc;
 
+    extern int tang_tangini_register(void);
+    rc = tang_tangini_register();
+    if (rc) return rc;
+
     extern int tang_osd_register(void);
     rc = tang_osd_register();
     if (rc) return rc;
