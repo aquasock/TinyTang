@@ -576,3 +576,33 @@ Power-cycle the board with both cables and confirm with `platform` that it runs 
 - User Test: NOT RUN
 
 ---
+
+## 58 COMMIT Unreleased 2026-10-07T16:43:14-07:00
+
+#### Coming From:
+
+Unreleased ed2211c
+
+#### Purpose:
+
+Confirm entry 57's firmware boot and qualify its automatic PMOD declaration with the normally seated I2S2 and the existing oscilloscope core.
+
+#### Outcome:
+
+The console confirmed `969e6ff-dirty.71fe989`, with the watchdog enabled, no resets retained since power-up and no previous crash record. Loading the card's default `phosphortang.bin` without `/tang.ini` automatically declared `0xc0 = 0x0000`, and `tangini` confirmed both sockets released; that image reports ABI 1.8 and is older than the separate I2S2 playback and oscilloscope images. The user confirmed I2S2 in its usual PMOD0 position, normally oriented. A 65-byte `/tang.ini` now declares `pmod0 = i2s2`, `pmod0_flip = no`, `pmod1 = none` and `pmod1_flip = no` under `[tang]`. Loading `phosphortang-i2s2-play.bin` (ABI 1.9) automatically applied `0x0050`, and `tangini apply` wrote and read it back successfully. The old `/music/test.wav` and `/music/test.mp3` files are absent, so playback used `/music/Fleetwood Mac - Landslide.mp3`. The user wanted the visualizer, so the final test loaded the existing `phosphortang-oscope.bin` (5,158,912 bytes, ABI 1.10) directly through `tangload`, again automatically declaring `0x0050`, enabled medium trails and glow at `0xac = 0x0b`, hid the overlay and restarted the track. The user reported perfect audio and a perfect oscilloscope and asked to let the song finish. It ended at 3:19 with 8,796,143 samples at 44,100 Hz and zero underruns; the socket declaration remained `0x0050`, and no crash was recorded. During playback the clock status was `0x17` and the MCLK count `0x00113a00`, as expected at 44.1 kHz. Nothing was built or reflashed. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that only this entry was added and no settled history or core directive changed, and validated entry 58 with 18 entries in the active log and exactly six sections; the existing checker reports only the numbering mismatch documented in entry 51.
+
+#### Next Steps:
+
+Qualify the OLEDrgb, encoder and PmodVGA layouts and the invalid-module refusal from entry 57 when the user is ready to change modules. The I2S2 automatic declaration, reapplication and full-track playback with the oscilloscope have passed and need not be repeated without a new concern. Keep the card's distinct core images in mind: the default Phosphor script still loads the older ABI 1.8 image, while `/scripts/oscope.tdsh` selects the visualizer and currently also writes its own socket declaration. The card's `/bl616-firmware.bin` remains entry 55's older image; refresh it with entry 57's qualified firmware after the remaining qualification is accepted. The other open items of entry 57 stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
