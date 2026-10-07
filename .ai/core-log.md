@@ -339,3 +339,33 @@ Entry 49's next steps stand: the resident player with gapless track changes, who
 - User Test: PASS
 
 ---
+
+## 51 COMMIT Unreleased 2026-10-07T11:29:50-07:00
+
+#### Coming From:
+
+Unreleased 515969c
+
+#### Purpose:
+
+Record the discrepancy between the project's earlier upstream publication and the rule the user added to `.ai/core.md` at `515969c` forbidding pushes to any GitHub repository outside the `aquasock` account, together with the stale local clone that hid that rule from the resuming agent, and confirm that both have been addressed.
+
+#### Outcome:
+
+The user added to `.ai/core.md`, under Agent Behavior, that nothing is to be pushed to any GitHub repository for any reason except those under the username `aquasock`, and pushed that change directly to GitHub as `515969c`. Settled entries 41 and 44 record work that this rule now forbids: entry 44 pushed the fork branch to `aquasock/tinydesk-shell`, which the rule permits, but then opened pull request #4 on `tinydesk-project/tinydesk-shell`, and entry 41 records pull request #3 and the reply on issue #1 on that same repository, all of which write to a repository outside the `aquasock` account. Those entries are left as written, since they were within the instructions in force at the time. A second discrepancy hid the rule at first: the resuming agent read `.ai/core.md` from the local clone, whose `main` was at `069c64d`, one commit behind `origin/main`, because shell access had failed with a transient error from the auto-mode safety check and the fetch could not run, so its first read lacked the rule and it proposed a plan without it. Once a later fetch succeeded, the clone was fast-forwarded to `515969c`, whose only change is the two-line addition to `.ai/core.md`, leaving the four uncommitted resident-player files and the `third_party/tinydesk-shell` patch state untouched, and the rule was re-read and applied. The user is handling the open upstream threads on their own side. From this entry on, agents push only to repositories under `aquasock`, and do not open, comment on or update pull requests or issues on any other account's repositories, and the earlier next steps that called for upstream publication from this project no longer stand. Nothing was built, deployed or tested. The required core-syntax audit re-read `.ai/core.md` at `515969c` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `.ai/core.md` was not changed by the agent and that no settled entry was rewritten, and validated this entry as number 51 with 11 entries in the active log and exactly six sections; `tools/check_core_log.py` passed every header, section, terminator and Status check and reported only its numbering rule, which expects the active log to begin at 1 and so flags every retained entry since entry 48's user-directed trim kept numbering from 41.
+
+#### Next Steps:
+
+The resident player with gapless track changes comes next, with its BL616 side still uncommitted in `ports/bl616/phosphor/ae350_file_server.cpp`, `ae350_file_server.h`, `phosphor_cmd.cpp` and `phosphor_player.cpp`, under the plan proposed in this session and awaiting the user's approval; then the `/tang.ini` parser (`PMOD-002`), and for Tang-Phosphor's one-visualizer-per-core plan a measured core switch and resume-at-offset in the player. The upstream items in entries 41 to 44, namely pull requests #3 and #4, issue #1's naming answer, the script-loading allocation error and the three drafts in `docs/upstream/issue-drafts.md`, are the user's to handle, and any upstream text an agent prepares is left in this repository for the user to post. Before acting on `.ai/core.md`, fetch `origin` and confirm the local clone is current.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
