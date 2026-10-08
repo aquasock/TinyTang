@@ -781,3 +781,67 @@ No validation remains for this corrected desktop boot and VGA cycle. The canonic
 - User Test: PASS
 
 ---
+
+## 64 COMMIT Unreleased 2026-10-07T19:56:35-07:00
+
+#### Coming From:
+
+Unreleased 16b49b3
+
+#### Purpose:
+
+Implement an independent fixed 24×16 OLED terminal on the desktop core with an original 4×4 font.
+
+#### Outcome:
+
+The user approved the independent OLED terminal and later deferred deployment with “wait”, then explicitly requested this commit and push for agent handoff. Desktop ABI 1.1 adds OLEDrgb selection on either socket, 384 coloured character cells, a cursor, validated 1–64-cell block writes, frame count and CRC32 of emitted RGB565 bytes. The original 4×4 font supports printable ASCII and a boxed fallback; TinyDesk's compact terminal emulator substitutes unsupported printable Unicode for display only. The BL616 OLED Terminal app, independent session, task-local input/output routes inherited by script workers, background UART updater and core-replacement hooks are implemented and compile, but runtime routing and lifecycle qualification remain pending. FatFS descriptor allocation is protected briefly without placing any filesystem calls inside critical sections. The panel/SPI engine comes from committed Tang-Phosphor 7cf9ede, with complete-pixel latching added to the panel; THIRD_PARTY.md records its GPL provenance and the MIT TinyDesk emulator instance, and no colibri code was copied or adapted. The reconstructed UART regression passed 36 replies with independent CRC checks, successful ordered writes and rejected requests causing no partial writes; existing PMOD, legacy decoder and full HDMI/VGA compositor tests passed. The OLED regression passed initialization, minimum power/SPI timing, all 6,144 pixels of a nonuniform frame, cursor inversion, coherent live pixel bytes and an independent Python check of serialized-frame CRC32 79285abe; compact terminal wrap, scroll, ANSI colours, cursor and Unicode fallback checks passed, as did the 70-check desktop-layer host regression. All four Gowin 1.9.11.03 revision-C placements passed with zero timing violations and were reported before any deployment: every variant uses 3,702 LUTs, 383 ALUs, 2,313 FFs, 14 BSRAMs, 1.5 DSPs as reported by Gowin, and three PLLs. Placement 2 has the best setup margin, +2.193 ns setup and +0.246 ns hold, pixel Fmax 88.689 MHz against 74.25 MHz; its 4,481,940-byte image has SHA-256 dfe6ad996aefeee605d95b03ba56608e55d12fe22096d2b160ba50542ce3c301. The report parser now accepts fractional DSP usage. The final compile check produced BL616 identity 16b49b3-dirty.201ddb8, 648,640 bytes, SHA-256 c04b10de1ea9c4b2f00fd080837f75e08b158f2a9fbff77c48cc3da4deafc183. Exact images, build identity, reports, logs, manifest, source diff and changed-source archive are retained locally in build/oled-terminal/handoff; all four placement outputs remain in build/oled-terminal/sweep. Neither new image was uploaded or flashed, and no user acceptance is claimed. Before USB disappeared, the user seated OLEDrgb face up in PMOD0 with PMOD1 empty, the old desktop core was explicitly released at 0xc0 = 0, and /tang.ini was uploaded with oledrgb on PMOD0, no flips and PMOD1 none. Last known running firmware and canonical desktop image remain entry 63's accepted versions; their final state could not be re-probed because the USB console was absent. Existing dirty TinyDesk and TinyDesk Shell submodules are carried patches and remain unstaged. The core-syntax audit re-read core.md and core-syntax.md, inspected the complete .ai diff, confirmed unchanged directives and byte-preserved settled history, and validated entry 64's six sections, prose, statuses, contiguous numbering and 24-entry count.
+
+#### Next Steps:
+
+Resume from the committed sources and fpga/desktop/README.md, preserving the user's deployment hold until they explicitly restore the console connection and report readiness. Review concurrent shell history and shared-device commands, add dedicated session-routing, worker inheritance and core-transition tests, and measure available heap and task stack margin before calling the OLED app runtime-qualified; the shell task reserves 16 KB plus its independent session. Rebuild the final firmware after any changes, retain its exact identity and source evidence, and rerun the four-placement sweep if HDL changes; the completed FPGA regressions need repeating only for relevant changes. Once ready, preserve the accepted desktop image and firmware backup, stage the selected desktop candidate and new firmware, deploy, request the required physical power cycle, and verify identity, ABI 1.1, automatic OLED word 0x0010, advancing frames and stable-frame CRC. Ask the user to check font readability, fixed geometry, typing and editing, wrap/scroll, unsupported-character substitution, file read/write, focus isolation from TinyConsole and Terminal, close/reopen persistence, F12 and core reloads. Deployment and hardware acceptance remain outstanding; log those results in a new cycle rather than rewriting this deferred handoff.
+
+#### Files Modified:
+
+- FreeRTOSConfig.h
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/README.md
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop_oled.sv
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/oled_font.vh
+- fpga/desktop/oled_panel.sv
+- fpga/desktop/oled_spi.sv
+- ports/bl616/oled_vterm.c
+- ports/bl616/oled_vterm.h
+- ports/bl616/phosphor/oled_link.cpp
+- ports/bl616/tang_oled.c
+- ports/bl616/tang_oled.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/tdsh_fs_bl616.c
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- third_party/patches/desktop/0001-desktop-host.patch
+- tools/make_oled_font.py
+- tools/report_desktop_sweep.py
+- tools/tests/oled/test_oled_vterm.c
+- tools/tests/sim/tb_desktop_oled.sv
+- tools/tests/sim/tb_desktop_pmod.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_desktop_video.sv
+- tools/tests/tb_osd_desk.c
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_oled.sh
+- tools/tests/test_desktop_video.sh
+- tools/tests/test_oled_vterm.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---

@@ -21,15 +21,17 @@ import binascii
 import sys
 from pathlib import Path
 replies=Path(sys.argv[1]).read_text().splitlines()
-assert len(replies)==17
+assert len(replies)==36
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15
     assert binascii.crc_hqx(b'\x10'+p[:-2],0xffff)==int.from_bytes(p[-2:],'big'),line
 print('desktop responses: independent Python CRC check PASS')
 PY
-iverilog -g2012 -s tb_desktop_pmod -o "$work/pmod" \
-    "$root/tools/tests/sim/tb_desktop_pmod.sv" "$root/fpga/desktop/desktop_pmod.sv"
+iverilog -g2012 -I "$root/fpga/desktop" -s tb_desktop_pmod -o "$work/pmod" \
+    "$root/tools/tests/sim/tb_desktop_pmod.sv" "$root/fpga/desktop/desktop_pmod.sv" \
+    "$root/fpga/desktop/desktop_oled.sv" "$root/fpga/desktop/oled_panel.sv" \
+    "$root/fpga/desktop/oled_spi.sv"
 vvp "$work/pmod"
 # Validate the desktop-layer legacy path on the reconstructed patched source.
 NESTANG_DIR="$source_dir" bash "$root/tools/tests/test_iosys_desk.sh" > "$work/legacy.log" 2>&1 || \

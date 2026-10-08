@@ -54,35 +54,43 @@ pmod1_flip = no
 This produces `0xc0 = 0x0230`. The first desktop ABI supports both sockets
 released or a complete VGA pair, in either order, with independent row flips.
 Unsupported module words are rejected without changing the active word.
-Sockets start released after reset. OLED, encoder and I2S are currently
-Phosphor features; they are not driven by this desktop core.
+Sockets start released after reset. ABI 1.1 additionally supports OLEDrgb
+on either socket, including two panels sharing the same terminal. Encoder
+and I2S remain Phosphor features. The OLED build has passed simulation and
+timing; hardware deployment and user acceptance remain pending.
 
 The boot script loads `/cores/console138k/desktop.bin`. Preserve the old
 `nestang-menu.bin` and boot script on the card for rollback. Firmware must
 include the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 
-## Register ABI 1.0
+## Register ABI 1.1
 
 The endpoint accepts version-1 extended TangCore command `0x10` with the
 existing big-endian fields and CRC-16/CCITT-FALSE. Read32 and write32 are
-supported; capabilities returns `3`. Replies use response `0x16`.
+supported; validated block writes use command `0x12` and capabilities
+returns `0x13`. Replies use response `0x16`.
 
 | Address | Access | Meaning |
 |---|---|---|
 | `0x00` | Read | Identity `0x00544453` (TDS) |
-| `0x04` | Read | Desktop ABI `0x00010000` |
-| `0x08` | Read | Personality bitmap `0x0000000d` (none, VGA J1, VGA J2) |
+| `0x04` | Read | Desktop ABI `0x00010001` |
+| `0x08` | Read | Personality bitmap `0x0000000f` (none, OLEDrgb, VGA J1, VGA J2) |
 | `0xc0` | Read/write | Socket declaration |
+| `0x100` | Read | Geometry `0x00180010`: 24 columns, 16 rows |
+| `0x108` | Read | Completed OLED frame count |
+| `0x10c` | Read | CRC32 of the last emitted RGB565 frame, high byte first |
+| `0x114` | Read/write | Cursor visible bit 16, row bits 15:8, column bits 7:0 |
+| `0x200`–`0x7fc` | Write | 384 row-major cells, word-aligned |
 
 The socket word uses personality nibbles `[7:4]` and `[11:8]`, and row flips
 `[12]` and `[13]`. All other bits must be zero. Personalities are 0 (released),
-2 (VGA J1) and 3 (VGA J2). A validated write commits at the beginning of
+1 (OLEDrgb), 2 (VGA J1) and 3 (VGA J2). A validated write commits at the beginning of
 vertical blank; its reply waits for the pixel-domain acknowledgement. The
 held word and synchronized toggles prevent a partial pin configuration.
 
 Status values are implementation choices: 0 success, 1 unsupported version,
 2 unsupported opcode, 3 bad CRC, 4 unknown address, 5 bad payload length and
-6 unsupported socket word. No malformed request changes the sockets.
+6 unsupported value. No malformed request changes sockets or text cells.
 
 The regression exercises the real 2 Mbaud UART, reply CRCs through an
 independent Python implementation, legacy keyboard/layer traffic, invalid
@@ -92,3 +100,49 @@ sync counts across a full 720p frame. The legacy desktop decoder regression
 also runs without `DESKTOP_CORE`. A streamed compositor regression independently
 checks the physical VGA color/sync pins over a full raster and all HDMI visible
 pixels against a reference glyph image, including line and frame wraps.
+
+## OLED terminal and deferred handoff
+
+The OLED is a separate shell display with a fixed 24×16 grid, filling its
+96×64 pixels with original 4×4 glyphs. ASCII 32–126 is supported; unsupported
+printable Unicode uses one boxed fallback cell. The display conversion does
+not change command input or file contents. Each 16-bit cell stores character
+7:0, foreground 11:8 and background 15:12 in a 16-colour palette. Upper bits
+of a write32 value must be zero. Block writes validate the whole request
+before applying 1–64 consecutive cells; a rejected block applies none.
+Cursor updates use the same vertical-blank handshake as socket declarations.
+The panel clocks SPI at a 161.6 ns period and latches both pixel bytes before
+sending them. Its frame signature covers the serialized pixels.
+
+The BL616 app **OLED Terminal** owns an independent TinyDesk Shell session
+and compact terminal emulator, fixed at 24 columns for the line editor.
+Keyboard and paste input go there only when its window has focus; output
+continues while unfocused or closed. The shell task and script workers use
+a task-local terminal route, separate from TinyConsole and the existing
+Terminal app. Opening the app allocates a session and a 16 KB task stack;
+that hardware memory budget remains to be measured. The background desktop
+poll task sends changed cell blocks and cursor state. It pauses for core
+replacement and checks desktop identity, ABI and OLED configuration before
+writing. Starting another desktop from the OLED shell is refused.
+
+Diagnostic shell commands are `oledterm start`, `oledterm status`, and
+`oledterm run "echo hello"`. The last submits a command to the independent
+session. Run `tools/make_oled_font.py` to regenerate the font and native
+proof sheet under `build/oled-terminal/`. Additional regressions:
+
+```bash
+bash tools/tests/test_oled_vterm.sh
+bash tools/tests/test_desktop_oled.sh
+bash tools/tests/test_osd_desk.sh
+```
+
+At the user's handoff request, no new bitstream or firmware has been deployed.
+The card configuration was changed to OLEDrgb on PMOD0, unflipped, and PMOD1
+released; the old desktop core was explicitly released at `0xc0 = 0` before
+that change. The user's last connection instruction is **wait**. Do not deploy
+until the user restores the console connection and says ready. Read entry 64
+in `.ai/core-log.md` for retained artifacts and the remaining validation.
+Firmware integration still needs dedicated session-routing and core-transition
+tests, runtime heap/stack checks and a final build before deployment. Physical
+font readability, focus isolation, editing, wrapping/scrolling, unsupported
+characters and file read/write acceptance remain untested.

@@ -77,6 +77,7 @@ typedef struct {
     int result;
     SemaphoreHandle_t done;
     bool background;
+    tdsh_bl616_route_t *route;
 } bl616_worker_t;
 
 /* The largest stack a worker gets.  TinyDesk Shell defaults to a 32 KB
@@ -100,6 +101,7 @@ bool tdsh_bl616_worker_stack(size_t *bytes, size_t *min_free)
 static void bl616_worker_trampoline(void *param)
 {
     bl616_worker_t *w = (bl616_worker_t *)param;
+    tdsh_bl616_route_set(w->route);
     w->result = w->worker(w->arg);
     if (!w->background) {
         s_worker_stack_free = (size_t)uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t);
@@ -134,6 +136,7 @@ static int bl616_worker_run(void *context,
     w->cleanup = cleanup;
     w->arg = arg;
     w->background = background;
+    w->route = tdsh_bl616_route_current();
 
     if (stack_bytes == 0) {
         stack_bytes = 4096u;
@@ -200,6 +203,16 @@ static int  (*s_term_read)(void);
 static int  (*s_term_write)(const void *data, size_t length);
 static volatile int s_term_cols;    /* the redirected terminal's width */
 
+tdsh_bl616_route_t *tdsh_bl616_route_current(void)
+{
+    return (tdsh_bl616_route_t *)pvTaskGetThreadLocalStoragePointer(NULL, 0);
+}
+
+void tdsh_bl616_route_set(tdsh_bl616_route_t *route)
+{
+    vTaskSetThreadLocalStoragePointer(NULL, 0, route);
+}
+
 void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
                                 int (*write_fn)(const void *data, size_t length))
 {
@@ -212,6 +225,8 @@ void tdsh_bl616_terminal_set_io(int (*read_fn)(void),
  * wherever the shell itself is being typed at. */
 int tdsh_bl616_input_read_byte(void)
 {
+    tdsh_bl616_route_t *route = tdsh_bl616_route_current();
+    if (route && route->read_byte) return route->read_byte(route->context);
     /* Three sources, in the only order that keeps a single reader on the
      * stream.  The desktop's Terminal takes it while the desktop is up.
      * Otherwise, if the layer is up, take the layer's ring -- that is
@@ -290,6 +305,8 @@ static int bl616_terminal_write_bytes(void *context, const void *data, size_t le
  * console keeps every line, as the user asked. */
 int tdsh_bl616_output(const void *data, size_t length)
 {
+    tdsh_bl616_route_t *route = tdsh_bl616_route_current();
+    if (route && route->write_bytes) return route->write_bytes(route->context, data, length);
     if (s_term_write) {
         (void)tdsh_bl616_console_write_usb(data, length);
         return s_term_write(data, length);
@@ -417,6 +434,10 @@ int tdsh_bl616_init(const char *hostname)
     if (rc) return rc;
 
     rc = tang_crash_register();
+    if (rc) return rc;
+
+    extern int tang_oled_register(void);
+    rc = tang_oled_register();
     if (rc) return rc;
 
     rc = tdsh_session_init(&s_session, "root", true);

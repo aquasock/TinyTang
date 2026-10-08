@@ -11,6 +11,7 @@
 
 #include "tang_fw_update.h"
 #include "tdsh_bl616.h"
+#include "tang_oled.h"
 #include "tang_osd_desk.h"
 
 #include <stdint.h>
@@ -174,6 +175,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
     /* A track playing on a Phosphor core is stopped while that core can still
      * be told, so the playback task never talks to the core that replaces it. */
     tang_phosphor_core_replacing();
+    tang_oled_core_replacing();
 
     tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
     const bool ok = fpga_program(real);
@@ -186,6 +188,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
         /* A core with the PMOD sockets brings them up released; declare
          * what /tang.ini says is seated (phosphor/pmod_sockets.cpp). */
         tang_ini_core_loaded();
+        tang_oled_core_loaded();
     }
     return ok ? 0 : 1;
 }

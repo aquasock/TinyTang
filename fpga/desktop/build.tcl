@@ -9,6 +9,7 @@ foreach source {
     src/keylink_rx.sv src/iosys/iosys_bl616.v src/iosys/uart_fixed.v
     src/iosys/textdisp_wide.sv src/nes2hdmi.sv src/nestang_top.sv
     src/desktop/desktop_regs.sv src/desktop/desktop_pmod.sv
+    src/desktop/desktop_oled.sv src/desktop/oled_panel.sv src/desktop/oled_spi.sv
     src/hdmi2/audio_clock_regeneration_packet.sv src/hdmi2/audio_info_frame.sv
     src/hdmi2/audio_sample_packet.sv src/hdmi2/auxiliary_video_information_info_frame.sv
     src/hdmi2/hdmi.sv src/hdmi2/packet_assembler.sv src/hdmi2/packet_picker.sv

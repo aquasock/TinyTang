@@ -68,6 +68,17 @@ int  tdsh_bl616_input_read_byte(void);
  * Shell 0.1.4's columns()); 0 when it is not known. */
 void tdsh_bl616_terminal_set_columns(int cols);
 
+/* A private terminal route for an independent shell and its script workers.
+ * NULL retains the existing console/desktop Terminal route. */
+typedef struct {
+    void *context;
+    int (*read_byte)(void *context);
+    int (*write_bytes)(void *context, const void *data, size_t length);
+    int columns;
+} tdsh_bl616_route_t;
+tdsh_bl616_route_t *tdsh_bl616_route_current(void);
+void tdsh_bl616_route_set(tdsh_bl616_route_t *route);
+
 /* The BL616 <-> FPGA UART link and the ROM loader over it (tang_fpga_uart.c). */
 int  tdsh_bl616_fpga_register(void);
 

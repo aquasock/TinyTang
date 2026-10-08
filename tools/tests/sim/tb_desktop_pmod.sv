@@ -10,9 +10,11 @@ module tb_desktop_pmod;
     logic request=0;
     wire ack;
     tri [7:0] p0,p1;
-    desktop_pmod dut(.pixel_clk(pixel_clk),.resetn(resetn),.cx(cx),.cy(cy),
+    desktop_pmod dut(.control_clk(pixel_clk),.pixel_clk(pixel_clk),.resetn(resetn),.cx(cx),.cy(cy),
         .rgb(rgb),.socket_word(word),.socket_request(request),.socket_ack(ack),
-        .pmod0_io(p0),.pmod1_io(p1));
+        .pmod0_io(p0),.pmod1_io(p1),
+        .oled_cell_we(1'b0),.oled_cell_index(9'd0),.oled_cell_word(16'd0),
+        .oled_cursor(17'd0),.oled_frames(),.oled_signature());
     task automatic sample(input integer x,input integer y);
         @(negedge pixel_clk); cx=11'(x); cy=10'(y);
         @(posedge pixel_clk); #1;

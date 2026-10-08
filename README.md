@@ -319,9 +319,10 @@ the pinned source in an isolated build directory, applies the common, menu and
 `third_party/patches/desktop/` patches, then adds `fpga/desktop/`. It targets
 revision C and rejects setup or hold violations before publishing its binary.
 HDMI and VGA share the 720p raster and desktop compositor. The firmware applies
-`/tang.ini` after loading it; this first desktop ABI supports released sockets
-and the complete VGA pair, with either header order and row flips. OLED,
-encoder and I2S remain features of Phosphor. The old menu image and build tool
+`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
+terminal using an original 4×4 font alongside released sockets and the complete
+VGA pair. The OLED work is committed for handoff; deployment and user testing
+remain pending. Encoder and I2S remain features of Phosphor. The old menu image and build tool
 remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
 for the register interface and regression commands.
 

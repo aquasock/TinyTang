@@ -145,7 +145,8 @@ The menu variant is carried in `third_party/patches/menu/`, and the desktop
 host variant in `third_party/patches/desktop/`. These are also modifications
 to GPL-3.0 sources. The new HDL, board definition and constraints in
 `fpga/desktop/`, and its simulation benches in `tools/tests/sim/tb_desktop_*`,
-are TinyTang's work under GPL-3.0-only. Build scripts and timing-validation
+are GPL-3.0-only. Except for the OLED panel/SPI modules identified below, they
+are TinyTang's work. Build scripts and timing-validation
 tools retain their explicit MIT notices. The desktop binary links upstream
 nestang and HDMI modules and is governed by GPL-3.0; the BL616 firmware remains
 separate and communicates through the documented UART protocol.
@@ -287,3 +288,20 @@ carries one translator's choices, and it is new and small.
 No colibri code is copied into this repository. The reciprocity applies from
 the moment any of it is, including from the port, which is itself Covered
 Source modified under section 3 of the licence.
+
+## Tang-Phosphor OLED panel engine
+
+The desktop OLED terminal reuses the user's GPL-3.0-only panel engine from
+https://github.com/aquasock/Tang-Phosphor at commit `7cf9ede`.
+`fpga/desktop/oled_spi.sv` retains `src/oled/oled_spi.sv` unchanged
+apart from the provenance comment. `fpga/desktop/oled_panel.sv` derives from
+`src/oled/oled_panel.sv`, adding a complete RGB565 pixel latch and
+its sampled-pixel output so live text updates cannot split two pixel bytes.
+The source was taken from the committed files, leaving that repository's
+working changes untouched. The compact font and desktop text renderer are
+original TinyTang work under GPL-3.0-only.
+
+`ports/bl616/oled_vterm.c` separately compiles TinyDesk's MIT `src/vterm.c`
+with private 24×16 geometry and distinct symbols; its UTF-8 display adapter
+substitutes the OLED fallback glyph without altering shell input or files.
+The existing TinyDesk MIT attribution above also covers this instance.

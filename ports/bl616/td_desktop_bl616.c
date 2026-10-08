@@ -50,6 +50,7 @@
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
+#include "tang_oled.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -201,6 +202,7 @@ static td_sysinfo_t s_info;
 void td_apps_register_all(void)
 {
     td_terminal_register();
+    td_oled_terminal_register();
     td_files_register();
     td_editor_register();
     td_sysmon_register();
@@ -364,6 +366,11 @@ static int desktop_run(void)
 static int cmd_desktop(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session; (void)argc; (void)argv;
+
+    if (tdsh_bl616_route_current()) {
+        tdsh_printf("desktop: launch from TinyConsole\r\n");
+        return 1;
+    }
 
     /* The desktop takes the console: it reads raw keys and writes ANSI.  Say
      * this first, then let it reach the host before the screen is redrawn. */

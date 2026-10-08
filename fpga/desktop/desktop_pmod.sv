@@ -1,23 +1,30 @@
 // TinyTang desktop VGA socket driver. SPDX-License-Identifier: GPL-3.0-only
 // Raster timing is 1280x720p60, matching the existing HDMI transmitter.
 module desktop_pmod (
-    input logic pixel_clk, resetn,
+    input logic control_clk, pixel_clk, resetn,
     input logic [10:0] cx,
     input logic [9:0] cy,
     input logic [23:0] rgb,
     input logic [15:0] socket_word,
     input logic socket_request,
+    input logic oled_cell_we,
+    input logic [8:0] oled_cell_index,
+    input logic [15:0] oled_cell_word,
+    input logic [16:0] oled_cursor,
+    output logic [31:0] oled_frames, oled_signature,
     output logic socket_ack,
     inout wire [7:0] pmod0_io, pmod1_io
 );
     (* ASYNC_REG = "TRUE" *) logic request_meta, request_sync;
     logic [15:0] active_word;
+    logic [16:0] active_cursor;
     always_ff @(posedge pixel_clk) begin
         if (!resetn) begin
             request_meta <= 0;
             request_sync <= 0;
             socket_ack <= 0;
             active_word <= 0;
+            active_cursor <= 0;
         end else begin
             request_meta <= socket_request;
             request_sync <= request_meta;
@@ -25,6 +32,7 @@ module desktop_pmod (
             // The sender holds socket_word until this ack crosses back.
             if (cx == 0 && cy == 720 && request_sync != socket_ack) begin
                 active_word <= socket_word;
+                active_cursor <= oled_cursor;
                 socket_ack <= request_sync;
             end
         end
@@ -50,12 +58,20 @@ module desktop_pmod (
     wire [3:0] blue = visible ? rgb[7:4] : 4'b0;
     wire [7:0] j1 = {blue, red};
     wire [7:0] j2 = {2'b0, vs, hs, green};
+    wire [7:0] oled_lanes, oled_enables;
+    desktop_oled terminal_panel (
+        .control_clk(control_clk),.pixel_clk(pixel_clk),.resetn(resetn),
+        .selected(active_word[7:4]==1 || active_word[11:8]==1),
+        .cell_we(oled_cell_we),.cell_index(oled_cell_index),.cell_word(oled_cell_word),
+        .cursor_word(active_cursor),.lane_o(oled_lanes),.lane_oe(oled_enables),
+        .frames(oled_frames),.signature(oled_signature)
+    );
 
     for (genvar slot = 0; slot < 2; slot = slot + 1) begin : g_slot
         wire [3:0] personality = slot == 0 ? active_word[7:4] : active_word[11:8];
         wire flipped = slot == 0 ? active_word[12] : active_word[13];
-        wire [7:0] lanes = personality == 2 ? j1 : j2;
-        wire [7:0] enables = personality == 2 ? 8'hff : personality == 3 ? 8'h3f : 8'h00;
+        wire [7:0] lanes = personality == 1 ? oled_lanes : personality == 2 ? j1 : j2;
+        wire [7:0] enables = personality == 1 ? oled_enables : personality == 2 ? 8'hff : personality == 3 ? 8'h3f : 8'h00;
         for (genvar io = 0; io < 8; io = io + 1) begin : g_pin
             // The dock interleaves rows: even IO numbers are pins 1-4.
             localparam integer NORMAL_LANE = io/2 + (io%2)*4;

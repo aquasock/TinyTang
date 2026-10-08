@@ -25,10 +25,10 @@ def variant(directory, placement):
     text = (directory / "desktop.rpt.txt").read_text()
 
     def resource(name):
-        match = re.search(r"^\s*" + re.escape(name) + r"\s*\|\s*(\d+)/(\d+)", text, re.M)
+        match = re.search(r"^\s*" + re.escape(name) + r"\s*\|\s*(\d+(?:\.\d+)?)/(\d+)", text, re.M)
         if not match:
             raise ValueError(f"missing resource {name}")
-        return {"used": int(match[1]), "total": int(match[2])}
+        return {"used": float(match[1]) if "." in match[1] else int(match[1]), "total": int(match[2])}
 
     logic = re.search(r"\((\d+) LUT, (\d+) ALU, (\d+) ROM16\)", text)
     if not logic:

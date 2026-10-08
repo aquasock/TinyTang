@@ -93,19 +93,24 @@ static bool s_fil_used[TDSH_MAX_FILES];
 
 static int fil_alloc(void)
 {
+    taskENTER_CRITICAL();
     for (int i = 0; i < TDSH_MAX_FILES; i++) {
         if (!s_fil_used[i]) {
             s_fil_used[i] = true;
+            taskEXIT_CRITICAL();
             return i;
         }
     }
+    taskEXIT_CRITICAL();
     return -1;
 }
 
 static void fil_free(int idx)
 {
     if (idx >= 0 && idx < TDSH_MAX_FILES) {
+        taskENTER_CRITICAL();
         s_fil_used[idx] = false;
+        taskEXIT_CRITICAL();
     }
 }
 
@@ -168,12 +173,12 @@ int _close_r(struct _reent *reent, int fd)
 _ssize_t _read_r(struct _reent *reent, int fd, void *ptr, size_t size)
 {
     if (fd == 0) {
-        /* stdin: the USB CDC console.  Blocking is the right behaviour for a
+        /* stdin: the calling task's terminal route. Blocking is right for a
          * stdio reader, and this runs in the shell task, never in an ISR. */
         uint8_t *p = (uint8_t *)ptr;
         size_t got = 0;
         while (got < size) {
-            int b = tdsh_bl616_console_read_byte();
+            int b = tdsh_bl616_input_read_byte();
             if (b < 0) {
                 if (got > 0) break;
                 vTaskDelay(2);

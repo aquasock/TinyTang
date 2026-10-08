@@ -27,9 +27,11 @@ module tb_desktop_video;
         .tmds_clk_n(), .tmds_clk_p(), .tmds_d_n(), .tmds_d_p()
     );
     desktop_pmod sockets (
-        .pixel_clk(pixel_clk), .resetn(resetn), .cx(cx), .cy(cy), .rgb(rgb),
+        .control_clk(pixel_clk), .pixel_clk(pixel_clk), .resetn(resetn), .cx(cx), .cy(cy), .rgb(rgb),
         .socket_word(16'h0230), .socket_request(1'b1), .socket_ack(ack),
-        .pmod0_io(p0), .pmod1_io(p1)
+        .pmod0_io(p0), .pmod1_io(p1),
+        .oled_cell_we(1'b0),.oled_cell_index(9'd0),.oled_cell_word(16'd0),
+        .oled_cursor(17'd0),.oled_frames(),.oled_signature()
     );
     logic [6:0] chars[0:3599];
     logic [14:0] foreground[0:3599], background[0:3599];

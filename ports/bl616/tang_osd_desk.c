@@ -5,6 +5,7 @@
 // what the core has been told, a diff, and a task that sends it.
 
 #include "tang_osd_desk.h"
+#include "tang_oled.h"
 #include "tang_osd.h"
 #include "tang_fpga_link.h"
 #include "tang_pad.h"
@@ -492,6 +493,7 @@ static void desk_task(void *arg)
         } else {
             desk_watch_toggle();
         }
+        tang_oled_poll();
     }
 }
 
