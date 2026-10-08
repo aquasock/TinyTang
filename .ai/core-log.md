@@ -928,3 +928,32 @@ Remove `/gfx/` from the card at the next connection, and restore the normal boot
 - User Test: PASS
 
 ---
+## 67 COMMIT Unreleased 2026-10-07T22:10:13-07:00
+
+#### Coming From:
+
+Unreleased 7f0ed90
+
+#### Purpose:
+
+Return the card to the normal boot and the PmodVGA socket layout for music with the visualizer, and record the measured demo frame rate and a stdout routing defect found while doing so.
+
+#### Outcome:
+
+With no PMOD seated and firmware `9313085-dirty.41ff066` running, `/gfx/` was removed from the card, `/scripts/boot.tdsh` was restored from `/scripts/diagnostics/boot-before-fire.tdsh` at 3,326 bytes, the size of `scripts/boot.tdsh`, and `/tang.ini` was rewritten as entry 60's 69-byte layout with `pmod0 = vga_j2`, `pmod1 = vga_j1` and both flips `no`; `tangini apply` then had the loaded desktop core at ABI 1.1 report `0xc0 = 0x0230` as declared. The `/demos/` frames and players stay on the card. Measured from the user's 59.94 fps video of the fire on the panel, the demo updates at 14.97 frames a second, a 4-video-frame period, not the about 17 that entry 66 gives from console timing; most of each 66.7 ms frame is the player's `sleep 0.04`. While the fire started by the boot script still ran in the OLED session, fragments of its frames appeared on the USB console ahead of commands' output, because the firmware neither enables newlib reentrancy nor changes stdout's buffering, so stdio output such as `cat`'s `fputs` lands in one global buffer and is flushed through the route of whichever task flushes next; the output of one shell can therefore reach the other's display, and concurrent unlocked use of that buffer is unsafe. Entry 65's session test exercised the shell's printf path, not stdio, and did not catch it. No repository file and no firmware changed. The user will reboot with the PmodVGA seated to play music with the visualizer, so that hardware result is not yet reported. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 27-entry count.
+
+#### Next Steps:
+
+After the user's reboot with the PmodVGA seated, confirm `0xc0 = 0x0230` on the desktop and Phosphor cores and VGA output with the visualizer if any doubt remains. Fix the stdout leak in a firmware cycle, likely by making stdout unbuffered at startup so each write leaves through the calling task's route, and extend `tools/tests/test_oled_session.sh` to send stdio output from both shells at once. A shorter player sleep, such as 0.01 s, would bring the fire close to the 25 frames a second the link allows. The other open items of entry 66 stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
