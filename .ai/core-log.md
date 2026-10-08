@@ -606,3 +606,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 59 COMMIT Unreleased 2026-10-07T17:02:41-07:00
+
+#### Coming From:
+
+Unreleased f888ae4
+
+#### Purpose:
+
+Qualify the encoder's lower-row seating and the OLED-and-encoder declaration, including reapplication and invalid-module rejection, on entry 57's firmware.
+
+#### Outcome:
+
+The user clarified that the Digilent Pmod ENC is a single-row module, then seated it face up in PMOD1, the socket nearest HDMI, on pins 7-12, with PMOD0 empty. Tang-Phosphor's reference explicitly records that the socket's flip bit also selects the alternate row for a 1x6 module; the earlier instruction to seat the encoder flipped did not distinguish row selection from turning it over. A 69-byte `/tang.ini` declared PMOD0 none and PMOD1 encoder with `pmod1_flip = yes`; loading the existing default Phosphor image (ABI 1.8) automatically wrote and read back `0x2400`. With the user operating each control, five clockwise clicks changed `0xe0` from `0x80000000` to `0x80000014`, and five counterclockwise clicks restored the baseline, proving four counts per detent in both directions. Pressing and releasing the button changed `0xe4` from `0xb2` to `0xf3` and back without moving the count; toggling the slide switch changed it to `0x30` and back to `0xb2`. The user reported an accidental knob step during the switch test, and its count was exactly minus four, ending at `0x7ffffffc`. After powering off, the user installed the OLEDrgb face up in PMOD0, keeping the encoder on PMOD1's lower row. The repository's 664-byte `docs/tang.ini` was copied to the card; a core load automatically applied `0x2410`, source and panel signatures both read `0x76491800`, and the panel frame counter advanced from 202 to 401. The user reported that the image looked great. `tangini apply` preserved the declaration, and a brief play of Landslide at 44.1 kHz with zero underruns left the sockets at `0x2410` and the OLED signatures matching. A temporary line-2 declaration `pmod0 = oled` produced the expected unknown-module warning and released PMOD0 while preserving the encoder at `0x2400`; restoring `docs/tang.ini` and applying it returned `0x2410` and matching OLED signatures. Playback was stopped, the final layout is OLED plus encoder, and firmware `969e6ff-dirty.71fe989` has no previous crash record. Nothing was built or reflashed. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed only this entry was added with no core directive or settled-history changes, and validated entry 59 with 19 active entries and exactly six sections; the checker reports only its existing numbering mismatch documented in entry 51.
+
+#### Next Steps:
+
+The remaining module qualification is PmodVGA, J1 on PMOD0 and J2 on PMOD1 with the normal orientation, expecting `0x0320` and a picture. I2S2, encoder, OLED, missing-file release and invalid-module refusal have passed for the exercised layouts and paths. Refresh the stale card firmware backup with entry 57's qualified image after the remaining qualification is accepted. The final `/tang.ini` matches the currently seated OLED and lower-row encoder; change it before using another layout. The other open items of entry 58 stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
