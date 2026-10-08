@@ -125,7 +125,14 @@ All configuration items must be included in the file */
 /  memory for the working buffer, memory management functions, ff_memalloc() and
 /  ff_memfree() exemplified in ffsystem.c, need to be added to the project. */
 
-#define FF_LFN_UNICODE 0
+/* TinyTang: UTF-8, the encoding the shell and TinyDesk use.  With 0 (code
+/  page 437), a long name with a letter 437 lacks (Hungarian o/u double
+/  acute) was listed under its short name, and a short name holding a 437
+/  byte such as 0xA3 could not be looked up again: the file showed 0 bytes,
+/  would not open and refused to move (core-log entry 70,
+/  tools/tests/test_fat_names.sh).  A name too long for FF_LFN_BUF still
+/  falls back to its short name, which in UTF-8 converts back correctly. */
+#define FF_LFN_UNICODE 2
 /* This option switches the character encoding on the API when LFN is enabled.
 /
 /   0: ANSI/OEM in current CP (TCHAR = char)

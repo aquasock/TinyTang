@@ -1024,3 +1024,36 @@ UTF-8 file names follow as the next cycle, from the investigation of the Hungari
 - User Test: PASS
 
 ---
+## 70 COMMIT Unreleased 2026-10-08T07:40:53-07:00
+
+#### Coming From:
+
+Unreleased 8ec32b0
+
+#### Purpose:
+
+Fix file names that code page 437 cannot carry, after the Hungarian track names in `/music` were listed under their short names, counted as zero bytes and refused to open or move.
+
+#### Outcome:
+
+With `FF_LFN_UNICODE 0` the shell and TinyDesk read long names through code page 437, so a name holding a letter 437 lacks, such as the Hungarian `ő`, `ű`, `ú` or `Á`, was listed under its 8.3 short name, and a short name holding a 437 byte such as `0xA3` could not be looked up again: the file showed 0 bytes, would not open and refused to move, which the card's own `/music` listing showed as `08-M\xa3L~1.FLA` and `01-HA_~1.FLA` at zero bytes. `fatfs_conf_user.h` now defines `FF_LFN_UNICODE 2`, UTF-8, the encoding the shell and TinyDesk use, leaving `FF_CODE_PAGE 437` for short names and `FF_LFN_BUF 255` unchanged; its comment records that a name too long for `FF_LFN_BUF` still falls back to its short name, which in UTF-8 converts back correctly. The new harness, `tools/tests/test_fat_names.sh` with `tools/tests/make_fat_names_image.py`, `tools/tests/tb_fat_names.c` and `tools/tests/check_fat_names.py`, builds the SDK's FatFs R0.15 with this repository's `fatfs_conf_user.h` against a FAT32 image whose twelve Hungarian names are stored exactly as Linux wrote them on the card, then lists the folder, looks each listed name up again, opens, reads and hashes it, moves it out and back and lists once more, and runs twice: forced back to code page 437 it reproduces the card, reporting that 1 of 12 listed names cannot be looked up again, and as committed it passes every check, with `fsck.fat` accepting the image after the moves; of the host suite's 23 scripts 22 pass, and `test_desktop_video.sh` fails only because `NESTANG_DIR` is unset here, which this change does not touch. Firmware `8ec32b0-dirty.e30863d`, 650,368 bytes, SHA-256 `7da08074dedbf88d4ca104e5878d2e70e33114d411172e594bfcd016e4b60443`, was built with `make CHIP=bl616 BOARD=bl616dk` in a clean worktree of `8ec32b0` carrying these changes, with no warnings from the changed files beyond the existing ones, installed with `tools/tinytang_flash.py`, and retained with its log and diff in `build/utf8-names/`; a build of the same sources left by the interrupted session, identity `8ec32b0-dirty.e0c20c7`, was superseded because its identity counted a stray `build.log` at the worktree root and so did not reproduce. After the power cycle the board reported `8ec32b0-dirty.e30863d`: `ls -l /music` listed its seven tracks under their full UTF-8 names with their exact sizes, `01 - Ha Újra Látom.flac` at 26,107,070 bytes and `08 - Múló Idő.flac` at 28,048,198 bytes among them, a quoted `ls -l` resolved a UTF-8 path, `head -l 1` read the `fLaC` header and Vorbis comment of such a file, a rename to an ASCII name and back to the original UTF-8 name preserved the name and size and left the file readable, and the listing was unchanged afterwards; heap was 68,496 bytes free of 130,616 with a 60,536-byte largest block, the last script task had used 10,728 of its 16,384 bytes of stack, and `crash` recorded no refused allocation and no record from a previous run. The user reported that the fix held under everything they tried, which included dragging `05 - Híd A Folyón.flac` to `/root/Desktop` and reorganising tracks into `/music_O-scope`, `/musichhh`, `/music_codec-test` and `/music_oscope-test`, so `/music` now holds seven of the harness image's twelve names. The card's `/bl616-firmware.bin` is this build, with entry 68's kept as `/bl616-firmware-pre-utf8.bin`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 30-entry count; `tools/check_core_log.py` exits 1 on all thirty entries for numbering alone, because it expects the active log to begin at `1` while this one continues from `41` as the last rollover left it, a disagreement that predates this entry and that renumbering settled history must not repair.
+
+#### Next Steps:
+
+The redirect and pipe hijack between the two shells that entry 69 left open still needs per-session newlib state, which the user has deferred, and the other open items of entry 69 stand: the OLED Terminal and a desktop script launch cannot both fit the heap, a third PMOD port on the dock's free 2x20 header, the author's naming answer on the upstream peek and poke issue, review of pull request #3, the user's decision on the three drafted issues, the note to nand2mario before TinyTang is listed anywhere visible, the Bluetooth discovery stall when both devices reconnect at once, and Phosphor's load-progress readout and file-size limit. No card work is outstanding for this cycle.
+
+#### Files Modified:
+
+- fatfs_conf_user.h
+- tools/tests/check_fat_names.py
+- tools/tests/make_fat_names_image.py
+- tools/tests/tb_fat_names.c
+- tools/tests/test_fat_names.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
