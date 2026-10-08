@@ -126,10 +126,18 @@ Building and flashing are under *Quick start* and *Building requirements*.
   with the layer left on. The merged core has no WAV or FLAC decoder in the
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
   the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
-  desktop up, probes it, hands it the screen and starts `/music/test.mp3` (or
-  `$FILE`) without waiting, with the PMOD sockets as `/tang.ini` declares
-  them; F12 then switches between the player and TinyDesk, during the track
-  and after it.
+  desktop up, probes it, enables the stereo XY oscilloscope with medium trails
+  and glow, and hands it the screen, with the PMOD sockets as `/tang.ini`
+  declares them. Press F12 to return to TinyDesk and choose a track in the
+  Phosphor app. Setting `FILE` in the session before running the script starts
+  that track without waiting; no default music file is required. F12 switches
+  between the oscilloscope and TinyDesk during playback and after it ends.
+  This is the single Phosphor launcher: the canonical `phosphortang.bin` is
+  the qualified ABI 1.10 merged image with audio and the oscilloscope. The
+  earlier `oscope.tdsh`, `i2s2-play.tdsh` and `i2s2-tone.tdsh` scripts are
+  retained under `/scripts/diagnostics/` on the card for earlier bring-up work
+  and are not the normal launch path; their fixed declarations predate
+  `/tang.ini`.
 - **The Phosphor app** in the desktop's start menu is a player for `/music`:
   a sorted list of the playable files, the title and status of the current
   track, a progress bar (WAV and FLAC, whose length is read from the file's

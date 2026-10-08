@@ -1,31 +1,28 @@
 #!/bin/tdsh
-# phosphor.tdsh - load the Tang-Phosphor core and start one track under TinyDesk.
+# phosphor.tdsh - load the merged Phosphor core and enable its oscilloscope.
 #
 # Run it from the console prompt, or from the desktop -- right-click its icon
 # and choose Run -- or from the Terminal:
 #
 #   tdsh run /scripts/phosphor.tdsh
 #
-# It plays /music/test.mp3 unless FILE is set in the session first; tdsh run
-# passes no arguments, but the script inherits the session's variables:
+# Choose a track in the desktop's Phosphor app after launching. To start a
+# track automatically, set FILE in the session first; tdsh run passes no
+# arguments, but the script inherits the session's variables:
 #
-#   FILE=/music/test.flac; tdsh run /scripts/phosphor.tdsh
+#   FILE="/music/Fleetwood Mac - Landslide.mp3"; tdsh run /scripts/phosphor.tdsh
 #
 # The core carries the TinyDesk layer, so this works the way castlevania.tdsh
 # does: the desktop stays up across the load, the screen is handed to the
-# player, and F12 switches between the player and TinyDesk.  The track is
+# oscilloscope, and F12 switches between it and TinyDesk. An optional track is
 # started without waiting, so the shell comes straight back and the core stays
 # loaded after the track ends -- loading another core is what replaces it.
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
-
-if "$FILE" == ""
-    FILE=/music/test.mp3
-endif
+# PMOD selection comes only from /tang.ini, applied automatically by tangload.
 CORE=/cores/console138k/phosphortang.bin
 PLAYER=/ae350/resident.tpi
 
 echo "phosphor: core  $CORE"
-echo "phosphor: file  $FILE"
 
 if test -f "$CORE"
     echo "phosphor: core image found"
@@ -39,11 +36,13 @@ else
     echo "phosphor: no AE350 player at $PLAYER"
     return 1
 endif
-if test -f "$FILE"
-    echo "phosphor: file found"
-else
-    echo "phosphor: no file at $FILE"
-    return 1
+if "$FILE" != ""
+    if test -f "$FILE"
+        echo "phosphor: file  $FILE"
+    else
+        echo "phosphor: no file at $FILE"
+        return 1
+    endif
 endif
 
 echo "phosphor: programming the FPGA"
@@ -63,16 +62,32 @@ endif
 # The PMOD sockets were declared by tangload from /tang.ini (`tangini` shows
 # what it says); the core powers up with both released.
 
+# The canonical merged image includes the stereo XY oscilloscope. Enable it
+# with medium trails and glow; this does not change the socket declaration.
+phosphor poke 0xac 0xb
+if $? != 0
+    echo "phosphor: the oscilloscope could not be enabled"
+    return 1
+endif
+
 # The core comes out of configuration with its overlay on, which in this core
 # shows the TinyDesk layer; hand the screen to the player instead.  F12 brings
 # TinyDesk back.
 osd off
-
-echo "phosphor: playing $FILE"
-phosphor play "$FILE" nowait
 if $? != 0
-    echo "phosphor: playback did not start"
+    echo "phosphor: the screen could not be handed to the oscilloscope"
     return 1
+endif
+
+if "$FILE" != ""
+    echo "phosphor: playing $FILE"
+    phosphor play "$FILE" nowait
+    if $? != 0
+        echo "phosphor: playback did not start"
+        return 1
+    endif
+else
+    echo "phosphor: ready; press F12 and choose a track in the Phosphor app"
 endif
 
 echo "phosphor: up"

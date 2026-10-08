@@ -666,3 +666,34 @@ None.
 - User Test: PASS
 
 ---
+
+## 61 COMMIT Unreleased 2026-10-07T17:50:00-07:00
+
+#### Coming From:
+
+Unreleased 7369f99
+
+#### Purpose:
+
+Consolidate Phosphor's normal launch path around the qualified merged oscilloscope image, with PMOD selection owned only by /tang.ini, and qualify it from the desktop.
+
+#### Outcome:
+
+The user approved consolidating the scripts during this cycle. `scripts/phosphor.tdsh` now loads the canonical `/cores/console138k/phosphortang.bin`, probes the link, enables the stereo XY oscilloscope with medium trails and glow at `0xac = 0x0b`, and hands it the screen. It has no PMOD register write: `tangload` applies `/tang.ini`. The missing `/music/test.mp3` default was removed; without `FILE` it loads ready for track selection in the desktop's Phosphor app, while a supplied `FILE` is checked before programming and played in the background. The README describes this single launcher. The qualified scope image from Tang-Phosphor entry 82 was verified locally at 5,158,912 bytes, MD5 `0d0e2b5c1df97bfb3a66e729bbfc4391`, SHA-256 `1c63387762443a3e90ec06c77b75c6421440ec5158b8d7cbdb8b7e947ea535d9`, staged through `tinytang_put.py` and renamed to the canonical card path. The old ABI 1.8 canonical image is preserved at `/cores/console138k/rollback/phosphortang-abi1.8.bin`, and `oscope.tdsh`, `i2s2-play.tdsh` and `i2s2-tone.tdsh` were moved to `/scripts/diagnostics/`; their diagnostic core images remain available. The normal scripts folder now has only one Phosphor launcher, copied from this tree at 2,848 bytes. Creating the new directories with `mkdir -p` failed while walking the mount root; plain `mkdir` succeeded, and this cycle does not change that filesystem behaviour. On the console, launching with no `FILE` returned zero and loaded ABI 1.10 with VGA declaration `0x0230`, scope control `0x0b` and no playback. A nonexistent `FILE` returned one before programming. A path containing spaces launched Landslide successfully, and at 17 s it reported 44.1 kHz, zero audio underruns, zero scope queue drops and unchanged VGA sockets. Playback was stopped, `FILE` unset and the normal boot script run to return the board to its console; the last `crash` check had no prior record. The user then reported all desktop tests passing: right-click Run, track selection in the Phosphor app, the moving oscilloscope on HDMI and VGA, pause/resume, stop and repeated F12 switching. USB was absent when the final diagnostic probe was attempted after that acceptance, so no later board readings were collected. Nothing was rebuilt or reflashed; BL616 firmware remains entry 57's qualified image. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed only this entry was added and no directives or settled history changed, and validated entry 61 with 21 active entries and exactly six sections; the checker reports only its existing numbering mismatch documented in entry 51.
+
+#### Next Steps:
+
+The canonical Phosphor launcher and VGA desktop cycle are accepted, with no further validation pending for that path. Future PMOD changes use /tang.ini and the same core and launcher. The stale `/bl616-firmware.bin` remains to be refreshed after locating or recovering entry 57's exact qualified image or completing a new reproducible firmware cycle; the mismatching local binary must not silently replace it. The other open items from entry 60 stand, and the mount-root failure in `mkdir -p` can be addressed separately if needed.
+
+#### Files Modified:
+
+- README.md
+- scripts/phosphor.tdsh
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
