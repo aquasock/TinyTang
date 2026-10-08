@@ -124,9 +124,11 @@ and compact terminal emulator, fixed at 24 columns for the line editor.
 Keyboard and paste input go there only when its window has focus; output
 continues while unfocused or closed. The shell task and script workers use
 a task-local terminal route, separate from TinyConsole and the existing
-Terminal app. Opening the app allocates a session and a 16 KB task stack,
-about 25 KB of heap on hardware; `crash tasks` lists every task's stack
-margin. The background desktop poll task sends changed cell blocks and
+Terminal app. Starting it allocates a session, a 16 KB task stack and the
+emulator, input ring and link buffers, about 31 KB of heap on hardware and
+nothing before it starts; it is held until reboot, which leaves too little
+for a desktop script launch alongside it. `crash tasks` lists every task's
+stack margin. The background desktop poll task sends changed cell blocks and
 cursor state. After each core load it asks the core's ID once with the
 legacy command and sends extended frames only to this desktop core, so a
 game core is never sent them. It pauses for core replacement and checks

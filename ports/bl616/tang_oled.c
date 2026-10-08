@@ -13,11 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-static oled_vterm_t s_vt;
+// The emulator and input ring are allocated when the terminal first starts,
+// so a board that never opens it keeps that heap for the desktop and scripts.
+typedef struct {
+    oled_vterm_t vt;
+    uint8_t input[1024];
+} oled_state_t;
+static oled_state_t *s_st;
 static SemaphoreHandle_t s_lock;
 static TaskHandle_t s_task;
 static tdsh_session_t *s_session;
-static uint8_t s_input[1024];
 static unsigned s_head, s_tail;
 static td_window_t *s_window;
 static uint32_t s_revision, s_drawn;
@@ -25,13 +30,13 @@ int tdsh_printf(const char *fmt, ...);
 
 static bool enqueue(const void *data, size_t length)
 {
-    if (length > sizeof(s_input)-1) return false;
+    if (!s_st || length > sizeof(s_st->input)-1) return false;
     taskENTER_CRITICAL();
-    unsigned available = (s_tail-s_head-1) & (sizeof(s_input)-1);
+    unsigned available = (s_tail-s_head-1) & (sizeof(s_st->input)-1);
     if (length > available) { taskEXIT_CRITICAL(); return false; }
     const uint8_t *p=data;
     for (size_t i=0;i<length;i++) {
-        s_input[s_head]=p[i]; s_head=(s_head+1)&(sizeof(s_input)-1);
+        s_st->input[s_head]=p[i]; s_head=(s_head+1)&(sizeof(s_st->input)-1);
     }
     taskEXIT_CRITICAL();
     return true;
@@ -40,9 +45,10 @@ static int route_read(void *context)
 {
     (void)context;
     int result=-1;
+    if (!s_st) return -1;
     taskENTER_CRITICAL();
     if (s_tail!=s_head) {
-        result=s_input[s_tail]; s_tail=(s_tail+1)&(sizeof(s_input)-1);
+        result=s_st->input[s_tail]; s_tail=(s_tail+1)&(sizeof(s_st->input)-1);
     }
     taskEXIT_CRITICAL();
     return result;
@@ -61,7 +67,7 @@ static int route_write(void *context,const void *data,size_t length)
     size_t remaining=length;
     while (remaining) {
         int n=remaining>256 ? 256:(int)remaining;
-        oled_vterm_write(&s_vt,p,n); p+=n; remaining-=(size_t)n;
+        oled_vterm_write(&s_st->vt,p,n); p+=n; remaining-=(size_t)n;
         ++s_revision;
         xSemaphoreGive(s_lock);
         if (remaining) xSemaphoreTake(s_lock,portMAX_DELAY);
@@ -99,26 +105,39 @@ static void shell_task(void *arg)
     }
 }
 static bool s_starting;
+// A failed start keeps nothing but the mutex, so it can be retried.
+static int start_failed(int rc)
+{
+    free(s_session);s_session=NULL;
+    free(s_st);s_st=NULL;
+    return rc;
+}
 static int start_claimed(void)
 {
     if (!s_lock) s_lock=xSemaphoreCreateMutex();
     if (!s_lock) return -ENOMEM;
+    s_st=calloc(1,sizeof(*s_st));
     s_session=calloc(1,sizeof(*s_session));
-    if (!s_session) return -ENOMEM;
+    if (!s_st || !s_session) return start_failed(-ENOMEM);
     int rc=tdsh_session_init(s_session,"root",true);
-    if (rc) { free(s_session);s_session=NULL;return rc; }
+    if (rc) return start_failed(rc);
     s_session->terminal_caps=TDSH_TERM_CAP_ANSI|TDSH_TERM_CAP_COLOR|TDSH_TERM_CAP_FULLSCREEN;
     xSemaphoreTake(s_lock,portMAX_DELAY);
-    oled_vterm_init(&s_vt,24,16);s_vt.reply=reply;s_revision++;
+    oled_vterm_init(&s_st->vt,24,16);s_st->vt.reply=reply;s_revision++;
     xSemaphoreGive(s_lock);
     TaskHandle_t task=NULL;
-    if (xTaskCreate(shell_task,"oledterm",4096,NULL,3,&task)!=pdPASS) {
-        free(s_session);s_session=NULL;return -ENOMEM;
-    }
+    if (xTaskCreate(shell_task,"oledterm",4096,NULL,3,&task)!=pdPASS) return start_failed(-ENOMEM);
     taskENTER_CRITICAL();
     s_task=task;
     taskEXIT_CRITICAL();
     return 0;
+}
+bool tang_oled_running(void)
+{
+    taskENTER_CRITICAL();
+    const bool running=s_task!=NULL;
+    taskEXIT_CRITICAL();
+    return running;
 }
 int tang_oled_start(void)
 {
@@ -147,10 +166,10 @@ bool tang_oled_snapshot(uint16_t cells[384],uint32_t *cursor)
     if (!s_task) return false;
     xSemaphoreTake(s_lock,portMAX_DELAY);
     for (int i=0;i<384;i++) {
-        td_vcell_t c=s_vt.cells[i];
+        td_vcell_t c=s_st->vt.cells[i];
         cells[i]=(uint16_t)((colour(c.bg)<<12)|(colour(c.fg)<<8)|c.ch);
     }
-    *cursor=(s_vt.cursor_visible ? 0x10000:0)|((uint32_t)s_vt.cy<<8)|(uint32_t)s_vt.cx;
+    *cursor=(s_st->vt.cursor_visible ? 0x10000:0)|((uint32_t)s_st->vt.cy<<8)|(uint32_t)s_st->vt.cx;
     xSemaphoreGive(s_lock);
     return true;
 }
@@ -161,8 +180,8 @@ static void draw(td_window_t *window,int w,int h)
     if (!s_task) { td_text(0,0,"Unable to start shell",9,0,0);return; }
     xSemaphoreTake(s_lock,portMAX_DELAY);
     for (int y=0;y<16 && y<h;y++) for(int x=0;x<24 && x<w;x++) {
-        td_vcell_t c=s_vt.cells[y*24+x];
-        if(s_vt.cursor_visible && x==s_vt.cx && y==s_vt.cy) {
+        td_vcell_t c=s_st->vt.cells[y*24+x];
+        if(s_st->vt.cursor_visible && x==s_st->vt.cx && y==s_st->vt.cy) {
             uint8_t tmp=c.fg;c.fg=c.bg;c.bg=tmp;
         }
         td_putc(x,y,c.ch==127 ? '?':c.ch,c.fg,c.bg,0);

@@ -6,9 +6,12 @@ extern "C" {
 #include "semphr.h"
 #include "tang_fpga_link.h"
 }
+#include <cstdlib>
 #include <cstring>
 
-// Called only by osddesk. Static buffers keep its 4 KB stack bounded.
+// Called only by osddesk. Its buffers are allocated on the first poll after
+// the terminal starts, off osddesk's 4 KB stack and out of the heap only
+// when the OLED is used.
 //
 // The loaded core is identified once per load with the legacy ID command every
 // core answers, as pmod_sockets.cpp does; only the desktop core (0x54) is then
@@ -26,8 +29,12 @@ static SemaphoreHandle_t lock;
 static bool paused,available,full=true;
 static core_kind kind=UNKNOWN;
 static unsigned probe_tick,id_attempts;
-static uint16_t cells[384],shadow[384];
-static uint32_t words[64],last_cursor=0xffffffff;
+struct link_buffers {
+    uint16_t cells[384],shadow[384];
+    uint32_t words[64];
+};
+static link_buffers *bufs;
+static uint32_t last_cursor=0xffffffff;
 static bool read(uint32_t address,uint32_t &value)
 {
     fpga_debug_result r={};
@@ -89,6 +96,13 @@ static bool probe()
 }
 extern "C" void tang_oled_poll(void)
 {
+    if(!bufs) {
+        if(!tang_oled_running()) return;
+        bufs=static_cast<link_buffers*>(std::calloc(1,sizeof(link_buffers)));
+        if(!bufs) return;
+    }
+    uint16_t *cells=bufs->cells,*shadow=bufs->shadow;
+    uint32_t *words=bufs->words;
     uint32_t cursor;
     if(!tang_oled_snapshot(cells,&cursor) || !acquire()) return;
     if(paused) {xSemaphoreGive(lock);return;}

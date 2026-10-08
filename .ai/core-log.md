@@ -957,3 +957,38 @@ None.
 - User Test: NOT RUN
 
 ---
+## 68 COMMIT Unreleased 2026-10-07T22:40:00-07:00
+
+#### Coming From:
+
+Unreleased a8f1e9d
+
+#### Purpose:
+
+Restore desktop script launches by allocating the OLED Terminal's buffers only when it starts, after the static buffers added in entry 64 left too little heap to run `phosphor.tdsh` from the desktop.
+
+#### Outcome:
+
+The user reported that right-click Run on `/scripts/phosphor.tdsh` in the desktop returned to the Terminal prompt at once with no output, while the same quoted `tdsh run "/scripts/phosphor.tdsh"` loaded the Phosphor core, applied `0x0050` for the I2S2 in PMOD0 and played Landslide from the console, which the user heard with the scope. `crash` showed an 80-byte allocation refused for task `tdsh_script` from the script loader, whose failure upstream returns silently, so the desktop launch was running out of heap. Entry 64's firmware reserved about 6 KB statically for the OLED Terminal, which took the heap total from entry 63's 130,976 bytes to 124,600 whether or not the terminal was used. `ports/bl616/tang_oled.c` now allocates its emulator and input ring when the terminal first starts, freeing them again if that start fails, and gains `tang_oled_running()`; `ports/bl616/phosphor/oled_link.cpp` allocates its cell, shadow and word buffers on its first poll after the terminal is running. `tools/tests/test_oled_link.sh` checks through a wrapped `calloc` that the link allocates nothing before the start and once after, and it and `test_oled_session.sh` fail if either file reserves static data over 256 bytes, which the previous `tang_oled.c` did with 3,208 and 1,024 bytes and the previous link failed; all 19 host test scripts pass. Firmware `a8f1e9d-dirty.1c81d39`, 649,824 bytes, SHA-256 `96d3e911930f7e4f3405ca23d7666bfbbe5117f9f3feab894049b40c0b0e265e`, was built with `make CHIP=bl616 BOARD=bl616dk` in a clean worktree of `a8f1e9d` carrying the firmware and test changes, with no warnings from the changed files, and installed with `tools/tinytang_flash.py`; image, log and diff are in `build/oled-lazy/`. After the power cycle the heap was 71,828 bytes free of 130,616, 6,016 more in total, and the user reported desktop Run of `phosphor.tdsh`, track selection, I2S2 audio and the scope all passing, with no allocation refused since boot. Afterwards `oledterm start` took the heap from 58,156 to 27,220 bytes free, so the started terminal costs about 31 KB and is held until reboot, too much for a desktop script launch alongside it; its panel was not attached, so only its memory was checked. `fpga/desktop/README.md` records this and changed after the build, which it does not affect. The card's `/bl616-firmware.bin` is this build, with entry 65's kept as `/bl616-firmware-pre-lazy.bin`, and `/tang.ini` declares the I2S2 layout. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 28-entry count.
+
+#### Next Steps:
+
+Power-cycle before the next desktop script launch, since the OLED Terminal started for the measurement holds its 31 KB until reboot. The OLED Terminal and a desktop script launch cannot both run within the heap, so a smaller script stack or a way to stop the terminal would be needed to use them together. The stdout leak of entry 67 remains for a firmware cycle. A third PMOD port on the dock's free 2x20 header was discussed: it needs an adapter with a 3.3 V regulator from pin 11's 5 V, a third socket in the desktop and Phosphor cores and a `pmod2` key, and its FPGA pins and bank voltage are still to be read from the schematic. The other open items of entry 67 stand.
+
+#### Files Modified:
+
+- fpga/desktop/README.md
+- ports/bl616/phosphor/oled_link.cpp
+- ports/bl616/tang_oled.c
+- ports/bl616/tang_oled.h
+- tools/tests/tb_oled_link.cpp
+- tools/tests/test_oled_link.sh
+- tools/tests/test_oled_session.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

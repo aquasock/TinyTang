@@ -34,6 +34,17 @@ static uint16_t g_panel[384];            // what the core has been sent
 static uint32_t g_panel_cursor;
 static int g_ids, g_ext, g_blocks, g_cursor_writes, g_block_words;
 
+// Counts the link's own heap use (linked with -Wl,--wrap=calloc).
+static int g_callocs;
+extern "C" void *__real_calloc(size_t n, size_t size);
+extern "C" void *__wrap_calloc(size_t n, size_t size)
+{
+    g_callocs++;
+    return __real_calloc(n, size);
+}
+
+extern "C" bool tang_oled_running(void) { return g_started; }
+
 extern "C" bool tang_oled_snapshot(uint16_t cells[384], uint32_t *cursor)
 {
     if (!g_started) return false;
@@ -106,13 +117,20 @@ int main()
 {
     for (int i = 0; i < 384; i++) g_cells[i] = (uint16_t)(0x0700 | ('A' + i % 26));
 
-    // Not started: nothing is asked of any core.
+    // Not started: nothing is asked of any core and nothing is allocated.
     g_started = false;
     load(0x54);
     reset_counts();
+    g_callocs = 0;
     polls(100);
     CHECK(g_ids == 0 && g_ext == 0);
+    CHECK(g_callocs == 0);
     g_started = true;
+    polls(1);
+    CHECK(g_callocs >= 1);                // the buffers, and the lock
+    const int after_start = g_callocs;
+    polls(50);
+    CHECK(g_callocs == after_start);      // allocated once
 
     // A game core is asked its ID once and then left alone, with no
     // extended frame, however long the terminal runs.

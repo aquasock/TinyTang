@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 int tang_oled_start(void);
+bool tang_oled_running(void);
 bool tang_oled_snapshot(uint16_t cells[384], uint32_t *cursor);
 void tang_oled_poll(void);
 void tang_oled_core_replacing(void);
