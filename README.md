@@ -48,8 +48,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
 
 ## What it does
 
-- **Boots to a console on the HDMI output.** `/scripts/boot.tdsh` loads the
-  menu core, turns the desktop layer on, and stops at the shell prompt
+- **Boots to a console on HDMI and configured VGA.** `/scripts/boot.tdsh` loads
+  `desktop.bin`, turns the desktop layer on, and stops at the shell prompt
   (`root@tinytang:~#`) drawn on the screen. The board has the shell's built-in
   commands, redirection and scripts, plus the Tang commands below.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
@@ -74,8 +74,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
   core keeps running underneath, and while TinyDesk is up the controllers are
   gated away from the game. It works at the console, in the desktop and during
-  a game. L on controller 1 does the same. On the menu core the core's side is
-  an empty frame; on the NES core it is the game.
+  a game. L on controller 1 does the same on the NES core. On the desktop core
+  the core's side is an empty frame; on the NES core it is the game.
 - **A keyboard.** A Bluetooth LE keyboard connected with `blekbd` types at
   the console and in the desktop; the BL616 receives it directly, so it works
   on any core that carries the desktop layer. A Keychron K2 HE running this
@@ -229,14 +229,15 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 #   ... then power-cycle the board (see fact 6), and confirm with `platform`:
 #   it prints the build identity, which must match build/tinytang/tinytang_build_id.h
 
-# Build the two FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
+# Build the FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
 # at ../tangcore/nestang, or NESTANG_DIR)
 tools/build_nestang_core.sh     # the NES core, with the desktop layer
-tools/build_menu_core.sh        # the menu core: the same design, no NES machine
+tools/build_desktop_core.sh     # desktop.bin: TinyDesk host with HDMI/VGA
+# tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /cores/console138k/nestang-desk.bin
-tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2_menu.bin /cores/console138k/nestang-menu.bin
+tools/tinytang_put.py build/desktop/place2/desktop.bin                 /cores/console138k/desktop.bin
 tools/tinytang_put.py scripts/boot.tdsh      /scripts/boot.tdsh
 tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
 
@@ -244,7 +245,7 @@ tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
 screen /dev/ttyACM0 115200
 ```
 
-Power-cycle the board and it comes up at the console on the HDMI output. Type
+Power-cycle the board and it comes up at the console on HDMI and configured VGA. Type
 `desktop` for TinyDesk.
 
 ### Cartridges
@@ -286,7 +287,7 @@ it loaded the keyboard and TinyDesk are gone until the next boot.
 ### What the board boots
 
 `/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
-line -- the menu core, `nestang-menu.bin` -- probes it, enables the desktop
+line -- `desktop.bin` -- probes it, applies `/tang.ini`, enables the desktop
 layer and stops at the prompt. Pointing `CORE` at `nestang-desk.bin` boots the
 NES core instead. Removing or renaming the file boots to a plain prompt with no
 core loaded; the FPGA then stays on the core it configured itself with, and
@@ -294,7 +295,7 @@ the screen shows a TangCore splash (fact 14).
 
 ## The FPGA cores
 
-Both cores are nand2mario's nestang, carried as patches against upstream rather
+The cores derive from nand2mario's nestang, carried as patches against upstream rather
 than as a fork. The checkout stays pristine at commit `c2450818`, and
 `scripts/apply-nestang-patches.sh` applies `third_party/patches/0001` through
 `0007` before a build:
@@ -311,9 +312,18 @@ than as a fork. The checkout stays pristine at commit `c2450818`, and
 
 `third_party/patches/menu/0001-menu-core.patch` applies on top to make the
 menu core: the NES machine, its loader and SDRAM are not instantiated, and the
-legacy text page is removed. Both builds are reproducible byte for byte, and a
-fresh clone plus the series reproduces the working tree; the patches'
-`README.md` files have the detail.
+legacy text page is removed. It remains the legacy HDMI-only rollback host.
+
+The default host is `desktop.bin`. `tools/build_desktop_core.sh` reconstructs
+the pinned source in an isolated build directory, applies the common, menu and
+`third_party/patches/desktop/` patches, then adds `fpga/desktop/`. It targets
+revision C and rejects setup or hold violations before publishing its binary.
+HDMI and VGA share the 720p raster and desktop compositor. The firmware applies
+`/tang.ini` after loading it; this first desktop ABI supports released sockets
+and the complete VGA pair, with either header order and row flips. OLED,
+encoder and I2S remain features of Phosphor. The old menu image and build tool
+remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
+for the register interface and regression commands.
 
 ## Keyboard
 
@@ -402,7 +412,7 @@ STM32's own DFU bootloader.
   - `tinytang_put.py`, `tinytang_run.py`, `tinytang_flash.py` — put a file on
     the card, run a command, reflash the BL616. `tinytang_put.py` refuses to
     send unless the console is at a shell prompt (fact 15).
-  - `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build
+  - `build_desktop_core.sh`, `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build
     a core with Gowin.
   - `test_textdisp_wide.sh` — simulates the layer against a free-running
     1650x750 raster and checks every visible pixel (Verilator).

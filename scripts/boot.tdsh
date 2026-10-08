@@ -12,7 +12,7 @@
 #
 #     tools/tinytang_put.py scripts/boot.tdsh /scripts/boot.tdsh
 #
-# The cycle this sets up, all on the HDMI output:
+# The cycle this sets up, mirrored on HDMI and configured VGA:
 #
 #   tangload   put a core in, so there is a raster for the layer to sit over
 #   osd clear  blank the core's own text page, which a reset core shows
@@ -23,25 +23,13 @@
 # up is a thing the user types -- `desktop` enables the layer itself and turns
 # the mirror off on its way past.
 #
-# The board boots the menu core, which has no machine of its own: F12 (or L
-# on controller 1) switches between TinyDesk and the core, and on this core
-# the core's side is an empty frame.  A game is a cartridge launched from the
-# console or the desktop -- boot-cart.tdsh loads the NES core for it -- and F12
-# switches between the game and TinyDesk the same way.
-
-# The core is the menu core: this project's patched nestang with the NES
-# machine left out (third_party/patches/menu/, built by
-# tools/build_menu_core.sh), so TinyDesk has a host of its own rather than an
-# idle emulator.  It has to be a patched core.  The desktop layer is three
-# commands the stock nestang does not implement -- it consumes them as unknown
-# frame types and ignores them, which is exactly what keeps it working -- so
-# loading /cores/console138k/nestang.bin here would leave 'osd desk on' talking
-# to a core that cannot hear it, and the screen black with no error anywhere.
-# Nothing below falls through to the desktop on a failure.  The desktop takes
-# the console, so starting it with no core, or with no layer, would leave a
-# black screen and no prompt -- a boot that looks broken and cannot be typed
-# at, which is the worst possible place to discover a wrong path.
-CORE=/cores/console138k/nestang-menu.bin
+# The desktop core hosts TinyDesk without a machine running behind it. F12
+# switches between the desktop layer and an empty frame. Its VGA sockets follow
+# /tang.ini automatically, just as Phosphor does. The first version supports
+# none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
+# Build it with tools/build_desktop_core.sh. Keep nestang-menu.bin and the old
+# boot script available for rollback. Cartridge launching uses boot-cart.tdsh.
+CORE=/cores/console138k/desktop.bin
 
 # Drop the layer before touching the core.
 #
@@ -67,13 +55,8 @@ else
     return 0
 endif
 
-# Blank the core's own text page before the layer comes up.
-#
-# A core comes out of reset with its overlay on, and while the desktop layer is
-# still off the compositor shows that page instead of the desktop -- and the
-# page's store is never initialised, so what shows is its power-on contents.
-# Clearing it here makes the gap between the core loading and the desktop
-# painting blank rather than stray characters.
+# Retained for scripts that select a core with the legacy text page.
+# The desktop core has no such page; its background starts black.
 osd clear
 
 # Mirror this session onto the desktop *layer* -- the 80x45 grid with per-cell

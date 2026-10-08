@@ -697,3 +697,49 @@ The canonical Phosphor launcher and VGA desktop cycle are accepted, with no furt
 - User Test: PASS
 
 ---
+
+## 62 COMMIT Unreleased 2026-10-07T18:33:54-07:00
+
+#### Coming From:
+
+Unreleased 8613cc9
+
+#### Purpose:
+
+Create TinyTang's desktop host core with HDMI and configurable VGA output, and make it the normal boot core.
+
+#### Outcome:
+
+The desktop host is reconstructed from pinned nestang plus the common, menu and new desktop patches, with native GPL-3.0-only HDL and revision-C constraints under `fpga/desktop/`; it preserves the desktop layer and keyboard link while replacing the old PMOD controller and LED outputs with released sockets or a complete VGA pair. The version-1 register endpoint validates requests and CRCs, acknowledges socket changes at vertical blank, reports core ID `0x54` and its own ABI 1.0, and safely rejects unsupported module words. Firmware now recognizes that ID and applies `/tang.ini` after loading it; the boot script selects `/cores/console138k/desktop.bin`. Reconstructed UART tests passed 17 replies with independent Python CRC checks, malformed-request recovery, keyboard traffic and layer enable; PMOD tests passed pin permutations, flips, frame commits, released pins, blanking and full-frame sync counts, and the legacy decoder passed 18 checks. A deliberately broken pin mapping failed, as did negative-slack and missing-summary timing reports. The final Gowin 1.9.11.03 placement 2 on GW5AST-LV138PG484AC1/I0 revision C passed with setup +2.880 ns, hold +0.167 ns and zero timing violations; its 4,524,032-byte binary has SHA-256 `ceb82e4a0924bc4104a3d78a37e1f83a4dc86f388ab7068049093ec0b7a204b0`. The 637,904-byte BL616 build `8613cc9-dirty.21e7755`, SHA-256 `3ae2edf06194f449041b9e5a0a4d640dcb8d79d6df5e5549a633237a36257988`, was retained locally and flashed successfully. After the user's power cycle, the console confirmed that identity, desktop ID 84, ABI 1.0, automatic VGA word `0x0230`, no refused desktop cells and no prior crash record. The old menu image remains on the card and its boot script was saved at `/scripts/diagnostics/boot-menu-rollback.tdsh`; serial readback confirmed both the old and new script bytes against source. The user reported a working boot console on both displays but a narrow vertical strip at VGA's left edge, absent from HDMI, and requested a separate corrective build cycle. Source review identified the new VGA path's raw blanking against registered RGB as an alignment defect related to the earlier PROT-009 glyph leak; the static-color PMOD test did not cover that boundary. The card's stale `/bl616-firmware.bin` was not replaced before acceptance. The required core-syntax audit re-read core.md and core-syntax.md, inspected the full .ai diff, confirmed unchanged directives and settled history, and validated this entry's six sections and contiguous numbering with 22 active entries; the checker retains only the existing numbering mismatch documented in entry 51.
+
+#### Next Steps:
+
+Correct VGA sync and blanking alignment with the registered compositor pixels, add a streamed regression that reproduces the left-edge artifact, and perform the user's requested placement 0-3 sweep with resource and timing results reported before deployment. After visual acceptance, finish desktop input and Phosphor transition checks and refresh the SD firmware backup with the retained running image; the other open work from entry 61 remains separate.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/phosphor/pmod_sockets.cpp
+- scripts/boot.tdsh
+- fpga/desktop/README.md
+- fpga/desktop/board.v
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop.cst
+- fpga/desktop/desktop.sdc
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- third_party/patches/desktop/0001-desktop-host.patch
+- tools/build_desktop_core.sh
+- tools/check_gowin_timing.py
+- tools/tests/sim/tb_desktop_pmod.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/test_desktop_core.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

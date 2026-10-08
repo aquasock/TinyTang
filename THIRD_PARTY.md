@@ -141,6 +141,19 @@ removes `src/usb_hid_host.v` and its ROM image from the build: the low-speed USB
 hosts they implemented are displaced on both front ports by the keyboard link,
 so the module is no longer instantiated anywhere.
 
+The menu variant is carried in `third_party/patches/menu/`, and the desktop
+host variant in `third_party/patches/desktop/`. These are also modifications
+to GPL-3.0 sources. The new HDL, board definition and constraints in
+`fpga/desktop/`, and its simulation benches in `tools/tests/sim/tb_desktop_*`,
+are TinyTang's work under GPL-3.0-only. Build scripts and timing-validation
+tools retain their explicit MIT notices. The desktop binary links upstream
+nestang and HDMI modules and is governed by GPL-3.0; the BL616 firmware remains
+separate and communicates through the documented UART protocol.
+
+The desktop handshake design uses synchronization and held-data conventions
+reviewed in CERN's colibri library as engineering guidance. No colibri module
+was copied, translated or adapted into the desktop core.
+
 ## Keychron QMK firmware (Tang keyboard link, carried as patches)
 
 The keyboard end of the link is a Keychron K2 HE running a modified QMK, built

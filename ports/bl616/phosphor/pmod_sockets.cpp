@@ -47,8 +47,10 @@ struct socket_core {
 
 // Tang-Phosphor's merged core: 0xc0 from ABI 1.8 (PHOS-011, PMOD-004).  Its
 // bring-up core also reports 0x50 but has no ABI word, so it is not matched.
+// TinyTang desktop: 0xc0 from its own ABI 1.0, supporting none and VGA pairs.
 const socket_core s_socket_cores[] = {
     {0x50, 0x00010008u, 0x00c0u},
+    {0x54, 0x00010000u, 0x00c0u},
 };
 
 // Kept off the stack: the parser holds a line and its notes.
