@@ -89,6 +89,17 @@ static size_t usb_unread(void)
     return n;
 }
 
+/* stdout is shared by every task; it must be unbuffered, or bytes one shell
+ * leaves in it go out through the next shell that flushes (entry 69).
+ * Linked with -Wl,--wrap=setvbuf. */
+static bool g_stdout_unbuffered;
+int __real_setvbuf(FILE *stream, char *buf, int mode, size_t size);
+int __wrap_setvbuf(FILE *stream, char *buf, int mode, size_t size)
+{
+    if (stream == stdout && buf == NULL && mode == _IONBF) g_stdout_unbuffered = true;
+    return __real_setvbuf(stream, buf, mode, size);
+}
+
 /* --------------------------------------------- the rest of the firmware */
 bool tang_osd_desk_enabled(void) { return false; }
 int tang_osd_desk_read_byte(void) { return -1; }
@@ -295,6 +306,7 @@ static bool other_event(td_window_t *w, const td_event_t *ev) { (void)w; (void)e
 int main(void)
 {
     CHECK(tdsh_bl616_init("tinytang") == 0);
+    CHECK(g_stdout_unbuffered);
     CHECK(g_platform != NULL && g_oledterm != NULL);
     td_init(&s_hal);
     td_oled_terminal_register();

@@ -992,3 +992,35 @@ Power-cycle before the next desktop script launch, since the OLED Terminal start
 - User Test: PASS
 
 ---
+## 69 COMMIT Unreleased 2026-10-08T07:12:09-07:00
+
+#### Coming From:
+
+Unreleased 62b3805
+
+#### Purpose:
+
+Stop one shell's stdio output from reaching the other shell's display by making the shared stdout unbuffered, the first of the fixes for entry 67's stdout defect.
+
+#### Outcome:
+
+The firmware runs newlib without per-task state, so `stdout` is `_REENT->_stdout` on the single global `_impure_ptr` that the SDK's `__getreent()` returns, and its buffer is shared by every task while `_write_r` picks the route of whichever task flushes. Per-task newlib state was measured at 1,064 bytes of `struct _reent` per task on this target, about 15 KB for the board's tasks, and a per-session state for the OLED shell alone at about 1.1 KB was proposed; the user chose the smaller step of an unbuffered stdout for now. `tdsh_bl616_init()` in `ports/bl616/tdsh_platform_bl616.c` now calls `setvbuf(stdout, NULL, _IONBF, 0)` before anything prints, so each stdio write leaves through its own task's route at once. The shell parser's redirects and pipes still assign the global `stdin` and `stdout` (`tdsh_parser.c`), so while one shell runs `echo x > file` or a pipe the other shell's stdio output can go to that file; that remains open. `tools/tests/test_oled_session.sh` now wraps `setvbuf` and fails unless startup makes stdout unbuffered, which the previous source does, and all 19 host test scripts pass. The new `tools/check_stdout_isolation.py` starts the fire demo in the OLED session and runs `cat /tang.ini` 40 times from the USB console, counting the demo's colour codes that arrive on USB; on entry 68's firmware it counted 1,405. Firmware `62b3805-dirty.64ca308`, 649,856 bytes, SHA-256 `51db60b1752a45472187612b0202adabde9e8bbff3ffbcbdb14243a998cddbc0`, was built with `make CHIP=bl616 BOARD=bl616dk` in a clean worktree of `62b3805` carrying these changes, with no warnings from the changed file, installed with `tools/tinytang_flash.py`, and retained with its log and diff in `build/stdout-unbuffered/`. After the power cycle the heap was 72,856 bytes free of 130,616, 1,028 more than entry 68 because stdout no longer allocates a buffer, the user reported desktop Run of `phosphor.tdsh` with I2S2 audio and the scope and Terminal output passing, and `tools/check_stdout_isolation.py` counted 0 colour codes on USB. The card's `/bl616-firmware.bin` is still entry 68's build. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 29-entry count.
+
+#### Next Steps:
+
+UTF-8 file names follow as the next cycle, from the investigation of the Hungarian track names. The redirect and pipe hijack between the two shells needs per-session newlib state if it is to be fixed, which the user has deferred. The other open items of entry 68 stand.
+
+#### Files Modified:
+
+- ports/bl616/tdsh_platform_bl616.c
+- tools/check_stdout_isolation.py
+- tools/tests/tb_oled_session.c
+- tools/tests/test_oled_session.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

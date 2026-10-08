@@ -371,6 +371,13 @@ static const tdsh_command_t s_tang_commands[] = {
 
 int tdsh_bl616_init(const char *hostname)
 {
+    /* stdout is one stream shared by every task (newlib's per-task state is
+     * off), and its route is chosen in _write_r by the task that writes.
+     * Buffered, bytes one shell left in it went out through whichever shell
+     * flushed next: the OLED demo's frames reached the USB console.
+     * Unbuffered, each write leaves on its own task's route at once. */
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     if (hostname && hostname[0]) {
         snprintf(s_hostname, sizeof(s_hostname), "%s", hostname);
     }

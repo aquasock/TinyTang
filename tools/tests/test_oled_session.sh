@@ -24,7 +24,7 @@ cc -std=gnu11 -O1 -Wall -Wextra -Werror -Wno-unused-parameter \
    "$root/ports/bl616/tdsh_console_stdio_bl616.c" \
    "$stubs/rtos_threads.c" \
    "$root/third_party/tinydesk/src/"*.c \
-   -lpthread -o "$work/tb" 2>"$work/cc.log" || { cat "$work/cc.log"; exit 1; }
+   -Wl,--wrap=setvbuf -lpthread -o "$work/tb" 2>"$work/cc.log" || { cat "$work/cc.log"; exit 1; }
 timeout 60 "$work/tb"
 
 # The terminal's emulator and input ring come from the heap when it starts.
