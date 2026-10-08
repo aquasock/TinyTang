@@ -899,3 +899,32 @@ The OLED terminal needs no further validation for the tested paths. A desktop se
 - User Test: PASS
 
 ---
+## 66 COMMIT Unreleased 2026-10-07T21:49:36-07:00
+
+#### Coming From:
+
+Unreleased 985cbcb
+
+#### Purpose:
+
+Show what the OLED Terminal's 4x4 mode can do as a graphics display with no firmware change, and leave a fire demo that plays on the OLED at power-up for filming.
+
+#### Outcome:
+
+The user now treats the 24x16 OLED mode as the graphics mode for small demos, with a later 8x8 mode intended for text, and chose to make no firmware changes for this work. The new `tools/make_oled_demo.py` renders a sine plasma and a fire as 48 pre-rendered ANSI frames each, 1,569 to 2,614 bytes, shading between palette colours by drawing the font's density glyphs in one colour over another, and writes the players `play.tdsh`, `fire.tdsh` and `fire10.tdsh`, the screen restore `restore.ans`, and `boot-fire.tdsh`, which is `scripts/boot.tdsh` plus one line that starts `fire10.tdsh` in the OLED session; its output is identical on every run and byte-identical to the copies on the card. The frames and players are in `/demos/` on the card, `/scripts/boot.tdsh` is the fire-on-boot version, and the normal boot script is kept as `/scripts/diagnostics/boot-before-fire.tdsh`, with `scripts/boot.tdsh` in the repository unchanged. Played from the console with `oledterm run "tdsh run /demos/play.tdsh"` on firmware `9313085-dirty.41ff066`, 288 frames took about 16.8 s, about 17 frames a second against the link's 25, and while it ran the heap fell from 40,896 to 12,964 bytes free with a 9,552-byte largest block, the script costing about 28 KB, and the script task used 13,752 of its 16,384 stack bytes. A script graphics kit with `draw` and `line` functions was tried and dropped at the user's direction after two failures that host runs of the same shell did not show: a 170-line showcase returned silently because loading it exhausted the heap, and a four-deep demo overflowed the script task's stack, which the crash recorder logged as a stack overflow in `tdsh_script` and which left the board off USB until a power cycle. Measured on the board, `cat` alone uses 9,576 stack bytes, each enclosing loop or `if` about 1,392 more and a function call about 5,000, so a board script can nest about three blocks around a `cat` and cannot call a function from inside loops; the players stay within that. The user reported the fire-on-boot script working after a power cycle and accepted the fire demo. The board was off USB at the close, so `/gfx/`, holding the dropped kit and five stack probe scripts, is still on the card. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 26-entry count.
+
+#### Next Steps:
+
+Remove `/gfx/` from the card at the next connection, and restore the normal boot from `/scripts/diagnostics/boot-before-fire.tdsh` when filming is done. A kid-friendly drawing kit without firmware changes would have to avoid functions and keep within three nested blocks, and a script that nests deeper still crashes the board, so ease of use for scripts depends on a firmware change to the script stack or a guard, which the user has not asked for. The 8x8 text mode for the OLED is a separate core change for a later cycle. The other open items of entry 65 stand.
+
+#### Files Modified:
+
+- tools/make_oled_demo.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
