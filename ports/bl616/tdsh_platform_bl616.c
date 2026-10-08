@@ -172,6 +172,55 @@ static int bl616_worker_run(void *context,
     return 0;
 }
 
+/* The memory `peek` and `poke` may reach.  The core checks every access
+ * against these regions, so only what is safe to touch is listed.
+ *
+ * sram  - the OCRAM the firmware runs from, through the cacheable alias its
+ *         own pointers use, less the 1K the SDK's linker reserves for
+ *         security.  The end comes from `__HeapLimit`, which the linker
+ *         defines as the end of that region, so the list follows the memory
+ *         map when the RAM reserved for Wi-Fi and BLE changes; a zero-size
+ *         region is skipped rather than guessed at.  The non-cacheable alias
+ *         (`0x22FC0400`) is deliberately not listed: a write through it can be
+ *         undone by a dirty cache line.
+ * flash - the XIP image, read-only, so code and constants can be read and a
+ *         `poke` cannot pretend to program it.
+ * glb   - the always-readable 32-bit system control block (clocks, resets,
+ *         GPIO), read-only.  The UARTs are left out because reading a FIFO
+ *         consumes console data, and PSRAM because this board does not
+ *         initialise one.
+ * tzc_* - the two trustzone blocks, read-only: their ROM/OCRAM/WRAM/flash
+ *         region and lock registers say what this chip's security controller
+ *         protects.  Reading them is measured safe.  The mask ROM they guard
+ *         is not reachable from here at all: a read at 0x90000000 resets the
+ *         chip into its loader in about 23 ms, silently, without an exception
+ *         or a crash record, and 0x90020000 does the same.  No address earns
+ *         a place here until it has been read without taking the board down. */
+/* The linker's end of the RAM region.  Weak on purpose: the host tests build
+ * this file without a linker script, and there the symbol resolves to 0 so the
+ * sram region is dropped rather than the link failing. */
+extern uint32_t __HeapLimit __attribute__((weak));
+
+#define BL616_RAM_START 0x62FC0400u
+
+static tdsh_mem_region_t s_mem_regions[] = {
+    {"sram", BL616_RAM_START, 0, TDSH_MEM_8 | TDSH_MEM_16 | TDSH_MEM_32},
+    {"flash", 0xA0000000u, 0x400000u,
+     TDSH_MEM_8 | TDSH_MEM_16 | TDSH_MEM_32 | TDSH_MEM_READONLY},
+    {"glb", 0x20000000u, 0x1000u, TDSH_MEM_32 | TDSH_MEM_READONLY},
+    {"tzc_sec", 0x20005000u, 0x1000u, TDSH_MEM_32 | TDSH_MEM_READONLY},
+    {"tzc_nsec", 0x20006000u, 0x1000u, TDSH_MEM_32 | TDSH_MEM_READONLY},
+};
+
+static const tdsh_mem_region_t *bl616_mem_regions(void *context, size_t *count)
+{
+    (void)context;
+    const uintptr_t end = (uintptr_t)&__HeapLimit;
+    s_mem_regions[0].size = end > BL616_RAM_START ? (size_t)(end - BL616_RAM_START) : 0;
+    *count = sizeof(s_mem_regions) / sizeof(s_mem_regions[0]);
+    return s_mem_regions;
+}
+
 /* The port's name carries the build identity, so `platform` and `version`
  * report which firmware is running -- the commit, and a hash of any
  * uncommitted changes it was built with (cmake/tinytang_build_id.cmake). */
@@ -187,6 +236,7 @@ static const tdsh_platform_api_t s_platform = {
     .realloc_fn = NULL,
     .free_fn = NULL,
     .worker_run = bl616_worker_run,
+    .mem_regions = bl616_mem_regions,
 };
 
 /* ----------------------------------------------------------------- console */

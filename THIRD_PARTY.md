@@ -75,14 +75,18 @@ documents this provenance.
 The shell this firmware runs, consumed as `third_party/tinydesk-shell`:
 
 - Project: https://github.com/tinydesk-project/tinydesk-shell
-- Commit: `8456dd1d8c2fa88706c065edba483be67fcb3553` (v0.1.5)
+- Commit: `a067fa7` (upstream `main`, ahead of the 0.1.6 release; `8456dd1`,
+  v0.1.5, is the last release tag)
 - License: MIT
 
 TinyTang carries `third_party/patches/tdsh/0001-configurable-script-limits.patch`
-against that commit, applied idempotently by `scripts/apply-tdsh-patches.sh`
-during CMake configuration. It wraps four public memory limits in `#ifndef`
-without changing their defaults, and documents that all components using
-`tdsh.h` must share the overrides because they change the session layout.
+for a build against v0.1.5, applied idempotently by
+`scripts/apply-tdsh-patches.sh` during CMake configuration. It wraps four
+public memory limits in `#ifndef` without changing their defaults, and
+documents that all components using `tdsh.h` must share the overrides because
+they change the session layout. The change itself is upstream from `7cffa85`,
+so against a newer checkout the script detects it and applies nothing; the
+patch file stays for the v0.1.5 pin.
 The matching upstream discussion is
 https://github.com/tinydesk-project/tinydesk-shell/issues/2.
 TinyTang sets 48 variables, 32-byte name buffers, 128-byte value buffers and

@@ -28,9 +28,11 @@ For a dedicated game launcher with his full library of cores, see
 TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
 
 - **Platform:** `bl616/freertos`, on the Sipeed Tang Console 138K.
-- **Built against:** TinyDesk Shell 0.1.5 and TinyDesk 0.1.5, as submodules at
-  their `v0.1.5` tags. TinyDesk Shell carries the configurable-limit patch
-  listed in `THIRD_PARTY.md`, applied automatically before building.
+- **Built against:** TinyDesk Shell at upstream `main` (`a067fa7`), ahead of the
+  0.1.6 release because that is where `peek`/`poke` and the configurable limits
+  live, and TinyDesk 0.1.5 at its `v0.1.5` tag. For a build against v0.1.5 the
+  shell still needs the carried patch `THIRD_PARTY.md` lists; with this pin the
+  script finds the change already present and applies nothing.
 - **Prefix:** `tang` -- `tang_` in C, `TANG_` in macros, and commands such as
   `tangload`, `tangput` and `tangflash`.
 - **Adds:** the desktop drawn over HDMI by the FPGA core and mirrored over USB
@@ -99,6 +101,13 @@ Building and flashing are under *Quick start* and *Building requirements*.
   link's liveness proof. This project's cores answer 1; the core the FPGA comes
   up with on its own answers 0.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
+- **`peek` / `poke`** read and write the memory the port lists, root only: the
+  BL616's RAM read/write, and the XIP flash, system control and trustzone
+  registers read-only. `peek -l` prints the regions and
+  `tools/tinytang_memdump.py` dumps one to a file. Nothing else is reachable: a
+  read at `0x90000000` or above, where the mask ROM sits, resets the board into
+  its loader in about 23 ms, with no exception, no crash record and nothing the
+  running firmware can read afterwards.
 - **`phosphor caps | peek | poke | play | pause | resume | status | stop | run | stats`**
   drives a loaded
   Tang-Phosphor core over its extended protocol (register access on frame

@@ -1057,3 +1057,37 @@ The redirect and pipe hijack between the two shells that entry 69 left open stil
 - User Test: PASS
 
 ---
+## 71 COMMIT Unreleased 2026-10-08T09:18:59-07:00
+
+#### Coming From:
+
+Unreleased 29f40c0
+
+#### Purpose:
+
+Put the shell's `peek`/`poke` memory regions in the BL616 port so the board's own RAM and registers can be read and written from the console, and find out what the chip's security controller does to the addresses it guards.
+
+#### Outcome:
+
+`ports/bl616/tdsh_platform_bl616.c` now fills the shell's optional `mem_regions` hook, so `peek` and `poke` exist as root-only core commands over a table the port owns: `sram`, the firmware's own RAM from `0x62FC0400` to the linker's `__HeapLimit` with every width and read/write, whose end comes from the symbol so the list follows the RAM reserved for BLE and Wi-Fi and a zero-size region is skipped rather than guessed; `flash`, the XIP window, read-only; `glb`, the 32-bit system control block, read-only; and `tzc_sec` and `tzc_nsec`, the trustzone blocks, read-only. Because `peek`/`poke` are not in v0.1.5, `third_party/tinydesk-shell` is pinned to upstream `main` (`a067fa7`), which the author invited in the peek/poke thread, and with that pin the carried configurable-limits patch is no longer applied: `scripts/apply-tdsh-patches.sh` now recognises a checkout newer than the pinned release that already carries the change, its marker being the `#ifndef` guard the patch adds, and refuses anything else. Firmware `29f40c0-dirty.4c95e97`, 653,200 bytes, SHA-256 `3962123d7b97131667cfc1091d2786645fe00cf691754f206003d1c04ba798e6`, was built with `make CHIP=bl616 BOARD=bl616dk` in a clean worktree of `29f40c0` carrying exactly this tree, so the deployed identity is the committed tree's own, and retained with its log and diff in `build/peek-poke/`. On the board `peek -l` prints the five regions, reads return real content, the banner string at `0xA0095200` came back as the `\r\n ESC[1;36` the map predicts, `flash` at `0xA0000000` reads `0xc2fc7197`, `glb` at `0x20000000` reads `0x68000000` and the TZC ROM control register reads `0xf1c3ff00`, every refusal path fires before memory is touched (a `poke` at flash and at glb reports read-only, an unlisted address, a misaligned one, a width the region does not allow, and an access crossing a region end), `echo $(peek 0xA0000000)` shows the single value is usable in a script, and a `poke` of the shell's own `s_hostname` at `0x62FC770C` changed `0x796E6974` ("tiny") to `0x746E6174` ("tant"), read back, and was restored to the value first read, a byte dump afterwards showing `tinytang` with its NULs. The mask ROM cannot be read at all: `peek` at `0x90000000`, at `0x9001FFF0` and at `0x90020000` each reset the chip, and a monitor watching the console recorded the command echoed at about 100 ms, the USB console dead at about 123 ms with 71 bytes and nothing further printed, and the board re-enumerating as its ISP loader (`0403:6010`) within a second. No exception ran and no crash record was left, `GLB_RESET_STS0` at `0x20000530` read `0x0000007d` and `GLB_TZC_CFG0` at `0x20000490` read `0x00000000` both before and after, so nothing the running firmware can read latches the violation, and a security-violation reset returns to the loader where a watchdog or exception reset returns to the app; the TZC blocks themselves are safe to read and their SEC and NSEC ROM descriptors are identical (control `0xf1c3ff00`, address mask `0x00000000`, R0 `0x00000053`, R1 `0x03ff03ff`, R2 `0x000003ff`, R3 `0x00000000`), recorded raw because decoding them needs the BL616 manual the project does not have. That measurement is the rule the table now follows: an address is listed only after it has been read without taking the board down, which is why the ROM window was tried and removed. The new `tools/tinytang_memdump.py` dumps any region the firmware reports at a width that region allows, checking every row's address against the one it asked for, and its first run caught two bugs of its own by refusing to write anything: the listing's widths are bits, and its END is inclusive. Reading the firmware back with it is how the flash window was checked: dumping 653,200 bytes from `0xA0000000` differed from the deployed image at 636,454 bytes, the image's bytes at offset `0x1000` appeared at dump offset 0, and shifted by that one header all 649,104 bytes the window covers are identical, SHA-256 `1fe6468c26ea8023426acd89abc4ffbf1b0504f834cabea7843357db065f3a4a`, because the SDK's linker places the 4 KB firmware header at `0xA0000000 - 0x1000` (`fw_header_memory` in `bl616_flash.ld`), so the XIP window begins one header into the image and the header itself is unreachable, its address lying in the range that resets the chip. The host suite caught a regression in this change before the commit: the port referenced `__HeapLimit` unconditionally, and `test_oled_session.sh`, which compiles the port on the host where there is no linker script, failed to link; the reference is now weak, resolving to zero there so the `sram` region is dropped, and the suite is back to 22 of 23 with only the pre-existing `NESTANG_DIR` gap. Heap was 72,792 bytes free of 130,552 with a 60,472-byte largest block and the last script task used 10,936 of its 16,384 bytes of stack, with no refused allocation and no record from a previous run. The README and `THIRD_PARTY.md` record the new pin, the retired patch and the feature, and were part of the tree the identity was computed from. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 31-entry count; `tools/check_core_log.py` still exits 1 on all thirty-one entries for numbering alone, its rule expecting the active log to begin at `1` while this one continues from `41` as the last rollover left it, the pre-existing disagreement entry 70 records.
+
+#### Next Steps:
+
+When the shell's next release carries `peek`/`poke` and the configurable limits, pin its tag and delete `third_party/patches/tdsh/0001-configurable-script-limits.patch`, which now exists only for a v0.1.5 build. The trustzone result belongs upstream: the shell's issue #1 is where the author asked ports to describe what they did, and "a read at `0x90000000` resets the chip into its loader in 23 ms with no exception and no crash record" is the concrete case the PORTING guidance about listing only verified addresses lacks, and `docs/PORTING.md` is the file to cite. The three drafted issues in `docs/upstream/issue-drafts.md` remain unposted, the user's own commitment in tinydesk issue #6 to profile each app's memory is still open, and the redirect and pipe hijack between the two shells that entry 69 left open still needs per-session newlib state; the other open items of entry 70 stand.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/apply-tdsh-patches.sh
+- third_party/tinydesk-shell
+- tools/tinytang_memdump.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
