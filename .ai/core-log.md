@@ -636,3 +636,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 60 COMMIT Unreleased 2026-10-07T17:13:26-07:00
+
+#### Coming From:
+
+Unreleased 5548664
+
+#### Purpose:
+
+Complete PmodVGA qualification, persist the header order that matches the dock's physical seating, and record the completed PMOD hardware checks.
+
+#### Outcome:
+
+The user powered down, replaced the OLED and encoder with PmodVGA facing up and connected the CRT. The initial `/tang.ini` declared PMOD0 vga_j1 and PMOD1 vga_j2, neither flipped; the default Phosphor image (ABI 1.8) applied and read back `0x0320` automatically, and reapplication succeeded, but the user reported only the color pattern on HDMI and a CRT that woke without a picture. Tang-PSX's reference already recorded the verified face-up placement with J1 on PMOD1 and J2 on PMOD0, opposite the agent's instruction. Writing `0xc0 = 0x0230` without moving the module immediately gave mirrored HDMI and VGA images, as the user confirmed. The card now holds a 69-byte `/tang.ini` with `pmod0 = vga_j2`, `pmod1 = vga_j1` and both flip keys set to no; reloading the core automatically applied `0x0230`, and `tangini` confirmed the match. Firmware remains `969e6ff-dirty.71fe989`, with no previous crash record. Entries 58 and 59 together with this result complete the exercised I2S2, encoder, OLED and VGA layouts, missing-file release, invalid-module refusal and reapplication checks; `PMOD-006` supersedes `PMOD-005` with their bounded hardware evidence, including the encoder's lower-row meaning of flip and the corrected VGA header order. No source changed, and nothing was built or reflashed. The intended refresh of `/bl616-firmware.bin` could not be completed: the qualified entry 57 image was not found in this checkout, /tmp or the retained board-backup directory. The local `build/build_out/tinytang_bl616.bin` is also 637872 bytes but identifies as `969e6ff-dirty.3054a25`, MD5 `f4c00d946084dfcba28643cbf98e8f52`, rather than the running image's `969e6ff-dirty.71fe989`, MD5 `2fab6aba64c72324a53710c981369de9`; it was not substituted, and the card backup remains entry 55's older firmware. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed unchanged core directives and settled log entries and preserved reference statements except for supersession metadata and lookup pointers, validated entry 60 with 20 active entries and exactly six sections, and parsed the reference YAML with 146 unique records (excluding the schema template) and an index line for each; the log checker reports only its existing numbering mismatch documented in entry 51.
+
+#### Next Steps:
+
+No further PMOD hardware qualification is pending for the exercised layouts. Keep the current VGA declaration while that module is seated; future layouts must update /tang.ini to match their actual rows and headers. Locate or recover entry 57's exact qualified firmware image to refresh the SD backup, or propose a new reproducible build and deployment cycle; do not silently substitute the unqualified local binary. The card's default Phosphor image remains the older ABI 1.8 core, while the oscilloscope and I2S2 images are separate. The other open items of entry 57 stand, including the Bluetooth ops interface, peek and poke after the next shell release, controller work and simultaneous Bluetooth reconnect discovery.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
