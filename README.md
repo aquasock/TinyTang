@@ -194,7 +194,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`ble`** reports the radio, the heap (free now, the largest free block, any
   allocations refused since boot, and what the stack took when it started), the
   pairings file and both devices.
-- **`crash`** shows how the previous run ended if it crashed or hung, and
+- **`crash`** shows how the previous run ended if it crashed or hung,
+  `crash tasks` lists every task's free stack, and
   `crash test trap | spin | hang` causes each kind on purpose. A hardware
   watchdog resets the board 4 s after it stops being fed; an exception, a
   FreeRTOS assert, a stack overflow, a Bluetooth controller fatal error or a
@@ -321,8 +322,8 @@ revision C and rejects setup or hold violations before publishing its binary.
 HDMI and VGA share the 720p raster and desktop compositor. The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
-VGA pair. The OLED work is committed for handoff; deployment and user testing
-remain pending. Encoder and I2S remain features of Phosphor. The old menu image and build tool
+VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.
+Encoder and I2S remain features of Phosphor. The old menu image and build tool
 remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
 for the register interface and regression commands.
 

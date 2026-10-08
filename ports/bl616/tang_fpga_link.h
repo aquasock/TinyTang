@@ -93,6 +93,11 @@ int  tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length);
 int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
                     uint32_t timeout_ms);
 
+/* Ask the loaded core for its ID once with the legacy command every core
+ * answers.  Takes and releases the lock itself.  False when nothing answered
+ * within timeout_ms. */
+bool tang_fpga_core_id(uint8_t *id, uint32_t timeout_ms);
+
 /* Change the link's rate, for a core that negotiates one (Phosphor's extended
  * protocol switches between 2 and 5 Mbaud around a file stream, EXTCTL-001).
  * The caller holds the lock and has already had the core's agreement: the core

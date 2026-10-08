@@ -354,6 +354,18 @@ int tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
     }
 }
 
+bool tang_fpga_core_id(uint8_t *id, uint32_t timeout_ms)
+{
+    if (tang_fpga_link_open() != 0) {
+        return false;
+    }
+    tang_fpga_lock();
+    tang_fpga_drain();
+    const int sent = tang_fpga_frame(FPGA_CMD_CORE_ID, NULL, 0);
+    tang_fpga_unlock();
+    return sent == 0 && tang_fpga_wait(FPGA_RESP_CORE_ID, id, 1, timeout_ms) == 1;
+}
+
 /* ------------------------------------------------------------------ commands */
 
 static bool resolve_path(tdsh_session_t *session, const char *in,

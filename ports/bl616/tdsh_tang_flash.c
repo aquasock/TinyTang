@@ -104,6 +104,12 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
         tdsh_printf("usage: tangput <size> <path>\r\n");
         return 1;
     }
+    /* The file's bytes come from the USB console, which only that console's
+     * shell may read; from the OLED shell this would take the host's typing. */
+    if (tdsh_bl616_route_current()) {
+        tdsh_printf("tangput: run it from the USB console\r\n");
+        return 1;
+    }
     const uint32_t size = (uint32_t)strtoul(argv[1], NULL, 0);
     const char *path = argv[2];
     if (size == 0) {
@@ -160,6 +166,11 @@ void tang_ini_core_loaded(void);
 /* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
 void tang_phosphor_core_replacing(void);
 
+/* Two shells can now run at once (the OLED terminal's and the console's), and
+ * the JTAG programmer has one set of pins: a second load waits for nothing and
+ * is refused. */
+static bool s_programming;
+
 static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
 {
     if (argc < 2) {
@@ -169,6 +180,14 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
     char real[TDSH_MAX_REAL_PATH];
     if (!resolve_path(session, argv[1], real, sizeof(real))) {
         tdsh_printf("tangload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+    taskENTER_CRITICAL();
+    const bool busy = s_programming;
+    s_programming = true;
+    taskEXIT_CRITICAL();
+    if (busy) {
+        tdsh_printf("tangload: another tangload is running\r\n");
         return 1;
     }
 
@@ -190,6 +209,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
         tang_ini_core_loaded();
         tang_oled_core_loaded();
     }
+    s_programming = false;
     return ok ? 0 : 1;
 }
 

@@ -845,3 +845,57 @@ Resume from the committed sources and fpga/desktop/README.md, preserving the use
 - User Test: NOT RUN
 
 ---
+## 65 COMMIT Unreleased 2026-10-07T20:48:24-07:00
+
+#### Coming From:
+
+Unreleased 9313085
+
+#### Purpose:
+
+Qualify entry 64's OLED terminal for deployment with routing, concurrency and core-transition tests and runtime measurements, then deploy it and obtain the user's hardware acceptance.
+
+#### Outcome:
+
+Review of entry 64 found four defects, fixed with regressions that fail against the committed code. `ports/bl616/phosphor/oled_link.cpp` sent extended READ32 frames once a second to whatever core was loaded, so a game core received frames it does not speak (EXTCTL-004) and each unanswered one stalled `osddesk`, which also watches F12, for 250 ms; it now asks the core's ID once per load through the new `tang_fpga_core_id()` in `ports/bl616/tang_fpga_uart.c`, at most three times a second apart, and sends extended frames only to core `0x54`. `tangput` read the USB console directly from any shell and is now refused from a private route, and a second `tangload` is refused while one programs, both in `ports/bl616/tdsh_tang_flash.c`. `tang_oled_start()` in `ports/bl616/tang_oled.c` could start several shell tasks under concurrent callers and now starts one, and its prompt buffer holds a full path. `crash tasks` in `ports/bl616/tang_crash.c` lists every task's stack margin. The new `tools/tests/test_oled_link.sh`, `test_oled_session.sh` and `test_tang_flash.sh` drive the real sources, the session test on POSIX threads through `tools/tests/stubs/rtos_threads/` inside TinyDesk's window manager, checking one session under eight concurrent starts, output and input isolation between the OLED and console shells, route inheritance by foreground and background script workers, focus-gated keys, and the link's behaviour across core loads, game cores, refused writes and socket changes; the session test passed ten repeated runs, and all 19 host test scripts pass. Firmware `9313085-dirty.41ff066`, 649,600 bytes, SHA-256 `92f18a3442c75ff18765c56ad7d5be1aaccf7cd9f9cf382055eb2bc62b86b540`, was built with `make CHIP=bl616 BOARD=bl616dk` in a clean worktree of `9313085` carrying the firmware and test changes, with no warnings from the changed files, and installed with `tools/tinytang_flash.py` after the user authorised it; entry 64's placement-2 desktop core went onto the card with the accepted ABI 1.0 core saved as `/cores/console138k/rollback/desktop-abi1.0.bin`. After the power cycle the board reported that identity, desktop ABI 1.1 and `0xc0 = 0x0010` applied automatically, and the panel's frame count advanced, but the cursor stayed 0 and the CRC did not change because the core refused every block write with status 5: `fpga/desktop/desktop_regs.sv` read a 32-bit count with words from byte 12, while EXTCTL-002 and the firmware's Tang-Control encoder use a count byte with words from byte 9, and `tools/tests/sim/tb_desktop_uart.sv` had been written to the same wrong layout. Single WRITE32 cell and cursor writes drew correctly on the panel. The decoder now follows EXTCTL-002 and returns the count, the testbench encodes it, rejects the old layout, and replays eight frames made by `tools/tests/sim/gen_desktop_block_frames.cpp` from the firmware's own `fpga_ext_frame.h`; the committed decoder fails that test with the board's status 5, and `tools/tests/test_desktop_core.sh` passes all 45 replies, 388 replayed cells and the PMOD, legacy and video regressions. The Gowin 1.9.11.03 revision-C sweep, with placement 0 rebuilt because a README edit mid-sweep changed its source fingerprint, built all four placements from one fingerprint with zero violations at 3,780 LUTs, 2,313 FFs, 14 BSRAMs and 1.5 DSPs; placement 2 was selected at setup +2.735 ns and hold +0.252 ns, pixel Fmax 93.174 MHz, SHA-256 `4fcc62e6570805b4ea02fb7356c3344e7df90ad980bfe78c66475f1245439873`, and the table was reported before deployment. The refused image was kept as `/cores/console138k/rollback/desktop-abi1.1-countfault.bin`, and the fixed core, 4,463,306 bytes, was installed and loaded with `tangload`; the cursor then followed the OLED shell, the CRC changed after `oledterm run "echo hello"`, and the user confirmed the panel. The README text in `fpga/desktop/` changed again after that build, so the committed tree's fingerprint differs from the image's while the HDL is identical. With the terminal running the heap was 40,896 bytes free of 124,600 with a 37,048-byte largest block, against 72,312 of 130,976 before this cycle, so the terminal costs about 25 KB and its fixed buffers 6.4 KB; `oledterm` had 7,928 of 16,384 stack bytes free and `osddesk` 3,160 of 4,096, with no crash record. The user reported every desktop check passing and accepted the result; the agent's readback afterwards found no OLED-session commands in the shared `~/.tdsh_history`, no `/oled-test.txt` and the panel CRC unchanged since the agent's own command, so the board did not record that session; asked about it, the user confirmed the terminal works functionally. One sent command was appended to a half-typed console line because the probe reports a prompt regardless of a partial line; the agent now clears the line with Ctrl-U before sending. The card's `/bl616-firmware.bin` now holds this firmware, with entry 63's kept as `/bl616-firmware-pre-oled.bin`. Images, logs, sweep summary and source diff are retained in `build/oled-terminal/qualify/`. Both root sessions share `~/.tdsh_history`, so simultaneous entries can lose a history line; that is documented, not fixed, since it needs an upstream change. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed `.ai/core.md` unchanged and settled entries byte-preserved, and validated this entry's header, six sections, prose, Status values, contiguous numbering and the 25-entry count.
+
+#### Next Steps:
+
+The OLED terminal needs no further validation for the tested paths. A desktop session typed in the OLED Terminal window was not captured by the board's own records in this cycle, so if a later cycle touches that window's keyboard path, confirm from the history file or the panel CRC that its keys reach the session. With the terminal open about 23 KB less heap remains on the desktop, so heavy combinations such as the Editor plus a script should be measured before relying on them. The status codes in `desktop_regs.sv` still differ from EXTCTL-002's status 2 for bad count, length or alignment, which the firmware does not distinguish. Still open from earlier entries are the Bluetooth ops interface in the shape of `td_net_ops_t`, `peek` and `poke` after the next shell release, controller work, simultaneous Bluetooth reconnect discovery, the `mkdir -p` mount-root failure, and removing `/editor-7k.txt` and `/editor-9k.txt` from the card.
+
+#### Files Modified:
+
+- README.md
+- fpga/desktop/README.md
+- fpga/desktop/desktop_regs.sv
+- ports/bl616/phosphor/oled_link.cpp
+- ports/bl616/tang_crash.c
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_oled.c
+- ports/bl616/tdsh_tang_flash.c
+- tools/tests/sim/gen_desktop_block_frames.cpp
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/stubs/rtos_threads/FreeRTOS.h
+- tools/tests/stubs/rtos_threads/bflb_mtimer.h
+- tools/tests/stubs/rtos_threads/bflb_sec_trng.h
+- tools/tests/stubs/rtos_threads/rtos_threads.c
+- tools/tests/stubs/rtos_threads/semphr.h
+- tools/tests/stubs/rtos_threads/task.h
+- tools/tests/stubs/rtos_threads/tinytang_build_id.h
+- tools/tests/stubs/tang_flash/ff.h
+- tools/tests/tb_oled_link.cpp
+- tools/tests/tb_oled_session.c
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_oled_link.sh
+- tools/tests/test_oled_session.sh
+- tools/tests/test_tang_flash.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

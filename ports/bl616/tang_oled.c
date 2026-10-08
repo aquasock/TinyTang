@@ -84,7 +84,7 @@ static void shell_task(void *arg)
     (void)arg;
     tdsh_bl616_route_set(&s_route);
     const tdsh_terminal_io_t io={.read_byte=io_read,.write_bytes=io_write,.columns=columns};
-    char line[512],prompt[96];
+    char line[512],prompt[TDSH_MAX_PATH+32];
     route_write(NULL,"OLED Terminal 24x16\r\n",21);
     for (;;) {
         snprintf(prompt,sizeof(prompt),"\033[1;32moled\033[0m:%s# ",s_session->cwd);
@@ -98,10 +98,9 @@ static void shell_task(void *arg)
         } else if (rc!=-EINTR) vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
-int tang_oled_start(void)
+static bool s_starting;
+static int start_claimed(void)
 {
-    if (s_task) return 0;
-    // Called by the UI or console command, never by the polling task.
     if (!s_lock) s_lock=xSemaphoreCreateMutex();
     if (!s_lock) return -ENOMEM;
     s_session=calloc(1,sizeof(*s_session));
@@ -112,10 +111,28 @@ int tang_oled_start(void)
     xSemaphoreTake(s_lock,portMAX_DELAY);
     oled_vterm_init(&s_vt,24,16);s_vt.reply=reply;s_revision++;
     xSemaphoreGive(s_lock);
-    if (xTaskCreate(shell_task,"oledterm",4096,NULL,3,&s_task)!=pdPASS) {
+    TaskHandle_t task=NULL;
+    if (xTaskCreate(shell_task,"oledterm",4096,NULL,3,&task)!=pdPASS) {
         free(s_session);s_session=NULL;return -ENOMEM;
     }
+    taskENTER_CRITICAL();
+    s_task=task;
+    taskEXIT_CRITICAL();
     return 0;
+}
+int tang_oled_start(void)
+{
+    // Called by the UI and by any shell's oledterm, never by the polling
+    // task. One caller starts the session; a concurrent one is told busy.
+    taskENTER_CRITICAL();
+    const bool running=s_task!=NULL, claimed=!running && !s_starting;
+    if (claimed) s_starting=true;
+    taskEXIT_CRITICAL();
+    if (running) return 0;
+    if (!claimed) return -EBUSY;
+    int rc=start_claimed();
+    s_starting=false;
+    return rc;
 }
 // Quantize xterm colours to the OLED's 16-colour palette.
 static uint8_t colour(uint8_t c)

@@ -1,5 +1,7 @@
 // TinyTang desktop register endpoint. SPDX-License-Identifier: GPL-3.0-only
 // Validate complete CRC-protected requests before any cell or socket write.
+// A 0x12 block write follows EXTCTL-002: version, opcode, sequence, address,
+// a count byte, then the words, so its frame length is 12 + 4 * count.
 module desktop_regs (
     input logic clk, resetn, start, byte_valid, finish, block_request,
     input logic [7:0] byte_data,
@@ -44,21 +46,22 @@ module desktop_regs (
     wire supported_word=(write_data&32'hffffc00f)==0 &&
         ((p0<=1 && p1<=1)||(p0==2 && p1==3)||(p0==3 && p1==2));
     wire cell_address=address>=32'h200 && address<32'h800 && address[1:0]==0;
-    wire [31:0] last_address=address+((write_data-32'd1)<<2);
+    wire [7:0] block_count=packet[47:40];
+    wire [31:0] last_address=address+(({24'b0,block_count}-32'd1)<<2);
     logic [7:0] status;
     logic [31:0] read_data;
     always_comb begin
         status=0;read_data=0;
         if((!is_block && (length_q!=15 || received!=14)) ||
-           (is_block && (write_data<1 || write_data>64 ||
-            length_q!=15+(write_data<<2) || received!=length_q-1)))status=5;
+           (is_block && (block_count<1 || block_count>64 ||
+            length_q!=16'd12+{6'b0,block_count,2'b0} || received!=length_q-1)))status=5;
         else if(packet[111:104]!=1)status=1;
         else if(request_crc!=crc_tail)status=3;
         else if(is_block) begin
             if(opcode!=4)status=2;
             else if(!cell_address || last_address<address || last_address>=32'h800)status=4;
             else if(invalid_word)status=6;
-            else read_data=write_data;
+            else read_data={24'b0,block_count};
         end else if(opcode==0)read_data=32'h13; // read32, write32, validated block write
         else if(opcode==1) begin
             case(address)
@@ -104,10 +107,10 @@ module desktop_regs (
                 if(received<2047)received<=received+11'd1;
                 crc_tail<={crc_tail[7:0],byte_data};
                 if({5'b0,received}+16'd3<length_q)request_crc<=crc_byte(request_crc,byte_data);
-                if(is_block && received>=12 && received<268 &&
+                if(is_block && received>=9 && received<265 &&
                    {5'b0,received}+16'd3<length_q) begin
                     assembly<={assembly[23:0],byte_data};
-                    if(received[1:0]==3) begin
+                    if(received[1:0]==0) begin
                         words[(received-11'd12)>>2]<={assembly[23:0],byte_data};
                         if(assembly[23:8]!=0)invalid_word<=1;
                     end
@@ -134,7 +137,7 @@ module desktop_regs (
                     oled_cell_we<=1;
                     oled_cell_index<=((address-32'h200)>>2)+apply_index;
                     oled_cell_word<=words[apply_index][15:0];
-                    if({25'b0,apply_index}+32'd1==write_data)state<=SEAL;
+                    if(apply_index+7'd1=={1'b0,block_count[6:0]})state<=SEAL;
                     else apply_index<=apply_index+7'd1;
                 end
                 WAIT_ACK:if(ack_sync==socket_request)state<=SEAL;

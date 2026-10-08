@@ -15,13 +15,16 @@ verilator --binary --timing -j 4 -Wno-fatal -Wno-DECLFILENAME \
     "$source_dir/src/iosys/iosys_bl616.v" "$source_dir/src/iosys/uart_fixed.v" \
     "$root/fpga/desktop/desktop_regs.sv" > "$work/uart.log" 2>&1 || \
     { cat "$work/uart.log"; exit 1; }
+c++ -std=gnu++17 -Wall -Wextra -Werror -I "$root/ports/bl616/phosphor" \
+    "$root/tools/tests/sim/gen_desktop_block_frames.cpp" -o "$work/gen_frames"
+"$work/gen_frames" "$work/uart"
 (cd "$work/uart" && ./tb)
 python3 - "$work/uart/desktop-replies.hex" <<'PY'
 import binascii
 import sys
 from pathlib import Path
 replies=Path(sys.argv[1]).read_text().splitlines()
-assert len(replies)==36
+assert len(replies)==45
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15

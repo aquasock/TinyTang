@@ -128,19 +128,23 @@ module tb_desktop_uart;
             #1000;
         end
     endtask
+    // EXTCTL-002: version, opcode, sequence, address, a count byte, the words
+    // and the CRC.  Fault 3 sends the 32-bit count this core once expected.
     task automatic block_write(input [31:0] addr,input integer count,input integer fault,input [7:0] status);
         reg [7:0] bytes[0:269];
         reg [15:0] c;
         reg [31:0] value;
-        integer n,before_reply,before_writes;
+        integer n,header,before_reply,before_writes;
         begin
             transaction_sequence++;
-            n=14+count*4;
+            header=fault==3 ? 12:9;
+            n=header+2+count*4;
             bytes[0]=1;bytes[1]=4;bytes[2]=8'(transaction_sequence>>8);bytes[3]=8'(transaction_sequence);
-            for(integer i=0;i<4;i++) begin bytes[4+i]=addr[31-i*8 -:8];bytes[8+i]=8'(count>>(24-i*8));end
+            for(integer i=0;i<4;i++) begin bytes[4+i]=addr[31-i*8 -:8];if(fault==3)bytes[8+i]=8'(count>>(24-i*8));end
+            if(fault!=3)bytes[8]=8'(count);
             for(integer i=0;i<count;i++) begin
                 value=fault==2 && i==count-1 ? 32'h00010741:32'h00000f41+i;
-                for(integer j=0;j<4;j++)bytes[12+i*4+j]=value[31-j*8 -:8];
+                for(integer j=0;j<4;j++)bytes[header+i*4+j]=value[31-j*8 -:8];
             end
             c=crc_byte(16'hffff,8'h12);
             for(integer i=0;i<n-2;i++)c=crc_byte(c,bytes[i]);
@@ -157,6 +161,42 @@ module tb_desktop_uart;
             if(status==0) for(integer i=0;i<count;i++)
                 if(cells[((addr-32'h200)>>2)+i]!==16'h0f41+16'(i))$fatal(1,"block cell order mismatch");
             #1000;
+        end
+    endtask
+    // Replay the bytes the firmware's own encoder produces
+    // (gen_desktop_block_frames.cpp) and compare the cells it expects.
+    logic [7:0] fw[0:4095];
+    logic [15:0] fw_cells[0:383];
+    task automatic firmware_frames;
+        integer fd,frames,total,at,len,before_reply,before_writes,words;
+        reg [31:0] addr;
+        reg [15:0] seq;
+        begin
+            fd=$fopen("firmware-blocks.count","r");
+            if(fd==0 || $fscanf(fd,"%d %d",frames,total)!=2)$fatal(1,"no firmware block frames");
+            $fclose(fd);
+            $readmemh("firmware-blocks.hex",fw);
+            $readmemh("firmware-cells.hex",fw_cells);
+            at=0;words=0;
+            for(integer f=0;f<frames;f++) begin
+                len={fw[at+1],fw[at+2]};
+                seq={fw[at+6],fw[at+7]};
+                addr={fw[at+8],fw[at+9],fw[at+10],fw[at+11]};
+                before_reply=reply_count;before_writes=writes;
+                for(integer i=0;i<3+len;i++)send_byte(fw[at+i]);
+                wait(reply_count>before_reply);
+                if(reply[111:104]!=8'h84 || reply[103:96]!=0 || reply[95:80]!=seq ||
+                   reply[79:48]!=addr || reply[47:16]!=32'(fw[at+12]))
+                    $fatal(1,"firmware block %0d refused: %030h",f,reply);
+                if(writes-before_writes!=int'(fw[at+12]))$fatal(1,"firmware block %0d partial",f);
+                words+=int'(fw[at+12]);
+                at+=3+len;
+                #1000;
+            end
+            if(at!=total)$fatal(1,"firmware frame bytes %0d of %0d",at,total);
+            for(integer i=0;i<384;i++)
+                if(cells[i]!==fw_cells[i])$fatal(1,"firmware cell %0d is %h, expected %h",i,cells[i],fw_cells[i]);
+            $display("desktop UART: %0d firmware block frames, %0d cells PASS",frames,words);
         end
     endtask
     initial begin
@@ -204,6 +244,8 @@ module tb_desktop_uart;
         block_write(32'h1fc,1,0,4);
         block_write(32'hfffffffc,2,0,4);
         block_write(32'h200,0,0,5);
+        block_write(32'h200,64,3,5);
+        firmware_frames();
         request(2,32'hc0,0,0,0,0);
         // The original desktop commands still work alongside register replies.
         send_byte(8'haa); send_byte(0); send_byte(2); send_byte(8'h15); send_byte(1);
@@ -214,5 +256,5 @@ module tb_desktop_uart;
         $display("desktop UART: %0d register responses, ID, keyboard traffic and layer enable PASS",reply_count);
         $finish;
     end
-    initial begin #20_000_000; $fatal(1,"desktop UART test timeout"); end
+    initial begin #60_000_000; $fatal(1,"desktop UART test timeout"); end
 endmodule

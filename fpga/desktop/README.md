@@ -56,8 +56,8 @@ released or a complete VGA pair, in either order, with independent row flips.
 Unsupported module words are rejected without changing the active word.
 Sockets start released after reset. ABI 1.1 additionally supports OLEDrgb
 on either socket, including two panels sharing the same terminal. Encoder
-and I2S remain Phosphor features. The OLED build has passed simulation and
-timing; hardware deployment and user acceptance remain pending.
+and I2S remain Phosphor features. The OLED build is deployed and was
+accepted by the user on hardware (core-log entry 65).
 
 The boot script loads `/cores/console138k/desktop.bin`. Preserve the old
 `nestang-menu.bin` and boot script on the card for rollback. Firmware must
@@ -68,7 +68,12 @@ include the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 The endpoint accepts version-1 extended TangCore command `0x10` with the
 existing big-endian fields and CRC-16/CCITT-FALSE. Read32 and write32 are
 supported; validated block writes use command `0x12` and capabilities
-returns `0x13`. Replies use response `0x16`.
+returns `0x13`. Replies are `0x10` frames. A block write follows EXTCTL-002:
+version, opcode `0x04`, sequence, first address, a one-byte count, the
+words and the CRC, a frame length of 12 plus four per word; the reply's
+data is the count. ABI 1.1's first build read a 32-bit count instead and
+refused every block the firmware sent; the UART regression now replays
+frames made by the firmware's own encoder.
 
 | Address | Access | Meaning |
 |---|---|---|
@@ -101,7 +106,7 @@ also runs without `DESKTOP_CORE`. A streamed compositor regression independently
 checks the physical VGA color/sync pins over a full raster and all HDMI visible
 pixels against a reference glyph image, including line and frame wraps.
 
-## OLED terminal and deferred handoff
+## OLED terminal
 
 The OLED is a separate shell display with a fixed 24×16 grid, filling its
 96×64 pixels with original 4×4 glyphs. ASCII 32–126 is supported; unsupported
@@ -119,11 +124,17 @@ and compact terminal emulator, fixed at 24 columns for the line editor.
 Keyboard and paste input go there only when its window has focus; output
 continues while unfocused or closed. The shell task and script workers use
 a task-local terminal route, separate from TinyConsole and the existing
-Terminal app. Opening the app allocates a session and a 16 KB task stack;
-that hardware memory budget remains to be measured. The background desktop
-poll task sends changed cell blocks and cursor state. It pauses for core
-replacement and checks desktop identity, ABI and OLED configuration before
-writing. Starting another desktop from the OLED shell is refused.
+Terminal app. Opening the app allocates a session and a 16 KB task stack,
+about 25 KB of heap on hardware; `crash tasks` lists every task's stack
+margin. The background desktop poll task sends changed cell blocks and
+cursor state. After each core load it asks the core's ID once with the
+legacy command and sends extended frames only to this desktop core, so a
+game core is never sent them. It pauses for core replacement and checks
+desktop identity, ABI and OLED configuration once a second. Starting
+another desktop, or `tangput`, from the OLED shell is refused, and a second
+`tangload` is refused while one is programming. Both root sessions share
+`~/.tdsh_history`, so commands entered in both at the same instant can lose
+a history line.
 
 Diagnostic shell commands are `oledterm start`, `oledterm status`, and
 `oledterm run "echo hello"`. The last submits a command to the independent
@@ -134,15 +145,12 @@ proof sheet under `build/oled-terminal/`. Additional regressions:
 bash tools/tests/test_oled_vterm.sh
 bash tools/tests/test_desktop_oled.sh
 bash tools/tests/test_osd_desk.sh
+bash tools/tests/test_oled_link.sh
+bash tools/tests/test_oled_session.sh
+bash tools/tests/test_tang_flash.sh
 ```
 
-At the user's handoff request, no new bitstream or firmware has been deployed.
-The card configuration was changed to OLEDrgb on PMOD0, unflipped, and PMOD1
-released; the old desktop core was explicitly released at `0xc0 = 0` before
-that change. The user's last connection instruction is **wait**. Do not deploy
-until the user restores the console connection and says ready. Read entry 64
-in `.ai/core-log.md` for retained artifacts and the remaining validation.
-Firmware integration still needs dedicated session-routing and core-transition
-tests, runtime heap/stack checks and a final build before deployment. Physical
-font readability, focus isolation, editing, wrapping/scrolling, unsupported
-characters and file read/write acceptance remain untested.
+`test_oled_session.sh` runs the real app, terminal routes, script workers and
+printf layer on POSIX threads (`tools/tests/stubs/rtos_threads/`) inside
+TinyDesk's window manager. The OLED-and-encoder card layout uses
+`pmod0 = oledrgb` with PMOD1 released, giving `0xc0 = 0x0010`.

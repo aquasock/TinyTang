@@ -494,9 +494,34 @@ void tang_crash_report(void)
 
 /* --------------------------------------------------------------- command */
 
+/* Every task's stack margin, the high-water mark in bytes, so a new task's
+ * budget can be checked from the console.  The table is allocated only for
+ * the listing; with no room for it the listing says so. */
+static int crash_tasks(void)
+{
+    const UBaseType_t room = uxTaskGetNumberOfTasks() + 4;
+    TaskStatus_t *status = (TaskStatus_t *)malloc(room * sizeof(TaskStatus_t));
+    if (status == NULL) {
+        tdsh_printf("crash: no memory for the task list\r\n");
+        return 1;
+    }
+    const UBaseType_t count = uxTaskGetSystemState(status, room, NULL);
+    for (UBaseType_t i = 0; i < count; i++) {
+        tdsh_printf("crash: task %-10s prio %lu  stack free %lu bytes\r\n",
+                    status[i].pcTaskName ? status[i].pcTaskName : "?",
+                    (unsigned long)status[i].uxCurrentPriority,
+                    (unsigned long)(status[i].usStackHighWaterMark * sizeof(StackType_t)));
+    }
+    free(status);
+    return 0;
+}
+
 static int cmd_crash(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
+    if (argc == 2 && strcmp(argv[1], "tasks") == 0) {
+        return crash_tasks();
+    }
     if (argc >= 3 && strcmp(argv[1], "test") == 0) {
         if (strcmp(argv[2], "trap") == 0) {
             tdsh_printf("crash: executing an illegal instruction\r\n");
@@ -542,8 +567,8 @@ static int cmd_crash(tdsh_session_t *session, int argc, char **argv)
 }
 
 static const tdsh_command_t s_crash_commands[] = {
-    { "crash", "crash [test trap|hang|spin]",
-      "Show how the previous run ended (crash or hang record), or cause one to test it",
+    { "crash", "crash [tasks | test trap|hang|spin]",
+      "Show how the previous run ended (crash or hang record), list task stack margins, or cause a crash to test it",
       cmd_crash, 0 },
 };
 
