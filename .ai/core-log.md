@@ -743,3 +743,41 @@ Correct VGA sync and blanking alignment with the registered compositor pixels, a
 - User Test: FAIL
 
 ---
+
+## 63 COMMIT Unreleased 2026-10-07T19:02:37-07:00
+
+#### Coming From:
+
+Unreleased e7c8d8e
+
+#### Purpose:
+
+Correct the desktop core's VGA left-edge artifact and qualify the fix with a four-placement sweep before deployment.
+
+#### Outcome:
+
+VGA blanking and sync now register on the same pixel-clock edge as the compositor's RGB, aligning the complete active region without changing the HDMI or text-layer pipeline. The new regression streams the actual compositor and HDMI raster, checks physical VGA pins against an independent glyph image through line and frame wraps, and separately checks every HDMI visible pixel. Before the fix it reproduced 720 left-edge blanking leaks and 2,942 VGA color or sync mismatches while all 921,600 HDMI visible pixels passed; afterward it passed all 1,237,500 VGA raster pixels and all HDMI pixels with no leak. The UART, independent reply CRC, PMOD row/flip/reset/frame-commit and legacy desktop decoder regressions also passed. New deterministic sweep and reporting tools build placements 0-3, validate all timing summaries, report resources and select the greatest setup margin; a report-parser check also rejected mixed-source variants. The requested Gowin 1.9.11.03 revision-C sweep passed all four variants with zero setup/hold violations, and its resource and timing table was reported before deployment. Every variant uses 2,655 LUTs, 1,777 FFs, 12 BSRAM, one DSP and three PLLs; ALU use is 302 except placement 2's 301. Placement 1 was selected at setup +5.135 ns and hold +0.153 ns, with reported pixel Fmax 120.002 MHz against the unchanged 74.25 MHz target. Its 4,524,032-byte image, SHA-256 `c0237974d6404833c3aa15064586f4669b9bf73fc5644057842228c71f3e9f7f`, replaced the canonical desktop image after saving the previous image at `/cores/console138k/rollback/desktop-unaligned.bin`; the normal boot script loaded it and automatically applied `0x0230`. The user reported the requested console left-edge, desktop keyboard/pointer, repeated F12 and power-cycle checks passing and returned to the console. Final diagnostics confirmed firmware `8613cc9-dirty.21e7755`, desktop ID `0x54`, ABI 1.0, matching VGA declaration, zero refused cells and no crash record. An agent-run Phosphor launch confirmed ID `0x50`, ABI 1.10, scope control `0x0b` and automatic `0x0230`, then successfully returned through the boot script to the desktop core; no track was started. The retained accepted 637,904-byte firmware image from entry 62 was uploaded to refresh `/bl616-firmware.bin`, preserving the old 633,296-byte backup at `/bl616-firmware-pre-desktop.bin`; temporary upload and script files were removed. No firmware was rebuilt or reflashed in this cycle. The required core-syntax audit re-read core.md and core-syntax.md, inspected the complete .ai diff, confirmed unchanged directives and byte-preserved settled history, and validated six sections, contiguous actual numbering and the 23-entry cap count; the checker passes with headings normalized in a temporary audit copy, leaving its existing start-at-one mismatch unchanged.
+
+#### Next Steps:
+
+No validation remains for this corrected desktop boot and VGA cycle. The canonical desktop core and Phosphor launcher both use the existing /tang.ini declaration, and the SD firmware backup now matches the accepted running build. The separate Bluetooth ops, controller, reconnect and filesystem work carried from earlier entries remains outside this cycle.
+
+#### Files Modified:
+
+- fpga/desktop/README.md
+- fpga/desktop/desktop_pmod.sv
+- tools/check_gowin_timing.py
+- tools/report_desktop_sweep.py
+- tools/sweep_desktop_core.sh
+- tools/tests/sim/tb_desktop_pmod.sv
+- tools/tests/sim/tb_desktop_video.sv
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_video.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

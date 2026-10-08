@@ -14,7 +14,8 @@ module tb_desktop_pmod;
         .rgb(rgb),.socket_word(word),.socket_request(request),.socket_ack(ack),
         .pmod0_io(p0),.pmod1_io(p1));
     task automatic sample(input integer x,input integer y);
-        @(negedge pixel_clk); cx=11'(x); cy=10'(y); #1;
+        @(negedge pixel_clk); cx=11'(x); cy=10'(y);
+        @(posedge pixel_clk); #1;
     endtask
     task automatic apply(input [15:0] next_word);
         reg old_ack;
@@ -87,7 +88,7 @@ module tb_desktop_pmod;
         end
         if(hs_pixels!=40*750 || vs_pixels!=5*1650 || active_pixels!=1280*720)
             $fatal(1,"raster mismatch: H=%0d V=%0d active=%0d",hs_pixels,vs_pixels,active_pixels);
-        resetn=0; @(negedge pixel_clk); #1;
+        resetn=0; @(posedge pixel_clk); #1;
         if(p0!==8'hzz || p1!==8'hzz) $fatal(1,"reset did not release sockets");
         $display("desktop PMOD: row permutations, frame commit, blanking and 720p sync PASS");
         $finish;

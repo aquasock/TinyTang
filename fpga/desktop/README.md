@@ -16,6 +16,9 @@ in `NESTANG_DIR` (default `../tangcore/nestang`), Gowin EDA 1.9.11.03 and Python
 tools/tests/test_desktop_core.sh
 tools/build_desktop_core.sh 2
 # build/desktop/place2/desktop.bin
+tools/sweep_desktop_core.sh
+# build/desktop/sweep/{place0,place1,place2,place3}/desktop.bin
+# build/desktop/sweep/summary.md and summary.json
 ```
 
 Placement accepts 0–4, default 2. `GOWIN_SH` overrides the tool executable and
@@ -26,6 +29,9 @@ target GW5AST-LV138PG484AC1/I0 revision C with a 50 MHz oscillator, 21.492 MHz
 main clock and 74.25 MHz pixel clock. VGA uses the HDMI 1280×720 raster,
 1650×750 total, positive 40-pixel HSync and 5-line VSync. RGB is the top four
 bits of each compositor channel, forced black outside the visible region.
+VGA blanking and sync are registered once, matching the compositor's RGB
+register. Using raw raster timing with that RGB exposes a previous-line
+blanking pixel at the left edge and drops the last visible pixel.
 
 The HDL and carried upstream modifications are GPL-3.0-only. Build tools are
 MIT; see `THIRD_PARTY.md`. The synchronizers and held-data handshake were
@@ -83,4 +89,6 @@ independent Python implementation, legacy keyboard/layer traffic, invalid
 requests and acknowledgement latency. An independent PMOD simulation checks
 row mapping and flips, released pins, frame-boundary commits, blanking and
 sync counts across a full 720p frame. The legacy desktop decoder regression
-also runs without `DESKTOP_CORE`.
+also runs without `DESKTOP_CORE`. A streamed compositor regression independently
+checks the physical VGA color/sync pins over a full raster and all HDMI visible
+pixels against a reference glyph image, including line and frame wraps.

@@ -30,14 +30,24 @@ module desktop_pmod (
         end
     end
 
-    wire visible = cx < 1280 && cy < 720;
-    // nes2hdmi's registered RGB is the pixel sampled by HDMI at the current
-    // coordinate. VGA presents that same value, black through blanking.
+    // The compositor registers RGB from cx/cy. Register its timing on the
+    // same edge, as HDMI does with video_data_period; raw timing would expose
+    // the previous line's blanking glyph at x=0 and drop the last active pixel.
+    logic visible, hs, vs;
+    always_ff @(posedge pixel_clk) begin
+        if (!resetn) begin
+            visible <= 0;
+            hs <= 0;
+            vs <= 0;
+        end else begin
+            visible <= cx < 1280 && cy < 720;
+            hs <= cx >= 1390 && cx < 1430;
+            vs <= cy >= 725 && cy < 730;
+        end
+    end
     wire [3:0] red = visible ? rgb[23:20] : 4'b0;
     wire [3:0] green = visible ? rgb[15:12] : 4'b0;
     wire [3:0] blue = visible ? rgb[7:4] : 4'b0;
-    wire hs = cx >= 1390 && cx < 1430;
-    wire vs = cy >= 725 && cy < 730;
     wire [7:0] j1 = {blue, red};
     wire [7:0] j2 = {2'b0, vs, hs, green};
 

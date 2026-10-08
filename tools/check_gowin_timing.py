@@ -63,6 +63,7 @@ def check(path):
         margins.append(min(slacks))
     print(f"timing PASS: setup {margins[0]:+.3f} ns, hold {margins[1]:+.3f} ns; "
           f"{len(summaries[0])-1} clock/analysis rows have zero violations")
+    return {"setup_ns": margins[0], "hold_ns": margins[1], "violations": 0}
 
 
 if __name__ == "__main__":

@@ -35,4 +35,5 @@ vvp "$work/pmod"
 NESTANG_DIR="$source_dir" bash "$root/tools/tests/test_iosys_desk.sh" > "$work/legacy.log" 2>&1 || \
     { tail -80 "$work/legacy.log"; exit 1; }
 tail -5 "$work/legacy.log"
+NESTANG_DIR="$source_dir" bash "$root/tools/tests/test_desktop_video.sh"
 echo 'desktop core: reconstruction and affected regressions PASS'
