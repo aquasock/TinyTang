@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 `timescale 1ns/1ps
 module tb_desktop_uart;
-    logic clk=0, pixel_clk=0, resetn=0, uart_rx=1;
+    logic clk=0, pixel_clk=0, ref_clk=0, resetn=0, uart_rx=1;
     always #23.265 clk=~clk;
     always #6.734 pixel_clk=~pixel_clk;
+    // The clock monitor's 50 MHz crystal reference: 20 ns, the timebase every
+    // rate is measured against (fpga/desktop/clock_monitor.sv).
+    always #10 ref_clk=~ref_clk;
     wire uart_tx;
     wire [15:0] socket_word;
     wire socket_request;
@@ -32,7 +35,7 @@ module tb_desktop_uart;
         cells[cell_index]=cell_word;writes++;
     end
     iosys_bl616 #(.FREQ(21_492_000), .CORE_ID(16'h0054)) dut (
-        .clk(clk), .hclk(pixel_clk), .resetn(resetn),
+        .clk(clk), .hclk(pixel_clk), .resetn(resetn), .sys_clk(ref_clk),
         .overlay(), .overlay_x(8'd0), .overlay_y(8'd0), .overlay_color(),
         .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
         .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
@@ -125,6 +128,35 @@ module tb_desktop_uart;
                 reply[79:48]!=addr || reply[47:16]!=expected)
                 $fatal(1,"response mismatch: %030h, transaction_sequence %d",reply,transaction_sequence);
             if (socket_request!=socket_ack) $fatal(1,"reply preceded socket acknowledgement");
+            #1000;
+        end
+    endtask
+    // Read32 of a register whose value is not known ahead of time -- the clock
+    // monitor's free-running counters.  Checks the frame the response arrives
+    // in (type, opcode, sequence, address) but not the value, which it returns
+    // in rd_value with the core's status in rd_status.
+    logic [31:0] rd_value;
+    logic [7:0] rd_status;
+    task automatic read32(input [31:0] addr);
+        reg [111:0] p;
+        reg [15:0] c;
+        integer before_reply,length;
+        begin
+            transaction_sequence=transaction_sequence+1;
+            p={8'h01,8'h01,16'(transaction_sequence),addr,32'b0,16'b0};
+            c=crc_byte(16'hffff,8'h10);
+            for(integer i=0;i<12;i=i+1) c=crc_byte(c,p[111-i*8 -:8]);
+            p[15:0]=c;
+            length=15;
+            before_reply=reply_count;
+            send_byte(8'haa); send_byte(0); send_byte(8'(length)); send_byte(16);
+            for(integer i=0;i<length-1;i=i+1) send_byte(p[111-i*8 -:8]);
+            wait(reply_count>before_reply);
+            if(reply[119:112]!=1 || reply[111:104]!=8'h81 ||
+               reply[95:80]!=16'(transaction_sequence) || reply[79:48]!=addr)
+                $fatal(1,"read32 response mismatch: %030h @%0d",reply,addr);
+            rd_status=reply[103:96];
+            rd_value=reply[47:16];
             #1000;
         end
     endtask
@@ -247,6 +279,46 @@ module tb_desktop_uart;
         block_write(32'h200,64,3,5);
         firmware_frames();
         request(2,32'hc0,0,0,0,0);
+        // ---------------------------------------------------- clock monitor --
+        // The counters free-run, so the check is on their RATES against the
+        // three clocks the bench drives -- 46.53 ns (21.492 MHz), 13.468 ns
+        // (74.25 MHz) and 20 ns (50 MHz) -- using the reference counter as the
+        // timebase, which is what the instrument is for.  A dead or
+        // wrong-domain counter reads zero or the wrong ratio; the tolerance
+        // absorbs the few hundred microseconds the sequential reads take.
+        begin
+            reg [31:0] a0,a1,a2,a3,a4,b0,b1,b2,b3,b4,dref;
+            integer dclk,dpix,dclkb,dpixb;
+            request(1,32'h134,0,0,0,32'h4d4f4e31);   // "MON1" stamp
+            read32(32'h120); a0=rd_value; read32(32'h124); a1=rd_value;
+            read32(32'h128); a2=rd_value; read32(32'h12c); a3=rd_value;
+            read32(32'h130); a4=rd_value;
+            #20_000_000;
+            read32(32'h120); b0=rd_value; read32(32'h124); b1=rd_value;
+            read32(32'h128); b2=rd_value; read32(32'h12c); b3=rd_value;
+            read32(32'h130); b4=rd_value;
+            dref=b4-a4;
+            dclk=b0-a0; dclkb=b1-a1; dpix=b2-a2; dpixb=b3-a3;
+            if(a4==0 || dref==0) $fatal(1,"reference counter did not run");
+            // Rates in 64-bit: dclk/dref must equal clk/ref (21.492/50), and
+            // dpix/dref must equal 74.25/50, each within one percent.
+            begin : rate_checks
+                longint lhs, rhs, tol;
+                lhs=longint'(dclk)*50_000_000; rhs=longint'(dref)*21_492_000; tol=rhs/100;
+                if(lhs>rhs+tol || lhs<rhs-tol)
+                    $fatal(1,"clk rate wrong: d=%0d of ref d=%0d",dclk,dref);
+                lhs=longint'(dpix)*50_000_000; rhs=longint'(dref)*74_250_000; tol=rhs/100;
+                if(lhs>rhs+tol || lhs<rhs-tol)
+                    $fatal(1,"pixel rate wrong: d=%0d of ref d=%0d",dpix,dref);
+            end
+            // Probe B of each clock must agree with probe A: both sites saw it.
+            if(!(dclkb*100 < dclk*101 && dclkb*100 > dclk*99))
+                $fatal(1,"clk probe B disagrees: A=%0d B=%0d",dclk,dclkb);
+            if(!(dpixb*100 < dpix*101 && dpixb*100 > dpix*99))
+                $fatal(1,"pixel probe B disagrees: A=%0d B=%0d",dpix,dpixb);
+            $display("clock monitor: clk=%0d/ref=%0d pix=%0d/ref=%0d probes agree PASS",
+                     dclk,dref,dpix,dref);
+        end
         // The original desktop commands still work alongside register replies.
         send_byte(8'haa); send_byte(0); send_byte(2); send_byte(8'h15); send_byte(1);
         #1000;
@@ -256,5 +328,5 @@ module tb_desktop_uart;
         $display("desktop UART: %0d register responses, ID, keyboard traffic and layer enable PASS",reply_count);
         $finish;
     end
-    initial begin #60_000_000; $fatal(1,"desktop UART test timeout"); end
+    initial begin #200_000_000; $fatal(1,"desktop UART test timeout"); end
 endmodule

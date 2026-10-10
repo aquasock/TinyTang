@@ -89,6 +89,17 @@ Nothing in this project sends `0x13`/`0x14`/`0x15` today, so the layer is in the
 bitstream and never enabled. The transport constants are defined in
 `ports/bl616/tang_fpga_link.h`.
 
+## 0002-clock-monitor.patch (desktop)
+
+Wires the clock monitor's clocks through to the desktop register endpoint. It
+adds a `sys_clk` input to `iosys_bl616` (under `DESKTOP_CORE`), hands
+`desktop_regs` the pixel clock and the 50 MHz crystal reference, and connects
+the crystal in `nestang_top`. Kept as its own patch rather than folded into
+`desktop/0001` so the monitor -- a diagnostic instrument, not part of the
+desktop host -- can be dropped without disturbing the host wiring. The
+counters themselves live in this project's own `fpga/desktop/clock_monitor.sv`,
+which the desktop build copies in, not in the patch.
+
 ## Conventions
 
 - One patch per coherent change, `NNNN-short-slug.patch`, numbered in the order

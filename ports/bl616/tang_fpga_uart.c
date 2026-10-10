@@ -39,6 +39,10 @@
 //                     without turning it off plays its music behind a black
 //                     screen carrying nothing but the core's logo, which
 //                     looks exactly like a video fault and is not one.
+//   0x10 <request>    the core's CRC-16-protected register endpoint (opcode 1
+//                     reads a 32-bit register).  The clock monitor's cycle
+//                     counters are read this way -- `fmon` below, and see
+//                     fpga/desktop/clock_monitor.sv for what they are.
 //
 // The sequence for a cartridge is three steps and is the reference
 // firmware's, unchanged:
@@ -368,6 +372,177 @@ bool tang_fpga_core_id(uint8_t *id, uint32_t timeout_ms)
 
 /* ------------------------------------------------------------------ commands */
 
+/* CRC-16/CCITT-FALSE (poly 0x1021, init 0xffff), the core's crc_byte in
+ * desktop_regs.sv, byte for byte.  The extended request is protected with it,
+ * so this must match or the core answers status 3 (bad CRC) and nothing else. */
+static uint16_t fpga_crc16(uint16_t crc, uint8_t data)
+{
+    crc ^= (uint16_t)data << 8;
+    for (int i = 0; i < 8; i++)
+        crc = (crc & 0x8000u) ? (uint16_t)((crc << 1) ^ 0x1021u)
+                              : (uint16_t)(crc << 1);
+    return crc;
+}
+
+/* Read one 32-bit register from the core's desktop register endpoint.
+ *
+ * The request is 14 bytes of payload under frame type 0x10:
+ *
+ *   version opcode seq_hi seq_lo addr[3..0] value[3..0] crc_hi crc_lo
+ *
+ * opcode 1 is read32 and the value field is ignored (zero here); the CRC
+ * covers the type byte and the first twelve payload bytes.  The reply is 15
+ * bytes and carries the register in bytes 9..12, big-endian, with the core's
+ * status in byte 2 (0 = ok).  Caller need not hold the lock. */
+static bool fpga_ext_read32(uint32_t address, uint32_t *value, uint8_t *status)
+{
+    uint8_t req[14];
+    memset(req, 0, sizeof(req));
+    req[0] = 1;                                   /* extended-request version */
+    req[1] = 1;                                   /* opcode: read32           */
+    req[4] = (uint8_t)(address >> 24);
+    req[5] = (uint8_t)(address >> 16);
+    req[6] = (uint8_t)(address >> 8);
+    req[7] = (uint8_t)address;
+    uint16_t crc = fpga_crc16(0xffffu, 0x10u);
+    for (int i = 0; i < 12; i++) crc = fpga_crc16(crc, req[i]);
+    req[12] = (uint8_t)(crc >> 8);
+    req[13] = (uint8_t)crc;
+
+    tang_fpga_lock();
+    const int sent = tang_fpga_frame(0x10, req, sizeof(req));
+    tang_fpga_unlock();
+    if (sent != 0) return false;
+
+    uint8_t rep[16];
+    if (tang_fpga_wait(0x10, rep, sizeof(rep), 500) != 15) return false;
+    if (status) *status = rep[2];
+    if (value)
+        *value = ((uint32_t)rep[9] << 24) | ((uint32_t)rep[10] << 16) |
+                 ((uint32_t)rep[11] << 8) | (uint32_t)rep[12];
+    return true;
+}
+
+/* The clock monitor's registers, contiguous from 0x120: `clk` and `pix` each
+ * have two probes (A and B) so a host can see whether both regions the placer
+ * chose are running, and `ref` is the 50 MHz crystal every rate is measured
+ * against.  See fpga/desktop/clock_monitor.sv. */
+#define MON_BASE 0x120u
+#define MON_REGS 5u
+static const char *const mon_names[MON_REGS] = { "clk", "clk_b", "pix", "pix_b", "ref" };
+
+/* Read all five counters twice, holding for `hold_ms` between, and report the
+ * deltas as rates against the nominal 50 MHz reference.  A counter that stands
+ * still (a clock that did not reach it) shows as a zero delta. */
+static int cmd_fmon(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+
+    uint32_t hold_ms = 5000;
+    if (argc >= 2) {
+        char *end = NULL;
+        const unsigned long v = strtoul(argv[1], &end, 10);
+        if (end == argv[1] || *end != '\0' || v == 0 || v > 60000) {
+            tdsh_printf("usage: fmon [hold-ms]   0 < ms <= 60000\r\n");
+            return 1;
+        }
+        hold_ms = (uint32_t)v;
+    }
+
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("fmon: cannot bring up UART1\r\n");
+        return 1;
+    }
+
+    uint32_t stamp = 0;
+    uint8_t st = 0;
+    if (!fpga_ext_read32(0x134u, &stamp, &st)) {
+        tdsh_printf("fmon: no reply -- is the desktop core (with the monitor) loaded?\r\n");
+        return 1;
+    }
+    tdsh_printf("fmon: stamp %02x%02x%02x%02x status %u\r\n",
+                (unsigned)(stamp >> 24) & 0xff, (unsigned)(stamp >> 16) & 0xff,
+                (unsigned)(stamp >> 8) & 0xff, (unsigned)stamp & 0xff, (unsigned)st);
+    if (stamp != 0x4d4f4e31u) {
+        tdsh_printf("fmon: this core has no clock monitor (want stamp 4d4f4e31)\r\n");
+        return 1;
+    }
+
+    uint32_t a[MON_REGS], b[MON_REGS];
+
+    tang_fpga_lock(); tang_fpga_drain(); tang_fpga_unlock();
+    const uint32_t t0 = bflb_mtimer_get_time_ms();
+    for (uint32_t i = 0; i < MON_REGS; i++)
+        if (!fpga_ext_read32(MON_BASE + 4u * i, &a[i], NULL)) {
+            tdsh_printf("fmon: read A of %s failed\r\n", mon_names[i]);
+            return 1;
+        }
+
+    vTaskDelay(pdMS_TO_TICKS(hold_ms));
+
+    const uint32_t t1 = bflb_mtimer_get_time_ms();
+    for (uint32_t i = 0; i < MON_REGS; i++)
+        if (!fpga_ext_read32(MON_BASE + 4u * i, &b[i], NULL)) {
+            tdsh_printf("fmon: read B of %s failed\r\n", mon_names[i]);
+            return 1;
+        }
+
+    tdsh_printf("fmon: hold %u ms\r\n", (unsigned)(t1 - t0));
+    for (uint32_t i = 0; i < MON_REGS; i++)
+        tdsh_printf("fmon: %-6s %10u %10u  d %u\r\n",
+                    mon_names[i], (unsigned)a[i], (unsigned)b[i],
+                    (unsigned)(b[i] - a[i]));
+
+    /* Rate in Hz, as 50 MHz * dtarget / dref, in 64-bit arithmetic because
+     * the product overflows 32 bits.  No float: tdsh_printf has no %f. */
+    const uint32_t dref = b[MON_REGS - 1] - a[MON_REGS - 1];
+    if (dref == 0) {
+        tdsh_printf("fmon: the 50 MHz reference did not tick; no rate\r\n");
+        return 1;
+    }
+    for (uint32_t i = 0; i + 1 < MON_REGS; i++) {
+        const uint32_t d = b[i] - a[i];
+        const uint32_t hz = (uint32_t)(((uint64_t)50000000u * d) / dref);
+        tdsh_printf("fmon: %-6s %u Hz\r\n", mon_names[i], (unsigned)hz);
+    }
+    return 0;
+}
+
+/* Read one register of the core's desktop endpoint by address, for checking
+ * the link and the register map against a core whose values are known.  The
+ * desktop's magic (`fpgar 0`) is 0x00544453 and its ABI word (`fpgar 4`) is
+ * 0x00010001, both of which the core answered before the clock monitor
+ * existed, so a wrong answer here is the frame, not the monitor. */
+static int cmd_fpgar(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    if (argc < 2) {
+        tdsh_printf("usage: fpgar <hex-address>\r\n");
+        return 1;
+    }
+    char *end = NULL;
+    const unsigned long addr = strtoul(argv[1], &end, 16);
+    if (end == argv[1] || *end != '\0' || addr > 0xfffffffful) {
+        tdsh_printf("fpgar: not a hex address: %s\r\n", argv[1]);
+        return 1;
+    }
+
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("fpgar: cannot bring up UART1\r\n");
+        return 1;
+    }
+
+    uint32_t value = 0;
+    uint8_t status = 0;
+    if (!fpga_ext_read32((uint32_t)addr, &value, &status)) {
+        tdsh_printf("fpgar: no reply on UART1 (is a core loaded?)\r\n");
+        return 1;
+    }
+    tdsh_printf("fpgar 0x%08lx -> 0x%08lx status %u\r\n",
+                addr, (unsigned long)value, (unsigned)status);
+    return status == 0 ? 0 : 1;
+}
+
 static bool resolve_path(tdsh_session_t *session, const char *in,
                          char *out, size_t out_size)
 {
@@ -533,6 +708,10 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_nesload, 0 },
     { "fpga", "fpga", "Ask the loaded core for its ID over UART1",
       cmd_fpga, 0 },
+    { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",
+      cmd_fmon, 0 },
+    { "fpgar", "fpgar <hex-addr>", "Read one desktop register over UART1",
+      cmd_fpgar, 0 },
 };
 
 int tdsh_bl616_fpga_register(void)

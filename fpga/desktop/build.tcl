@@ -8,6 +8,7 @@ foreach source {
     src/pll/gowin_pll_27.v src/pll/gowin_pll_hdmi.v src/pll/gowin_pll_nes.v
     src/keylink_rx.sv src/iosys/iosys_bl616.v src/iosys/uart_fixed.v
     src/iosys/textdisp_wide.sv src/nes2hdmi.sv src/nestang_top.sv
+    src/desktop/clock_monitor.sv
     src/desktop/desktop_regs.sv src/desktop/desktop_pmod.sv
     src/desktop/desktop_oled.sv src/desktop/oled_panel.sv src/desktop/oled_spi.sv
     src/hdmi2/audio_clock_regeneration_packet.sv src/hdmi2/audio_info_frame.sv

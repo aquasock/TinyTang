@@ -19,7 +19,8 @@ git -c advice.detachedHead=false clone --quiet --no-hardlinks "$nestang" "$sourc
 git -C "$source_dir" checkout --quiet --detach c2450818e1f0c858e13c5dd16746ee5221a5c760
 for patch in "$root/third_party/patches/"*.patch \
              "$root/third_party/patches/menu/0001-menu-core.patch" \
-             "$root/third_party/patches/desktop/0001-desktop-host.patch"; do
+             "$root/third_party/patches/desktop/0001-desktop-host.patch" \
+             "$root/third_party/patches/desktop/0002-clock-monitor.patch"; do
     git -C "$source_dir" apply --whitespace=nowarn "$patch"
 done
 mkdir -p "$source_dir/src/desktop"
@@ -28,7 +29,8 @@ printf '%s\n' "$source_dir" > "$build/source-path.txt"
 (
     cd "$root"
     sha256sum third_party/patches/*.patch third_party/patches/menu/0001-menu-core.patch \
-        third_party/patches/desktop/0001-desktop-host.patch fpga/desktop/* |
+        third_party/patches/desktop/0001-desktop-host.patch \
+        third_party/patches/desktop/0002-clock-monitor.patch fpga/desktop/* |
         sha256sum > "$build/source.sha256"
 )
 echo "desktop source: $source_dir"

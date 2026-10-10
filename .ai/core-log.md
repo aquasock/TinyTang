@@ -1091,3 +1091,42 @@ When the shell's next release carries `peek`/`poke` and the configurable limits,
 - User Test: PASS
 
 ---
+
+## 72 COMMIT Unreleased 2026-10-10T10:03:11-07:00
+
+#### Coming From:
+
+Unreleased bbfbf4e
+
+#### Purpose:
+
+Give the desktop core on-fabric instruments that measure its own clocks on silicon, as entry 57 of the Tang-Build log chose, and commit the PLL placement pins the open flow needs to build a violation-free core at all.
+
+#### Outcome:
+
+The instrument is built, verified off the board, deployed and read back, and the repository now carries the constraint its own working baseline was built with. `fpga/desktop/clock_monitor.sv` is new and holds five free-running 32-bit counters: `clk` twice, read directly because `clk` is the register domain; `hclk` twice and the 50 MHz crystal `sys_clk` once, taken into `clk` as gray code through two flops, because a binary counter sampled mid-carry would hand the synchroniser a mixture while gray changes one bit per increment. There is no reset, so no net is added, and nothing is pinned, so the placer chooses where each probe lands and the two probes of a clock test whether both regions it chose are actually running. `fpga/desktop/desktop_regs.sv` returns them from the endpoint's existing read32 at 0x120, 0x124, 0x128, 0x12c and 0x130, with 0x134 reading the stamp `4d4f4e31`, so no new frame type and no new protocol were needed. `third_party/patches/desktop/0002-clock-monitor.patch` carries the wiring -- a `sys_clk` input on `iosys_bl616` under `DESKTOP_CORE`, `.hclk` and `.ref_clk` on the endpoint instance, and the crystal connection in `nestang_top` -- and was kept as its own patch so the instrument can be removed without touching the desktop host; it was generated from a clean nestang clone and the reconstruction applies the whole series cleanly. The BL616 gained two shell commands, `fpgar <hex-addr>` for one read32 and `fmon [hold-ms]` for all five counters read twice with their deltas and rates, and the request encoder was checked against the project's own independently-computed vector rather than trusted: `tools/tests/fpga_ext_frame_test.cpp` expects CRC bytes `73 17` for command `0x10` and payload `01 02 10 02 00 00 00 20 12 34 56 78`, and the new C encoder reproduces `7317` exactly. The firmware builds as `4d7051da...` against this tree's previous `e2205009...`, and the only difference is the two commands. Off the board the core's own regression, `tools/tests/test_desktop_core.sh` -- extended to compile `clock_monitor.sv` and to drive the monitor's three clocks at 46.53, 13.468 and 20 ns -- now reports `clock monitor: clk=452041/ref=1051671 pix=1561740/ref=1051671 probes agree PASS`, which is `clk` and `hclk` measured at 21.492 and 74.25 MHz with both probe pairs agreeing inside one percent, alongside 56 register responses, the independent Python CRC check and the unmodified video test. The second change is the constraint: the open flow had no violation-free placement at all, eight seeds gave none and two did not route, because `TinyTang/fpga/desktop/desktop.cst` carried no PLL pins and the placer's free choice put `pll_nes` inside a row-108 clock gap, which is the same defect that made the board's working baseline unreconstructable from this repository -- its pins existed only in build artefacts. `INS_LOC` pins for `pll_27` at `PLL_L[1]`, `pll_hdmi` at `PLL_L[3]` and `pll_nes` at `PLL_R[0]` are now committed, the third differing from the vendor's `PLL_B[1]` deliberately because that site is inside the gap the open database does not model, and a fresh reconstruction and build with no override reproduces the same bitstream byte for byte, which is the verification that the fix is complete. On the board, after the firmware was flashed with `tools/tinytang_flash.py` and the console returned at `bbfbf4e-dirty`, `fpgar` first validated the readback against the running baseline's own registers -- `0x00` returning `0x00544453`, `0x04` returning `0x00010001`, `0x100` returning `0x00180010`, and `0x134` correctly absent with status 4 -- and then the monitor core was loaded with `tangload` and `fmon` run three times, each agreeing: `clk` 21.5038 to 21.5053 MHz against its 21.49 MHz constraint, `hclk` 74.2499 to 74.2500 MHz against its intended 74.25, the reference counting 500,235,740 cycles in 10,004 ms, and both probes agreeing to about 0.007 percent, with the 32-bit counters observed to wrap mid-measurement and still give the correct delta. The clocks are therefore at their intended rates on silicon in an open-flow-built core, which is the question entry 57 asked and the timing model could not answer, and the small excess on `clk` is not an error but the design's own PLL dividing a 2000 MHz VCO by 93, which the constraint treats conservatively. The user's part was the power cycle and the display was not reported, so the hardware acceptance of the *screen* is not established here; the log's own rule that an agent-run device-side diagnostic is not user acceptance is why `User Test` is `NOT RUN`. Evidence, including the raw `fmon` output, lives at `evidence/clock-monitor.txt` in the Tang-Build repository. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that only this appended entry changed under `.ai/`, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, sequential numbering as entry 72 of the active log and a count within the 100-entry limit. No part of this repository, Tang-Build or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` already records; `clock_monitor.sv` is this project's own work under GPL-3.0-only, and patch `0002` modifies GPL-3.0 nestang sources and marks its added regions `TinyTang:`.
+
+#### Next Steps:
+
+Ask the user what the screen shows with the monitor core loaded, since the display is the one result this cycle produced no evidence for, and record it in the next entry rather than here; the core is timing-clean at seed 17 but carries 1199 `clk` fabric fallbacks where the baseline had 943, exactly the 256 `clk`-domain flops the monitor adds, so the display should be compared against the lined baseline rather than assumed. The instrument itself needs no more: `fmon` reports rate and probe agreement, and a future measurement can put a second probe pair anywhere by instantiating another counter, since nothing is pinned. `desktop.bin` on the card was deliberately left as the lined baseline and the monitor image is `/cores/console138k/desktop-monitor.90d3fa3a84fa.bin`, so a power cycle returns to the known state. The uncommitted `ports/bl616/phosphor/pmod_sockets.cpp` socket-retry fix and the pre-existing dirty `THIRD_PARTY.md` and `tinydesk` submodule were left alone as they belong to other work.
+
+#### Files Modified:
+
+- fpga/desktop/clock_monitor.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop.cst
+- fpga/desktop/build.tcl
+- ports/bl616/tang_fpga_uart.c
+- third_party/patches/desktop/0002-clock-monitor.patch
+- third_party/patches/README.md
+- tools/build_desktop_core.sh
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/test_desktop_core.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

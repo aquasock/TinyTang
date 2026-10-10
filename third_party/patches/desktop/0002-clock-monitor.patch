@@ -1,0 +1,37 @@
+diff --git a/src/iosys/iosys_bl616.v b/src/iosys/iosys_bl616.v
+index 5de81a7..d2e4181 100644
+--- a/src/iosys/iosys_bl616.v
++++ b/src/iosys/iosys_bl616.v
+@@ -17,6 +17,10 @@ module iosys_bl616 #(
+     input clk,                      // main logic clock
+     // input clk50,                    // 50mhz clock for UART
+     input hclk,                     // hdmi clock
++`ifdef DESKTOP_CORE
++    // TinyTang: the 50 MHz crystal, so the clock monitor can measure rates.
++    input sys_clk,
++`endif
+     input resetn,
+ 
+     // OSD display interface
+@@ -229,6 +233,8 @@ wire [119:0] desktop_response;
+ wire desktop_response_taken = send_state == 16 && tx_ready && !tx_valid && send_idx == 14;
+ desktop_regs desktop_endpoint (
+     .clk(clk), .resetn(resetn),
++    // TinyTang: the clock monitor's pixel clock and 50 MHz reference.
++    .hclk(hclk), .ref_clk(sys_clk),
+     .start(recv_state == RECV_CMD && rx_valid && (rx_data == 8'h10 || rx_data == 8'h12)),
+     .byte_valid(recv_state == RECV_PARAM && rx_valid && (cmd_reg == 8'h10 || cmd_reg == 8'h12)),
+     .finish(data_cnt + 16'd2 == len_reg), .byte_data(rx_data), .frame_length(len_reg),
+diff --git a/src/nestang_top.sv b/src/nestang_top.sv
+index e1a074f..3d37929 100644
+--- a/src/nestang_top.sv
++++ b/src/nestang_top.sv
+@@ -513,6 +513,8 @@ iosys_bl616 #(.COLOR_LOGO(15'b01100_00000_01000), .FREQ(21_492_000), .CORE_ID(TH
+     .hid1(hid1), .hid2(hid2),
+     .uart_tx(UART_TXD), .uart_rx(UART_RXD),
+ `ifdef DESKTOP_CORE
++    // TinyTang: hand the clock monitor the crystal reference it measures against.
++    .sys_clk(sys_clk),
+     .desktop_socket_word(desktop_socket_word),
+     .desktop_socket_request(desktop_socket_request),
+     .desktop_socket_ack(desktop_socket_ack),

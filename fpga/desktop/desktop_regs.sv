@@ -2,8 +2,16 @@
 // Validate complete CRC-protected requests before any cell or socket write.
 // A 0x12 block write follows EXTCTL-002: version, opcode, sequence, address,
 // a count byte, then the words, so its frame length is 12 + 4 * count.
+//
+// It also carries the clock monitor: read32 addresses 0x120..0x134 return the
+// cycle counters from clock_monitor, which is what lets a host measure the
+// core's clocks on silicon.  Read-only, and additive -- a host that never
+// asks for those addresses sees exactly the register map it saw before.
 module desktop_regs (
     input logic clk, resetn, start, byte_valid, finish, block_request,
+    // Clock-monitor clocks: the pixel clock and the 50 MHz crystal reference.
+    // `clk` is the register domain, so no fourth clock is needed here.
+    input logic hclk, ref_clk,
     input logic [7:0] byte_data,
     input logic [15:0] frame_length,
     input logic response_taken,
@@ -50,6 +58,16 @@ module desktop_regs (
     wire [31:0] last_address=address+(({24'b0,block_count}-32'd1)<<2);
     logic [7:0] status;
     logic [31:0] read_data;
+
+    // The clock monitor answers addresses 0x120..0x134.  It is a leaf here:
+    // it counts, and this module only reads it.
+    logic [31:0] mon_clk_a, mon_clk_b, mon_pix_a, mon_pix_b, mon_ref;
+    clock_monitor monitor (
+        .clk(clk), .hclk(hclk), .ref_clk(ref_clk),
+        .clk_a(mon_clk_a), .clk_b(mon_clk_b),
+        .pix_a(mon_pix_a), .pix_b(mon_pix_b), .ref_a(mon_ref)
+    );
+
     always_comb begin
         status=0;read_data=0;
         if((!is_block && (length_q!=15 || received!=14)) ||
@@ -73,6 +91,12 @@ module desktop_regs (
                 32'h108:read_data=oled_frames;
                 32'h10c:read_data=oled_signature;
                 32'h114:read_data={15'b0,oled_cursor};
+                32'h120:read_data=mon_clk_a;  // `clk` cycles, probe A
+                32'h124:read_data=mon_clk_b;  // `clk` cycles, probe B
+                32'h128:read_data=mon_pix_a;  // `hclk` cycles, probe A
+                32'h12c:read_data=mon_pix_b;  // `hclk` cycles, probe B
+                32'h130:read_data=mon_ref;    // `ref_clk` (50 MHz) cycles
+                32'h134:read_data=32'h4d4f4e31; // "MON1", the monitor's stamp
                 default:status=4;
             endcase
         end else if(opcode==2) begin

@@ -82,3 +82,23 @@ IO_LOC "pmod1_io[6]" E21;
 IO_PORT "pmod1_io[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "pmod1_io[7]" D21;
 IO_PORT "pmod1_io[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+
+// PLL placement.  Only the PLLs have placement macros (the divider does not --
+// evidence/desktop-vga-display.txt), and the open flow needs these three pins:
+// without them nextpnr's free choice lands pll_nes inside a row-108 gap and the
+// design has no violation-free placement at all -- an eight-seed sweep found
+// none, and two seeds did not even route (`Net hclk5 has no route to the FCLK
+// of u_hdmi.hdmi.serializer.gwSer0`).  With pll_nes at PLL_R[0], the site
+// nearest the logic, seeds 17 and 19 measure setup 0 / hold 0.
+//
+// pll_27 and pll_hdmi are pinned to the sites the vendor's own place-and-route
+// used; pll_nes differs from the vendor's PLL_B[1] deliberately, because that
+// site is inside a clock gap the open database does not model.  These are the
+// pins the working baseline (`build/vga-diagnostic/baseline`, 7b95d942...) was
+// built with, which until now lived only in build artefacts and not here --
+// which is why the flow could not rebuild its own working core.
+//
+// Instance names are the flattened cell names nextpnr reports.
+INS_LOC "pll_27.PLL_inst"   PLL_L[1];
+INS_LOC "pll_hdmi.PLL_inst" PLL_L[3];
+INS_LOC "pll_nes.PLL_inst"  PLL_R[0];
