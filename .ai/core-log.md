@@ -1252,3 +1252,40 @@ Build and flash the socket-register retry fix and confirm on the board that a so
 - User Test: N/A
 
 ---
+
+## 77 COMMIT Unreleased 2026-10-10T14:01:02-07:00
+
+#### Coming From:
+
+Unreleased 4903796
+
+#### Purpose:
+
+Complete the removal of the third-party and personal material this repository was publishing, and make `THIRD_PARTY.md` and the reference's citations accurate again.
+
+#### Outcome:
+
+The repository no longer carries either the schematics or the photographs, and the two documents that described them now say so. The schematics went in entry 76. The photographs did not, and this cycle has to record that rather than gloss it: the user reported removing them, and `git ls-files` showed all seven still tracked, still in `HEAD` and still on disk, with their original 2026-10-05 18:21 to 18:26 modification times untouched -- so the removal had reached the schematics and not the pictures -- and they were staged out of the tree in this cycle, which is why the seven deletions are in this entry's file list beside the two documents that describe them. `THIRD_PARTY.md` changed in two places. Its Sipeed section no longer claims the sheets are present: it says `docs/` carried them, that they were removed on 2026-10-10, that they were kept because a port needs them -- the FPGA banks, the PMOD sockets, the HDMI level shifters and the clock tree's I2C are only legible from those sheets, and reading them is what produced this project's pin and bank records -- and that they were tracked in a public repository under terms that are Sipeed's and unstated, with the source and the standing instruction not to bring anything else from that bundle in. A new section records the photographs as this project's own work that owed no licence to anyone, taken by the author on 2026-10-05, cited by `.ai/core-reference.md` as the record of the dock's two edge headers, and removed because they carried EXIF location data in a public repository, with the instruction that anything of the kind added later has its EXIF stripped first. `.ai/core-reference.md` changed only in its citations, not in any statement: the two sources of the dock-headers record now say that the sheet was `docs/Tang_Mega_138K_Console_32001C__Schematics.pdf` and the photograph was `images/circuit_boards/dock_front.jpg`, and that both were removed from this repository on 2026-10-10, with the sheet's name and revision kept so that anyone holding a copy can still re-check the record. Every other reference to these files was checked and left alone: the log entries are settled history, and the reference's other Sipeed citation names a different sheet (`tang_mega_138k_30353`) that was never in this repository. The full tracked file inventory was taken again and the repository now holds no third-party document and no binary of any kind besides its own sources and its own `.ai` log archive -- seven images fewer than an hour ago and two PDFs fewer than that. Nothing was built and no other file changed; the retry fix of entry 75 is still unbuilt and unflashed, the active log's numbering still runs from 75 rather than from one, and `third_party/tinydesk` is still a dirty submodule that was deliberately left alone. Because this cycle changed documents and citations rather than a design, a build or a board state, all three statuses are not applicable. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that `core-reference.md` and this appended entry are the only `.ai` changes, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and numbering as this log's highest entry plus one, which is its own convention rather than the checker's from-one rule. No part of Tang-Build, TinyTang or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` now records.
+
+#### Next Steps:
+
+Build and flash the socket-register retry fix and confirm on the board that a socket declaration now survives a first-miss read, which is the one piece of committed work here that has never been exercised. Two housekeeping items then remain, and both are named in entry 76 as well: the active log's numbering runs to 77 where the project's own checker expects an active log numbered from one, and the correction is a mechanical renumber the syntax rules allow only as a declared mechanical fix; and `third_party/tinydesk` is dirty and needs a decision -- commit, pin or revert. One thing should be kept in mind rather than acted on: the dock-headers record now rests on a schematic and a photograph that are both outside the repository, so anyone re-checking it needs Sipeed's share or a fresh photograph, and if the headers are ever revisited the cheapest evidence is a new photograph with its EXIF stripped. Nothing else in this repository is pending, and its purpose remains met: the desktop core runs with VGA and without HDMI, the HDMI cause is characterised and closed in Tang-Build, and no work here should be chosen in the expectation that a build brings the display up.
+
+#### Files Modified:
+
+- THIRD_PARTY.md
+- images/circuit_boards/dock_back.jpg
+- images/circuit_boards/dock_front.jpg
+- images/circuit_boards/fpga_back.jpg
+- images/circuit_boards/fpga_front.jpg
+- images/circuit_boards/fpga_front2.jpg
+- images/circuit_boards/sdram_back.jpg
+- images/circuit_boards/sdram_front.jpg
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

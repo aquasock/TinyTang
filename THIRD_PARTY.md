@@ -295,29 +295,38 @@ Source modified under section 3 of the licence.
 
 ## Sipeed board documentation (schematics, not this project's to license)
 
-`docs/` carries Sipeed's schematics for the board this firmware runs on. They
-are kept because a port needs them: the FPGA banks, the PMOD sockets, the HDMI
-level shifters and the I2C the clock tree hangs on are only legible from these
-sheets, and reading them is what produced the pin and bank records
-themselves.
+`docs/` **carried** Sipeed's schematics for the board this firmware runs on, and
+they were removed from this repository on 2026-10-10. They were kept because a
+port needs them -- the FPGA banks, the PMOD sockets, the HDMI level shifters and
+the I2C the clock tree hangs on are only legible from these sheets, and reading
+them is what produced this project's pin and bank records -- but they were
+tracked in a public repository under terms that are Sipeed's and unstated.
 
-- `docs/Tang_Mega_138K_Console_32001C__Schematics.pdf` — the dock and the SOM,
+- `docs/Tang_Mega_138K_Console_32001C__Schematics.pdf` -- the dock and the SOM,
   board revision 32001C, 17 sheets
-- `docs/tang_mega_138k_30354_Schematics..pdf` — the Tang Mega 138K board, 7
+- `docs/tang_mega_138k_30354_Schematics..pdf` -- the Tang Mega 138K board, 7
   sheets (the doubled dot in the filename is Sipeed's)
 
 - Source: Sipeed's download share for the Tang Console,
   https://dl.sipeed.com/shareURL/Tang/Console, which mirrors to Baidu and to
   MEGA. The same bundle holds the board's KiCad project and its Gerbers.
 - Terms: **Sipeed's own, and unstated.** The bundle carries no licence for the
-  hardware documents, so nothing here is permission to redistribute them.
-  They are included unmodified as reference for work on this board, and they
-  are **not** covered by this project's MIT licence. Ask Sipeed before reusing
-  them elsewhere, and do not bring other material from that bundle into this
-  repository — the Gowin toolchain, the vendor datasheets and the example
-  bitstreams in particular.
+  hardware documents, so nothing there is permission to redistribute them, and
+  they are **not** covered by this project's MIT licence. The records that cite
+these sheets name the sheet and the revision so that anyone holding a copy can
+  re-check them. Do not bring material from that bundle into this repository --
+  the Gowin toolchain, the vendor datasheets and the example bitstreams in
+  particular.
 
-If Sipeed states terms for these files, replace this section with them.
+## Board photographs (this project's own work, removed)
+
+`images/circuit_boards/` carried seven photographs of the dock, the FPGA module
+and the SDRAM module, taken by the project's author on 2026-10-05, and cited by
+`.ai/core-reference.md` as the record of the dock's two edge headers. They were
+this project's own work and owed no licence to anyone; they were removed from
+this repository on 2026-10-10 because they carried EXIF location data and the
+repository is public. Anything of the kind added later should have its EXIF
+stripped first.
 
 ## Tang-Phosphor OLED panel engine
 
