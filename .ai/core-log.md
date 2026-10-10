@@ -1160,3 +1160,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 74 COMMIT Unreleased 2026-10-10T11:25:20-07:00
+
+#### Coming From:
+
+Unreleased eb3fbe1
+
+#### Purpose:
+
+Name the toolchain the FPGA image is built with in the desktop's About window, on the user's request, without modifying TinyDesk.
+
+#### Outcome:
+
+The About window now states the open-source flow, and it was done inside this port rather than by patching upstream. The About app draws exactly one line supplied by the port -- `si->extra` in the sysinfo struct -- and this port was already using it for the shell version; that line now reads `desktop:   yosys+nextpnr+apicula (open)`. Nothing else was needed because the app's own height calculation already counts that line (`14 + have_fw + (si->extra ? 1 : 0)`), so no label, no row and no window size changed, and because the text is the port's there is no `third_party/patches/tinydesk/` entry, no edit to the submodule, and no `THIRD_PARTY.md` obligation added -- the alternative of patching `apps/about.c` to add a second port line was considered and rejected by the user, which is why the shell version no longer shares the line. That version is not lost: `platform` on the console prints `TinyDesk Shell: 0.1.5`, and About's own title carries the TinyDesk version. The wording took three iterations, all at the user's direction and each answering what the previous one showed: `desktop.bin: yosys+nextpnr+apicula (open)`, then `desktop:` for brevity, then two more spaces after the colon so the value starts in column 11 like `Chip:`, `SDK:` and `Built:` above it -- the label is padded to 11 columns like every other row rather than left at 9. The firmware was built and flashed three times, `c7b630f1`, `a312d1f7` and finally `4df6b6fb`, each with `tools/tinytang_flash.py` and a power cycle, and the user reports the line looks right and the cycle passes. One account of the cost, because it was not all smooth: the first flash attempt failed with `could not open port /dev/ttyACM0` because the board was not connected to this workstation at all, which is recorded rather than assumed to have been a tool fault -- the two identities it presents were both absent, `ffff:5454` for two-wire and `0403:6010` for the one-wire loader. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that only this appended entry changed under `.ai/`, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, sequential numbering as entry 74 of the active log and a count within the 100-entry limit. No part of this repository, Tang-Build or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` already records; TinyDesk itself is unmodified, so its licences and notices are untouched.
+
+#### Next Steps:
+
+No work remains on this change. If a second port line is ever wanted in About, it needs an upstream patch adding a field and a label, because the app renders one port line and its labels are single-line -- `td_label` stops at a newline, so a multi-line string would be truncated rather than wrapped; the user chose not to take that route here and the decision is recorded so it is not re-litigated. The next engineering cycle is the HDMI defect in the Tang-Build repository, whose step 1 is a read-only check of whether the wires feeding the divider's GAMMA input at tile (81,181) acquire a cross-tile source in the vendor's data: if they do, the chipdb can be made to select the network path instead of the fabric entry `L2HCLK`, and if they do not, the lead dies the way the two previous attempts did. That work needs the user's approval to modify the apicula fork, which is still clean at `4281068`. The active log's numbering remains non-conforming from an earlier rollover and a mechanical renumber is still the fix.
+
+#### Files Modified:
+
+- ports/bl616/td_desktop_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

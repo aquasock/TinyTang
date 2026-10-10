@@ -333,7 +333,12 @@ static int desktop_run(void)
     s_info.cpu_mhz = sys_cpu_mhz;
     s_info.tasks = sys_tasks;
 
-    s_info.extra = "Shell:     TinyDesk Shell " TDSH_VERSION;
+    /* The port's own line in About.  This names the flow the FPGA image is
+     * built with, because it is the one thing about this port a user cannot
+     * infer from the window: the shell version is on the console (`platform`)
+     * and in About's own title, so this line spends its space on the toolchain
+     * instead.  About's height already counts this line, so no other change. */
+    s_info.extra = "desktop:   yosys+nextpnr+apicula (open)";
     td_set_sysinfo(&s_info);
 
     td_init(&s_hal);
