@@ -1221,3 +1221,34 @@ Build and flash the retry fix and confirm on the board that a socket declaration
 - User Test: NOT RUN
 
 ---
+
+## 76 COMMIT Unreleased 2026-10-10T13:31:32-07:00
+
+#### Coming From:
+
+Unreleased 2c8b76f
+
+#### Purpose:
+
+Record as a handoff the state this repository is being left in and the cross-project findings a next agent would otherwise have to re-derive, together with the user's removal of the Sipeed schematics.
+
+#### Outcome:
+
+This entry is a handoff and a project-control record, and the tree it describes carries one change besides the entry itself: the user has removed the two Sipeed schematic PDFs, `docs/Tang_Mega_138K_Console_32001C__Schematics.pdf` and `docs/tang_mega_138k_30354_Schematics..pdf`, which entry 75 had only just documented. The reason is the one entry 75 recorded as a licensing gap rather than a permission -- the files were tracked in a public repository under terms their own `THIRD_PARTY.md` section calls unstated and not this project's to grant -- and the user's decision is to remove them rather than keep them published. The consequence is recorded rather than repaired here: the section entry 75 added now describes two files that are no longer in the tree, so it should either say they were removed for that reason or be withdrawn, and that is the next cycle's first small job. The dirty `third_party/tinydesk` submodule is unchanged and still needs a decision. What follows is the handoff itself, and it is the part of this entry worth reading first next time. **The retry fix committed in entry 75 is source and not a result**: `ports/bl616/phosphor/pmod_sockets.cpp` retries its register accesses now, but it has not been built and has not been flashed, so the open item is to build it, flash it and confirm a socket declaration survives a first-miss read. **The active log's numbering is still non-conforming**: entries run to 75 where the project's own checker expects an active log numbered from one, the pre-edit file fails identically, and the correction is a mechanical renumber the syntax rules allow only as a declared mechanical fix rather than inside an ordinary cycle. **The toolchain work this repository leans on is closed, and that matters when choosing work**: on 2026-10-10 the Tang-Build project closed its HDMI and clock-model question, recording in its entry 76 and its `TOOL-031` that an open-flow build carries no HDMI because the device database's clock model has no entry into any HCLK block, and that every model-side change available either moves no route or costs the clock plane 1068 of them; an open-flow core should therefore not be expected to carry HDMI, and nothing here should be reopened to make it. Two traps are recorded there so they cost nothing here: resolving a table-38 endpoint by preferring `HCLK_UNK<n>` over `UNK<n>` is wrong because an id names two different wires, and the `spanning` count is not a result because a naming accident raises it from 132 to 178 while changing no route. **The toolchain state**: the apicula fork is clean at `4281068` with its chipdb `57a1c2a5...` at 850,124 bytes and in sync with its aquasock remote, and two generator defects are recorded in Tang-Build's `TOOL-031` and deliberately left unfixed, so a next agent finds a clean pair rather than a half-made change. **The board** is attached and running seed 17, `/cores/console138k/desktop.bin`: VGA renders perfectly and HDMI is dark, which is the expected state and not a fault to chase. **Standing constraints** are unchanged: push only to repositories under aquasock, do not modify the apicula fork without approval, do not spawn sub-agents because development work is one on one, and do not edit `.ai/core.md` automatically. Because this cycle changed project-control metadata and a pair of untracked-in-spirit reference documents rather than a design, a build or a board state, all three statuses are not applicable. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that only this appended entry changed under `.ai/`, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and numbering as this log's highest entry plus one, which is its own convention rather than the checker's from-one rule. No part of Tang-Build, TinyTang or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` records, and this cycle reduced what this repository carries rather than adding to it.
+
+#### Next Steps:
+
+Build and flash the socket-register retry fix and confirm on the board that a socket declaration now survives a first-miss read, because until that is done entry 75 describes source rather than a result. Then settle the two housekeeping items this handoff names. The first follows directly from this cycle: `THIRD_PARTY.md` still documents the two Sipeed schematics the user has removed, and its section should be adjusted to record the removal and its reason, or withdrawn, in the same commit as the deletion. The second is the active log's numbering, which runs to 76 rather than from one; the correction is a mechanical renumber and the syntax rules allow it only as a declared mechanical fix. The dirty `third_party/tinydesk` submodule also still needs a decision -- commit, pin or revert -- and it was deliberately left alone. Beyond that, the honest position is that this repository is in a working state, not a finished one: the desktop core runs with VGA and without HDMI by a cause that is now characterised elsewhere and closed, and any new work here should be chosen knowing that, rather than in the expectation that the display is one build away.
+
+#### Files Modified:
+
+- docs/Tang_Mega_138K_Console_32001C__Schematics.pdf
+- docs/tang_mega_138k_30354_Schematics..pdf
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
