@@ -293,6 +293,32 @@ No colibri code is copied into this repository. The reciprocity applies from
 the moment any of it is, including from the port, which is itself Covered
 Source modified under section 3 of the licence.
 
+## Sipeed board documentation (schematics, not this project's to license)
+
+`docs/` carries Sipeed's schematics for the board this firmware runs on. They
+are kept because a port needs them: the FPGA banks, the PMOD sockets, the HDMI
+level shifters and the I2C the clock tree hangs on are only legible from these
+sheets, and reading them is what produced the pin and bank records
+themselves.
+
+- `docs/Tang_Mega_138K_Console_32001C__Schematics.pdf` — the dock and the SOM,
+  board revision 32001C, 17 sheets
+- `docs/tang_mega_138k_30354_Schematics..pdf` — the Tang Mega 138K board, 7
+  sheets (the doubled dot in the filename is Sipeed's)
+
+- Source: Sipeed's download share for the Tang Console,
+  https://dl.sipeed.com/shareURL/Tang/Console, which mirrors to Baidu and to
+  MEGA. The same bundle holds the board's KiCad project and its Gerbers.
+- Terms: **Sipeed's own, and unstated.** The bundle carries no licence for the
+  hardware documents, so nothing here is permission to redistribute them.
+  They are included unmodified as reference for work on this board, and they
+  are **not** covered by this project's MIT licence. Ask Sipeed before reusing
+  them elsewhere, and do not bring other material from that bundle into this
+  repository — the Gowin toolchain, the vendor datasheets and the example
+  bitstreams in particular.
+
+If Sipeed states terms for these files, replace this section with them.
+
 ## Tang-Phosphor OLED panel engine
 
 The desktop OLED terminal reuses the user's GPL-3.0-only panel engine from

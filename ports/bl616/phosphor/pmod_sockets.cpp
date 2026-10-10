@@ -75,20 +75,40 @@ bool core_id(uint8_t *id)
     return false;
 }
 
+// A register access can miss for the same reason the ID probe can: a core that
+// has only just been configured may miss the first ask, and the link is shared
+// with the desktop layer and the OLED cells.  core_id() retries for exactly
+// that; a single unretried read here decides whether the core has PMOD sockets
+// at all, so one miss returns nullptr, the socket declaration is skipped and
+// the screen stays dark with nothing printed to say why.  Retry as core_id()
+// does.  Writes are retried too, and safely: the socket write is idempotent,
+// so a repeat that follows a lost one writes the same word.
+constexpr int REG_ATTEMPTS = 3;
+constexpr uint32_t REG_RETRY_MS = 20;
+
 bool read_reg(uint32_t address, uint32_t *value)
 {
-    fpga_debug_result r;
-    if (!fpga_debug_request(FPGA_EXT_READ32, address, 0, &r) || r.status != 0) {
-        return false;
+    for (int attempt = 0; attempt < REG_ATTEMPTS; attempt++) {
+        fpga_debug_result r;
+        if (fpga_debug_request(FPGA_EXT_READ32, address, 0, &r) && r.status == 0) {
+            *value = r.data;
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(REG_RETRY_MS));
     }
-    *value = r.data;
-    return true;
+    return false;
 }
 
 bool write_reg(uint32_t address, uint32_t value)
 {
-    fpga_debug_result r;
-    return fpga_debug_request(FPGA_EXT_WRITE32, address, value, &r) && r.status == 0;
+    for (int attempt = 0; attempt < REG_ATTEMPTS; attempt++) {
+        fpga_debug_result r;
+        if (fpga_debug_request(FPGA_EXT_WRITE32, address, value, &r) && r.status == 0) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(REG_RETRY_MS));
+    }
+    return false;
 }
 
 // The loaded core's socket register, or nullptr; *id is set when it answered.

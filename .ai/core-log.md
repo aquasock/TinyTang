@@ -1190,3 +1190,34 @@ No work remains on this change. If a second port line is ever wanted in About, i
 - User Test: PASS
 
 ---
+
+## 75 COMMIT Unreleased 2026-10-10T13:27:30-07:00
+
+#### Coming From:
+
+Unreleased 4f54cc8
+
+#### Purpose:
+
+Commit the PMOD socket register-access fix that has sat in the working tree, and record the terms of the Sipeed board documents this repository carries.
+
+#### Outcome:
+
+Two changes were committed, one of them the user's own work, and both are recorded here because neither had been. The code change is in `ports/bl616/phosphor/pmod_sockets.cpp`: `read_reg` and `write_reg` now retry three times at 20 ms, where a single unretried register access used to decide whether the loaded core has PMOD sockets at all. The failure mode is the one `core_id()` already retries for -- a core that has only just been configured can miss the first ask, and the link is shared with the desktop layer and the OLED cells -- and here one miss returned `nullptr`, so the socket declaration was skipped, `/tang.ini` was never sent, and the screen stayed dark with nothing printed to say why. The write path retries too and that is safe, because the socket write is idempotent and a repeat that follows a lost write writes the same word; the source says so. The change is source only: **it has not been built and has not been flashed**, so this entry records it as committed and unexercised rather than as a fix. The second change documents rather than alters: `THIRD_PARTY.md` gains a section for the two Sipeed schematics the `docs/` tree carries, and it is a licensing record rather than a permission. Those files are tracked in this repository, Sipeed states no terms for them anywhere in the bundle, and the section therefore records that they are included unmodified as board reference, that they are **not** covered by this project's MIT licence, that a port needs them because the FPGA banks, the PMOD sockets, the HDMI level shifters and the clock tree's I2C are only legible from the sheets, and that nothing else from Sipeed's download share is to be brought in -- the Gowin toolchain, the vendor datasheets and the example bitstreams in particular. It says plainly that if Sipeed states terms the section should be replaced with them. That is the honest state: the documents are published, their terms are unstated, and this project holds no grant to redistribute them. `third_party/tinydesk` remains a dirty submodule and was deliberately not touched, so the parent commit does not move it. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that only this appended entry changed under `.ai/`, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and numbering as this log's highest entry plus one, which is its own convention; the project's checker still reports the pre-existing numbering non-conformance of the active log, which this entry does not change. No part of Tang-Build, TinyTang or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` records.
+
+#### Next Steps:
+
+Build and flash the retry fix and confirm on the board that a socket declaration now survives a first-miss read, because until that is done the change is source and not a result. Two loose ends are named rather than left implicit. The Sipeed schematics are tracked in a public repository under terms their own section calls unstated and not this project's to grant, so keeping them published is the user's decision to confirm or to reverse by removing them from `docs/`. And the active log's numbering is still non-conforming against the project's own checker, which expects an active log numbered from one: the entries run to 74 before this one, the pre-edit file fails identically, and the correction is a mechanical renumber the syntax rules allow only as a declared mechanical fix rather than as part of an ordinary cycle. The dirty `third_party/tinydesk` submodule also still needs a decision -- commit, pin or revert -- and it was left alone here.
+
+#### Files Modified:
+
+- THIRD_PARTY.md
+- ports/bl616/phosphor/pmod_sockets.cpp
+
+#### Status:
+
+- Build: NOT RUN
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---
