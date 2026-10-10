@@ -1130,3 +1130,33 @@ Ask the user what the screen shows with the monitor core loaded, since the displ
 - User Test: NOT RUN
 
 ---
+
+## 73 COMMIT Unreleased 2026-10-10T10:19:40-07:00
+
+#### Coming From:
+
+Unreleased ea72e0f
+
+#### Purpose:
+
+Record the user's acceptance of the clock-monitor core image across repeated power cycles, which entry 72 left as `User Test: NOT RUN` and which the display half of that work had no evidence for.
+
+#### Outcome:
+
+The user reports the VGA coming up perfectly on four consecutive power cycles with the monitor core booting from the card, so the image `desktop.90d3fa3a84fa.bin` is accepted as stable across the boots tested and the display result entry 72 could not report is now on the record. Nothing in this repository changed in this cycle, which is why Files Modified is `None.` -- the image was built by the Tang-Build repository's open flow from these sources, and that repository's entries 58, 59 and 60 carry the build configuration, the placement, the clock measurements and the boot-by-boot tally, with the raw evidence in its `evidence/clock-monitor.txt`. The one board change was made there: `/cores/console138k/desktop.bin` was set to the monitor image so `/scripts/boot.tdsh` boots it, with the lined baseline preserved as `desktop-vga-baseline.bin`. Each boot was tied to the bitstream by two independent reads of the monitor's stamp rather than by file size, `fpgar 134` returning `0x4d4f4e31` with status 0 on all four, and the counters were re-read every boot without moving, `clk` between 21.5020 and 21.5053 MHz and `hclk` between 74.2496 and 74.2501 MHz, both probes agreeing inside 0.02 percent. One finding narrows entry 72's account of why this image renders where the board's earlier baseline did not: entry 59 had offered `clk` skew as the lead, and measuring the only other timing-clean placement refutes it as a sufficient explanation, because seed 19 routes at 4.657 ns of `clk` skew, above the lined baseline's 4.389, while seed 17's 4.077 renders perfectly, so skew does not order the outcome and the mechanism is still unknown. The limits are the same ones the Tang-Build record states: four boots on one board with one monitor is a bar rather than a proof, and the seed-19 discriminator that would separate a skew threshold from an unrelated cause is built and deliberately unrun. Entry 72 keeps `User Test: NOT RUN` because settled entries are not rewritten and the syntax rules require later results to be recorded in a new entry, which this is. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai` diff, confirmed that `core.md` and settled history are intact and that only this appended entry changed under `.ai/`, and validated the four-field header, six canonical sections, prose in Outcome and Next Steps, an allowed Status set, sequential numbering as entry 73 of the active log and a count within the 100-entry limit. No part of this repository, Tang-Build or Tang-Phosphor was found to use intellectual property beyond what `THIRD_PARTY.md` already records.
+
+#### Next Steps:
+
+Run the seed-19 discriminator in the Tang-Build repository and record which reading it supports, because a skew threshold below about 4.2 ns predicts it lined while an unrelated cause predicts it perfect, and that answer decides whether a placement can be screened by `tools/clock-skew-report.py` before it is staged or whether the mechanism still has to be found. Do not re-measure `clk` skew as an explanation for the vertical lines without that result, since the three clean placements now on record do not order by it. Whether this image stays the card's boot default is the user's call and is currently yes, and reverting to the lined baseline is one `tangput`. The active log's numbering remains non-conforming from an earlier rollover and a mechanical renumber is the fix.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
