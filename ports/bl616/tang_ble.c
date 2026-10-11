@@ -1295,6 +1295,27 @@ static void hid_le_param_updated(struct bt_conn *conn, u16_t interval,
     }
 }
 
+/* le_param_req: a device asks for different connection parameters.  Every
+ * request is logged.  The gamepad's slot refuses it (diagnostic): the Xbox
+ * Wireless Controller asks for 7.5-15 ms soon after pairing, and on this board
+ * the link has died within one supervision timeout of every such switch,
+ * while BlueZ, which starts the same switch itself, keeps the controller
+ * (.ai/core-reference.md BLE-017).  Refusing keeps the link at 50 ms, so the
+ * next run shows whether the switch is what breaks it.  Other slots accept,
+ * as before. */
+static bool hid_le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
+{
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return true;
+    }
+    const bool refuse = d == &s_hid[HID_KBD];
+    hid_log(d, "link params asked: interval %u-%u latency %u timeout %u; %s",
+            param->interval_min, param->interval_max, param->latency,
+            param->timeout, refuse ? "refused (diagnostic)" : "accepted");
+    return !refuse;
+}
+
 static void hid_connected(struct bt_conn *conn, u8_t err)
 {
     hid_dev_t *d = hid_by_conn(conn);
@@ -1476,6 +1497,7 @@ static struct bt_conn_cb s_conn_cb = {
     .connected = hid_connected,
     .disconnected = hid_disconnected,
     .security_changed = hid_security_changed,
+    .le_param_req = hid_le_param_req,
     .le_param_updated = hid_le_param_updated,
 };
 

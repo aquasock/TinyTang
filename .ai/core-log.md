@@ -387,3 +387,33 @@ Test the connection update as the single next change, keeping legacy pairing and
 - User Test: FAIL
 
 ---
+
+## 13 COMMIT Unreleased 2026-10-11T09:06:15-07:00
+
+#### Coming From:
+
+Unreleased 9235969
+
+#### Purpose:
+
+Test whether the Xbox Wireless Controller's link dies because of the parameter switch it asks for, first by removing every other Bluetooth device from the board and then by refusing the request.
+
+#### Outcome:
+
+On the entry-12 image, with the M750's slot turned off so that nothing scanned in the background, the controller still died right after the 15 ms switch, so radio time shared with the reconnect scan is ruled out. The user then had every Logitech pairing removed, `blemouse forget` and `blekbd forget` followed by deleting `/ble/bonds.bin`, and from now on the controller is the only Bluetooth device while it is being worked on, at the user's direction; the earlier setup never tested more than two devices at once. A fresh reboot with the controller alone gave the same death after the switch, and in one session the link died at 50 ms just before the switch completed. `ports/bl616/tang_ble.c` then gained an `le_param_req` callback that logs every parameter request and refuses it for the gamepad's slot only, built cleanly as `9235969-dirty.ac83602`, 658160 bytes, MD5 `a3f2dbde4a7cac871bf72d22bcc4d3c0`, installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after a power cycle. The first run lost its decisive lines: the agent filtered the output of `blekbd off` with `grep -c`, and the board's log ring hands each line out once, so the lines could not be recovered; a memory rule now requires every console output to be saved whole first. After the user restarted the controller, the repeat was captured whole in a 45-second `blekbd watch`: three pairings, each followed by `link params asked: interval 6-12 latency 0 timeout 300; refused`, the link staying at 50 ms, discovery stalling after one or two answers, a supervision timeout, and error 2 on the next connection, with no report. The parameter switch is therefore ruled out, and BLE-017 records it. The host's own reply is not at fault either: the SDK's `le_conn_param_update_req()` allocates the response before calling the callback and sends it after. Since legacy pairing, most first connection attempts end in `HCI 0x3E` at -24 to -33 dBm, the controller never answering the board's connection, which BlueZ never saw; that is recorded as a second, separate fault. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 13 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Stop testing single guesses and build the instrument: an HCI trace on the board, made by wrapping the host's `bt_recv` and `bt_send` at link time as `CMakeLists.txt` already does for the allocator, recording every event and every ACL packet in and out with a millisecond timestamp in a static ring and printing it with a shell command, so that one pairing on this board can be laid against `~/xbox-desktop2.snoop` line for line, including the controller's last packet and the `0x3E` connects. The parameter request should go back to being accepted, the SDK's behaviour, while it is still logged, so that the trace shows the board as it normally runs.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
