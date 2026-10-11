@@ -512,3 +512,33 @@ Make this board's link match BlueZ's: create the gamepad slot's connection at 45
 - User Test: FAIL
 
 ---
+
+## 17 COMMIT Unreleased 2026-10-11T09:56:41-07:00
+
+#### Coming From:
+
+Unreleased ba80bbf
+
+#### Purpose:
+
+Make this board's link to the Xbox Wireless Controller match BlueZ's, a 45 ms interval with a 420 ms supervision timeout and a 251-octet data length, since the controller asks this board for new parameters, never BlueZ, before falling silent.
+
+#### Outcome:
+
+`ports/bl616/tang_ble.c` now creates both the explicit connection and the whitelist reconnect with interval 0x24 and supervision timeout 42, BlueZ's values, and sends `bt_le_set_data_len(conn, 251, 2120)` on every connection; `bt_le_set_data_len()` is declared locally because `host/hci_core.h` is not on this port's include path, and the SDK's automatic data-length update is off in this build. Two separate variables are changed in one cycle because each test costs the user a pairing session. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `ba80bbf-dirty.8977791`, 661008 bytes, MD5 `2facf1a27ed6de689f9efc2938c84a5f`, was installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the user's power cycle. In a traced session with the controller alone, 530 packets, every connection came up at interval 36 and timeout 42, and the controller still asked for interval 6-12 and fell silent as pairing completed, in three encrypted sessions, so BlueZ's link parameters are ruled out. The controller accepted all 40 `LE Set Data Length` commands, but no `LE Data Length Change` event ever arrived, where BlueZ's adapter reported 251 octets each way, so whether this board's controller completes the exchange is unknown; that and the frequent `0x3E` connects, which BlueZ never had, both point below the host. BLE-017 records this. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 17 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The one remaining host-side difference from BlueZ is the pairing: legacy pairing here, where this board sends its own keys, against BlueZ's LE Secure Connections, where the host sends none. With everything else now matched, setting the pairing request to BlueZ's flags (`smp_set_auth(0x2d)`, Bonding, MITM, Secure Connections, CT2; still Just Works against the controller's NoInputNoOutput) makes this board's host traffic a replica of BlueZ's. If that also fails, the fault lies in the BL616's binary controller, and the choice between stopping, seeking a newer controller library, or using another radio for the controller is the user's.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

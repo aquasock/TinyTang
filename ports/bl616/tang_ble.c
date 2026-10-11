@@ -242,6 +242,20 @@ static void hid_mtu_changed(struct bt_conn *conn, int mtu);
 extern void smp_set_auth(u8_t auth);
 #define TANG_SMP_AUTH_BONDING 0x01
 
+/* host/hci_core.h: LE Set Data Length for one connection. */
+extern int bt_le_set_data_len(struct bt_conn *conn, u16_t tx_octets, u16_t tx_time);
+
+/* Diagnostic: the link BlueZ makes with the Xbox Wireless Controller, which
+ * talks to BlueZ and falls silent on this board as pairing completes, after
+ * asking this board -- never BlueZ -- for new parameters
+ * (.ai/core-reference.md BLE-017): created at 45 ms (0x24) with a 420 ms
+ * supervision timeout (42), and the data length raised to 251 octets
+ * (2120 us) once connected.  Used for every connection while only the
+ * controller is paired; the SDK's default is 30-50 ms with a 4 s timeout. */
+#define TANG_CONN_PARAM_BLUEZ BT_LE_CONN_PARAM(0x0024, 0x0024, 0, 42)
+#define TANG_DATA_LEN_OCTETS  251
+#define TANG_DATA_LEN_TIME_US 2120
+
 /* Bring the radio and the host up, once.  `verbose` prints progress and
  * errors to the console, for the shell's commands; the boot-time reconnect
  * task starts it quietly, and `ble` reports the result. */
@@ -1391,6 +1405,12 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
                     ci.le.interval, ci.le.latency, ci.le.timeout, ci.role);
         }
     }
+    {
+        int dl = bt_le_set_data_len(conn, TANG_DATA_LEN_OCTETS, TANG_DATA_LEN_TIME_US);
+        if (dl) {
+            hid_log(d, "data length request not sent (%d)", dl);
+        }
+    }
     d->state = HID_SECURING;
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (rc) {
@@ -1753,7 +1773,7 @@ static void ble_reconnect_update(void)
         }
     }
     if (s_wl_mask) {
-        const int err = bt_conn_create_auto_le(BT_LE_CONN_PARAM_DEFAULT);
+        const int err = bt_conn_create_auto_le(TANG_CONN_PARAM_BLUEZ);
         if (err == 0 || err == -EALREADY) {
             s_auto_running = true;
         } else {
@@ -2082,7 +2102,7 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
     hid_clear_input(d);
     d->state = HID_CONNECTING;             /* holds the initiator off */
     ble_auto_stop();
-    d->conn = bt_conn_create_le(addr, BT_LE_CONN_PARAM_DEFAULT);
+    d->conn = bt_conn_create_le(addr, TANG_CONN_PARAM_BLUEZ);
     if (!d->conn) {
         d->state = HID_IDLE;
         ble_auto_resume();
