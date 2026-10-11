@@ -602,3 +602,33 @@ None.
 - User Test: FAIL
 
 ---
+
+## 20 COMMIT Unreleased 2026-10-11T10:21:34-07:00
+
+#### Coming From:
+
+Unreleased c441eaf
+
+#### Purpose:
+
+Size the move to upstream Bouffalo SDK 2.3.36, which the user chose to bring its newer radio layer and other fixes, by building TinyTang against it unchanged before touching the board.
+
+#### Outcome:
+
+The SDK in use was found to be a single shallow commit of nand2mario's fork, which descends from CherryUSB's fork of an older Bouffalo base (about 2.0, 2024) carrying CherryUSB 1.4.2 (January 2025), a USB Xbox 360 host driver and nand2mario's C++ build fixes, so the gap to upstream spans the whole SDK and its Bluetooth layer predates April 2025. Upstream `bouffalolab/bouffalo_sdk` was fetched shallow at `8a3df34cb73f459ac71deb1bdf0b33fa016ab6fb` (2.3.36, 1.6 GB) into `~/.cache/tangcore-dev/sdk-2.3.36`, leaving `~/.cache/tangcore-dev/sdk` untouched as the rollback, selected through the Makefile's `BL_SDK_BASE`. Upstream still builds with the Xuantie GCC 10.2.0 toolchain V2.6.1 already installed, and includes CherryUSB, but configures projects through Kconfig and a `defconfig` instead of `proj.conf`'s CMake settings, so the first build compiled with nothing enabled; a `defconfig` translating `proj.conf` was written, every option mapping by name except `BFLOG` (now `BFLB_LOG`) and the newlib switches, of which upstream keeps only the file ports. Built with `make -k`, the errors fall into five areas: the USB console and role switching, where CherryUSB's API now takes a bus id (about twenty calls in `usb_cdc_bl616.c` and `tang_usb_role.c`); the heap, where the allocator header `mem.h` is gone (`tang_heap.c`, `td_desktop_bl616.c`); the Bluetooth host's include layout (`uuid.h` in `tang_ble.c`); a C++ brace-initialisation error in `phosphor_player.cpp`; and two SDK-side configuration gaps, the Bluetooth CLI wanting the shell component and the SD card port a BSP header. More errors are expected behind these at link time. The largest risk is not the compile: TinyTang is reflashed only through its own USB console, so a new-SDK image that passes the boot-header checks and hangs before USB comes up would leave no console to reflash through, the board has no BOOT button, one-wire mode runs Sipeed's FT2232 firmware, and FLS-004's Dev Cube restore needs the BL616's ROM bootloader, which no record says how to reach on this board. The build directory was rebuilt against the current SDK, identity `c441eaf-dirty.3254be5`, matching the code on the board; the board was not touched. `defconfig` is committed; the current SDK does not read it. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 20 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Before Phase 1, the recovery path has to be settled with the user: either a confirmed way into the BL616's ROM bootloader for a Dev Cube or blflash restore, or a way to make a new-SDK image unable to strand the board. Phase 1 then ports the five areas, builds, and boots with Bluetooth unused, checking the console, flashing, the SD card, the desktop, core loading and Phosphor.
+
+#### Files Modified:
+
+- defconfig
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
