@@ -495,6 +495,46 @@ static void log_line(const char *line)
     taskEXIT_CRITICAL();
 }
 
+/* Diagnostic: keep public-address devices out of the controller's resolving
+ * list.  When a device hands over its IRK, the host's bt_id_add() writes it to
+ * the controller's resolving list and turns address resolution off and on
+ * around that -- mid-connection, at the moment pairing completes.  The Xbox
+ * Wireless Controller stops sending data at exactly that moment on this board,
+ * and BlueZ, with which it works, issues none of those commands
+ * (.ai/core-reference.md BLE-017).  A public address is never resolvable, so
+ * leaving such a device out costs nothing; random-address devices keep the
+ * SDK's behaviour.  The link renames the host's calls to these
+ * (-Wl,--wrap=bt_id_add,--wrap=bt_id_del in CMakeLists.txt). */
+void __real_bt_id_add(struct bt_keys *keys);
+void __real_bt_id_del(struct bt_keys *keys);
+
+static bool rl_skip(const struct bt_keys *keys, const char *what)
+{
+    if (keys->addr.type != BT_ADDR_LE_PUBLIC) {
+        return false;
+    }
+    char line[HID_LOG_LEN];
+    const uint8_t *a = keys->addr.a.val;
+    snprintf(line, sizeof(line), "ble: resolving list: %02X:%02X:%02X:%02X:%02X:%02X is public, not %s",
+             a[5], a[4], a[3], a[2], a[1], a[0], what);
+    log_line(line);
+    return true;
+}
+
+void __wrap_bt_id_add(struct bt_keys *keys)
+{
+    if (!rl_skip(keys, "added")) {
+        __real_bt_id_add(keys);
+    }
+}
+
+void __wrap_bt_id_del(struct bt_keys *keys)
+{
+    if (!rl_skip(keys, "removed")) {
+        __real_bt_id_del(keys);
+    }
+}
+
 static void log_drain(void)
 {
     char line[HID_LOG_LEN];

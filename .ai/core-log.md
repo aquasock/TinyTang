@@ -451,3 +451,34 @@ Separate the two causes that coincide when the controller goes silent: this boar
 - User Test: FAIL
 
 ---
+
+## 15 COMMIT Unreleased 2026-10-11T09:46:09-07:00
+
+#### Coming From:
+
+Unreleased 750bb0a
+
+#### Purpose:
+
+Test whether the Xbox Wireless Controller goes silent because this board's host turns on address resolution in its controller as pairing completes, by keeping public-address devices out of the controller's resolving list.
+
+#### Outcome:
+
+`ports/bl616/tang_ble.c` now wraps the host's `bt_id_add()` and `bt_id_del()` at link time (`-Wl,--wrap=bt_id_add -Wl,--wrap=bt_id_del` in `CMakeLists.txt`) and skips them, with a log line, for public-address devices, which a resolving list never serves; random-address devices keep the SDK's behaviour. The disassembly confirmed that the key-exchange handler `smp_ident_addr_info` and both key-clearing paths call the wrappers and that only the wrappers call the real functions. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `750bb0a-dirty.2c19591`, 660000 bytes, MD5 `6b553c5a34e6057caa96f648d969aacf`, was installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the user's power cycle. A traced session with the controller alone, 374 packets fetched in ranges and decoded with btmon, held four encrypted sessions; every pairing logged `resolving list: 78:86:2E:BB:45:79 is public, not added`, no resolving-list, privacy-mode or address-resolution command reached the controller, and the controller still stopped sending data as pairing completed, with the same supervision timeout and error 2 on the next connection. Address resolution is therefore ruled out. The agent's first count of those commands also matched `LE Add Device To Accept List`, the reconnect allow-list, and was corrected before it was reported as a result. BLE-017 now lists what still differs from BlueZ at the moment of failure: an ATT MTU exchange as the first operation after encryption, which this board never makes, data length extension, and the interval and supervision timeout. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 15 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Copy BlueZ's first move after encryption: send an ATT MTU exchange when the link reaches encryption and start discovery from its completion, keeping the resolving-list wrap and the trace, and trace one more pairing. Entry 5's exchange was sent during the security procedure and failed for that reason; this one is not. If the controller still goes silent, data length extension is the next difference.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

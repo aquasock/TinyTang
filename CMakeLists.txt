@@ -156,6 +156,9 @@ else()
     # on with CONFIG_BT_DEBUG_MONITOR, records into RAM for `bletrace` instead
     # of printing to an unconnected UART (ports/bl616/tang_ble_trace.c).
     sdk_add_link_options(-Wl,--wrap=bt_monitor_send)
+    # Diagnostic: public-address Bluetooth devices are kept out of the
+    # controller's resolving list (ports/bl616/tang_ble.c __wrap_bt_id_add).
+    sdk_add_link_options(-Wl,--wrap=bt_id_add -Wl,--wrap=bt_id_del)
 
     # The firmware's build identity: the commit, plus a hash of any uncommitted
     # changes, regenerated on every build so it cannot go stale (see
