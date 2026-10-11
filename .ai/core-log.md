@@ -826,3 +826,33 @@ Run the rest of the Phase 1 checklist that entries 20 and 21 set out, which this
 - User Test: PASS
 
 ---
+
+## 27 COMMIT Unreleased 2026-10-11T14:00:22-07:00
+
+#### Coming From:
+
+Unreleased 397fa20
+
+#### Purpose:
+
+Record that the move to Bouffalo SDK 2.3.36 is complete and working, and hand the Bluetooth radio-start hang that blocks the Xbox controller line to the next agent.
+
+#### Outcome:
+
+The migration is done and banked; the Bluetooth line has a new, sharply defined blocker. The board now runs 2.3.36: after entry 26's watchdog-name fix it enumerated as `ffff:5454 TinyTang CDC`, `platform` reported `bf42518-dirty.475b83d` with the TinyDesk Shell 0.1.5 prompt, `help` listed the full command set, `boot.tdsh` ran and `fpga` answered `core 84` (0x54, the desktop core), and the user accepted the VGA display, so the console, the shell, the SD mount, core loading and the display all work on the new SDK, which was the whole point of the move. The three fixes that got it there are the crash recorder's masked-mcause guard (entry 23's finding, which is what made any of the later faults readable), the SD mount moved out of `main` into the shell task so no blocking `f_mount` runs before the scheduler, and the watchdog device name taken from the SDK's own `BFLB_NAME_WDT` because 2.3.36 renamed it from `watchdog` to `watchdog0` and its `bflb_device_get_by_name()` asserts on an unknown name. For the handoff: the migration replaced far more than Bluetooth, so a future agent should not read it as a library swap. CherryUSB went from v1.0.0 to v1.6.1 with the bus-id API (`usbd_initialize(busid, reg_base, cb)`), the FreeRTOS port changed (its trap handler passes masked `mcause` in `a0`, and `xTaskCheckForTimeOut` dereferences `pxCurrentTCB` under `INCLUDE_xTaskAbortDelay`), and the lhal/BSP changed (device names, and the assert on an unknown name), while the point of the exercise was only the newer controller library. The Bluetooth line was then taken first because the user wants the Xbox controller. `ble` reports the stack reachable and the heap healthy on the new image (`79604 bytes free of 121720`, largest block `29504`) and the board stays up, so the ported `tang_ble.c` and the `mm`-based heap reporting both work; but **starting the radio takes the board off USB entirely** — no CDC, no FT2232, no reset, no crash record — twice, on `blekbd pair Xbox` and on `blescan 3`. That kills every Bluetooth device, so the Logitech keyboard and mouse cannot connect either, and it is not the entry-19 mismatched-library failure: `libbtblecontroller_bl616_ble1m10s1bredr0.a` is shipped by 2.3.36 and is what this build linked. A direct console trace was added to `ble_start_ex` in `ports/bl616/tang_ble.c`, bypassing `ble_say`, which buffers into the drained-once ring when it runs on the ble task, but not one `ble: start:` line reached the host, so the hang is at or before the radio start or the USB dies before the first flush. The recovery path is proven and cheap: with BOOT held at power-up the BL616 presents `349b:6160` on `/dev/ttyACM0` and `BLFlashCommand` reads and writes flash there, and because the firmware now boots, ordinary reflashes go over the console with `tools/tinytang_flash.py` without opening the case; the board is left needing a power cycle after the last radio-start attempt. The required core-syntax audit re-read `core.md` and `core-syntax.md`, inspected the complete `.ai` diff, confirmed `core.md` unchanged and no settled entry rewritten, and validated this entry as number 27 with six canonical sections, prose, allowed Status values and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Find where the radio start dies, and do it with an instrument that survives the hang: write a breadcrumb to a spare flash sector at each step of `ble_start_ex` in `ports/bl616/tang_ble.c` and read `0x3FF000`-style after the hang through the ROM bootloader, since console output does not survive it — the last breadcrumb names the step, exactly as the crash record named the boot fault. Prime suspects, in order: the RF and PHY parameters (`rfparam_init`), which are where the newer controller and the board's own radio meet; an interrupt or trap interaction the way the boot had one; and the `hci_driver_init` and `bt_enable` host handshake. Once the radio starts, the Xbox controller is the next step and BLE-017 applies to the newer controller library, whose behaviour was never observable before because the radio could not run; the operating notes there still hold — the pad must be awake and in pairing mode, the first pairing attempt commonly fails with error 8 and HCI 0x3E and the retry is the one that encrypts, every command's console output must be saved whole because one command's output is cut after about 4.5 KB, and `blekbd off` clears a wedged slot. The rest of the Phase 1 checklist follows the radio work — the SD card, `desktop`, core loading beyond the boot script, Phosphor and the flashing path — as does the Phase 2 regression on the M750, which is blocked by the same radio-start fault. Three housekeeping items are owed before Phase 4: remove the diagnostic scaffolding committed in `bf42518` (the `TINYTANG_NO_*` and `TINYTANG_UART_TRACE` guards, the UART trace in `main.cpp`) and the `BLE_STEP` trace added here, restore the BRD-009 wording in `tools/tinytang_flash.py`, and add the two porting-hazard records this migration found, that upstream asserts on an unknown `bflb_device_get_by_name()` name and that its FreeRTOS trap handler passes `mcause` rather than a register frame to `exception_entry`.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

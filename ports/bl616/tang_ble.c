@@ -278,7 +278,18 @@ static int ble_start_ex(bool verbose)
     }
 
     s_heap_before = kfree_size(0);
+    /* Diagnostic: straight to the console, not through ble_say, which buffers
+     * into the drained-once ring when it runs on the ble task -- the ring never
+     * drains if the radio start hangs, which is the failure being chased.  The
+     * delay after each line lets USB take the packet before the next step. */
+#define BLE_STEP(msg)                              \
+    do {                                           \
+        tdsh_printf("ble: " msg "\r\n");           \
+        vTaskDelay(pdMS_TO_TICKS(100));            \
+    } while (0)
+    BLE_STEP("start: rfparam_init");
     int32_t rc = rfparam_init(0, NULL, 0);
+    BLE_STEP("start: rfparam_init returned");
     if (rc != 0) {
         if (verbose) {
             ble_say("ble: RF init failed (%ld)", (long)rc);
@@ -288,10 +299,15 @@ static int ble_start_ex(bool verbose)
         return (int)rc;
     }
 
+    BLE_STEP("start: btble_controller_init");
     btble_controller_init(configMAX_PRIORITIES - 1);
+    BLE_STEP("start: hci_driver_init");
     hci_driver_init();
     s_enable_result = 1;
+    BLE_STEP("start: bt_enable");
     int err = bt_enable(bt_ready);
+    BLE_STEP("start: bt_enable returned");
+#undef BLE_STEP
     if (err) {
         s_enable_result = err;
         s_start_phase = 2;
