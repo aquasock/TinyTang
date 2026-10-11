@@ -57,3 +57,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 3 COMMIT Unreleased 2026-10-10T17:49:05-07:00
+
+#### Coming From:
+
+Unreleased 21d8a12
+
+#### Purpose:
+
+Record the Bluetooth controller cycle, which produced two firmware fixes in the BLE layer and a complete diagnosis of the Xbox pad's connection, up to the point where it refuses to stay attached.
+
+#### Outcome:
+
+The user asked for the Xbox Wireless Controller to work over Bluetooth, and the cycle produced two committed changes in `ports/bl616/tang_ble.c`, built as `21d8a12-dirty.8668742` and flashed to the board. The first writes Exit Suspend: HID over GATT lets a device hold its reports while it considers itself suspended, and nothing here had ever written the HID Control Point (`0x2A4C`) -- so `hid_setup_next` now writes `0x01` to it once the subscriptions are complete and logs `exit suspend -> 0x001A (0)`, and the pad accepts it. The pad's service map was captured in the process: the HID service is `0x0016`-`0x0023` with HID Information at `0x0018`, the Control Point at `0x001A`, the Report Map at `0x001C`, an input Report at `0x001E` (notify and read, CCC at `0x001F`) and an output Report at `0x0022` (write only). The CCC is correctly bound to its input, the subscription is accepted, and `0x001F` reads back `0x0001`, so the discovery, the binding and the subscription are all right and the pad simply sent nothing before this change. The second is the stale-key deadlock, which the board's own logs captured as six `security failed (level 1, err 8)` attempts and then an `err 2` in a row, each followed by `disconnected (HCI 0x3E)`: putting an Xbox pad into pairing mode makes it forget its host while this board still holds a key for it, so the stack tried to ENCRYPT against a key the pad no longer had and never re-paired, and a manual `forget` was the only escape -- which is exactly the "then you never can" the user had observed. A security failure at a bonded slot now drops the stored key, on the card and in the host's table, and leaves the slot armed so the next connect pairs afresh; `hid_drop_key` is that drop without the disconnect and the disarm, and `hid_forget` is now `hid_off` plus it. That fix was then narrowed in a second build after it proved too broad: `err 8` is UNSPECIFIED and is what this board reports on signal alone, as `BLE-001` says and as the reference warns not to read as the device refusing, so acting on it threw away a good pairing every time the link was marginal -- which it did, repeatedly, undoing the pairing while it looked like progress was being made. Only `PIN_OR_KEY_MISSING` is acted on now. What does not work yet is the whole of what the user asked for: the pad disconnects seconds after the subscription with `disconnected (HCI 0x13)`, the pad's own choice, so not one report has ever arrived and the controller does not work; and the automatic reconnect does not land it either, with a valid bond on the card, the pad awake and the whitelist initiator armed, while the K950 and M750 reconnect on the same board. The user's question about the desktop was settled on the way: the Bluetooth window calls the same `tang_ble_scan_start`, `tang_ble_pair_start` and `tang_ble_info`, shows the same slot state, and the user's own test through it showed no reports either, so there is no working path that the console lacks. Three errors of the agent's own are recorded so they cost nothing next time: `blescan` and `pair` both stop the whitelist initiator, which `BLE-011` states and which means every diagnostic scan was pausing the only reconnect mechanism this SDK has; overlapping console commands collided on the serial port, which showed as `multiple access on port?` and as spurious `none found`; and `tinytang_run.py --seconds N` streams for N seconds after the command, so long windows made every step a minute long for no reason. The board is left on the flashed build with the pairing on the card, and nothing else is pending in it.
+
+#### Next Steps:
+
+The post-subscribe disconnect is what stands between this and the report question, and connection parameters are the prime suspect: a HID peripheral that asks for a particular interval, latency and supervision timeout will terminate the link when the host does not grant it, and `HCI 0x13` seconds after the CCC write is what that looks like from this side. Log the parameter update request and adopt what the peripheral asks for, which is one small change. After that, the reconnect wants a plain `connect` verb that does an explicit connect without re-pairing, and a scan-based fallback for a waiting paired slot, because the whitelist initiator does not land this device. The pad's service map, the Exit Suspend behaviour and the stale-key deadlock belong in `.ai/core-reference.md` as records of their own, which this cycle did not add.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

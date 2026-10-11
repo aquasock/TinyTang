@@ -829,6 +829,21 @@ static void hid_setup_next(hid_dev_t *d)
         }
         d->setup_active = false;
         d->setup_pending = NULL;
+        /* HID over GATT: a device that considers itself SUSPENDED sends no
+         * reports until the host writes Exit Suspend (0x01) to the HID Control
+         * Point (0x2A4C), which nothing here ever did.  The Xbox controller is
+         * the first device to need it: its input report's CCC is enabled and
+         * acknowledged -- 0x001F reads back 0x0001 -- and it still sends
+         * nothing, while the K950 and M750 report without it.  Written after
+         * the subscriptions, so the device is listening when it resumes. */
+        hid_chrc_t *control_point = hid_find_chrc(d, 0x2A4C);
+        if (control_point) {
+            static const uint8_t exit_suspend = 0x01;
+            const int rc = bt_gatt_write_without_response(
+                    d->conn, control_point->value_handle, &exit_suspend, 1, false);
+            hid_log(d, "exit suspend -> 0x%04X (%d)",
+                    control_point->value_handle, rc);
+        }
         d->state = HID_READY;
         hid_log(d, "ready - %s", d->ready_hint);
     }
@@ -1118,6 +1133,8 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
     d->setup_pending = NULL;
 }
 
+static void hid_drop_key(hid_dev_t *d);
+
 static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
                                  enum bt_security_err err)
 {
@@ -1127,6 +1144,22 @@ static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
     }
     if (err) {
         hid_log(d, "security failed (level %d, err %d)", level, err);
+        /* A device that has re-entered pairing mode, or been reset, holds no
+         * key while this board still holds one for it.  The stack then keeps
+         * trying to ENCRYPT with a key the device no longer has -- on the Xbox
+         * controller that was six failed attempts in a row and then a seventh,
+         * and only a manual `forget` ever broke it.
+         *
+         * Only PIN_OR_KEY_MISSING is acted on.  An UNSPECIFIED failure (err 8)
+         * is what this board reports on signal alone, and BLE-001 says to
+         * expect it and retry, not to read it as the device refusing -- so
+         * dropping the key on it would throw away a good pairing every time the
+         * link is marginal, which is exactly what the pad made it do. */
+        if (err == BT_SECURITY_ERR_PIN_OR_KEY_MISSING &&
+            d->state == HID_SECURING && s_bonds[hid_slot(d)].valid) {
+            hid_log(d, "stored key refused; dropping it so the next try pairs");
+            hid_drop_key(d);
+        }
         return;
     }
     hid_log(d, "encrypted (level %d)", level);
@@ -1431,11 +1464,13 @@ static void hid_off(hid_dev_t *d)
     vTaskDelay(pdMS_TO_TICKS(500));
 }
 
-/* Let the device go and delete its pairing from the host and the card. */
-static void hid_forget(hid_dev_t *d)
+/* Drop the slot's stored key -- on the card and in the host's table -- and
+ * leave everything else alone, so the slot stays armed, connects again and
+ * pairs afresh.  This is `forget` without the disconnect and the disarm, which
+ * are exactly what a failing reconnect must not do. */
+static void hid_drop_key(hid_dev_t *d)
 {
     const int i = hid_slot(d);
-    hid_off(d);
     tang_bond_t b;
     taskENTER_CRITICAL();
     b = s_bonds[i];
@@ -1450,6 +1485,13 @@ static void hid_forget(hid_dev_t *d)
     }
     d->name[0] = '\0';
     ble_signal(BLE_EV_SAVE);
+}
+
+/* Let the device go and delete its pairing from the host and the card. */
+static void hid_forget(hid_dev_t *d)
+{
+    hid_off(d);
+    hid_drop_key(d);
 }
 
 /* At boot: read the pairings, and if there are any, start the stack quietly,
