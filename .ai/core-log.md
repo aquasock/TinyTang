@@ -951,3 +951,33 @@ Install this build as the card's `/cores/console138k/desktop.bin` so `boot.tdsh`
 - User Test: PASS
 
 ---
+
+## 31 COMMIT Unreleased 2026-10-11T16:37:16-07:00
+
+#### Coming From:
+
+Unreleased 79b9295
+
+#### Purpose:
+
+Hand the project to the next agent with HDMI working on the board, the card carrying the fixed core, and the remaining cleanup named.
+
+#### Outcome:
+
+The desktop now appears on both displays -- the user reports the console mirrored on the VGA and the HDMI screens together -- and the card carries the fixed core, so this is a handoff rather than a result to re-derive. The state to pick up from is: repository at `79b9295`, working tree clean apart from the carried `third_party/tinydesk` patch dirt, `tools/check_core_log.py` passing at 31 entries, and the board running firmware `0c53bd6-dirty.57f0e39`, which is the BL616 source as committed in entry 29; `/cores/console138k/desktop.bin` on the card is now the HDMI-capable build (4,495,050 bytes, sha256 `95e9b3e1cb884d99e4b6073651c2ba167798a6b92c8869eb499a392ca29549e3`) rebuilt from the committed `desktop.cst`, loaded and confirmed answering core 84, with the previous HDMI-dark build kept beside it as `desktop.bin.pre-hdmi-fix` and the stock nestang core kept as `nestang-stock.bin` for HDMI reference. What is true now, in brief: the board runs upstream Bouffalo SDK 2.3.36 and boots to the shell and TinyDesk on the SD card; cores load from the card and the desktop core now drives HDMI; Bluetooth works -- radio, scan, and both a BLE keyboard and mouse -- after the radio start was found to take the USB clock down and `tdsh_bl616_console_restart()` was made to bring it back, and after the connection-reference underflow that reset the board on every controller attempt was fixed by no longer releasing references the SDK's own teardown drops; the Xbox Wireless Controller remains unsupported, the fault being the BL616's closed controller library, and -- the finding that matters more than the pad itself -- the BL616 has no command in the core link to send input into a core, so a BLE pad could never have driven one. HDMI's fault is worth recording as an agent lesson: it was three `INS_LOC` PLL placement pins in `fpga/desktop/desktop.cst`, named with nextpnr's flattened cell names from the open-flow era, which stopped `hclk5` reaching the HDMI serializer's FCLK; the monitor, cable, port, pixel clock and RTL were all sound, and what found it in one cycle was building stock nestang on the same board as a reference and reading the clock monitor with `fmon`. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 31 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The cleanup cycle both entry 29 and entry 30 name is the next work: remove the diagnostic scaffolding -- the radio-start flash crumbs, the `blestart` and `blecrumb` commands, the heartbeat, the reference ring and the two `bt_conn_ref`/`bt_conn_unref` wraps in `ports/bl616/tang_ble.c`, `ports/bl616/tang_ble.h`, `ports/bl616/tang_crash.c` and `CMakeLists.txt`, and the `TINYTANG_NO_*` and UART-trace guards committed in `bf42518` -- then restore the BRD-009 wording in `tools/tinytang_flash.py`, which still names `make flash`. `.ai/core-reference.md` is owed three things this cycle established or re-learned: that starting the radio takes the BL616's USB clock down while the CPU lives, with `tdsh_bl616_console_restart()` as the fix; that 2.3.36's `bt_conn_unref` asserts on an over-release where the fork was silent, so a connection reference must be released only when it was taken; and that HDMI needed nestang's own `console.cst` PLL placement, not the open-flow pins, which belongs with PROT-009's look-ahead note. BLE-017 should be closed with the Xbox pad recorded as unsupported on this board for the reason its own ruled-out list now supports, and the two further consequences noted: BLE-HID gamepads are untested here because none was available, and the BL616 cannot feed a core in any case. Finally, building any core in this workspace needs `NESTANG_DIR` pointed at a real nestang checkout -- the local `../tangcore/nestang` submodule is empty, and this cycle cloned `nand2mario/nestang` to `/tmp/nestang` to build the stock reference and reconstruct the desktop core, which is not a durable location.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
