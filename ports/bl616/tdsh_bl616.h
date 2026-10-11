@@ -14,6 +14,10 @@
 /* Console transport (usb_cdc_bl616.c).  The USB CDC port is the terminal the
  * user sees; the shell renders into it and the PC displays it. */
 void tdsh_bl616_console_init(void);
+/* Bring the console back after the USB clock has been lost (the Bluetooth
+ * radio's PLL bring-up) -- re-asserts the USB clock and re-initialises the
+ * device.  Safe to call again; see tang_usb_role.c. */
+void tdsh_bl616_console_restart(void);
 bool tdsh_bl616_console_connected(void);
 /* Return the next byte, or -1 when none is waiting.  Never blocks. */
 int  tdsh_bl616_console_read_byte(void);

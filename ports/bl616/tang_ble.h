@@ -128,4 +128,13 @@ const char *tang_ble_set_reconnect(int slot, bool on);
 /* Let the slot's device go and delete its pairing from the board and card. */
 const char *tang_ble_forget(int slot);
 
+/* Diagnostic for the radio-start hang (BLE-017): a heartbeat into the flash
+ * crumbs, called by the crash recorder's watchdog task.  A no-op until the
+ * radio has started.  Remove with the blecrumb/blestart diagnostics. */
+void tang_ble_crumb_beat(void);
+
+/* Flush the bt_conn_unref diagnostic ring to the flash crumbs; called by the
+ * crash recorder before it resets.  Remove with the diagnostics. */
+void tang_ble_ref_dump(void);
+
 #endif /* TANG_BLE_H */

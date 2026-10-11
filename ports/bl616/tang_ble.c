@@ -46,12 +46,15 @@
 #include "hci_driver.h"
 #include "btble_lib_api.h"
 #include "rfparam_adapter.h"
+#include "bflb_flash.h"
+#include "bl616_glb.h"
 
 #include "keys.h"
 #include "ff.h"
 #include "mm.h"
 
 #include "tdsh.h"
+#include "tdsh_bl616.h"
 #include "tang_ble.h"
 #include "tang_ble_bonds.h"
 #include "tang_heap.h"
@@ -153,9 +156,197 @@ static void ble_release(void)
     s_busy = false;
 }
 
+/* --------------------------------------------------------- start crumbs --
+ *
+ * Diagnostic for the radio-start hang (BLE-017).  Console output does not
+ * survive it: the USB goes down with the radio, so not one line of the
+ * BLE_STEP trace in ble_start_ex() reaches the host.  Flash does.  Each step
+ * of the radio start writes a numbered word to a spare sector, so the highest
+ * word present after a hang names the step the board died at, and `blecrumb`
+ * prints them on the next boot -- the crumbs survive the power cycle, and with
+ * no pairings saved the next boot does not start the radio (see ble_boot()),
+ * so the console comes back to read them.
+ *
+ * Sector 0x3FE000: FLS-002's full read-back found everything above the vendor
+ * data record at 0x200000 erased, and the crash recorder owns the sector above
+ * this one (FLS-003).  Removed with the rest of the radio-start diagnostics. */
+#define BLE_CRUMB_ADDR    0x003FE000u
+#define BLE_CRUMB_SECTOR  0x1000u
+#define BLE_CRUMB_BASE    0x424C4500u   /* "BLE\0" in the high byte */
+
+enum {
+    BLE_CRUMB_ENTER = 1,
+    BLE_CRUMB_RFPARAM_BEFORE,
+    BLE_CRUMB_RFPARAM_AFTER,
+    BLE_CRUMB_CONTROLLER_INIT,
+    BLE_CRUMB_HCI_INIT,
+    BLE_CRUMB_BT_ENABLE,
+    BLE_CRUMB_BT_ENABLE_RET,
+    BLE_CRUMB_READY,
+    BLE_CRUMB_DONE,
+    BLE_CRUMB_START_RETURNED,   /* ble_start_ex() back in its caller */
+    BLE_CRUMB_SCAN_BEFORE,      /* before bt_le_scan_start() */
+    BLE_CRUMB_SCAN_AFTER,       /* after bt_le_scan_start() returned */
+    BLE_CRUMB_SCAN_STOPPED,     /* after bt_le_scan_stop() */
+    BLE_CRUMB_COUNT
+};
+
+/* A heartbeat the crash recorder's watchdog task writes every 500 ms once the
+ * radio is up: a value still advancing after the death proves the CPU is alive
+ * and it is the USB link that went, not a hang.  Its slots sit above the crumbs
+ * above; the run stops before the ring wraps, so every beat is a fresh word. */
+#define BLE_CRUMB_BEAT_BASE   128u
+#define BLE_CRUMB_BEAT_SLOTS  60u
+
+/* The bt_conn_unref ring, written by the crash recorder before it resets.  It
+ * has its own sector, below the crumbs', because the crumbs are armed (erased)
+ * at every radio start -- including the boot that follows the crash -- and
+ * would wipe the dump before it could be read. */
+#define BLE_REF_ADDR          0x003FD000u
+#define BLE_CRUMB_REF_TOTAL   64u
+#define REF_RING_ENTRIES      16u
+
+#define BLE_CRUMB_READ_WORDS  (BLE_CRUMB_BEAT_BASE + BLE_CRUMB_BEAT_SLOTS + 4u)
+
+/* Raw values (not markers), for the USB-clock investigation: the WiFi PLL
+ * register the USB clock comes from, either side of the radio start, and
+ * whether the revive was attempted. */
+#define BLE_CRUMB_PLL_BEFORE   16u
+#define BLE_CRUMB_PLL_AFTER    17u
+#define BLE_CRUMB_USB_REVIVE   18u
+
+static volatile bool s_crumb_armed;
+
+static const char *const s_crumb_names[] = {
+    "", "enter", "rfparam_init before", "rfparam_init after",
+    "btble_controller_init", "hci_driver_init", "bt_enable",
+    "bt_enable returned", "bt_ready", "done", "ble_start returned",
+    "scan start before", "scan start after", "scan stopped",
+};
+
+/* One crumb, one flash word.  Idempotent: a word already holding its marker is
+ * left alone, so a step that runs twice does not program the flash twice. */
+static void ble_crumb_write(unsigned step)
+{
+    if (step == 0 || step >= BLE_CRUMB_COUNT) {
+        return;
+    }
+    const uint32_t addr = BLE_CRUMB_ADDR + step * 4u;
+    const uint32_t want = BLE_CRUMB_BASE | step;
+    uint32_t have = 0;
+    if (bflb_flash_read(addr, (uint8_t *)&have, sizeof(have)) == 0 && have == want) {
+        return;
+    }
+    (void)bflb_flash_write(addr, (uint8_t *)&want, sizeof(want));
+}
+
+/* Arm a fresh run: erase the sector so only this attempt's crumbs read back,
+ * then mark entry.  Called once, by whoever actually starts the radio. */
+static void ble_crumbs_arm(void)
+{
+    (void)bflb_flash_erase(BLE_CRUMB_ADDR, BLE_CRUMB_SECTOR);
+    ble_crumb_write(BLE_CRUMB_ENTER);
+}
+
+/* Write one raw value (not a marker) into a crumb slot. */
+static void ble_crumb_put(unsigned slot, uint32_t value)
+{
+    (void)bflb_flash_write(BLE_CRUMB_ADDR + slot * 4u, (uint8_t *)&value, sizeof(value));
+}
+
+/* ------------------------------------------------------- bt_conn_unref probe --
+ *
+ * Diagnostic for the crash that resets the board: bt_conn_unref()'s
+ * BT_ASSERT(old > 0) firing from hci_disconn_complete() means a reference was
+ * dropped once too often.  The SDK's bt_conn_unref is wrapped at link time
+ * (CMakeLists.txt) to record the last few calls -- the connection and the
+ * caller -- and the crash recorder flushes them to the crumb sector before it
+ * resets (tang_crash.c), because the reset loses RAM, so `blecrumb` can name
+ * who dropped the extra reference. */
+static volatile uintptr_t s_ref_conn[REF_RING_ENTRIES];
+static volatile uintptr_t s_ref_ra[REF_RING_ENTRIES];
+static volatile int32_t   s_ref_val[REF_RING_ENTRIES];    /* conn->ref when called */
+static volatile unsigned  s_ref_head;
+
+/* conn->ref's offset, read from bt_conn_unref's own disassembly (it does
+ * "addi a0,a0,72" before atomic_dec).  The SDK's bt_conn_ref() calls made
+ * inside conn.c are not wrapped -- --wrap only redirects undefined references
+ * -- so the ledger is read from the field instead of from the calls. */
+#define BT_CONN_REF_OFFSET 72u
+
+static int32_t conn_ref_read(struct bt_conn *conn)
+{
+    return *(volatile int32_t *)((uintptr_t)conn + BT_CONN_REF_OFFSET);
+}
+
+static void ref_note(struct bt_conn *conn, uintptr_t ra, bool is_ref)
+{
+    const unsigned i = s_ref_head % REF_RING_ENTRIES;
+    s_ref_conn[i] = (uintptr_t)conn | (is_ref ? 1u : 0u);
+    s_ref_ra[i] = ra;
+    s_ref_val[i] = conn ? conn_ref_read(conn) : 0;
+    if (s_ref_head < 0xFFFFFFFFu) {
+        s_ref_head++;
+    }
+}
+
+void __real_bt_conn_unref(struct bt_conn *conn);
+struct bt_conn *__real_bt_conn_ref(struct bt_conn *conn);
+
+struct bt_conn *__wrap_bt_conn_ref(struct bt_conn *conn)
+{
+    ref_note(conn, (uintptr_t)__builtin_return_address(0), true);
+    return __real_bt_conn_ref(conn);
+}
+
+void __wrap_bt_conn_unref(struct bt_conn *conn)
+{
+    ref_note(conn, (uintptr_t)__builtin_return_address(0), false);
+    __real_bt_conn_unref(conn);
+}
+
+/* Flush the ring to a flash sector of its own, newest first, so it survives
+ * both the reset and the next boot's crumb arm. */
+void tang_ble_ref_dump(void)
+{
+    const unsigned n = s_ref_head < REF_RING_ENTRIES ? s_ref_head : REF_RING_ENTRIES;
+    uint32_t buf[2 + REF_RING_ENTRIES * 3];
+    unsigned w = 0;
+    buf[w++] = s_ref_head;
+    buf[w++] = n;
+    for (unsigned k = 0; k < n; k++) {
+        const unsigned idx = (s_ref_head - 1u - k) % REF_RING_ENTRIES;
+        buf[w++] = (uint32_t)s_ref_conn[idx];
+        buf[w++] = (uint32_t)s_ref_ra[idx];
+        buf[w++] = (uint32_t)s_ref_val[idx];
+    }
+    (void)bflb_flash_erase(BLE_REF_ADDR, BLE_CRUMB_SECTOR);
+    (void)bflb_flash_write(BLE_REF_ADDR, (uint8_t *)buf, w * sizeof(buf[0]));
+}
+
+/* The heartbeat.  Called by the crash recorder's watchdog task (tang_crash.c),
+ * which runs every 500 ms or the board resets, so this advances only while the
+ * CPU lives. */
+void tang_ble_crumb_beat(void)
+{
+    if (!s_crumb_armed) {
+        return;
+    }
+    static uint32_t s_beats;
+    const uint32_t seq = s_beats + 1;
+    if (seq > BLE_CRUMB_BEAT_SLOTS) {
+        return;                         /* stop before the ring wraps */
+    }
+    s_beats = seq;
+    const uint32_t word = seq;
+    (void)bflb_flash_write(BLE_CRUMB_ADDR + (BLE_CRUMB_BEAT_BASE + seq) * 4u,
+                           (uint8_t *)&word, sizeof(word));
+}
+
 static void bt_ready(int err)
 {
     s_enable_result = err;
+    ble_crumb_write(BLE_CRUMB_READY);
 }
 
 typedef struct {
@@ -277,7 +468,9 @@ static int ble_start_ex(bool verbose)
         return s_enable_result;
     }
 
+    ble_crumbs_arm();
     s_heap_before = kfree_size(0);
+    ble_crumb_put(BLE_CRUMB_PLL_BEFORE, BL_RD_REG(GLB_BASE, GLB_WIFI_PLL_CFG10));
     /* Diagnostic: straight to the console, not through ble_say, which buffers
      * into the drained-once ring when it runs on the ble task -- the ring never
      * drains if the radio start hangs, which is the failure being chased.  The
@@ -288,7 +481,9 @@ static int ble_start_ex(bool verbose)
         vTaskDelay(pdMS_TO_TICKS(100));            \
     } while (0)
     BLE_STEP("start: rfparam_init");
+    ble_crumb_write(BLE_CRUMB_RFPARAM_BEFORE);
     int32_t rc = rfparam_init(0, NULL, 0);
+    ble_crumb_write(BLE_CRUMB_RFPARAM_AFTER);
     BLE_STEP("start: rfparam_init returned");
     if (rc != 0) {
         if (verbose) {
@@ -300,12 +495,16 @@ static int ble_start_ex(bool verbose)
     }
 
     BLE_STEP("start: btble_controller_init");
+    ble_crumb_write(BLE_CRUMB_CONTROLLER_INIT);
     btble_controller_init(configMAX_PRIORITIES - 1);
     BLE_STEP("start: hci_driver_init");
+    ble_crumb_write(BLE_CRUMB_HCI_INIT);
     hci_driver_init();
     s_enable_result = 1;
     BLE_STEP("start: bt_enable");
+    ble_crumb_write(BLE_CRUMB_BT_ENABLE);
     int err = bt_enable(bt_ready);
+    ble_crumb_write(BLE_CRUMB_BT_ENABLE_RET);
     BLE_STEP("start: bt_enable returned");
 #undef BLE_STEP
     if (err) {
@@ -350,6 +549,13 @@ static int ble_start_ex(bool verbose)
     bt_gatt_register_mtu_callback(hid_mtu_changed);
     s_heap_after = kfree_size(0);
     s_start_phase = 2;
+    ble_crumb_write(BLE_CRUMB_DONE);
+    s_crumb_armed = true;               /* the heartbeat may start now */
+    /* The radio is up and the USB clock is likely down (see blecrumb).  Record
+     * the PLL register, then try to bring the console back. */
+    ble_crumb_put(BLE_CRUMB_PLL_AFTER, BL_RD_REG(GLB_BASE, GLB_WIFI_PLL_CFG10));
+    tdsh_bl616_console_restart();
+    ble_crumb_put(BLE_CRUMB_USB_REVIVE, 1u);
 
     if (verbose) {
         bt_addr_le_t own;
@@ -394,7 +600,9 @@ static int ble_scan(int secs, unsigned *count, unsigned *dropped, uint32_t *repo
     };
     s_scanning = true;
     ble_auto_stop();
+    ble_crumb_write(BLE_CRUMB_SCAN_BEFORE);
     int err = bt_le_scan_start(&param, device_found);
+    ble_crumb_write(BLE_CRUMB_SCAN_AFTER);
     if (err) {
         s_scanning = false;
         ble_auto_resume();
@@ -404,6 +612,7 @@ static int ble_scan(int secs, unsigned *count, unsigned *dropped, uint32_t *repo
     s_scan_until = xTaskGetTickCount() + pdMS_TO_TICKS(secs * 1000);
     vTaskDelay(pdMS_TO_TICKS(secs * 1000));
     (void)bt_le_scan_stop();
+    ble_crumb_write(BLE_CRUMB_SCAN_STOPPED);
     s_scanning = false;
     ble_auto_resume();
 
@@ -462,6 +671,7 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
         ble_release();
         return 1;
     }
+    ble_crumb_write(BLE_CRUMB_START_RETURNED);
 
     unsigned count, dropped;
     uint32_t reports;
@@ -620,7 +830,14 @@ typedef struct {
     const char *ready_hint;
     uint16_t appearance;          /* what `pair` looks for */
 
-    struct bt_conn *conn;         /* one reference held while set */
+    struct bt_conn *conn;         /* set while connecting, connected or waiting */
+    /* True when `conn` holds a reference this port must release.  bt_conn_create_le()
+     * carries a Bouffalo fix: when a connection object for the peer already exists
+     * it returns that object WITHOUT a caller reference, and only a freshly created
+     * one comes with one (blestack/src/host/conn.c).  Releasing a reference we were
+     * not given underflows bt_conn_unref(), whose BT_ASSERT(old > 0) resets the
+     * board on 2.3.36. */
+    bool conn_owned;
     char name[TANG_BOND_NAME_LEN];
     /* The paired device is to be reconnected whenever it is not connected:
      * while waiting it is on the controller's whitelist, and the reconnect
@@ -746,6 +963,7 @@ static hid_dev_t *hid_by_conn(struct bt_conn *conn)
         hid_dev_t *d = &s_hid[i];
         if (d->armed && !d->conn && dst && bt_addr_le_cmp(dst, &d->addr) == 0) {
             d->conn = bt_conn_ref(conn);
+            d->conn_owned = true;     /* a reference we took ourselves */
             return d;
         }
     }
@@ -1399,8 +1617,15 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
     }
     if (err) {
         hid_log(d, "connect failed (HCI 0x%02X)", err);
-        bt_conn_unref(d->conn);
+        /* No bt_conn_unref here.  For a failed connect the stack drops the
+         * reference itself: bt_conn_set_state(BT_CONN_DISCONNECTED) calls this
+         * callback through notify_connected() and then unrefs, in both the
+         * old_state == BT_CONN_CONNECT and BT_CONN_CONNECT_SCAN branches
+         * (blestack/src/host/conn.c).  Unreffing here dropped it twice, which
+         * the old SDK's bt_conn_unref tolerated silently but 2.3.36's asserts
+         * on (BT_ASSERT(old > 0)), resetting the board. */
         d->conn = NULL;
+        d->conn_owned = false;
         if (d->armed) {
             d->state = HID_WAITING;
             ble_arm_later(d);
@@ -1461,8 +1686,15 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
                     ci.le.interval, ci.le.latency, ci.le.timeout);
         }
     }
-    bt_conn_unref(d->conn);
+    /* No bt_conn_unref here.  The SDK's own disconnect teardown drops the
+     * reference the application holds: bt_conn_set_state(BT_CONN_DISCONNECTED)
+     * releases it inside conn.c, and hci_disconn_complete()'s own lookup
+     * reference is released after this callback returns.  Releasing ours as
+     * well dropped a reference that was never there -- the bt_conn_ref/unref
+     * ledger (blecrumb) showed 2 references and 3 releases -- which
+     * bt_conn_unref()'s BT_ASSERT(old > 0) turns into a board reset on 2.3.36. */
     d->conn = NULL;
+    d->conn_owned = false;
     if (d->armed) {
         /* Back on the whitelist, to be reconnected when it next advertises. */
         d->state = HID_WAITING;
@@ -2121,7 +2353,17 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
     hid_clear_input(d);
     d->state = HID_CONNECTING;             /* holds the initiator off */
     ble_auto_stop();
+    /* bt_conn_create_le() returns a connection object we own a reference to only
+     * when it creates one: with a connection object already present for this peer
+     * it returns that object without a reference (blestack/src/host/conn.c, the
+     * "not ref if conn of this peer has existed" fix).  Ask first, so the
+     * reference is released later only when it was actually given. */
+    struct bt_conn *existing = bt_conn_lookup_addr_le(BT_ID_DEFAULT, addr);
+    if (existing) {
+        bt_conn_unref(existing);      /* the lookup's own reference */
+    }
     d->conn = bt_conn_create_le(addr, TANG_CONN_PARAM_BLUEZ);
+    d->conn_owned = (d->conn != NULL) && (existing == NULL);
     if (!d->conn) {
         d->state = HID_IDLE;
         ble_auto_resume();
@@ -2568,6 +2810,105 @@ void tang_ble_info(tang_ble_info_t *out)
 /* ports/bl616/tang_ble_trace.c */
 int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv);
 
+/* The radio-start crumbs the diagnostic in ble_start_ex() leaves in flash, for
+ * reading back over the console after a hang (a power cycle brings the board
+ * back without starting the radio, so the console is available). */
+static int cmd_blecrumb(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    (void)argc;
+    (void)argv;
+    uint32_t words[BLE_CRUMB_READ_WORDS];
+    if (bflb_flash_read(BLE_CRUMB_ADDR, (uint8_t *)words, sizeof(words)) != 0) {
+        tdsh_printf("blecrumb: flash read failed\r\n");
+        return 1;
+    }
+    int last = 0;
+    for (unsigned s = 1; s < BLE_CRUMB_COUNT; s++) {
+        const bool set = words[s] == (BLE_CRUMB_BASE | s);
+        tdsh_printf("blecrumb: %-2u %-22s %s\r\n", s, s_crumb_names[s],
+                    set ? "set" : (words[s] == 0xFFFFFFFFu ? "-" : "garbled"));
+        if (set) {
+            last = (int)s;
+        }
+    }
+    if (last == 0) {
+        tdsh_printf("blecrumb: empty; no radio start recorded (sector erased)\r\n");
+    } else {
+        tdsh_printf("blecrumb: last = %s\r\n", s_crumb_names[last]);
+    }
+    /* The WiFi PLL register the USB clock is divided from, either side of the
+     * radio start: if the radio cleared the USB output bits, the two differ. */
+    const uint32_t pll_before = words[BLE_CRUMB_PLL_BEFORE];
+    const uint32_t pll_after = words[BLE_CRUMB_PLL_AFTER];
+    if (pll_before == 0xFFFFFFFFu && pll_after == 0xFFFFFFFFu) {
+        tdsh_printf("blecrumb: PLL_CFG10 not recorded\r\n");
+    } else {
+        tdsh_printf("blecrumb: PLL_CFG10 before %08lx after %08lx %s\r\n",
+                    (unsigned long)pll_before, (unsigned long)pll_after,
+                    pll_before == pll_after ? "(unchanged)" : "(CHANGED)");
+    }
+    tdsh_printf("blecrumb: usb revive %s\r\n",
+                words[BLE_CRUMB_USB_REVIVE] == 1u ? "attempted" : "-");
+    /* The bt_conn_ref/unref ring, from its own sector, newest first.  Each
+     * entry is the connection (low bit set for a ref), the caller, and
+     * conn->ref as it stood when the call was made. */
+    static uint32_t refbuf[2 + REF_RING_ENTRIES * 3];
+    if (bflb_flash_read(BLE_REF_ADDR, (uint8_t *)refbuf, sizeof(refbuf)) == 0 &&
+        refbuf[0] != 0xFFFFFFFFu) {
+        const unsigned kept = refbuf[1];
+        tdsh_printf("blecrumb: conn ref calls %lu (%u kept)\r\n",
+                    (unsigned long)refbuf[0], kept);
+        for (unsigned k = 0; k < kept && k < REF_RING_ENTRIES; k++) {
+            const uint32_t *e = &refbuf[2 + k * 3u];
+            tdsh_printf("blecrumb:   -%u %s conn %08lx ref %ld ra %08lx\r\n", k,
+                        (e[0] & 1u) ? "ref  " : "unref",
+                        (unsigned long)(e[0] & ~1u), (long)(int32_t)e[2],
+                        (unsigned long)e[1]);
+        }
+    } else {
+        tdsh_printf("blecrumb: no bt_conn_unref dump\r\n");
+    }
+    /* The heartbeat: how many 500 ms beats the watchdog task managed after the
+     * radio came up.  Advancing past the last crumb means the CPU lived on and
+     * only the USB link went away; stopping at the crumb means the CPU stopped. */
+    uint32_t beats = 0;
+    for (unsigned i = BLE_CRUMB_BEAT_BASE;
+         i < BLE_CRUMB_BEAT_BASE + BLE_CRUMB_BEAT_SLOTS; i++) {
+        if (words[i] != 0xFFFFFFFFu && words[i] > beats) {
+            beats = words[i];
+        }
+    }
+    tdsh_printf("blecrumb: heartbeat %lu beat(s)\r\n", (unsigned long)beats);
+    if (beats == 0) {
+        tdsh_printf("blecrumb: CPU did not outlive the radio start (stopped or hung)\r\n");
+    } else {
+        tdsh_printf("blecrumb: CPU alive about %lu ms past the radio start\r\n",
+                    (unsigned long)(beats * 500u));
+    }
+    return 0;
+}
+
+/* Start the radio and return without scanning, so the radio start and the scan
+ * can be told apart: if the console dies here, the start is the fault; if it
+ * survives, the scan is. */
+static int cmd_blestart(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    (void)argc;
+    (void)argv;
+    if (!ble_claim()) {
+        tdsh_printf("blestart: Bluetooth is busy; try again\r\n");
+        return 1;
+    }
+    tdsh_printf("blestart: starting the radio, no scan\r\n");
+    const int rc = ble_start();
+    ble_crumb_write(BLE_CRUMB_START_RETURNED);
+    ble_release();
+    tdsh_printf("blestart: ble_start returned %d\r\n", rc);
+    return rc;
+}
+
 static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
       "Bluetooth status: the radio, the heap, the pairings and both devices",
@@ -2584,6 +2925,12 @@ static const tdsh_command_t s_ble_commands[] = {
     { "bletrace", "bletrace [clear | dump [from [count]]]",
       "Diagnostic HCI trace of the Bluetooth stack (tools/ble_trace_to_btsnoop.py reads a dump)",
       tang_ble_trace_cmd, 0 },
+    { "blecrumb", "blecrumb",
+      "Diagnostic: the last Bluetooth radio-start step this board reached, from flash",
+      cmd_blecrumb, 0 },
+    { "blestart", "blestart",
+      "Diagnostic: start the Bluetooth radio and return, without scanning",
+      cmd_blestart, 0 },
 };
 
 int tang_ble_register(void)

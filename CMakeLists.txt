@@ -178,6 +178,10 @@ else()
         # Diagnostic: public-address Bluetooth devices are kept out of the
         # controller's resolving list (ports/bl616/tang_ble.c __wrap_bt_id_add).
         sdk_add_link_options(-Wl,--wrap=bt_id_add -Wl,--wrap=bt_id_del)
+        # Diagnostic: record the last bt_conn_ref/unref calls and the per-connection
+        # net, to name who drops a connection reference too many times
+        # (ports/bl616/tang_ble.c).
+        sdk_add_link_options(-Wl,--wrap=bt_conn_unref -Wl,--wrap=bt_conn_ref)
     endif()
     # The firmware's build identity: the commit, plus a hash of any uncommitted
     # changes, regenerated on every build so it cannot go stale (see

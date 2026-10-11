@@ -19,6 +19,7 @@
 #include "usbd_core.h"
 #include "usbd_cdc_acm.h"   /* declares usbd_cdc_acm_init_intf; usbd_cdc.h does not */
 #include "bflb_mtimer.h"
+#include "bl616_glb.h"
 
 #define CDC_IN_EP  0x81
 #define CDC_OUT_EP 0x02
@@ -291,6 +292,20 @@ void tdsh_bl616_console_init(void)
     usbd_add_endpoint(CDC_BUSID, &cdc_in_ep);
     /* The register base is 0: CherryUSB's BL616 port knows its own block. */
     usbd_initialize(CDC_BUSID, 0, cdc_event_handler);
+}
+
+/* Bring the console back after the USB clock has been taken down.  The
+ * Bluetooth radio's PLL bring-up does that: USB is clocked from a divided
+ * output of the WiFi PLL, set up by GLB_Set_USB_CLK_From_WIFIPLL(1) in the
+ * BSP's board.c, and the radio's RF programming clears it.  Re-assert the USB
+ * clock and re-initialise the device; tang_usb_role.c records that
+ * tdsh_bl616_console_init() is safe to call again (the endpoints assign by
+ * index and usbd_deinitialize() resets the interface offset). */
+void tdsh_bl616_console_restart(void)
+{
+    GLB_Set_USB_CLK_From_WIFIPLL(1);
+    usbd_deinitialize(CDC_BUSID);
+    tdsh_bl616_console_init();
 }
 
 bool tdsh_bl616_console_connected(void)

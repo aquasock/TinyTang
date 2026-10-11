@@ -22,6 +22,7 @@
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_heap.h"
+#include "tang_ble.h"
 #include "tinytang_build_id.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -269,6 +270,9 @@ void __wrap_platform_reset(uint32_t error)
 /* configASSERT's end (FreeRTOSConfig.h); the SDK's weak version spins. */
 void vAssertCalled(void)
 {
+    /* Diagnostic: flush the bt_conn_unref ring to flash before the reset, so a
+     * connection reference dropped too often can be named (tang_ble.c). */
+    tang_ble_ref_dump();
     record_and_wait(KIND_ASSERT, 0, 0, 0, (uint32_t)__builtin_return_address(0),
                     current_task_name());
 }
@@ -367,6 +371,9 @@ static void watchdog_task(void *arg)
             record_and_wait(KIND_STARVED, 0, 0, 0, 0, "(see the trail)");
         }
         bflb_wdg_reset_countervalue(s_wdg);
+        /* Diagnostic heartbeat for the radio-start hang (BLE-017); a no-op
+         * until the Bluetooth radio has started. */
+        tang_ble_crumb_beat();
     }
 }
 

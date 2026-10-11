@@ -856,3 +856,38 @@ Find where the radio start dies, and do it with an instrument that survives the 
 - User Test: FAIL
 
 ---
+
+## 28 COMMIT Unreleased 2026-10-11T15:35:55-07:00
+
+#### Coming From:
+
+Unreleased 47d2622
+
+#### Purpose:
+
+Close the connection-reference underflow that reset the board on every Xbox Wireless Controller pairing attempt, so Bluetooth work could continue on Bouffalo SDK 2.3.36.
+
+#### Outcome:
+
+The board runs Bouffalo SDK 2.3.36 with Bluetooth working, the crash that blocked it is fixed, and the Xbox Wireless Controller still does not work. The radio start was found to take the BL616's USB device down while the CPU kept running, which the flash-breadcrumb and heartbeat diagnostic proved by showing `ble_start_ex` completing all its steps while the crash recorder's watchdog task was still being fed: `ports/bl616/usb_cdc_bl616.c` gained `tdsh_bl616_console_restart()`, which re-asserts the USB clock with `GLB_Set_USB_CLK_From_WIFIPLL` and re-initialises the device, and `ble_start_ex()` calls it once the radio is up, after which the console re-enumerates as `ffff:5454` with no power cycle, a `blescan` found 11 devices, and the Logitech M750 paired and delivered 218 reports, so the migration did not break the working Logitech support. The controller pairs, encrypts, bonds and then fails exactly as BLE-017 records -- `mtu exchange done (err 14)`, `service discovery failed (-57)`, a supervision timeout and a reconnect loop with error 8 and HCI 0x3E -- so the newer controller library the migration was made for did not fix it, and the SDK's heap cost (about 1 KB more for the stack and 3 KB less total heap than the fork) was measured and accepted before deciding to keep it. Separately, a FreeRTOS assert in `recv_thread` kept resetting the board; the failing address resolved to `BT_ASSERT(old > 0)` in `bt_conn_unref` called from `hci_disconn_complete`, and a link-time wrap of `bt_conn_ref` and `bt_conn_unref` that reads `conn->ref` showed two references and three releases, so this port's `hid_disconnected()` and `hid_connected()`'s error path were releasing connection references that the SDK's own `bt_conn_set_state(BT_CONN_DISCONNECTED)` teardown already drops, which the old SDK's assert-free `bt_conn_unref` tolerated silently. Removing both releases closed it, verified by two pairing attempts, one of them a full pair, encrypt, bond and disconnect cycle, leaving the board up with no crash record where every previous attempt had reset it into the vendor loader. The diagnostic scaffolding added across this cycle -- the flash crumbs, `blestart` and `blecrumb`, the PLL probes, the heartbeat, the reference ring and the `bt_conn_ref`/`bt_conn_unref` wraps -- is still in the tree and is to be removed before the port is finished. The build identity at this commit is `47d2622-dirty.18bd979`, and the required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 28 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Promote the USB revive out of the diagnostic code into a clean, commented call and remove the diagnostic scaffolding -- the flash crumbs, `blestart`, `blecrumb`, the PLL probes, the heartbeat, the reference ring and the `bt_conn_ref`/`bt_conn_unref` wraps, together with the `TINYTANG_NO_*` and UART-trace guards committed in `bf42518` -- before the port is finished. The Xbox Wireless Controller is the remaining work and BLE-017 still applies: the cheapest next test is to stop sending the ATT MTU exchange while the pad is still completing pairing, because this build sends it immediately after encryption and the pad answers ATT `0x0E`, after which BLE-017's remaining list applies, with the honest expectation that the fault is in the BL616's binary controller and may only be documentable. The M750's pointer movement in the desktop was never confirmed and should be checked on the image that is kept. `tools/tinytang_flash.py` still names `make flash` in its closing hint, which BRD-009 forbids, and the two hardware facts this cycle established -- that starting the radio takes the USB clock down while the CPU lives, and that `bt_conn_unref` asserts on an over-release -- are owed to `.ai/core-reference.md`.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_crash.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/usb_cdc_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
