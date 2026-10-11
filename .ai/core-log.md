@@ -921,3 +921,33 @@ The BLE controller line is closed as far as this board allows: the pad is the BL
 - User Test: NOT RUN
 
 ---
+
+## 30 COMMIT Unreleased 2026-10-11T16:31:28-07:00
+
+#### Coming From:
+
+Unreleased 6edf305
+
+#### Purpose:
+
+Find why the desktop core's HDMI output was dark when nestang's own core drives the same monitor and cable, and fix it.
+
+#### Outcome:
+
+The desktop core now drives HDMI. The fault was localised by building the reference: nestang's *stock, unmodified* `console138k` core, built from the pinned commit `c2450818` with nestang's own `build.tcl` (device revision B, no patches), uploaded to the card and `tangload`ed, drove the user's primary monitor -- it drew the nestang splash and offered `boot castlevania` -- which placed the monitor, the cable and the board's HDMI hardware beyond doubt and confined the fault to this project's core build, since the factory splash had already shown the same port working (DEV-006). The clock monitor then ruled out the clocking: `fmon` read the core's counters as `clk` 21,722,222 Hz and `pix` 74,249,611 Hz, so the 720p pixel clock was running and reaching both probe regions, and the earlier note that an open-flow build carries no HDMI because the chipdb leaves HCLK unreachable was not what this bitstream was doing. The difference is one block of the constraint file: `fpga/desktop/desktop.cst` pinned all three PLLs with `INS_LOC` lines whose own comment recorded that they are "the flattened cell names nextpnr reports", an open-flow-era workaround whose comment also carried the failure verbatim -- `Net hclk5 has no route to the FCLK of u_hdmi.hdmi.serializer.gwSer0` -- while the working reference, nestang's `console.cst`, pins no PLL at all and lets the vendor's place-and-route choose. Removing the three `INS_LOC` lines and letting Gowin place the PLLs, at the board's own revision C, produced a build with `timing PASS: setup +1.957 ns, hold +0.166 ns` and ten clock/analysis rows with zero violations; loaded on the board, the user confirmed HDMI on their primary monitor. One intermediate attempt is worth recording: building at revision B to match nestang's declaration failed outright, because the `INS_LOC` object names do not resolve under that device revision (`CT1135: Can't find object named 'pll_hdmi.PLL_inst'`), which is itself evidence that the pins were the fault and not the revision; `build.tcl` is unchanged from revision C. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 30 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Install this build as the card's `/cores/console138k/desktop.bin` so `boot.tdsh` loads the HDMI-capable core at boot, and keep the stock nestang core on the card as the HDMI reference. The HDMI work is then closed: the fix is a constraint-file change, the RTL was never at fault, and no FPGA patch is owed. The cleanup cycle entry 29 named is still owed -- the radio-start crumbs, `blestart`, `blecrumb`, the heartbeat, the reference ring, the two `bt_conn_ref`/`bt_conn_unref` wraps and the `TINYTANG_NO_*` and UART-trace guards -- together with the three records (the radio start taking the USB clock down, `bt_conn_unref` asserting on an over-release, and USB-003's no-VBUS finding, which the controller work re-learned), the BRD-009 wording in `tools/tinytang_flash.py`, and the BLE-017 update that closes the Xbox pad as unsupported on this board. The build tools' `DESKTOP_BUILD_DIR` reconstruction is also worth keeping in mind: it clones from `NESTANG_DIR`, which is an empty submodule in this workspace and had to be cloned from GitHub for this cycle.
+
+#### Files Modified:
+
+- fpga/desktop/desktop.cst
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

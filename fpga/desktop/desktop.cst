@@ -99,6 +99,9 @@ IO_PORT "pmod1_io[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 // which is why the flow could not rebuild its own working core.
 //
 // Instance names are the flattened cell names nextpnr reports.
-INS_LOC "pll_27.PLL_inst"   PLL_L[1];
-INS_LOC "pll_hdmi.PLL_inst" PLL_L[3];
-INS_LOC "pll_nes.PLL_inst"  PLL_R[0];
+// No PLL placement constraints here.  Three INS_LOC pins used to be, named
+// with the flattened cell names nextpnr reports -- they were the open-flow
+// flow's workaround, and the wrong lever for a Gowin build.  The working
+// reference is nestang's own console.cst, which pins no PLL and lets the
+// vendor's place-and-route choose; pinning pll_hdmi left hclk5 unable to reach
+// the HDMI serializer's FCLK, which is the dark-HDMI symptom.
