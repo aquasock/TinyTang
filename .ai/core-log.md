@@ -572,3 +572,33 @@ The host-side search is exhausted, and the next step is the user's choice betwee
 - User Test: FAIL
 
 ---
+
+## 19 COMMIT Unreleased 2026-10-11T10:15:38-07:00
+
+#### Coming From:
+
+Unreleased 32299f4
+
+#### Purpose:
+
+Try upstream Bouffalo's newest BLE controller library in place of the SDK fork's, at the user's choice, since the Xbox Wireless Controller's failure had been placed in the controller.
+
+#### Outcome:
+
+Upstream `bouffalolab/bouffalo_sdk` at `8a3df34` (release 2.3.36) was read for `libbtblecontroller_bl616_ble1m10s1bredr0.a` (1,856,570 bytes, sha256 `cf8b688b694bb96225d736c412350ea3c737f7a872bb755bb37ef267a2e64e23`, version string `lib_version_btblecontroller_1.6.210`), its headers and its host glue. Against the fork's library it keeps `btble_controller_init` and the rest of the controller API and the onchip HCI packet enum and structures unchanged, renames `bt_onchiphci_hanlde_rx_acl` to `bt_onchiphci_handle_rx_acl`, and comes with host glue that sends every command with `dest_id` 0 where the fork's glue passes a connection handle for some, so a new `ports/bl616/tang_btble_compat.c` forwarded the old name and a link-time wrap of `bt_onchiphci_send` zeroed `dest_id` for commands, leaving the SDK's sources untouched; its other new needs (`arch_delay_ms`, `mfg_media_read_macaddr_with_lock`, `vprintf`) were already in the build. With the library copied over the SDK cache's own (a git checkout, so recoverable), the firmware linked cleanly as `32299f4-dirty.b71462e`, 663488 bytes, MD5 `0dc5b705f3ab4c72ae450662e3c7d83b`, and was installed and confirmed by `platform`, but the first command to start the radio, `blescan 3`, took the board off USB entirely, neither the CDC nor the FT2232, and after the user's power cycle `crash` held no record, so the board hung rather than faulted or reset. Upstream has also changed the BL616 PHY library three times and the BL616 linker scripts that size the controller's exchange memory four times since the fork, so the controller cannot be taken alone; using it means taking upstream's radio layer together, which the user had been told would come back to them as a larger job. `/ble/bonds.bin` was deleted so that no saved pairing could start the radio at boot on that image, the original library was restored with `git checkout` in the SDK cache (sha256 `d20d1b68ddea5cd83c5ba5e5edcb4b2c62fa6bf0ddcf5538c024d0408cfd3890`), the compatibility file and its wrap were removed, and the entry-18 code was rebuilt as `32299f4-dirty.17f81b2` and installed, awaiting the user's power cycle. The SDK cache already carried a modified `cmake/compiler_flags.cmake` and an untracked `tools/bflb_tools/.../img_create/` that were not made in this session and were left alone. BLE-017 records the result. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 19 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The user chooses between porting upstream's radio layer (controller, PHY and RF libraries, the controller's memory layout in the linker script, and the host glue, which approaches moving the whole Bluetooth stack to the current upstream SDK and puts the working Logitech support at risk while it is done), getting a link-layer view with an over-the-air sniffer, and stopping with the defect documented. In every case the diagnostic changes still in the firmware should be reviewed before the M750 and K950 are paired again.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
