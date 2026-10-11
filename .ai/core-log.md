@@ -327,3 +327,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 11 COMMIT Unreleased 2026-10-11T08:28:15-07:00
+
+#### Coming From:
+
+Unreleased bb64cbb
+
+#### Purpose:
+
+Capture the Xbox Wireless Controller pairing with a working host, and test the one difference the capture pointed to, this board offering its own identity key, by building with host privacy off.
+
+#### Outcome:
+
+The user's desktop (BlueZ 5.85) was used as the reference host under `btmon`, run by the user because the agent lacks CAP_NET_ADMIN, and its radio was powered off and soft-blocked again afterwards with the controller's pairing removed. The first attempt failed on the agent's side, because `bluetoothctl` run non-interactively had no pairing agent and rejected the numeric-comparison step; even so the controller streamed input notifications on 0x001E over the unencrypted, unpaired link, 23 in two seconds, before any discovery or subscription. A second capture, `~/xbox-desktop2.snoop`, holds a successful pairing: LE Secure Connections Just Works, the controller asking for the host's IdKey but receiving nothing because BlueZ offered none, the controller then sending its IRK and identity address, reports starting 45 ms after encryption with nothing asked of the controller, 701 reports in all, and no ATT request ever sent by the controller. The capture also gave the controller's preferred connection parameters (7.5 to 15 ms, latency 0, 3 s), its PnP ID `045E:0B13` version `0x0509`, and that its report is 16 bytes over GATT, not the 17 BLE-016 had recorded. The one protocol difference from this board was that the SDK defaults `CONFIG_BT_PRIVACY` on, so the board offered and sent its own identity key and connected from a private address; `proj.conf` now sets `CONFIG_DISABLE_BT_HOST_PRIVACY 1`, the SDK's own switch, which the `blestack` compile flags and the map confirmed (`le_set_private_addr` no longer linked). The firmware built cleanly with `make CHIP=bl616 BOARD=bl616dk` as `bb64cbb-dirty.34f7c44`, 657936 bytes, MD5 `0bd5c660dc0c607bcf935dacba9d812f`, was installed with `tools/tinytang_flash.py --yes`, and `platform` reported it after the user's power cycle. It did not fix the controller: `blekbd pair Xbox` with the controller at -37 dBm paired, encrypted at level 2 and bonded, then found 0 services and ended in a supervision timeout, and the next connection got error 2 and re-paired into the same failure, twice before `blekbd off` stopped it, so the identity-key theory is ruled out. BLE-015, BLE-016 and BLE-017 in `.ai/core-reference.md` were revised with the capture, the corrected report length, the failed test, and the differences from BlueZ that remain untested, chief among them LE Secure Connections itself, which Bluepad32 5.0.0-beta0 disabled by default for controllers that fail key exchange. The M750 has not yet been checked on this image. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 11 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Test LE Secure Connections off as the next single change, keeping privacy off so the board stays as close to BlueZ and Bluepad32 as possible: the SDK's `smp_set_auth()` (under `BFLB_BLE_SMP_LOCAL_AUTH`, which its `config.h` defines) overrides the pairing request's authentication flags, so calling it with bonding only when the stack starts makes the board request legacy pairing without patching the SDK. If that also fails, the remaining differences in BLE-017 are the link layer (data length, connection interval) and the pairing request's IO capability and MITM flag, and the M750 must be confirmed to reconnect on whichever image is kept.
+
+#### Files Modified:
+
+- proj.conf
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
