@@ -234,6 +234,7 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 }
 
 static void hid_register_callbacks(void);
+static void hid_mtu_changed(struct bt_conn *conn, int mtu);
 
 /* Bring the radio and the host up, once.  `verbose` prints progress and
  * errors to the console, for the shell's commands; the boot-time reconnect
@@ -297,6 +298,10 @@ static int ble_start_ex(bool verbose)
     }
 
     hid_register_callbacks();
+    /* BFLB_BLE_MTU_CHANGE_CB is on, so the stack reports the negotiated MTU.
+     * The exchange's own completion callback carries no value, which makes
+     * this the only place the number is visible. */
+    bt_gatt_register_mtu_callback(hid_mtu_changed);
     s_heap_after = kfree_size();
     s_start_phase = 2;
 
@@ -554,6 +559,7 @@ typedef struct {
     unsigned nsubs;
     struct bt_gatt_read_params reads[HID_MAX_READS];
     unsigned nreads;
+    struct bt_gatt_exchange_params mtu;   /* ATT MTU, asked for once per link */
 
     /* Setup after discovery is a sequence of ATT operations: every
      * subscription, then the read-backs.  They are issued one at a time, each
@@ -649,6 +655,28 @@ static hid_dev_t *hid_by_conn(struct bt_conn *conn)
 }
 
 /* The input a slot hands the desk layer, cleared so nothing stays held. */
+/* The link starts at the default ATT MTU of 23 -- smaller than the HID Report
+ * Map and too small for any input report that is not a keyboard's eight bytes.
+ * Nothing here ever asked for more, so every read was capped at 22 and the
+ * controller's map was unreachable.  Ask once per connection (the API permits
+ * no more than that) and log what the stack says the link settled on. */
+static void hid_mtu_changed(struct bt_conn *conn, int mtu)
+{
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d) {
+        hid_log(d, "mtu now %d", mtu);
+    }
+}
+
+static void hid_mtu_exchanged(struct bt_conn *conn, u8_t err,
+                              struct bt_gatt_exchange_params *params)
+{
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d && err) {
+        hid_log(d, "mtu exchange failed (ATT 0x%02X)", err);
+    }
+}
+
 static void hid_clear_input(const hid_dev_t *d)
 {
     taskENTER_CRITICAL();
@@ -797,8 +825,38 @@ static u8_t hid_read_done(struct bt_conn *conn, u8_t err,
         hid_log(d, "read 0x%04X failed (ATT 0x%02X)", params->single.handle, err);
     } else if (data) {
         const uint8_t *p = data;
-        hid_log(d, "read 0x%04X: %u byte(s) %02X %02X", params->single.handle, length,
-                length > 0 ? p[0] : 0, length > 1 ? p[1] : 0);
+        if (length <= 4) {
+            /* A CCC read-back: two bytes, and the old line said it all. */
+            hid_log(d, "read 0x%04X: %u byte(s) %02X %02X", params->single.handle, length,
+                    length > 0 ? p[0] : 0, length > 1 ? p[1] : 0);
+        } else {
+            /* A Report Map is tens of bytes and useless truncated; a log line
+             * is 96, so it goes out in chunks with the offset on each. */
+            for (unsigned off = 0; off < length; off += 12) {
+                char hex[HID_LOG_LEN];
+                unsigned n = length - off < 12 ? (unsigned)(length - off) : 12;
+                unsigned k = 0;
+                for (unsigned i = 0; i < n; i++) {
+                    k += (unsigned)snprintf(hex + k, sizeof(hex) - k, "%02X ",
+                                            p[off + i]);
+                }
+                hid_log(d, "read 0x%04X [%u]: %s", params->single.handle,
+                        params->single.offset + off, hex);
+            }
+        }
+    }
+    /* A value longer than the ATT MTU does not arrive whole, and the stack will
+     * not fetch the rest for us: gatt.h is explicit that the caller reads the
+     * remainder by handle and offset.  A chunk that filled the MTU means there
+     * is probably more, so ask for it from where this one stopped and let the
+     * next call land here again; anything shorter ended the value. */
+    const u16_t mtu = bt_gatt_get_mtu(conn);
+    if (!err && data && length && mtu > 1 && length >= mtu - 1) {
+        params->single.offset += length;
+        if (bt_gatt_read(conn, params) == 0) {
+            return BT_GATT_ITER_STOP;
+        }
+        hid_log(d, "read 0x%04X continuation not sent", params->single.handle);
     }
     hid_setup_step_done(conn, params);
     return BT_GATT_ITER_STOP;
@@ -930,6 +988,14 @@ static void hid_setup_reports(hid_dev_t *d)
     }
     for (unsigned i = 0; i < d->nsubs; i++) {
         hid_add_read(d, d->subs[i].ccc_handle);
+    }
+    /* The Report Map is the only thing that says which bit of an input report
+     * is which button.  A gamepad's report is not a keyboard's, and reading
+     * this characteristic is what turns an opaque notification into a control
+     * layout.  Nothing here has ever read it. */
+    hid_chrc_t *map = hid_find_chrc(d, 0x2A4B);
+    if (map) {
+        hid_add_read(d, map->value_handle);
     }
     hid_log(d, "%s protocol requested; subscribing to %u input(s)",
             d->boot ? "boot" : "report", d->nsubs);
@@ -1103,6 +1169,16 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (rc) {
         hid_log(d, "set_security failed (%d)", rc);
+    }
+    /* Ask for a wider ATT MTU before discovery, so the Report Map read and any
+     * report wider than a keyboard's eight bytes have room.  Sent alongside
+     * SMP rather than after it: the two ride different L2CAP channels, so they
+     * do not contend for the ATT buffers that setup is careful to serialise. */
+    memset(&d->mtu, 0, sizeof(d->mtu));
+    d->mtu.func = hid_mtu_exchanged;
+    rc = bt_gatt_exchange_mtu(conn, &d->mtu);
+    if (rc) {
+        hid_log(d, "mtu exchange not sent (%d)", rc);
     }
 }
 

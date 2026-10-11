@@ -87,3 +87,41 @@ The post-subscribe disconnect is what stands between this and the report questio
 - User Test: FAIL
 
 ---
+
+## 4 COMMIT Unreleased 2026-10-10T18:25:56-07:00
+
+#### Coming From:
+
+Unreleased 1da7838
+
+#### Purpose:
+
+Read the Xbox pad's HID Report Map, which this firmware had never fetched, and record the ATT MTU exchange that was built to make that possible -- and disproved.
+
+#### Outcome:
+
+The pad's Report Map is now read: 283 bytes, arriving in 26 chunks. Two changes were needed in `ports/bl616/tang_ble.c`, and only the second of them was the one that worked.
+
+The first negotiates an ATT MTU when a device connects: `bt_gatt_exchange_mtu` in the connected callback, and `bt_gatt_register_mtu_callback` at bring-up, which is available only because `BFLB_BLE_MTU_CHANGE_CB` is defined in the SDK's own `config.h`. The reasoning was that the board runs at the default MTU of 23 -- `grep mtu` across the whole port returned nothing before this change -- so a Report Map of tens of bytes could not be read in one request. That reasoning was wrong, and the log says so plainly: in a complete setup capture, from `connected; requesting encryption` through `ready`, neither a `mtu now` line nor a failure line ever appeared; the map's chunks come back 22 bytes at a time, which is MTU 23 minus one; and the pad's input report turns out to be 17 bytes, which fits in a 23-byte MTU notification with room to spare. So the exchange either never took or never reported, the MTU was never the obstacle to reports, and the claim that it was had been stated twice as a mechanism before anything was observed.
+
+The second change is what actually worked, and it came from reading the SDK's documentation rather than from guessing. `gatt.h` states that a value longer than the ATT MTU is not continued by the stack: "the caller will need to read the remaining data separately using the handle and offset". Our single read at offset 0 was therefore everything we could ever get, and 22 bytes was not the pad being awkward -- it was the ceiling. `hid_read_done` now re-issues the read from `params->single.offset + length` whenever a chunk filled the MTU, and the map arrives whole. The read-back logger had to change with it: it printed two bytes, which describes a CCC correctly and a descriptor uselessly, so reads longer than four bytes now dump in 12-byte chunks carrying their absolute offset, because a log line is 96 bytes and the map is far longer.
+
+The pad is now decoded rather than guessed at. It is a `Game Pad` (`09 05`) on Report ID 1, with a 17-byte input report: X, Y, Z and Rz as four 16-bit axes on a logical range of 0 to 65535; Brake and Accelerator as 10-bit fields on 0 to 1023, each followed by six bits of padding; one 4-bit Hat switch, logical 1 to 8 with a null state and a physical range in degrees; fifteen 1-bit buttons; and one Consumer-page bit followed by seven bits of padding. Report ID 3 is an output report on the PID usage page: four 8-bit motor-scale fields on 0 to 100 and three 8-bit fields on 0 to 255. The pad's GATT map also shows a 128-bit vendor-specific service at `0x0024`-`0x002A`, which our discovery has never walked because it only ever queries the HID service.
+
+What still does not work is the whole of what the user asked for. The pad accepts the subscription (`0x001F` reads back `01 00`), takes Exit Suspend, and stays connected -- and sends not one notification, with buttons held down. `hid_notify` increments its report counter on any data before any other test, so a notification arriving cannot be missed; `0 report(s)` is therefore evidence that nothing was sent, not that something was dropped. The `HCI 0x13` disconnect is intermittent rather than deterministic: the pad completed the entire setup and sat `ready` at least once, and hung up at other times. Signal remains a live factor rather than a suspect that has been excluded -- the first pairing scan in this cycle found nothing while the next found the device at -73 dBm a minute later, and the board carries no antenna (board fact 17, and `BLE-001` on why a failure here is not the device refusing).
+
+#### Next Steps:
+
+The 128-bit vendor-specific service at `0x0024`-`0x002A` is the next surface to read: discovery only walks the HID service, and on Xbox pads the vendor service is where the handshake lives, which would explain a device that completes a standard HID setup and then declines to report. Connection parameters are the second candidate for the intermittent disconnect -- a HID peripheral that asks for a particular interval, latency and supervision timeout can terminate a link that does not grant it, and `HCI 0x13` shortly after the CCC write is what that looks like from this side. The `mtu now` line never firing is itself unexplained and worth one look: the callback registration point, not the exchange, is the thing to check.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
