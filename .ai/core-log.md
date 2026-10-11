@@ -237,3 +237,33 @@ Re-bond the pad and watch for a report, which is the only engineering work left 
 - User Test: FAIL
 
 ---
+
+## 8 COMMIT Unreleased 2026-10-10T23:44:45-07:00
+
+#### Coming From:
+
+Unreleased f6fe420
+
+#### Purpose:
+
+Find out why the user's Xbox pad, once paired, delivers no report, after the user called the whole controller line suspect and directed a revert and a series of instrumented builds rather than another theory.
+
+#### Outcome:
+
+The pad's failure was localised to the second after bonding, and none of the hypotheses the earlier cycles carried survived. `ports/bl616/tang_ble.c` was first reverted to `799c0ac` (entry 5), verified byte-identical, built as `f6fe420-dirty.8510c77`, 656896 bytes, MD5 `008ec5034c6888bc21b34e32625756c8`, and flashed; with the board's bond cleared by `blekbd forget` and the pad awake in pairing mode at -32 and -34 dBm, both attempts still died at `connected; requesting encryption` then `disconnected (HCI 0x3E)` with no `encrypted` line, which eliminates the entry-6 GATT reorder and the stale key alike, because the same firmware had been recorded reaching `ready`. A diagnostic build then added the service count, a decoded HCI reason, a 128-line ring and an explicit `bt_gatt_read` of handle `0x0003` whose callback reports an ATT error, and it returned `primary discovery done: 0 service(s) seen` with `probe read 0x0003 sent (-128)`; -128 is -ENOTCONN, checked against the toolchain's `sys/errno.h` (`ENOTCONN 128`) and `blestack/src/host/gatt.c`, so the host's ATT layer already held the link to be gone when discovery ran, and `no HID service on this device` had never been about services. A hands-off experiment then issued nothing at all for eight seconds after `encrypted` -- no discovery, no arming, no bond save -- and probed at 1, 2, 3, 5 and 8 seconds; the link was reported alive at every mark, yet died 8750 to 8801 ms after bonding on a 4 s supervision timeout, which places the pad's last packet at about 4.75 s, inside the hold, and not one of the five probes was ever answered. The decisive build probed `0x0003` on connect before any security was requested, and the pad answered twice, 22 bytes then 2, spelling `Xbox Wireless Controller`; after the security procedure the same read never came back at all. So the pad serves ATT perfectly and stops the instant encryption completes, and a bond captured on that build is a proper LE Secure Connections bond (`security level 2, enc_size 16, keys 0x0022, flags 0x10`, `key parts: LTK_P256 IRK; LE Secure Connections`), which eliminates the legacy-pairing theory too; the pad does answer ATT errors when it chooses to, `ATT 0x05` (Insufficient Authentication) to an unencrypted read once a bond exists, so its server is alive and the attribute is valid. Two other things came from the board: the controller needs fast blink for pairing mode and slow blink means idle, which several runs had read backwards, and the desktop does start and hold the console, where `tinytang_run.py` correctly refuses to send. Four errors of the night are recorded so they cost nothing next time: the SD-card test reported as exonerating the card write never ran, because the card's absence was assumed and never checked; the blink states were read backwards for hours; `tail` truncated console output again; and a full elimination list was published on top of the unchecked assumption. Six builds were made and flashed. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md`'s only change is the user's own edit to the AI Agent Recovery Policy, which adds "and open the record behind any hardware fact before acting on it" after the instruction to read this reference, and which entry 7's Next Steps had asked for, and validated this entry as number 8 of the active log with the six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The next cycle has to explain the pad's post-encryption silence rather than theorise about it, because the pad demonstrably answers ATT before the bond and never after, and reports `err 2` (PIN_OR_KEY_MISSING) on the next connect, which is what two sides that disagree about a key look like. The instrumented build on the board already logs what was negotiated, so the cheapest next probes are the SMP parameters and a comparison against the desktop, which keeps this same pad connected; the committed `tang_ble.c` now carries the revert plus that instrumentation, and the port should be rebuilt and flashed from this commit before the next run. Three records entry 7 asked for are still owed to `.ai/core-reference.md` -- the pad's GATT map, its decoded 17-byte Report ID 1 report, and the first-encryption-fails signature -- and this cycle adds two more worth keeping as records: that the pad serves ATT before the bond and not after it, and that the controller's fast blink is pairing mode while slow blink is idle. The churn bound added here should stay, since a slot that never reaches ready now stops after three connections and waits for an explicit `on` instead of looping; and the SD-card test must actually be run before the card write is called exonerated.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
