@@ -694,3 +694,33 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 23 COMMIT Unreleased 2026-10-11T11:44:48-07:00
+
+#### Coming From:
+
+Unreleased b61d730
+
+#### Purpose:
+
+Record restoration of the original working firmware after the user stopped the resumed SDK migration trial.
+
+#### Outcome:
+
+After entry 22 the user authorized another attempt at the new Bluetooth stack. Local startup-recovery code was added to expose a USB console before the scheduler, save the previous crash sector, upload and verify an application into the existing staging slot, and commit it through the existing TCM copier; SD mounting was moved into the shell task and a boot watchdog was added for the scheduler attempt. Host tests exercised the actual C recovery and update code with the Python client, passing a complete update, write failure, invalid header, bad CRC, refusal to commit an unverified image and preservation of loader/vendor regions. The new-SDK image `b61d730-dirty.9986a06`, 611472 bytes, SHA-256 `d7f8de8778932918ac2f331a251551ecd2ac06fc739c89c140dd8dd61876096e`, was installed through the working old USB console, but its first hardware boot returned to the Sipeed loader instead of exposing recovery. The user confirmed the power LED on and both cables connected. Source review found that the SDK bare-metal trap vector's IRQ branch still calls default_interrupt_handler, which the FreeRTOS build aliases to freertos_risc_v_trap_handler; enabling USB interrupts before task creation therefore enters a task-dependent handler with no task. This recovery defect was not corrected or redeployed, and the original scheduler failure remains unresolved. The user stopped the work and requested restoration through ROM BOOT mode. BLFlashCommand wrote only the application at 0x40000 from `/run/media/vash/GIT/Tang-Console-138K-backups/tinytang_bl616_32299f4-dirty.17f81b2.bin`, 661008 bytes, and its device SHA-256 matched `f8cb34557b0da70595954d756d833fb47c7c5d83637b0f22d954c1309fa137c2`. After the user's power cycle, USB enumerated as TinyTang CDC and a guarded platform command returned `32299f4-dirty.17f81b2` and the shell prompt. Display acceptance was not tested. All experimental engineering changes and test files remain local and uncommitted; this commit records only the restoration. The core-syntax audit re-read core.md and core-syntax.md, inspected the complete .ai diff, confirmed core.md and settled entries unchanged, and validated the canonical entry structure, statuses, sequential numbering and capacity.
+
+#### Next Steps:
+
+Keep the original firmware installed and do not resume the migration without a new explicit user request. The USB console and exact restored identity are confirmed. The local source and build products still contain the failed migration and recovery experiment and must not be flashed as a working baseline; use the saved original binary for restoration.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
