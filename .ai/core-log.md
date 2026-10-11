@@ -357,3 +357,33 @@ Test LE Secure Connections off as the next single change, keeping privacy off so
 - User Test: FAIL
 
 ---
+
+## 12 COMMIT Unreleased 2026-10-11T08:39:24-07:00
+
+#### Coming From:
+
+Unreleased cb9c96c
+
+#### Purpose:
+
+Test LE legacy pairing in place of LE Secure Connections for the Xbox Wireless Controller, the change Bluepad32 made by default for controllers that fail key exchange.
+
+#### Outcome:
+
+Before the build the user moved the M750, and on the privacy-off image of entry 11 it reconnected from its saved bond and reached ready with 429 reports, so privacy off is safe for it. `ports/bl616/tang_ble.c` now calls the SDK's `smp_set_auth()` with Bonding only when the stack starts, so this board's pairing requests ask for legacy pairing; the function exists under `BFLB_BLE_SMP_LOCAL_AUTH`, which the SDK's `config.h` defines, and is declared locally because `host/smp.h` is not on this port's include path. The firmware built cleanly with `make CHIP=bl616 BOARD=bl616dk` as `cb9c96c-dirty.1055ce0`, 657952 bytes, MD5 `4db6191350ee0e7b95b63de203efc29d`, was installed with `tools/tinytang_flash.py --yes`, and `platform` reported it after the user's power cycle. It changed the controller's behaviour without fixing it. Over six pairings, the user repeating the experiment once to be sure, the controller encrypted, bonded and, for the first time on this board, answered ATT after encryption: discovery found all five primary services including HID at 0x0016-0x0023. Each time it then asked for its preferred parameters, which the board granted (interval 12, 15 ms; latency 0; timeout 300, 3 s), and the link ended in a supervision timeout about one timeout later, with `characteristic discovery failed (-128)` logged as the host learned of it; the next connection got error 2 and re-paired into the same failure until `blekbd off`. Two attempts in between ended in `HCI 0x3E` before encryption while the controller was still in pairing mode, and it then dropped to slow blink. The entry-11 BlueZ capture shows BlueZ moving the same controller to the same 15 ms and 3 s with its own LE Connection Update, after which 676 more reports arrived, so the parameters are not the fault; who starts the update, and how this board's controller carries it out, are. BLE-017 in `.ai/core-reference.md` was revised with this third failure form. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 12 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Test the connection update as the single next change, keeping legacy pairing and privacy off: register an `le_param_req` callback that logs every parameter request with its slot and refuses it for the gamepad's slot only, so the M750's own update is untouched, and see whether the controller then stays connected and reports at the 50 ms interval. If it does, the follow-up is to reach the 15 ms the controller prefers the way BlueZ does, with a host-started update once setup is complete.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

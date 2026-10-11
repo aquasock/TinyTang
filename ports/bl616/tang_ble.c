@@ -236,6 +236,12 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 static void hid_register_callbacks(void);
 static void hid_mtu_changed(struct bt_conn *conn, int mtu);
 
+/* host/smp.h, not on this port's include path: the SDK's override of the
+ * authentication flags its pairing requests carry (BFLB_BLE_SMP_LOCAL_AUTH,
+ * defined in the SDK's config.h), and the Bonding flag. */
+extern void smp_set_auth(u8_t auth);
+#define TANG_SMP_AUTH_BONDING 0x01
+
 /* Bring the radio and the host up, once.  `verbose` prints progress and
  * errors to the console, for the shell's commands; the boot-time reconnect
  * task starts it quietly, and `ble` reports the result. */
@@ -298,6 +304,13 @@ static int ble_start_ex(bool verbose)
     }
 
     hid_register_callbacks();
+    /* Pair with LE legacy pairing, not LE Secure Connections: request Bonding
+     * and nothing else.  The Xbox Wireless Controller bonds with Secure
+     * Connections here and then goes silent and drops the bond, while BlueZ
+     * pairs it with Secure Connections fine; Bluepad32 turned Secure
+     * Connections off by default for controllers that fail key exchange
+     * (.ai/core-reference.md BLE-017).  Existing bonds are unaffected. */
+    smp_set_auth(TANG_SMP_AUTH_BONDING);
     /* BFLB_BLE_MTU_CHANGE_CB is on, so the stack reports the negotiated MTU.
      * The exchange's own completion callback carries no value, which makes
      * this the only place the number is visible. */
