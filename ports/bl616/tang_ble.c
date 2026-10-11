@@ -454,7 +454,7 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
  * chain of ATT requests issued one by one (BLE-005), and two chains at once
  * would put that back in doubt. */
 
-#define HID_LOG_LINES     48
+#define HID_LOG_LINES     128  /* diagnostic: hold a whole connect cycle */
 #define HID_LOG_LEN       96
 #define HID_MAX_CHRCS     24
 #define HID_MAX_SUBS      8
@@ -548,6 +548,7 @@ typedef struct {
 
     uint16_t hids_start;
     uint16_t hids_end;
+    unsigned svc_count;           /* primary services seen this discovery */
     /* The first 128-bit service seen.  Not walked for reports: listed and
      * described, because a device that completes a standard HID setup and
      * then declines to report is usually waiting on its vendor surface. */
@@ -1178,10 +1179,12 @@ static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr
     }
     if (!attr) {
         if (!d->hids_end) {
-            hid_log(d, "no HID service on this device");
+            hid_log(d, "primary discovery done: %u service(s) seen, no HID service",
+                    d->svc_count);
             return BT_GATT_ITER_STOP;
         }
-        hid_log(d, "HID service 0x%04X-0x%04X", d->hids_start, d->hids_end);
+        hid_log(d, "primary discovery done: %u service(s), HID 0x%04X-0x%04X",
+                d->svc_count, d->hids_start, d->hids_end);
         if (d->vendors_end && !d->vendor_walked) {
             hid_log(d, "vendor service 0x%04X-0x%04X", d->vendors_start, d->vendors_end);
             hid_start_vendor_discovery(d);
@@ -1191,6 +1194,7 @@ static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr
         return BT_GATT_ITER_STOP;
     }
     const struct bt_gatt_service_val *svc = attr->user_data;
+    d->svc_count++;
     if (svc->uuid->type == BT_UUID_TYPE_16) {
         const uint16_t uuid = BT_UUID_16(svc->uuid)->val;
         hid_log(d, "  service 0x%04X-0x%04X uuid 0x%04X", attr->handle,
@@ -1228,6 +1232,7 @@ static void hid_start_discovery(hid_dev_t *d)
     d->state = HID_DISCOVERING;
     d->hids_start = 0;
     d->hids_end = 0;
+    d->svc_count = 0;
     d->vendors_start = 0;
     d->vendors_end = 0;
     d->vendor_walked = false;
@@ -1240,6 +1245,40 @@ static void hid_start_discovery(hid_dev_t *d)
     int err = bt_gatt_discover(d->conn, &d->disc_primary);
     if (err) {
         hid_log(d, "service discovery failed (%d)", err);
+    }
+}
+
+/* Names for the HCI error codes that turn up here; the numeric code is
+ * always logged too, this only makes the reason read at a glance.  Diagnosis
+ * build: logging only, no behaviour change. */
+static const char *hid_hci_reason(u8_t reason)
+{
+    switch (reason) {
+    case 0x05: return "auth failure";
+    case 0x08: return "connection timeout (supervision)";
+    case 0x13: return "remote user terminated";
+    case 0x16: return "local host terminated";
+    case 0x28: return "instant passed";
+    case 0x3B: return "unacceptable conn parameters";
+    case 0x3D: return "MIC failure";
+    case 0x3E: return "conn establishment failed";
+    default:   return "other";
+    }
+}
+
+/* The link's actual interval, latency and supervision timeout as the stack
+ * reports them (interval unit 1.25 ms, timeout unit 10 ms).  Registered on
+ * le_param_updated: if the pad asks for a change, or the link settles away
+ * from the default 30-50 ms it was created with, this says so. */
+static void hid_le_param_updated(struct bt_conn *conn, u16_t interval,
+                                 u16_t latency, u16_t timeout)
+{
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d) {
+        hid_log(d, "link params: interval %u (%u.%02u ms) latency %u timeout %u (%u ms)",
+                interval, (unsigned)(interval * 125u / 100u),
+                (unsigned)((interval * 125u) % 100u), latency, timeout,
+                (unsigned)(timeout * 10u));
     }
 }
 
@@ -1276,6 +1315,13 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
     }
     ble_signal(BLE_EV_ARM);
     hid_log(d, "connected; requesting encryption");
+    {
+        struct bt_conn_info ci;
+        if (bt_conn_get_info(conn, &ci) == 0) {
+            hid_log(d, "conn info: interval %u latency %u timeout %u role %u",
+                    ci.le.interval, ci.le.latency, ci.le.timeout, ci.role);
+        }
+    }
     d->state = HID_SECURING;
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (rc) {
@@ -1296,8 +1342,17 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
     if (!d) {
         return;
     }
-    hid_log(d, "disconnected (HCI 0x%02X)%s", reason,
-            d->armed ? "; waiting for it to come back" : "");
+    {
+        struct bt_conn_info ci;
+        const bool have = (bt_conn_get_info(conn, &ci) == 0);
+        hid_log(d, "disconnected (HCI 0x%02X %s)%s", reason,
+                hid_hci_reason(reason),
+                d->armed ? "; waiting for it to come back" : "");
+        if (have) {
+            hid_log(d, "  last link: interval %u latency %u timeout %u",
+                    ci.le.interval, ci.le.latency, ci.le.timeout);
+        }
+    }
     bt_conn_unref(d->conn);
     d->conn = NULL;
     if (d->armed) {
@@ -1408,6 +1463,7 @@ static struct bt_conn_cb s_conn_cb = {
     .connected = hid_connected,
     .disconnected = hid_disconnected,
     .security_changed = hid_security_changed,
+    .le_param_updated = hid_le_param_updated,
 };
 
 /* Only completion callbacks, no passkey ones, so the stack reports

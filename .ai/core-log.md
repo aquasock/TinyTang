@@ -207,3 +207,33 @@ Operating notes for whoever continues: the pad's pairing mode lasts only a few m
 - User Test: FAIL
 
 ---
+
+## 7 COMMIT Unreleased 2026-10-10T20:37:46-07:00
+
+#### Coming From:
+
+Unreleased 0121f7c
+
+#### Purpose:
+
+Instrument the Bluetooth LE host so that the reason the user's Xbox Wireless Controller pairs with the board and then delivers no report could be read off the board rather than theorised, after five cycles of hypotheses that were stated before they were observed.
+
+#### Outcome:
+
+The port now records what the link actually does. `ports/bl616/tang_ble.c` gained a `le_param_updated` callback and a `bt_conn_get_info` call on connect and on disconnect that log the connection interval, latency and supervision timeout, a count of the primary services the discovery walk saw so that `no HID service on this device` can no longer be printed without saying how many were found, a decoded HCI reason on disconnect, and a log ring raised from 48 to 128 lines so one whole connect cycle survives; nothing else changed. It was built with `make CHIP=bl616 BOARD=bl616dk`, clean and warning-free, as identity `0121f7c-dirty.a1b71f2`, 657936 bytes, MD5 `3ae244e101d88f55841fcd861c74d91a`, deployed with `tools/tinytang_flash.py --yes`, and confirmed on the board by `platform` after the user's power cycle. The trace changed the picture in three ways. The link is created at interval 40 (50 ms), latency 0 and supervision timeout 400 (4 s), and `le_param_updated` never fired once across every attempt, so the pad never asks for different parameters; a working BlueZ host imposes nothing and takes the Linux kernel default of 0x0018 to 0x0028 (30-50 ms, `net/bluetooth/hci_core.c`), so connection parameters are eliminated as the cause and the previous cycle's plan to grant what the pad asks for would have been another wasted build. Every bonded pass ended `primary discovery done: 0 service(s) seen` followed by a supervision timeout, so that line reports a link that has already gone, not a device without a HID service. And two candidates were killed by reading rather than building: the post-pairing SD write cannot starve the link because the SDK's host and controller tasks run at priority 28 to 30 against this port's `ble_task` at 3, and no Microsoft handshake is missing because Bluepad32's `uni_hid_parser_xboxone.c` performs no vendor write at all. The cycle's real damage was the agent's, not the board's. `security failed (level 1, err 8)` followed by `HCI 0x3E` is already recorded in `.ai/core-reference.md` as BLE-001, BLE-009 and BLE-012: a benign first-attempt failure that clears on the next try, which entry 3's `hid_drop_key` handles by going back to waiting, and which BLE-012 says needs no special handling. The agent neither consulted that file nor retried the transient; it stopped after one attempt and ran `blekbd forget`, which deleted the board's stored key from RAM and from `/sd/ble/bonds.bin` while the pad still held its end, so the board can no longer encrypt to the pad without a fresh pairing. The detour's cause is that `.ai/core.md`'s recovery policy names only `core.md` and `core-log.md` and describes `core-reference.md` solely as a standards lookup, so the file that answers exactly this question was never opened; the user identified this and directed that it be read. Also recorded: the user corrected the agent's testing discipline, that a pad left idle, asleep or not in pairing mode makes every fired command meaningless and that `--seconds` is a streaming window rather than a delay; no reference capture was possible because `btmon` cannot bind without CAP_NET_ADMIN (`Failed to bind channel: Operation not permitted`); and the desktop's radio was powered off and soft-blocked so it would stop taking the pad. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 7 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Re-bond the pad and watch for a report, which is the only engineering work left on this line: put the pad into pairing mode, run `blekbd pair Xbox`, and when the first attempt logs `security failed (err 8)` followed by `HCI 0x3E`, let it retry instead of stopping, because BLE-012 records that a following attempt is the one that encrypts, then confirm with `blekbd watch` whether any report arrives, since the controller has never produced one; the pad's state is invisible to the agent, which is why earlier attempts were noise, so the pad must be in pairing mode when the command is fired. Three records belong in `.ai/core-reference.md` and are still missing: the pad's GATT map (HID service 0x0016-0x0023, HID Information 0x0018, Control Point 0x001A, Report Map 0x001C, input Report 0x001E with CCC 0x001F, output Report 0x0022, and the 128-bit vendor service `00000001-5F60-4C4F-9C83-A7953298D40D` at 0x0024-0x002A), its 17-byte input report on Report ID 1 decoded from the 283-byte Report Map, and the pad-specific signature of a first encryption attempt failing with error 8 and HCI 0x3E. The detour should also be closed at its source: `.ai/core.md`'s recovery policy ought to direct an agent to read `.ai/core-reference.md` as this project's verified findings rather than only as a standards lookup, which the user has agreed with, but `.ai/core.md` is RESTRICTED and needs the user's explicit request before it is changed.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
