@@ -664,3 +664,33 @@ Continue Phase 1 from the remaining ports above, in this order: the heap, re-der
 - User Test: NOT RUN
 
 ---
+
+## 22 COMMIT Unreleased 2026-10-11T11:21:24-07:00
+
+#### Coming From:
+
+Unreleased 8cddc54
+
+#### Purpose:
+
+Record the user's cancellation of the SDK migration and restoration of the exact firmware running before that trial.
+
+#### Outcome:
+
+The SDK 2.3.36 trial built and flashed, but normal USB enumeration failed; omitting the early SD mount also failed. A full flash read confirmed the installed application matched its build and that the loader and vendor data were unchanged. The first persistent diagnostic recorded main, successful board and USB initialization, successful shell-task creation and entry to the scheduler, but no running-shell checkpoint. Source inspection found that the new FreeRTOS exception path passes masked mcause instead of the register-frame pointer expected by the existing crash recorder; a local guard and more scheduler checkpoints were built, but the later run left an erased evidence sector and did not establish the boot cause. The user stopped the work and requested restoration. The exact original image, `32299f4-dirty.17f81b2`, was located in the prior agent's saved artifacts and copied to `/run/media/vash/GIT/Tang-Console-138K-backups/tinytang_bl616_32299f4-dirty.17f81b2.bin`; its length is 661008 bytes and SHA-256 is `f8cb34557b0da70595954d756d833fb47c7c5d83637b0f22d954c1309fa137c2`. Its boot-header CRC and length were validated and BLFlashCommand wrote only the application at 0x40000, with the device's SHA-256 matching the original image. An initial connection showed the Sipeed debugger; the user then explained the power cable was unplugged during cable swapping. After reconnecting, USB enumerated as TinyTang CDC `ffff:5454` and a guarded `platform` command returned the exact restored identity and a shell prompt. VGA was unavailable with the board disassembled, so display acceptance was not tested. Migration and diagnostic source changes remain local and uncommitted; this commit records only the recovery. The core-syntax audit re-read core.md and core-syntax.md, reviewed the complete .ai diff, confirmed core.md and settled entries unchanged, and checked the canonical sections, numbering, statuses and active-log capacity.
+
+#### Next Steps:
+
+Keep the restored firmware installed and leave the migration stopped unless the user explicitly requests further work. The recovered USB console and identity are confirmed; do not request another BOOT cycle to repeat those checks. Local source still contains the uncommitted migration experiment and HEAD retains entry 21's partially ported source, so neither is a qualified old-SDK build baseline; the saved original binary is the verified restore artifact.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
