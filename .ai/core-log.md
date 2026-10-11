@@ -297,3 +297,33 @@ The next cycle is project-control work: add to `.ai/core-reference.md` the recor
 - User Test: NOT RUN
 
 ---
+
+## 10 COMMIT Unreleased 2026-10-11T07:55:42-07:00
+
+#### Coming From:
+
+Unreleased 9268be7
+
+#### Purpose:
+
+Bring `.ai/core-reference.md` up to date and change it from an append-only record into a current one, at the user's direction, after its stale Bluetooth records misled the cycles of entries 7 and 8.
+
+#### Outcome:
+
+The user agreed that the reference, unlike this log, should hold what is true now and leave history to git and the log, and gave the agent licence to restructure it provided no current data was lost. Section 1's rule against rewriting a settled record was replaced by one that revises a record in place and ends its verification with a dated `Revised` note citing the log entry, the SUPERSEDED status and `superseded_by` field were removed, a rule was added to check that a record's cited code still exists before acting on it, and section 7 and the record template were brought into line. The 16 superseded records were folded into their successors, each successor rewritten to stand alone with every fact still true carried across, which a token comparison confirmed apart from figures that are no longer current (an abandoned 32-variable configuration's sizes, a pre-fix stack reading and two pre-fix heap readings, all still summarised in the new table and kept in git). Their ids, which code, `THIRD_PARTY.md` and the log still cite, are kept in a new section 8 that maps each retired id to the record holding its facts, with what it said. Twenty-one records were revised: DEV-006, FLS-002, PMOD-004, PMOD-006, TDSH-004, TDSH-008, TDESK-011, TDESK-013, PROV-005, TOOL-011, TOOL-016 and BLE-014 absorbed their predecessors; BLE-001 now records the 6 dBi antenna fitted on 2026-10-10; BLE-012 now records the stale-key failure and what `hid_security_changed()` does and does not handle, instead of saying a failed re-encryption needs no handling; BLE-002, BLE-006 and BLE-010 lost claims that pairings live in RAM only; BLE-005 names `hid_setup_reports()` and `hid_setup_next()` in place of three `kbd_*` functions that no longer exist; PMOD-002 and PMOD-004 no longer say the `/tang.ini` parser does not exist; and PROT-004 and TDSH-002 no longer cite `tang_osd_term.c`, removed on 2026-10-04. Seven other records had a citation of a retired id repointed and are otherwise byte-identical, and 102 records are untouched. Three records were added from entries 3 to 8: BLE-015, the Xbox Wireless Controller's pairing mode and GATT map; BLE-016, its 17-byte input report; and BLE-017, its open defect, recording both failure forms seen (a completed setup with no report and an `HCI 0x13` hang-up on the bare jack, and with the antenna no ATT answer after encryption, a supervision timeout and the key refused on the next connection), the causes ruled out, and key distribution labelled as a lead rather than a finding. Writing BLE-017 corrected entry 8's claim that the pad always stops answering when encryption completes, which entries 4 and 5 contradict. Records are now ordered by the topic catalog, the index was regenerated in that order with one line per live record, and routing gained four Bluetooth rows; the file is 133 records and parses as YAML in its rules, index and records blocks. Nothing was built or deployed. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled log entry was rewritten, and validated this entry as number 10 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The Xbox controller work resumes from the entry-7 firmware on the board, starting from BLE-017: the cheapest next evidence is a btmon capture of the controller pairing with the user's desktop, run by the user with the privilege the agent lacks, compared against this board's pairing, with the desktop's bond removed and its radio blocked again afterwards. The user's confirmation that the M750's pointer moves in the desktop on this firmware is still owed from entry 9.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

@@ -2,11 +2,11 @@
 
 > **Project:** TinyTang
 > **Purpose:** The authoritative lookup for externally defined facts this project depends on: the board's wiring and fitted parts, the BL616's registers and memory, the interface contract of the FPGA cores we boot, the contracts of the external projects we embed, and the behaviour of the vendor tools.
-> **Authority:** Per `.ai/core.md`, consult this file before looking anything up online. A record is authoritative to the extent of its `status` and cited `sources`. When a better or newer source is found online, add or supersede a record and notify the user.
+> **Authority:** Per `.ai/core.md`, consult this file before looking anything up online, and open the record behind any hardware fact before acting on it. A record is authoritative to the extent of its `status` and cited `sources`. When a better or newer source is found online, add or revise a record and notify the user.
 
 This file records what an outside source (a datasheet, schematic, vendor SDK, vendor tool, or external repository) says, plus hardware observations that confirm or refute it. It does not record project history, build results, or discussion; those belong in `core-log.md`. It does not record project design choices unless an external fact forces them.
 
-Three of the records here are negative results — facts about what this hardware *cannot* do. They are recorded because each cost a session to establish and each would otherwise be re-litigated: see USB-002, USB-003, and NEST-002.
+Some records are negative results — facts about what this hardware *cannot* do, or an open defect's ruled-out causes. They are recorded because each cost a session to establish and each would otherwise be re-litigated: see USB-002, USB-003, NEST-002, BLE-007 and BLE-017.
 
 ---
 
@@ -29,16 +29,17 @@ statuses:
   VERIFIED:   "Primary source cited AND confirmed on this project's hardware or tools."
   SOURCED:    "Primary source cited; not yet confirmed on this project's hardware or tools."
   INFERRED:   "Derived from secondary sources, reverse inspection, or consistent observation; no primary source. Flag before relying on it."
-  SUPERSEDED: "Replaced by the record named in superseded_by."
 
 rules:
   - "One fact or one tightly coupled fact group per record."
   - "Every record cites at least one source with enough detail to re-check it: repository path plus commit, file, symbol, register name, or tool version."
   - "Separate what the source says (statement) from what it means for this project (consequence)."
   - "Diagnostic or implementation limits chosen by this project are never recorded as standard or device limits."
-  - "Do not rewrite a settled record's statement. Correct it by adding a new record and marking the old one SUPERSEDED with superseded_by."
+  - "A record holds what is true now. When a fact changes or proves wrong, edit the record in place: revise statement and consequence, update verified_date and sources, and end verification with 'Revised <date> (core-log entry N): <what changed>'. Git and core-log.md keep the history; this file does not."
+  - "Before acting on a record, check that the code paths and symbols it cites still exist; fix the record in the same cycle if they do not."
+  - "Never reuse a record_id. When a record is folded into another, or split, move its id to the retired-id table in section 8 with the record that now holds its facts, after checking that every fact still true has been carried across."
   - "An INFERRED record must say how it was inferred, in verification."
-  - "A negative result is a fact. Record what the hardware cannot do with the same rigour as what it can, and say how many attempts established it."
+  - "A negative result is a fact. Record what the hardware cannot do with the same rigour as what it can, and say how many attempts established it. An open defect may be recorded as its established facts and ruled-out causes, with any lead labelled as a lead."
   - "When an online lookup was needed because this file had no answer, add the finding here with the existing syntax, then notify the user if the source is newer or more valid than a record already here."
   - "Use technical names (GW5AST-138, BL616, CDC, OTG). The user's conversational names are not used in this file."
 ```
@@ -163,7 +164,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where does the application live in flash, and what does a soft reset do? | FLS | FLS-002 |
 | What does a watchdog reset do, and where is a crash record kept across it? | FLS | FLS-003 |
 | Which BL616 loader does the board have, and where are the full flash backups? | FLS | FLS-004 |
-| Where is the Bluetooth antenna, and how well does the radio work without one? | BLE | BLE-001 |
+| Where is the Bluetooth antenna, is one fitted, and how well does the radio work without one? | BLE | BLE-001 |
 | Which SDK Bluetooth library does this firmware need, and what does Bluetooth cost? | BLE | BLE-002 |
 | Why does a UUID-filtered GATT discovery find nothing? | BLE | BLE-003 |
 | Why does a subscription's notify callback get a NULL report? | BLE | BLE-004 |
@@ -175,7 +176,11 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does a GATT subscribe fail with -EALREADY after a bonded device reconnects? | BLE | BLE-010 |
 | How does the host reconnect a paired device, and why is there no bt_le_set_auto_conn? | BLE | BLE-011 |
 | Where are Bluetooth pairings kept, and how do devices come back after a reset? | BLE | BLE-012 |
+| What does a failed re-encryption mean, and when is a stored key dropped? | BLE | BLE-012 |
 | How much heap does the running Bluetooth stack take? | BLE | BLE-014 |
+| What does the Xbox Wireless Controller expose, and how is it put in pairing mode? | BLE | BLE-015 |
+| What is in the Xbox controller's input report? | BLE | BLE-016 |
+| Why does the Xbox controller not work here, and what has been ruled out? | BLE | BLE-017 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -258,13 +263,14 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 
 ## 4. Fast lookup index
 
+One line per live record, in the order of section 5. Retired ids are in section 8.
+
 ```yaml
 DEV-001: "The FPGA is a GW5AST-138; its JTAG IDCODE is 0x0001081b, reported as ID=0001081b on every tangload"
 DEV-002: "cores/console138k/nestang.bin is 4,593,044 bytes and byte-identical to nand2mario's generated console138k artifact (GW5AST-138B)"
-DEV-003: "Superseded by DEV-006. Recorded the FPGA as unconfigured at power-up, which held only because tangload always replaced what was there before it was seen"
 DEV-004: "A core bitstream can carry AE350 RISC-V software: the program is compiled to a hex file and read into a boot ROM inside the design with $readmemh, so it is synthesised into the bitstream and arrives with tangload; the firmware loads whole images and never AE350 code as an artifact of its own"
 DEV-005: "The menu core is the console138k design with nestang's NES machine not instantiated: MENU_CORE in src/boards/console138k_menu.v, selected by build.tcl's third `menu` argument; it answers CORE_ID 1, the same value the patched NES core answers, and is about four fifths smaller in logic while its bitstream is only ~2.5 percent smaller"
-DEV-006: "The FPGA is not empty at power-up: with no tangload it is already running a core that answers core ID 0 on the UART and shows a TangCore splash on HDMI, so it configures itself from storage of its own; boot.tdsh replaces it within seconds, which is why it went unseen"
+DEV-006: "The FPGA is not empty at power-up: with no tangload it is already running a core that answers core ID 0 on the UART and shows a TangCore splash on HDMI, so it configures itself from storage of its own; boot.tdsh replaces it within seconds, and every boot reloads this project's core (tangload, fpga, nesload for a cartridge)"
 DEV-007: "The FPGA's 16 MB XTX configuration flash (JEDEC 0b 40 18) holds one image at offset 0, 1,084,246 B, a compressed GW5AST-138 bitstream matching no TangCore 0.9 core; TangCore's installer and firmware never write that flash, so it is most likely the factory splash core"
 BRD-001: "BL616 to FPGA JTAG: TMS GPIO0, TCK GPIO1, TDO GPIO2, TDI GPIO3"
 BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NOT_READY (3)"
@@ -275,11 +281,9 @@ BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the p
 BRD-007: "One-wire and two-wire cannot be combined: by the user's account the board's modules are powered from one input or the other, never both, and making the two work together was tried at length in the earlier projects without success; no written record of that work was found"
 BRD-008: "The dock's two 2x20 2.54 mm headers are the SDRAM connectors J9 (SDRAM0) and J10 (SDRAM1), MiSTer-style: FPGA I/O on pins 1-10, 13-28 and 31-40, +5 V on pin 11, ground on pin 12; they are not Raspberry Pi headers, and a Pi HAT fitted directly would put the board's 5 V on a HAT signal and short eight FPGA pins through the HAT's ground pins"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
-PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected, and the parser is firmware work - formerly Tang-Control's, now this project's"
-PMOD-003: "Superseded by PMOD-004. Recorded the socket control register as 0x10, which is the bring-up core's map only"
-PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them (0x2410 is the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit); 0x10 is the bring-up core's address"
-PMOD-005: "Superseded by PMOD-006. Tang-Phosphor's merged core adds personality 5, I2S2 stereo PCM playback; TinyTang parses /tang.ini (tang_ini.c) and sends it to a core with ID 0x50 at ABI 1.8 or later after every tangload, accepting none, oledrgb, encoder, i2s2, vga_j1 and vga_j2, refusing per the contract and warning about unknown keys; flip is applied as declared, with no flip-safety check yet; on the board only through host tests so far"
-PMOD-006: "Hardware-qualified /tang.ini declarations: I2S2 on PMOD0 is 0x0050; encoder face up on PMOD1 pins 7-12 needs flip=yes and is 0x2400, or 0x2410 with OLED on PMOD0; PmodVGA face up on this dock has J1 on PMOD1 and J2 on PMOD0, so uses 0x0230; missing-file release and unknown-module refusal also pass"
+PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected; this firmware parses it (tang_ini.c) and, by the user's choice, does not enforce flip safety"
+PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them; the bring-up core has the same layout at 0x10, which is not extended frame type 0x10"
+PMOD-006: "tangload declares /tang.ini to core 0x50 at ABI 1.8+ and reads it back; names none, oledrgb, encoder, i2s2 (personality 5, ABI 1.10), vga_j1, vga_j2; qualified: I2S2 on PMOD0 0x0050; encoder face up on PMOD1 pins 7-12 needs flip=yes, 0x2400, or 0x2410 with OLED on PMOD0; PmodVGA face up has J1 on PMOD1 and J2 on PMOD0, 0x0230; missing-file release and unknown-module refusal pass"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
 BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
 BL6-003: "The allocator is TLSF: mem.h exposes g_kmemheap, kfree_size(), and heapsize; PMEM_HEAP is the same heap unless the chip is a BL618"
@@ -296,8 +300,7 @@ USB-004: "usbd_add_endpoint() assigns by endpoint index, not by appending, and u
 USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-only, and usb_hc_low_level_init() has no counterpart, so the port must be returned to device mode by hand"
 USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
 USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
-FLS-001: "Superseded by FLS-002. Recorded the application slot as at most 0x80000 bytes with staging at 0x100000, a limit Tang-Control chose rather than one the flash or the vendor loader imposes"
-FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000 (the backup shows 0x76000-0x200000 erased), commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
+FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000; boot header magic at 0x00/0x08/0x64, body length at 0x84, CRC-32 of the first 252 bytes at 0xFC; the commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 FLS-003: "A watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, so only a power cycle (which scrambles RAM) brings TinyTang back; the crash recorder keeps its record in the last flash sector, 0x3FF000"
 FLS-004: "The BL616 loader at 0x0 is not TangCore 0.9's bl616_fpga_partner_console138k.bin (60,741 of 88,672 bytes differ); full backups of the BL616 and FPGA flashes are in /run/media/vash/GIT/Tang-Console-138K-backups with SHA256SUMS.txt"
 PROT-001: "Frames are 0xAA len_hi len_lo type payload[len-1]; length is big-endian and counts the type byte; a length high byte >= 8 drops the core back to hunting for magic"
@@ -322,15 +325,10 @@ TCTL-008: "No-BOOT update: patch the boot header (body length at 0x84, CRC-32 of
 TCTL-009: "The RX task kept counters for bytes, joypad frames, FIFO overflows, FIFO high water, resync bytes, unknown frame types and longest poll gap; the rework adding interrupt-driven RX and a TX mutex fixed gamepad and OSD stutter"
 TCTL-010: "Helper scripts being retired: tangctl.py, liveuart.py, liveuart_draw.py, print_uart.py, jtag.py, tdi_compare.py, crc16.sh and fs.py, which converts a Gowin .fs to .bin"
 TCTL-011: "Tang-Control is the architecture of record for the Phosphor core and the cores after it, and is hardware-verified as a whole because this project was built from it; a record's own status still reports whether that specific fact was confirmed here"
-TDSH-001: "Superseded by TDSH-003. Recorded TinyDesk Shell v0.1.3 at 232a39f and its scripting language"
-TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else"
-TDSH-003: "Superseded by TDSH-004. TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns"
-TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell): the same language and terminal interface as v0.1.4; board.conf numbers are decimal or 0x hex, never octal, and network mode/autowifi are root only, neither used by this port"
+TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C, ESC[<n>D and SGR colour, and nothing else; a narrow-page renderer must treat CR as the start of the logical line"
+TDSH-004: "TinyDesk Shell v0.1.5 at 8456dd1 (tinydesk-project/tinydesk-shell), C11 and MIT: uScript 1.1.1 (variables, substitution, arithmetic, if/while/for, functions, pipes, redirection; no script arguments); optional columns() and read_byte_timeout() in tdsh_terminal_io_t, 80 columns without either; board.conf numbers are decimal or 0x hex, never octal"
 TDSH-005: "Upstream STANDARDS.md (v0.1.5) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
-TDSH-006: "Superseded by TDSH-007. Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2)"
-TDSH-007: "Superseded by TDSH-008. TinyTang's first smaller configuration used 32 variables, 32-byte names, 128-byte values and a 16 KB stack, bringing its session to 5,752 B"
-TDSH-008: "TinyTang uses 48 variables, 32-byte names, 128-byte values and a 16 KB worker stack, with an 8,328 B session and 8,584 B job; scripts inherit independent copies. Desktop launches pass with a catalog sized to actual files; the active-worker probe leaves 24,936 B free with a 19,372 B largest block"
-TDESK-001: "Superseded by TDESK-012. Recorded TinyDesk's four-function port surface and its shell pin at 232a39f"
+TDSH-008: "Upstream's 64-variable 19 KB session and 32 KB stack made desktop scripts fail silently; a carried patch makes the limits overridable and TinyTang uses 48 variables, 32-byte names, 128-byte values and a 16 KB worker stack (8,328 B session, 8,584 B job), with independent copies per script; upstream issue #2"
 TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
 TDESK-004: "The Terminal app draws 'No shell backend in this build.' exactly when s_backend is NULL; td_terminal_set_backend() supplies it"
@@ -339,29 +337,11 @@ TDESK-006: "The Editor saves with Ctrl+S; the host HAL clears IXON so it arrives
 TDESK-007: "td_run() returns after td_quit(); td_shutdown() restores the terminal"
 TDESK-008: "Network, MQTT, Modbus and Software Update are built on proto/td_sock.c and proto/td_tls.c: POSIX sockets, esp_timer.h, and mbedTLS with esp_crt_bundle.h"
 TDESK-009: "Nine start-menu apps plus a clock window: About, Counter, Editor, Files, Log Viewer, Settings, System Monitor, Task Manager, Terminal, and Date & time"
-TDESK-010: "Superseded by TDESK-011. Called the Files app's delete dialog a possible TinyDesk bug and suspected it of removing /scripts/boot.tdsh, which the user had deleted themselves"
-TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step"
-TDESK-012: "Superseded by TDESK-013. TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor"
-TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk) pins the shell at 8456dd1, the same as this project; only td.h's version and repository URLs change in code this port builds"
+TDESK-011: "TinyDesk's delete confirmations, in the Files app and on desktop icons, focus their Delete button, so Delete then Enter (or Space) removes the selected file with no further step; deleting /scripts/boot.tdsh leaves the board on the FPGA's own core"
+TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk), C11: the port surface is td_hal_t (read_byte, write, millis, sleep_ms plus context); the Terminal backend is start, read, write, resize, user, set_user; it pins the shell at 8456dd1, the same as this project"
 TDESK-014: "Terminal retains its started flag across td_shutdown(); a port that stops its shell at desktop exit must explicitly restart it on reentry, since reinstalling the same backend does not call start again"
 TDESK-015: "TinyDesk launches apps by registered name: Settings' Network... button and the taskbar's network tray both call td_app_launch(\"Network\"), which does nothing when no app has that name, and the tray is drawn only when the port supplies td_net_ops_t; TinyTang's carried patch makes the button Bluetooth... launching its own Bluetooth app"
 TDESK-016: "TinyDesk's Editor allocates TD_EDITOR_MAX + 1 bytes of text and an undo history of TD_EDITOR_UNDO bytes plus 128 records when it opens, about 25 KB at the 16 KB and 6 KB defaults, freed on close; TinyTang sets 8 KB and 2 KB, measured at 12 KB on the board, and larger files open read-only"
-TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
-TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
-TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
-TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
-TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib.conf and proj.rtos.conf plus ref/, selected by TINYTANG_MIN, TINYTANG_RTOS, TINYTANG_NONEWLIB, TINYTANG_REF, TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL"
-TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
-TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
-TOOL-008: "Superseded by TOOL-016. Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
-TOOL-009: "Superseded by TOOL-011. Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending"
-TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
-TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1, and tangput passes the sequence through as data while it receives"
-TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 (openFPGALoader -c ft2232; --detect reads 0x0001081b and changes nothing; an SRAM load must be .fs, not .bin) and the FPGA UART on interface 1 (/dev/ttyUSB1, 2 Mbaud, the same 0xAA frames as the BL616 link); no shell, desktop, boot script or TinyTang tool runs, and reaching it takes a cold power-up that also restarts the FPGA, so it cannot inspect a state reached under TinyDesk"
-TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs over JTAG with Tang-Phosphor's scripts/flash-otg.sh (17 s for the merged Phosphor image), then identify, peek, poke and stream to it on /dev/ttyUSB1 at 2 Mbaud with tools/fpga_uart.py and scripts/play_stream.py; an MP3 played through the AE350 this way gave 441000 samples, 0 underruns, 44100 Hz"
-TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
-TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
-TOOL-016: "Linked out of the SDK under their own licences: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com), CherryUSB (Apache-2.0), FatFs R0.15 w/patch3 (ChaN), and since blescan/blekbd the Bluetooth stack: the Zephyr-derived host (Apache-2.0; Intel, Nordic, Wind River, Oticon, Chettimada), TinyCrypt (BSD-3-Clause, Intel 2017), micro-ecc (BSD-2-Clause, Kenneth MacKay 2014) and ctr_prng (BSD-2-Clause, Chris Morrison 2016), whose binary-form notices are reproduced in LICENSES/, plus the binary-only RivieraWaves-based controller and PHY libraries under the SDK's Apache-2.0 alone"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -381,35 +361,51 @@ PHOS-011: "Since Tang-Phosphor register ABI 1.8 (0x04 reads 0x00010008) cpu_mode
 PHOS-012: "Unqualified resident-player contract: a length-0 mailbox request is a question chosen by its offset, 0 SIZE, 1 NEXT (queued track's size, 0 when none, 0xffffffff STOP) and 2 POLL (1 when a stop is pending), each answered as a four-byte session least significant byte first; the player publishes RES1 (0x52455331) at 0x4040, tracks begun 0x4044, tracks finished 0x4048, last track's samples 0x404c and decode status 0x4050"
 PHOS-013: "Lessons from the discarded resident gapless player experiment: detect residency by loader RUN plus the RES1 marker, number a track as tracks begun plus one and treat it as over when tracks finished reaches that number, stop softly through the mailbox with a halt fallback, re-take the mailbox baseline whenever the BL616 has not itself started the resident player, and settle PHOS-007 and the RAM bridge before qualifying a player that never returns"
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
-PROV-002: "Superseded by PROV-004. Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0"
-PROV-004: "Superseded by PROV-005. TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree"
-PROV-005: "TinyTang is MIT with thirteen Apache-2.0 files: nand2mario's JTAG programmer, and ten Phosphor transport files and two host tests written by this project's author in Tang-Control; it descends from nand2mario's TangCore firmware-bl616 through Tang-Control, a fork of it, and copies no other TangCore source"
 PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv pinned to upstream 3fa78412; read the port when working in SystemVerilog since it ships an AGENTS.md and targets Verilator and free tooling, but treat the original as the authority; licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT, with no code copied here"
+PROV-005: "TinyTang is MIT with thirteen Apache-2.0 files: nand2mario's JTAG programmer, and ten Phosphor transport files and two host tests written by this project's author in Tang-Control; it descends from nand2mario's TangCore firmware-bl616 through Tang-Control, a fork of it, and copies no other TangCore source; THIRD_PARTY.md must keep saying the UART protocol was read from GPL-3.0 nestang as a specification, not copied"
 PSX-001: "This board is GW5AST-138 revision C (package mark 2518CA0N), while the console138k core image it loads is built for revision B and works anyway"
 PSX-002: "GW5AST-138: 138,240 LUTs, 139,095 registers, 340 BSRAM blocks of 18 Kbit, about 765 KB"
 PSX-003: "50 MHz oscillator on FPGA pin V22; the BL616 control UART reaches the FPGA on V14 (FPGA RX) and U15 (FPGA TX), LVCMOS33 - the other end of the link PROT-003 describes from the BL616 side"
 PSX-004: "Module connector U1201, 8-pin JST SH: 1 5V0 via diode (~4.4 V), 2 TMS T13, 3 TDO U13, 4 TCK V12, 5 TDI R13, 6 RX V14, 7 TX U15, 8 GND; the JTAG nets are shared with the BL616, so an external adapter must be released during a tangload, pins 6 and 7 stay unconnected, and pin 1 must not reach a 3.3 V adapter"
 PSX-005: "Dock SDRAM is Winbond W9825G6KH-6, 32 MB x16 at 166 MHz, on connectors J9 and J10, separate from the SOM's 1 GiB x32 DDR3; neither is the BL616's memory, which is 320 KB of on-chip OCRAM (BL6-002)"
 PSX-006: "A loaded core is indicated by active_core, the low byte of its CORE_ID (0x01 nestang, 0x50 Phosphor, 0x51 Gate 1), not by core_running, which reads no while a core answers; uploads are refused while a core runs; the link is 2 Mbaud with a 5 Mbaud fast mode and needs an iosys clock at least 8x the baud"
-BLE-001: "The BL616's antenna pin runs through L9 (0 ohm) to U35, a U.FL jack marked ANT on the dock's underside, and nothing is fitted to it; bare, the radio still scans and connects at arm's length at -76 to -94 dBm, with occasional HCI 0x3E connection failures that a retry clears"
-BLE-002: "Scanning and connecting need the SDK's ble1m10s1bredr0 controller library (central, observer, 10 links); ble1m0s1bredr0 has neither role; Bluetooth costs 236,096 B of image, 32 KB of RAM the linker reserves and 52.6 KB of boot heap, the controller cannot be shut down once started, and CONFIG_BT_SETTINGS 0 keeps pairing keys in RAM only"
+BLE-001: "The BL616's antenna pin runs through L9 (0 ohm) to U35, a U.FL jack marked ANT on the dock's underside, with no antenna from the factory; bare, the radio connects only close up with frequent HCI 0x3E failures; since 2026-10-10 a 2.4 GHz 6 dBi antenna is fitted on an RP-SMA pigtail, and a device that read -70 dBm bare reads -33 dBm"
+BLE-002: "Scanning and connecting need the SDK's ble1m10s1bredr0 controller library (central, observer, 10 links); ble1m0s1bredr0 has neither role; Bluetooth costs 236,096 B of image, 32 KB of RAM the linker reserves and 52.6 KB of boot heap, and the controller cannot be shut down once started; the stack starts on first use or at boot when pairings are saved"
 BLE-003: "Against the K950, bt_gatt_discover by service UUID (0x1812) and descriptor discovery by UUID (0x2902) found nothing, while unfiltered discovery found the same attributes; discover everything in range and filter in the callback"
 BLE-004: "With BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP on, the SDK calls a subscription's notify callback with data NULL when the CCC write enabling it succeeds, the same signal gatt.h documents as the subscription being removed; a NULL report there is not an unsubscribe"
-BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host on ATT TX buffer allocation for ever; issue one request at a time, each from the previous one's completion"
+BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host on ATT TX buffer allocation for ever; issue one request at a time, each from the previous one's completion (hid_setup_next() in tang_ble.c)"
 BLE-006: "Logitech K950 in Bluetooth mode is HID over GATT on BLE: a random address that changes each time it enters pairing mode, Just Works pairing, boot protocol supported (Boot Keyboard Input value handle 0x23, CCC 0x24, Protocol Mode 0x4D) and the standard 8-byte boot report"
 BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device such as the Rii K06 (Bluetooth 3.0) cannot connect"
 BLE-008: "A BLE keyboard notifies only when its key state changes, with no heartbeat, so it counts as live while connected and is zeroed on disconnect; its reports bypass the core, so left-alt pointer mode is applied in firmware by tang_key_pointer()"
 BLE-009: "Logitech M750 over BLE: random address that increases by one per pairing, Just Works, Boot Mouse Input at value handle 0x23 (CCC 0x24), Protocol Mode 0x35; its boot report is 4 bytes with the wheel in byte 3, and its 7-byte report-protocol report is 16-bit buttons, 12-bit X and Y packed in 3 bytes, wheel and pan"
 BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect unless BT_GATT_SUBSCRIBE_FLAG_VOLATILE is set, and re-sends them on reconnect; reusing those params structs for a new subscription rewrites a node still in its list and returns -EALREADY"
 BLE-011: "This SDK's config.h defines CONFIG_BT_WHITELIST, which compiles out bt_le_set_auto_conn and the host's reconnect-after-disconnect; reconnection is one whitelist initiator (bt_conn_create_auto_le) that connects the first whitelisted device to advertise and stops, cannot run beside an explicit scan or connect, and needs the whitelist unchanged while it runs"
-BLE-012: "Pairings are kept on the SD card in /sd/ble/bonds.bin (tang_ble_bonds.c format, keys unencrypted) and put back into the host's key table at boot; the K950 and M750 then reconnect when woken, but the first encryption attempt after a disconnect often fails (level 1, error 8, then HCI 0x3E) and a retry succeeds"
-BLE-013: "Superseded by BLE-014. Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect"
-BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost, and a connection about 700 B; with both devices connected about 64.7 KB stays free (largest block 40.5 KB) across cartridge loads and desktop sessions, and reconnects do not leak"
+BLE-012: "Pairings are kept on the SD card in /sd/ble/bonds.bin (keys unencrypted) and restored at boot; a failed first re-encryption (level 1, error 8, then HCI 0x3E) is retried by the next connection and must not drop the key; a device that forgot its key gives error 2, on which the key is dropped, or a silent 'requesting encryption' then 0x3E, which only forget clears"
+BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap and a connection about 700 B (heap_3, read with kfree_size(); no lowest-ever counter); with both devices connected about 64.7 KB stays free (largest block 40.5 KB) across cartridge loads and desktop sessions, and reconnects do not leak"
+BLE-015: "Xbox Wireless Controller: BLE HID only (no Classic inquiry answer); fast blink is pairing mode, slow blink idle; HID service 0x0016-0x0023 (Report Map 0x001C, input 0x001E with CCC 0x001F, Control Point 0x001A, output 0x0022); vendor service 00000001-5F60-4C4F-9C83-A7953298D40D at 0x0024-0x002A; works on BlueZ"
+BLE-016: "Xbox Wireless Controller input Report ID 1 is 17 bytes: four 16-bit axes 0-65535, Brake and Accelerator 10-bit 0-1023, a 4-bit hat, fifteen buttons and one Consumer bit; its 283-byte Report Map must be read with offsets, 22 bytes at a time"
+BLE-017: "Xbox Wireless Controller on this host: no report has ever arrived; with the antenna fitted it answers ATT before security and nothing after, the link dies on a supervision timeout about 8.8 s after bonding, and it refuses the saved key next time (error 2); signal, connection parameters, MTU, setup order, vendor service and legacy pairing are ruled out; open defect"
+TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
+TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
+TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
+TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
+TOOL-005: "The USB-enumeration bisection is kept as proj.min.conf, proj.nonewlib.conf and proj.rtos.conf plus ref/, selected by TINYTANG_MIN, TINYTANG_RTOS, TINYTANG_NONEWLIB, TINYTANG_REF, TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL"
+TOOL-006: "tools/ holds tinytang_flash.py (reflash over CDC), tinytang_put.py (file onto the card) and tinytang_run.py (run a shell command), all needing Python with pyserial"
+TOOL-007: "ports/bl616/tang_jtag_programmer.c is nand2mario's Apache-2.0 Gowin GPIO JTAG programmer from Tang-Control's fpga/programmer.cpp, based on openFPGALoader, vendored unmodified apart from its include list"
+TOOL-010: "A carried patch stops being recognised once a later cycle edits the lines it added: the reverse check wants those lines present verbatim and the forward check wants them absent, so scripts/apply-nestang-patches.sh presumes the series applied in a tree with local changes, and the guarantee is the fresh-clone reconstruction test rather than the applier's check"
+TOOL-011: "The console's input is exclusive, so the host tools ask the board before sending: the probe ESC [ ? 7 7 n is taken out of the USB input by the firmware, unseen by the shell or the desktop, and answered ESC [ ? 7 7 ; 1 n at the shell prompt, 2 with the desktop running, and not at all while a command runs; tools/tinytang_console.py sends nothing unless the answer is 1; a raw upload into the desktop once wrecked the card's FAT (recover with fsck.vfat)"
+TOOL-012: "One-wire debugging reaches the FPGA only: JTAG on FT2232 interface 0 (openFPGALoader -c ft2232; --detect reads 0x0001081b and changes nothing; an SRAM load must be .fs, not .bin) and the FPGA UART on interface 1 (/dev/ttyUSB1, 2 Mbaud, the same 0xAA frames as the BL616 link); no shell, desktop, boot script or TinyTang tool runs, and reaching it takes a cold power-up that also restarts the FPGA, so it cannot inspect a state reached under TinyDesk"
+TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs over JTAG with Tang-Phosphor's scripts/flash-otg.sh (17 s for the merged Phosphor image), then identify, peek, poke and stream to it on /dev/ttyUSB1 at 2 Mbaud with tools/fpga_uart.py and scripts/play_stream.py; an MP3 played through the AE350 this way gave 441000 samples, 0 underruns, 44100 Hz"
+TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
+TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
+TOOL-016: "Linked out of the SDK under their own licences: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com), CherryUSB (Apache-2.0), FatFs R0.15 w/patch3 (ChaN), and the Bluetooth stack: the Zephyr-derived host (Apache-2.0; Intel, Nordic, Wind River, Oticon, Chettimada), TinyCrypt (BSD-3-Clause, Intel 2017), micro-ecc (BSD-2-Clause, Kenneth MacKay 2014) and ctr_prng (BSD-2-Clause, Chris Morrison 2016), whose binary-form notices are reproduced in LICENSES/, plus the binary-only RivieraWaves-based controller and PHY libraries under the SDK's Apache-2.0 alone; LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
 ```
 
 ---
 
 ## 5. Records
+
+Records are grouped in the order of the topic catalog, and numbered within each topic.
 
 ```yaml
 - record_id: DEV-001
@@ -439,20 +435,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "nestang, build.tcl console138k branch: set_device GW5AST-LV138PG484AC1/I0 -device_version B, plus src/boards/console138k.v"
     - "nestang commit 976c326 'add console 138k build files', 2025-03-29"
   verification: "MD5 of the card's image compared against the built artifact; sizes compared against the console60k image. The card's copy is dated 2025-05-02, matching the TangCore 0.9 release the card was built from."
-
-- record_id: DEV-003
-  kind: DEVICE
-  topic_id: DEV
-  title: "The FPGA keeps no configuration across a power cycle, so a core is reloaded every boot"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "Nothing on this board reconfigures the GW5AST-138 on power-up: the fabric comes up empty and the BL616 has to program a core image over JTAG. On this bench a core was never present after a power cycle until tangload ran, and the load was what brought the HDMI output and the UART link to life."
-  consequence: "Any procedure that spans a power cycle must reload the core, which is why a cartridge takes three commands in order - tangload to put the core in, fpga to confirm it answers, nesload to stream the ROM - rather than assuming a core is there. It also means there is no persisted fabric state to reason about at boot."
-  sources:
-    - "This project's session behaviour: a core appeared only after tangload on every boot"
-    - "BRD-001: the JTAG pins the load drives"
-  verification: "Exercised on this board across many power cycles; each began with an unconfigured FPGA until tangload ran. Not tested against a hypothetical on-board reconfiguration path, because none was found."
-  superseded_by: "DEV-006"
 
 - record_id: DEV-004
   kind: DEVICE
@@ -488,14 +470,13 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: INFERRED
   verified_date: 2026-10-04
   statement: "With /scripts/boot.tdsh absent, so that nothing ran tangload after power-up, the board's FPGA was already running a core 80 seconds into uptime: fpga reported 'core 0 answering on UART1 at 2000000 baud', where every core this project builds answers 1, the desk layer was off, and the HDMI output showed a TangCore splash on more than one monitor and capture device. The same core-0 answer was seen once before, on 2026-10-04 in core-log cycle 12, with boot.tdsh renamed away. The FPGA therefore configures itself at power-up from configuration storage of its own, with a stock TangCore image, before the BL616 programs anything over JTAG."
-  consequence: "DEV-003 said the fabric comes up empty and was wrong; it held only because boot.tdsh's tangload replaces the stock core within seconds of power-up, before most displays have locked. Procedures still reload a core on every boot -- tangload is what puts this project's cores in, since they live on the card and not in that storage -- but 'no core answers' is not the state at boot: a core answering 0 is the sign that the boot chain did not run, which is how a missing boot.tdsh shows up (TDESK-010). tangload programs SRAM and leaves that storage alone, which is why the stock core returns on every power cycle. Core ID 0 is not in TangCore's core table (TCTL-006), so which image it is beyond the splash it draws is not established."
+  consequence: "The fabric is not empty at power-up; it looked empty only because boot.tdsh's tangload replaces the stock core within seconds, before most displays have locked. tangload programs SRAM and leaves that storage alone, which is why the stock core returns on every power cycle, and this project's cores live on the card, so every boot still reloads one: a cartridge is three commands in order, tangload to put the core in, fpga to confirm it answers, and nesload to stream the ROM. A core answering 0 is the sign that the boot chain did not run, which is how a missing /scripts/boot.tdsh shows up; restoring it is a tangput of scripts/boot.tdsh (TDESK-011 records how the desktop's Files app can delete it in two keystrokes). Core ID 0 is not in TangCore's core table (TCTL-006); DEV-007 identifies the stored image as most likely the factory splash core."
   sources:
     - "This board's console on 2026-10-04: fpga reporting core 0 with no tangload since power-up, and osd desk status reporting the layer off"
     - "The user's report of a TangCore splash at boot on several displays while boot.tdsh was missing"
     - "core-log cycle 12: the first core-0 observation"
     - "ports/bl616/tdsh_tang_flash.c: tangload calls fpga_program(), which loads SRAM ('Load SRAM' in its output)"
-  verification: "Observed twice on this board, both times with boot.tdsh absent; restoring boot.tdsh returns the board to core 1 at boot. The mechanism -- which storage and by what configuration mode the FPGA loads at power-up -- is inferred from that behaviour and not traced to a schematic or a Gowin document, which is why this is INFERRED rather than VERIFIED."
-
+  verification: "Observed twice on this board, both times with boot.tdsh absent; restoring boot.tdsh returns the board to core 1 at boot. The mechanism -- which storage and by what configuration mode the FPGA loads at power-up -- is inferred from that behaviour and not traced to a schematic or a Gowin document, which is why this is INFERRED rather than VERIFIED. Revised 2026-10-11 (core-log entry 10): folded in the three-command cartridge sequence from the retired DEV-003, whose claim that the fabric comes up empty this record corrects."
 
 - record_id: DEV-007
   kind: BOARD
@@ -510,6 +491,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "TangCore 0.9 release (tangcore-0.9 (1).zip on the user's Desktop): cores/console138k/*.bin, firmware-bl616/flash_console138k.ini, installation.pdf"
     - "Tang-Control (a fork of TangCore's firmware-bl616): no FPGA-flash write path in fpga/, core/ or main.cpp"
   verification: "Dump and comparisons made on 2026-10-06 (core-log entry 39)."
+
 - record_id: BRD-001
   kind: BOARD
   topic_id: BRD
@@ -578,7 +560,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   title: "One-wire or two-wire is chosen at a cold power-up by which input powers the board"
   status: INFERRED
   verified_date: 2026-10-05
-  statement: "The two modes TCTL-005 names are two different programs on the BL616, and only one runs at a time. A cold power-up with the dedicated power input connected, with or without the OTG cable, runs this project's firmware, and the host sees the TinyTang CDC (ffff:5454). A cold power-up with the OTG cable alone comes up instead as SIPEED's 'USB Debugger' FT2232 (0403:6010, serial 2025041420), with interface 0 as /dev/ttyUSB0 and interface 1 as /dev/ttyUSB1, and the CDC absent. Removing the power cable from a board already running TinyTang changes nothing: the OTG cable keeps it powered (BRD-005), the CDC stays enumerated under the same device number, and the console keeps answering. The same FT2232 is what a soft reset reaches after tangflash (FLS-001)."
+  statement: "The two modes TCTL-005 names are two different programs on the BL616, and only one runs at a time. A cold power-up with the dedicated power input connected, with or without the OTG cable, runs this project's firmware, and the host sees the TinyTang CDC (ffff:5454). A cold power-up with the OTG cable alone comes up instead as SIPEED's 'USB Debugger' FT2232 (0403:6010, serial 2025041420), with interface 0 as /dev/ttyUSB0 and interface 1 as /dev/ttyUSB1, and the CDC absent. Removing the power cable from a board already running TinyTang changes nothing: the OTG cable keeps it powered (BRD-005), the CDC stays enumerated under the same device number, and the console keeps answering. The same FT2232 is what a soft reset reaches after tangflash (FLS-002)."
   consequence: "Switching between the modes is a full power cycle -- both cables out, then the power input for two-wire or the OTG cable alone for one-wire -- and it restarts the FPGA as well as the BL616, so the FPGA comes back on the core it loads by itself (DEV-006) whichever mode follows. In one-wire nothing of TinyTang runs: no shell, no boot.tdsh, so no menu core, no desktop layer, no desktop, no keyboard handling and no F12, and HDMI shows the TangCore splash. Which signal the vendor loader reads to make the choice is not known; the power input's VBUS is the obvious candidate and has not been tested."
   sources:
     - "Observed on this board, 2026-10-05: lsusb and udevadm on the host after each change; the TinyTang status probe (TOOL-011) before and after the power cable was removed"
@@ -597,7 +579,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "User statement, 2026-10-05: 'we spend a lot of time trying to figure out how to get 1 and 2 wire to work together already. its a no go. Its a power deliver issue if i recall ... the actually devices/modules are powered 1 or the other, not both.'"
   verification: "Not instrumented, and no written record was found: Tang-Control's README and .ai files, Tang-Phosphor's and Tang-PSX's core-reference.md and core-log.md were searched for the power finding on 2026-10-05 and hold nothing on it. Consistent with BRD-006, where every observed state was one mode or the other."
 
-
 - record_id: BRD-008
   kind: BOARD
   topic_id: BRD
@@ -611,6 +592,60 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "this project's own photograph of the dock's front edge, which showed the two headers (`images/circuit_boards/dock_front.jpg`, removed from this repository on 2026-10-10)"
     - "Adafruit, 2.2-inch PiTFT HAT guide: ILI9340 over the Pi's SPI with GPIO 25 and four buttons"
   verification: "Read from the schematic text and the board photograph on 2026-10-06; nothing was fitted or measured (core-log entry 41). The HAT's own pin assignments beyond those Adafruit's guide states were not checked against its schematic."
+
+- record_id: PMOD-001
+  kind: BOARD
+  topic_id: PMOD
+  title: "The dock's two PMOD sockets, and Sipeed's interleaved pin numbering"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The dock carries two PMOD sockets. PMOD1, beside the HDMI port, exposes PMOD1_IO0-IO7 on FPGA balls W19 W20 F19 F20 E22 D22 E21 D21, and PMOD0 exposes PMOD0_IO0-IO7 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33. Sipeed's IO numbering interleaves the socket rows: IO0, IO2, IO4 and IO6 are Digilent module pins 1-4 and IO1, IO3, IO5 and IO7 are pins 7-10, so a connector index is Sipeed's IO number and not the linear pin order. Turning a module over swaps pins 1-4 with pins 7-10 while GND stays on pins 5/11 and VCC on 6/12."
+  consequence: "This is the board half of the PMOD story, and it is kept in Tang-Phosphor's own reference, where the constraint file (src/boards/console138k_pmod.cst) and the personalities (src/pmod/) live; this project cites it rather than copying it, so the dock does not acquire a second, driftable source. It matters here only because the firmware chooses which core image to load, and a personality built into that image has to match what the user has seated."
+  sources:
+    - "Tang-Phosphor, .ai/core-reference.md, the 'Dock PMOD Sockets' record"
+    - "Tang-Phosphor, src/pmod/pmod_slot.sv: the socket and orientation comment"
+  verification: "Read from Tang-Phosphor's reference and pmod_slot.sv. Not measured on this bench; the underlying dock facts were confirmed during Tang-Phosphor's own OLED bring-up, which this project has not repeated."
+
+- record_id: PMOD-002
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "The tang.ini socket contract, and which project owns its parser"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "PMOD modules carry no identification pins, so physical seating cannot be detected and the gateware can only be told what is attached. Tang-Phosphor therefore makes /tang.ini at the SD-card root the contract between what is seated and what the core drives: flat keys under one [tang] section, pmod0 = <module> and pmod0_flip = yes or no, and the same for pmod1. A missing file, or a socket with no entry, leaves that socket released, so the absent file is the safe state. Unknown module names, a vga_j1 without its vga_j2 partner, and flip for a module that is not flip-safe are refused rather than guessed. Tang-Phosphor's reference assigns the parser to the firmware that owns the SD card and the transport, naming Tang-Control there, while the registry of supported personalities lives beside the RTL that implements it."
+  consequence: "That assignment lands here: Tang-Control was retired into TinyTang, and the parser is ports/bl616/tang_ini.c, applied after every tangload by ports/bl616/phosphor/pmod_sockets.cpp (PMOD-006 has its behaviour and the qualified layouts). TinyTang follows the contract with one deliberate exception: flip is applied as declared for any module, without the flip-safety refusal, because the user chose to defer that check."
+  sources:
+    - "Tang-Phosphor, .ai/core-reference.md, the 'PMOD configuration file (tang.ini)' record"
+    - "This project's ports/bl616/tang_ini.c and ports/bl616/phosphor/pmod_sockets.cpp"
+  verification: "The contract was read from Tang-Phosphor's reference; this firmware's implementation of it is hardware-qualified in PMOD-006. Revised 2026-10-11 (core-log entry 10): the consequence said nothing here reads /tang.ini, which stopped being true on 2026-10-07."
+
+- record_id: PMOD-004
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "On the merged Phosphor core the socket control register is 0xc0, and both sockets power up released"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "In Tang-Phosphor's merged player core, the one TinyTang loads as phosphortang.bin, the socket control word is 0xc0: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1, and a read adds the renderer's frame selector at 18:16. Personalities are 0 none, 1 oledrgb, 2 vga J1, 3 vga J2 and 4 rotary encoder (PMOD-006 adds 5, I2S2). Both sockets power up released, which is that project's safe state, so nothing is driven until a host declares it, and the host is the only party that validates a declaration, because it is the only party that knows what the user wrote. Tang-Phosphor's bring-up core uses the same layout at register 0x10, with 0x14 as scratch and a power-on default of the panel on PMOD0."
+  consequence: "TinyTang declares the sockets from /tang.ini after every tangload of core 0x50 (PMOD-006); scripts/phosphor.tdsh no longer declares them. Bit 0 must not be used for stream routing, which moved to 0xa8 (PHOS-011). The bring-up core's register 0x10 is not extended-protocol frame type 0x10 (EXTCTL-001), which is a transport opcode; the two must not be conflated."
+  sources:
+    - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, docs/debug-registers.md, and its .ai/core-reference.md records on the 0x10 socket control register and on socket control and stream routing in the merged player map"
+    - "Tang-Phosphor src/pmod_mirror_core.sv: PERS_NONE through PERS_ENC"
+  verification: "On this board on 2026-10-06 phosphor.tdsh declared 0x2410, 0xc0 read 0x2410 before, during and after two tracks, the panel frame counter at 0xd8 advanced throughout and the panel signature matched the source at 0x76491800; the user confirmed the OLED lit (core-log entry 45). Revised 2026-10-11 (core-log entry 10): folded in the bring-up core's 0x10 map from the retired PMOD-003, and replaced the consequence's 'until the parser exists' with the parser that now exists."
+
+- record_id: PMOD-006
+  kind: EXTERNAL
+  topic_id: PMOD
+  title: "How TinyTang applies /tang.ini, and the hardware-qualified PMOD declarations"
+  status: VERIFIED
+  verified_date: 2026-10-07
+  statement: "Tang-Phosphor's socket word at 0xc0 selects personalities 0 none, 1 OLEDrgb, 2 PmodVGA J1, 3 PmodVGA J2, 4 encoder and, when compiled in, 5 I2S2 stereo PCM playback, which the merged core enables from register ABI 1.10 (0x04 reads 0x0001000a). The socket flip bit swaps the two signal rows; for a single-row Pmod ENC it also selects row 7-12 instead of row 1-6 without requiring the component side to face down. PmodVGA J1 carries red and blue, and J2 carries green and sync; the component-side-up seating exercised on this dock puts J1 on PMOD1 and J2 on PMOD0. Both sockets reset released, and the firmware must declare the fitted modules."
+  consequence: "ports/bl616/tang_ini.c parses /tang.ini with no card or core access, so tools/tests/test_ini.sh checks it on the host, including that docs/tang.ini parses to 0x2410. It accepts none, oledrgb, encoder, i2s2, vga_j1 and vga_j2; the contract (PMOD-002) names only oledrgb, vga_j1 and vga_j2, and encoder and i2s2 are TinyTang's names for personalities 4 and 5, kept as TinyTang's own copy of Tang-Phosphor's numbering until the core reports its personalities. After every successful tangload, ports/bl616/phosphor/pmod_sockets.cpp asks the core for its ID and, for ID 0x50 at ABI 1.8 or later, writes the word to 0xc0 and reads it back, masking the frame selector at 18:16; other cores, including the bring-up core whose 0x04 is not an ABI, get nothing. A missing file or entry releases the socket; an unknown module, a flip other than yes or no, or one VGA half without the other releases that socket with a line-numbered console warning; unknown keys, other sections and keys outside [tang] are warned about and ignored. Flip is applied as declared for any module, without a flip-safety check, as the user directed. tangini shows the declaration and the loaded core's sockets, and tangini apply resends it. Verified layouts are I2S2 normally seated on PMOD0 with PMOD1 released (0x0050), encoder face up on PMOD1 row 7-12 with PMOD0 released (0x2400), OLED normally seated on PMOD0 with that encoder (0x2410), and PmodVGA with PMOD0 vga_j2 and PMOD1 vga_j1, neither flipped (0x0230). The first VGA declaration, 0x0320, did not match that physical seating; module names must follow the actual headers."
+  sources:
+    - "Tang-Phosphor 7cf9ede: docs/debug-registers.md (0x04 ABI 1.10, 0x00c0 personality 5), src/pmod/pmod_slot.sv (row permutation), src/pmod/pmod_enc.sv (input pins and count), src/pmod/pmod_vga.sv (J1/J2), src/pmod_mirror_core.sv (personality registry, PERS_I2S2), docs/i2s2-bringup.md (I2S2) and .ai/core-reference.md (single-row encoder flip meaning)"
+    - "Tang-PSX 61974ca: .ai/core-reference.md BRD-004 and BRD-005, including the verified J1-on-PMOD1 placement"
+    - "TinyTang 42e9f9b: ports/bl616/tang_ini.c, ports/bl616/tang_ini.h, ports/bl616/phosphor/pmod_sockets.cpp, docs/tang.ini and tools/tests/test_ini.sh; firmware 969e6ff-dirty.71fe989"
+  verification: "The parser passes its host test under AddressSanitizer and UBSan, which failed when the VGA pairing rule and the bad-flip refusal were each removed. On this board on 2026-10-07, entries 58-60 exercised all four listed layouts through automatic core-load declaration and read-back. Entry 58 records a full 3:19 track at 44.1 kHz with zero underruns and user acceptance of I2S2 audio and the oscilloscope. Entry 59 records encoder counts of exactly four per detent in both directions, button and switch transitions, matching OLED/source signatures with advancing panel frames and user acceptance of the image, reapplication and unknown-module rejection. Entry 60 records no VGA picture at 0x0320, mirrored HDMI and CRT images accepted by the user at 0x0230 without moving the module, then a matching /tang.ini and automatic declaration after reload. Missing-file release was verified in entry 58. No hardware test of every invalid-flip, section or VGA-pair parser case is claimed. Revised 2026-10-11 (core-log entry 10): folded in the parser's behaviour from the retired PMOD-005. On 2026-10-10 a 14-load soak of desktop.bin and phosphortang.bin declared the sockets on every load after pmod_sockets.cpp's register reads gained a retry (core-log entry 2)."
+
 - record_id: BL6-001
   kind: SOC
   topic_id: BL6
@@ -815,40 +850,26 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-05
   statement: "A bulk IN packet completes only when the host issues IN tokens for it, and a Linux host does that for a CDC ACM port only while a program has the tty open and is reading. Opening the port raises DTR, which CherryUSB reports through usbd_cdc_acm_set_dtr, and closing it lowers DTR. With the board enumerated and no program reading, console_flush() in ports/bl616/usb_cdc_bl616.c waited up to a million taskYIELD() calls per 512-byte packet, then cleared the busy flag itself and started the next packet over one the hardware still held."
-  consequence: "Every writer to the console waited with it, and the desktop draws through the console, so with the cable attached TinyDesk on HDMI was laggy and unresponsive, and a large burst -- opening the Terminal window -- looked like a freeze. console_flush() now sends nothing unless DTR is up, waits at most 50 ms for a packet, and leaves an untaken packet pending, dropping further output until the host reads it, whose completion clears the way. Separately, while the desk layer shows the desktop its drawing goes only to the layer's mirror and not to USB, so a computer terminal sees the shell's transcript but not the window redraws; a consequence is that the desktop is no longer visible on USB, so a tool cannot detect it from its drawing (TOOL-009) and must go by the 'desktop: starting TinyDesk' and 'desktop: exited' lines, which still reach USB."
+  consequence: "Every writer to the console waited with it, and the desktop draws through the console, so with the cable attached TinyDesk on HDMI was laggy and unresponsive, and a large burst -- opening the Terminal window -- looked like a freeze. console_flush() now sends nothing unless DTR is up, waits at most 50 ms for a packet, and leaves an untaken packet pending, dropping further output until the host reads it, whose completion clears the way. Separately, while the desk layer shows the desktop its drawing goes only to the layer's mirror and not to USB, so a computer terminal sees the shell's transcript but not the window redraws; a consequence is that the desktop is no longer visible on USB, so a tool cannot detect it from its drawing (TOOL-011) and must go by the 'desktop: starting TinyDesk' and 'desktop: exited' lines, which still reach USB."
   sources:
     - "ports/bl616/usb_cdc_bl616.c: console_flush(), usbd_cdc_acm_bulk_in() and usbd_cdc_acm_set_dtr()"
     - "Linux cdc-acm: read URBs are submitted when the tty is opened and killed when it is closed"
   verification: "On this board on 2026-10-05 the user found TinyDesk on HDMI smooth with the cable attached and nothing reading the port, where before it had been unusable; a listen-only capture while the user dragged windows and ran ls /music in the Terminal held only the transcript -- the desktop's start line, the prompt, the command, its output and 'desktop: exited' -- with no cursor positioning at all, and the console answered after the desktop exited."
 
-- record_id: FLS-001
-  kind: FLASH
-  topic_id: FLS
-  title: "Application at 0x40000, staging at 0x100000, and a soft reset lands in the vendor loader"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "The application occupies flash from 0x40000 with a maximum of 0x80000 bytes. A new image is staged in an erased region at 0x100000, verified against the file, and only then copied into the application slot. The copy must run from .tcm_code with interrupts disabled, because once the first application sector is erased no instruction may be fetched from the application's XIP flash. The boot header carries magic at 0x00, 0x08 and 0x64, a CRC-32 of the first 252 bytes at 0xFC, and a body length at 0x84 counting bytes after the 4 KiB header region. A soft reset lands in the vendor loader."
-  consequence: "tangflash validates the header and the file's length against it before erasing anything, and the user power-cycles afterwards. The vendor loader below 0x40000 is never touched."
-  sources:
-    - "Tang-Control, utils/firmware_update.cpp: FW_APP_BASE, FW_STAGING_BASE, the sector helpers and the erase/write/verify loops"
-    - "This project's ports/bl616/tdsh_tang_flash.c: the constants and check_boot_header()"
-  verification: "tangflash has been run roughly a dozen times this session, each time followed by a power cycle and a working console."
-  superseded_by: "FLS-002"
-
 - record_id: FLS-002
   kind: FLASH
   topic_id: FLS
-  title: "The application slot is 0xE0000 bytes, staged at 0x120000 below the vendor data record"
+  title: "Application at 0x40000 up to 0xE0000 bytes, staged at 0x120000, and a soft reset lands in the vendor loader"
   status: VERIFIED
   verified_date: 2026-10-05
-  statement: "The application occupies flash from 0x40000 with a maximum of 0xE0000 bytes (917,504), ending at 0x120000. A new image is staged at 0x120000, which with the same maximum ends exactly at 0x200000, where the vendor's data record begins. A read-back of the whole 4 MiB flash taken on 2026-09-26 holds data only at 0x0-0x1C000 (the vendor loader), 0x40000-0x76000 (the application then installed) and 0x200000-0x201000 (the vendor data record), and is erased everywhere else, so 0x76000-0x200000 held nothing to preserve. The 0x80000 maximum FLS-001 recorded was Tang-Control's choice of layout (utils/firmware_image.h, whose own static assertions require only that the slot and the staging area fit below 0x200000), and the vendor loader does not enforce it: it booted images of 582,256 and 594,400 bytes, whose header body lengths exceed 0x80000. Everything else FLS-001 recorded holds unchanged: the header layout and CRC, the copy run from .tcm_code with interrupts off, and the soft reset landing in the vendor loader."
-  consequence: "ports/bl616/tdsh_tang_flash.c sets FW_APP_MAX_SIZE 0xE0000 and FW_STAGING_BASE 0x120000, with static assertions that the slot stays below the staging area and the staging area below 0x200000, and tools/tinytang_flash.py's FW_APP_MAX matches. A board still running a build from before this change refuses an image over 0x80000 itself, so moving such a board across takes two installs: first an image under 0x80000 built with the new limits, then the large one. Bluetooth LE alone took the image past the old limit (BLE-002), and the new slot leaves about 323 KB of room above a 594,400-byte image."
+  statement: "The application occupies flash from 0x40000 with a maximum of 0xE0000 bytes (917,504), ending at 0x120000. A new image is staged in an erased region at 0x120000, which with the same maximum ends exactly at 0x200000, where the vendor's data record begins; it is verified against the file and only then copied into the application slot. The copy must run from .tcm_code with interrupts disabled, because once the first application sector is erased no instruction may be fetched from the application's XIP flash. The boot header carries magic at 0x00, 0x08 and 0x64, a CRC-32 of the first 252 bytes at 0xFC, and a body length at 0x84 counting bytes after the 4 KiB header region. A soft reset lands in the vendor loader. A read-back of the whole 4 MiB flash taken on 2026-09-26 holds data only at 0x0-0x1C000 (the vendor loader), 0x40000-0x76000 (the application then installed) and 0x200000-0x201000 (the vendor data record), and is erased everywhere else, so 0x76000-0x200000 held nothing to preserve. An earlier 0x80000 maximum, with staging at 0x100000, was Tang-Control's choice of layout (utils/firmware_image.h, whose own static assertions require only that the slot and the staging area fit below 0x200000), and the vendor loader does not enforce it: it booted images of 582,256 and 594,400 bytes, whose header body lengths exceed 0x80000."
+  consequence: "tangflash validates the header and the file's length against it before erasing anything, and the user power-cycles afterwards; the vendor loader below 0x40000 is never touched. ports/bl616/tdsh_tang_flash.c sets FW_APP_MAX_SIZE 0xE0000 and FW_STAGING_BASE 0x120000, with static assertions that the slot stays below the staging area and the staging area below 0x200000, and tools/tinytang_flash.py's FW_APP_MAX matches. A board still running a build from before this change refuses an image over 0x80000 itself, so moving such a board across takes two installs: first an image under 0x80000 built with the new limits, then the large one. Bluetooth LE alone took the image past the old limit (BLE-002), and the new slot leaves about 323 KB of room above a 594,400-byte image."
   sources:
     - "Full flash read-back /home/vash/Desktop/tang-console138k-bl616-backup-20260926.bin (4,194,304 bytes), mapped in 4 KiB sectors on 2026-10-05"
+    - "Tang-Control, utils/firmware_update.cpp: FW_APP_BASE, FW_STAGING_BASE, the sector helpers and the erase/write/verify loops"
     - "Tang-Control, utils/firmware_image.h: the flash-layout comment and the static assertions on the application and staging regions"
-    - "This project's ports/bl616/tdsh_tang_flash.c: FW_APP_MAX_SIZE, FW_STAGING_BASE, FW_VENDOR_DATA and the static assertions"
-    - "FLS-001, which this record supersedes"
-  verification: "On 2026-10-05 a non-Bluetooth image built with the new limits was installed by the old tangflash and booted, then the 582,256-byte Bluetooth image was installed by the new one and booted after a power cycle, and later 594,400-byte builds (the last cb9e7d4-dirty.aee808e) installed and booted the same way, each confirmed by platform."
+    - "This project's ports/bl616/tdsh_tang_flash.c: FW_APP_MAX_SIZE, FW_STAGING_BASE, FW_VENDOR_DATA, check_boot_header() and the static assertions"
+  verification: "tangflash ran roughly a dozen times on 2026-10-03 under the old layout, each followed by a power cycle and a working console. On 2026-10-05 a non-Bluetooth image built with the new limits was installed by the old tangflash and booted, then the 582,256-byte Bluetooth image was installed by the new one and booted after a power cycle, and later 594,400-byte builds (the last cb9e7d4-dirty.aee808e) installed and booted the same way, each confirmed by platform. Revised 2026-10-11 (core-log entry 10): folded in the header layout, the staging procedure and the .tcm_code rule from the retired FLS-001, so this record stands alone."
 
 - record_id: FLS-003
   kind: FLASH
@@ -856,13 +877,12 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   title: "A watchdog reset lands in the vendor loader; crash records live at 0x3FF000"
   status: VERIFIED
   verified_date: 2026-10-05
-  statement: "The BL616's watchdog (bflb_wdg, 32 kHz clock divided by 32, reset mode) resets the chip into the vendor loader, which, as after a software reset (FLS-001, FLS-002), starts SIPEED's FT2232 debugger instead of the application, so the board re-enumerates as /dev/ttyUSB0 and /dev/ttyUSB1 and needs a power cycle to run TinyTang again; the power cycle leaves RAM unusable, so a .noinit record does not survive. The reset recorder register GLB_RESET_STS0 reads 0x7D after a power-up; its bits are active low (wdt_rst_n is bit 3). The last 4 KB sector of the 4 MiB flash, 0x3FF000, lies in the region the full read-back of FLS-002 found erased, above the application slot, the staging area and the vendor data record at 0x200000."
+  statement: "The BL616's watchdog (bflb_wdg, 32 kHz clock divided by 32, reset mode) resets the chip into the vendor loader, which, as after a software reset (FLS-002), starts SIPEED's FT2232 debugger instead of the application, so the board re-enumerates as /dev/ttyUSB0 and /dev/ttyUSB1 and needs a power cycle to run TinyTang again; the power cycle leaves RAM unusable, so a .noinit record does not survive. The reset recorder register GLB_RESET_STS0 reads 0x7D after a power-up; its bits are active low (wdt_rst_n is bit 3). The last 4 KB sector of the 4 MiB flash, 0x3FF000, lies in the region the full read-back of FLS-002 found erased, above the application slot, the staging area and the vendor data record at 0x200000."
   consequence: "ports/bl616/tang_crash.c writes its record and the last 32 (task, PC) samples to 0x3FF000 with interrupts off before resetting, and the next boot prints them, appends them to /sd/crash.log and erases the sector. tangflash calls tang_crash_suspend() before its commit, which runs with interrupts off for longer than the watchdog's 4 s."
   sources:
     - "Bouffalo SDK 7f44f9e: drivers/lhal/include/bflb_wdg.h, examples/peripherals/wdg/wdg_reset; drivers/soc/bl616/std/src/bl616_glb.c GLB_Get_Reset_Reason()"
     - "FLS-002's full flash read-back of 2026-09-26"
   verification: "On 2026-10-05 crash test trap, crash test spin and crash test hang each reset the board to the FT2232; after a power cycle the trap and spin records were read back from flash with the right task and PC, and the hang, which runs no code before the reset, left none, as designed. A later tangflash run with the recorder installed committed and booted (core-log entry 34)."
-
 
 - record_id: FLS-004
   kind: FLASH
@@ -876,6 +896,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "TangCore 0.9 release: firmware-bl616/bl616_fpga_partner_console138k.bin and flash_console138k.ini"
     - "/home/vash/Desktop/tang-console138k-bl616-backup-20260926.bin and its copy on the GIT drive"
   verification: "Compared and copied on 2026-10-06; both copies were verified by SHA-256 against their sources (core-log entry 39)."
+
 - record_id: PROT-001
   kind: PROTOCOL
   topic_id: PROT
@@ -921,12 +942,12 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-03
   statement: "A loaded core carries a text layer of 32 columns by 28 rows of 8x8 cells, drawn from a full ASCII bitmap font declared as FONT[0:127][0:7]. Each glyph is eight bytes, one per row, with the low bit the leftmost column; the eighth row is blank for most glyphs. Column 0 of every row draws in the cursor colour rather than the text colour, and cannot be switched off. The core draws its own logo into the same layer at LOGO_X 92 and LOGO_Y 201, 72 by 14 pixels, and it survives a clear because clearing writes the character buffer while the logo comes from a separate table."
-  consequence: "ports/bl616/tang_osd.c clips text at the row end and its menu uses column 0 for the selection marker, which is the only highlight the page offers. ports/bl616/tang_osd_term.c stops at 25 rows to keep the scroll region clear of the logo, which occupies rows 25 and 26 across columns 11 to 20."
+  consequence: "ports/bl616/tang_osd.c clips text at the row end and its menu uses column 0 for the selection marker, which is the only highlight the page offers. The logo occupies rows 25 and 26 across columns 11 to 20, so anything scrolling on the page must stop at 25 rows; the console mirror that did so, tang_osd_term.c, was retired in 318b23c when the desktop layer replaced it, and the menu core has no page at all."
   sources:
     - "nestang, src/iosys/textdisp.v: the module comment '32x28 text display in 8x8 font', the LOGO_X/LOGO_Y constants, and the is_cursor and logo comparisons in the pixel logic"
     - "nestang, src/assets/font.vh: 'localparam [7:0] FONT[0:127][0:7]'"
     - "nestang, src/iosys/iosys_bl616.v: the comment on command 0x05, 'display string from cursor', and the cursor_x < 32 test"
-  verification: "The user confirmed the page, the menu marker and the blinking cursor on hardware. The glyph table was decoded and checked: 'A', '0', '/', '_' and '.' render as expected."
+  verification: "The user confirmed the page, the menu marker and the blinking cursor on hardware. The glyph table was decoded and checked: 'A', '0', '/', '_' and '.' render as expected. Revised 2026-10-11 (core-log entry 10): the consequence cited ports/bl616/tang_osd_term.c, removed on 2026-10-04."
 
 - record_id: PROT-005
   kind: PROTOCOL
@@ -965,7 +986,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   sources:
     - "This project's scripts/boot-cart.tdsh: the sequence and the check between the two loads"
     - "PROT-002: command 0x07 for ROM data and 0x01 for the core ID"
-  verification: "Exercised on this board. scripts/boot-cart.tdsh has been run on its happy path and on its guard path (TDSH-001), and the black-screen-with-audio symptom was seen before the overlay clearing of PROT-005."
+  verification: "Exercised on this board. scripts/boot-cart.tdsh has been run on its happy path and on its guard path (TDSH-004), and the black-screen-with-audio symptom was seen before the overlay clearing of PROT-005."
 
 - record_id: PROT-008
   kind: PROTOCOL
@@ -1064,19 +1085,107 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Control, utils/init.cpp: the TANG_CONSOLE60K/TANG_CONSOLE138K branch selecting 2000000, and the else branch scaling by 40/26"
   verification: "Read from the source only. This project's tang_jtag_glue.h keeps the same constant behaviour as stubs."
 
-- record_id: TDSH-001
+- record_id: TCTL-004
   kind: EXTERNAL
-  topic_id: TDSH
-  title: "TinyDesk Shell v0.1.3, and the scripting language it provides"
-  status: SUPERSEDED
+  topic_id: TCTL
+  title: "Tang-Control is a fork of nand2mario's firmware, and its USB identity is 0xFFFF:0x6160"
+  status: SOURCED
   verified_date: 2026-10-03
-  statement: "The shell is TinyDesk Shell v0.1.3 at commit 232a39fa3375f2c8eb2560cdc69440f7095f8a25, consumed here as the third_party/tinydesk-shell submodule. Its portable core is C11 and MIT licensed. The script language, uScript 1.1.1, provides variables, quoting, command substitution, arithmetic, if/elseif/else/endif, while/endwhile, for/endfor, functions with return statuses, pipes up to eight stages, and redirection. tdsh run passes no arguments to a script; a script inherits the caller's variables. It also ships POSIX and Windows host ports."
-  consequence: "scripts/boot-cart.tdsh is written in this language and needed nothing beyond if, $?, and two variables. Its four shell commands are registered through tdsh_register_commands()."
+  statement: "Tang-Control is a fork of nand2mario's firmware-bl616, the stock TangCore firmware for this board. Its CDC command console and the transport protocols behind it - the extended debug channel, the stream protocol and no-BOOT firmware update - are additions on its feature/usb-cdc-file-transfer branch, not stock behaviour. It identifies itself to the host as USB vendor 0xFFFF, product 0x6160."
+  consequence: "A host client keyed to 0xFFFF:0x6160 will not find TinyTang, which presents 0xFFFF:0x5454. Command names this project inherited, such as tangput and tangflash, come from that console and deliberately match it. The stock firmware it forks has neither the console nor the transports, so its capabilities are not a floor TinyTang was standing on."
   sources:
-    - "third_party/tinydesk-shell/docs/SCRIPTING.md: the language reference, the run forms, and the limits table"
-    - "third_party/tinydesk-shell/VERSION and .git (v0.1.3, 232a39f)"
-  verification: "The shell runs on this board; boot-cart.tdsh has been run repeatedly, on its happy path and on its guard path."
-  superseded_by: "TDSH-003"
+    - "Tang-Control, README.md: 'This repo is a fork of nand2mario's firmware-bl616' and the list of what the fork adds over stock"
+    - "Tang-Control, scripts/tangctl.py: USB_VID = 0xFFFF, USB_PID = 0x6160"
+  verification: "Read from the README and the client. Tang-Control was never run by this project; the record is a statement about that firmware, not about ours."
+
+- record_id: TCTL-005
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The three wiring modes, and which connector carries the CDC"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control names three wiring arrangements. One-wire user mode runs TangCore normally. One-wire diag mode gives JTAG to the FPGA and the UART straight to the FPGA, for core load and execute, reached through the FT2232 debug cable. Two-wire debug mode connects the power cable and the CDC cable together, giving CDC file management, JTAG programming through a Pico 2, and no-BOOT BL616 flashing. The CDC arrives on the board's bottom-left USB-C port. Its client prints this explanation when it finds an FT2232 instead of a CDC device."
+  consequence: "This is the vocabulary behind every '1-wire' and '2-wire' remark in this project's history, including the several sessions where the console was missing because the host was on the wrong path. When ffff:5454 is absent and 0403:6010 is present, the host is on the debug path, which is the one-wire arrangement."
+  sources:
+    - "Tang-Control, README.md: the three mode diagrams and their captions"
+    - "Tang-Control, scripts/tangctl.py: the find_port() hint naming the FT2232, one-wire mode, and the bottom-left USB-C port for the CDC"
+  verification: "Read from the README and the client. The FT2232 half is independently confirmed by BRD-004, which observed that device on this workstation while the CDC was absent."
+
+- record_id: TCTL-006
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The TangCore core inventory and where an image is looked for"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "TangCore's core table is: id 1 NES, directory nes, image nestang.bin; id 2 SNES, snes, snestang.bin; id 3 Game Boy Advance, gba, gbatang.bin; id 4 MegaDrive or Genesis, genesis, mdtang.bin; id 5 Sega Master System, sms, smstang.bin; id 6 IBM PC/XT, pc, pctang.bin; and id 0x50 Phosphor, music, phosphortang.bin. An image is looked for first at cores/<board>/<name> and then at cores/<name>, taking the first that exists and is non-empty."
+  consequence: "This is the naming every core image on the card follows, and why /cores/console138k/ is the directory that matters here. It also explains the core IDs the UART reports: nestang answers 1."
+  sources:
+    - "Tang-Control, core/cores.cpp: init_core_list() and find_core_for_board()"
+  verification: "Confirmed against this board's own card: ls /cores/console138k lists nestang.bin, snestang.bin, gbatang.bin, mdtang.bin, smstang.bin, pctang.bin and phosphortang.bin among others, matching the table's names."
+
+- record_id: TCTL-007
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The retired host client's command surface"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "tangctl.py offers ping, status, rxstats with an optional reset, caps, peek, poke, baud, stream, bench, put, get, ls, rm, mkdir and firmware, run over the CDC as line commands with raw byte phases for transfers. caps, peek, poke and baud need a Phosphor core. There is no rename: rename is get, put under the new name, then rm. The firmware command patches and installs a BL616 image and the client waits for the device to disappear and return."
+  consequence: "This is the capability being retired, and the list to consult when deciding what TinyTang should grow next. Two of these already have equivalents here - put and the firmware install, as tangput and tangflash - and the rest do not: TinyTang has a shell rather than a command protocol, so a client of this shape cannot talk to it unchanged."
+  sources:
+    - "Tang-Control, README.md: the tangctl.py command table and the note that rename does not exist"
+    - "Tang-Control, scripts/tangctl.py: the command implementations"
+  verification: "Read from the README and the client. None of these commands were exercised on hardware by this project."
+
+- record_id: TCTL-008
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The no-BOOT firmware update procedure, in full"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "A build intended for installation has its boot header rewritten before transfer: the body length is written little-endian at 0x84 as the file size less 0x1000, and a CRC-32 of the first 252 bytes is written little-endian at 0xFC. The patched image is then sent over CDC with the firmware command, and the board is power-cycled afterwards, because the BL616 resets into its vendor loader and TangCore only returns on power-on. The client verifies the transfer by reading back the application's SHA-256 and comparing it with the local build, and it requires the transfer to sustain at least a megabyte per second while doing so."
+  consequence: "This is the same header layout this project validates in FLS-002, now with the procedure and the verification step that surround it. The power-cycle requirement matches this project's experience exactly. Note that tangflash here does not patch a header: it expects an image already carrying a valid one."
+  sources:
+    - "Tang-Control, README.md: the inline header-patching script and the two-case flashing section"
+    - "Tang-Control, scripts/tangctl.py: FW_APP_MAX_SIZE, FW_BOOT_HEADER_SIZE, FW_HEADER_REGION, check_boot_image(), read_status(), CRC_VERIFY_MIN_BYTES_PER_SECOND"
+  verification: "Read from the README and the client. The header layout it depends on is confirmed independently by FLS-002."
+
+- record_id: TCTL-009
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The FPGA UART receive path's design, and the counters it kept"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Tang-Control reworked the FPGA UART receive path to interrupt-driven RX with a TX mutex, reporting that this fixed gamepad and OSD stutter. Its receive task maintains counters for bytes drained, complete joypad frames, hardware FIFO overflows, the most bytes found waiting when the task woke, bytes skipped while searching for 0xAA, frames dropped for an unrecognised type, and the longest interval between polls. Its client exposes them through an rxstats command and can reset them."
+  consequence: "This project reached the same conclusion independently - tang_fpga_uart.c drains the RX ring from an interrupt because the 32-byte FIFO cannot hold a burst at 2 Mbaud - and the counter set is worth adopting: resync_bytes and fifo_overflows are the two that would have diagnosed the framing and rate problems faster than the logs did."
+  sources:
+    - "Tang-Control, utils/utils.h: struct fpga_rx_stats and fpga_rx_get_stats/fpga_rx_reset_stats"
+    - "Tang-Control, README.md: 'FPGA UART RX rework - interrupt-driven RX + a TX mutex (fixes gamepad/OSD stutter)'"
+  verification: "Read from the header and the README. This project's own ISR-drained ring is confirmed working by every UART operation it performs; the counters are not implemented here."
+
+- record_id: TCTL-010
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "The helper scripts that are being retired"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Alongside the client, Tang-Control carries liveuart.py and liveuart_draw.py to decode and visualise BL616 to FPGA UART traffic, print_uart.py for a raw dump, jtag.py with tdi_compare.py and crc16.sh as JTAG programming verification helpers, and fs.py to convert a Gowin .fs bitstream to the .bin this board loads."
+  consequence: "liveuart is the most directly useful of these: it is a decoder for the exact protocol PROT-001 describes, and its visualiser would make the joypad and OSD traffic visible in a way neither project's text logs do. fs.py matters because this board consumes .bin, not .fs."
+  sources:
+    - "Tang-Control, README.md: the debug scripts section"
+    - "Tang-Control, scripts/: the file listing"
+  verification: "Read from the README and the directory listing. None of these scripts was run by this project."
+
+- record_id: TCTL-011
+  kind: EXTERNAL
+  topic_id: TCTL
+  title: "Tang-Control's standing: the architecture of record for Phosphor and later cores"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "Stated by the user on 2026-10-03: Tang-Control is the architecture of record for the Phosphor core and for the cores that follow it, and it is hardware-verified as a whole because this project was built starting from it. The lineage is visible in this tree, where the board layer, the JTAG path, the SD gate, the UART1 contract and the flash layout all descend from Tang-Control."
+  consequence: "This is why the TCTL records are worth carrying past retirement, and why a board-layer question should be taken to Tang-Control rather than to nand2mario's stock firmware. It does not make any individual claim verified: a record's own status still reports whether that specific fact was confirmed on this hardware or only read from a source."
+  sources:
+    - "Project statement recorded with the user, 2026-10-03"
+  verification: "The lineage is visible in this tree and the inherited board layer has been exercised here. Tang-Control's hardware verification as a whole is the user's assertion and is not something this project's own runs can establish."
 
 - record_id: TDSH-002
   kind: EXTERNAL
@@ -1085,37 +1194,24 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-03
   statement: "The line editor and builtins emit: carriage return, line feed, ESC [ 2 K to erase a line, ESC [ 2 J and ESC [ H to clear and home, ESC [ <n> C and ESC [ <n> D to move the cursor, and SGR colour sequences. The editor redraws a line by emitting CR, erase-line, then the prompt and buffer, then a cursor-left by the number of characters past the cursor. Nothing else is emitted."
-  consequence: "A console mirror needs to understand only that set, which is what makes ports/bl616/tang_osd_term.c small. It treats CR as the start of the logical line rather than the row, because on a 32-column page a row-based CR would leave the tail of the previous render behind on every keystroke of a wrapped line."
+  consequence: "Anything that renders the console needs to understand only that set. A renderer on a narrow page must treat CR as the start of the logical line rather than the row, because on a 32-column page a row-based CR leaves the tail of the previous render behind on every keystroke of a wrapped line. The renderer built on this, tang_osd_term.c, was retired in 318b23c; the desktop's Terminal window now draws the shell."
   sources:
     - "third_party/tinydesk-shell/src/core/tdsh_terminal.c: redraw(), and the ESC [ C / ESC [ D writes in the arrow-key handling"
     - "third_party/tinydesk-shell/src/core/tdsh_builtin.c: the clear builtin's ESC [ H ESC [ 2 J"
-  verification: "The mirror was built against this set and the user confirmed the result on the core's screen."
-
-- record_id: TDSH-003
-  kind: EXTERNAL
-  topic_id: TDSH
-  title: "TinyDesk Shell v0.1.4: the same language, and a terminal interface that can carry its width"
-  status: SUPERSEDED
-  verified_date: 2026-10-05
-  statement: "The shell is TinyDesk Shell v0.1.4 at commit 3b7d7f8aca22af99a57606c1f8297df11ab81889, consumed as the third_party/tinydesk-shell submodule; the core is C11 and MIT licensed, and the script language is unchanged from v0.1.3 (TDSH-001). The line editor now redraws command lines that wrap over several rows. tdsh_terminal_io_t gains two optional members: columns(), the terminal's width read once per line, and read_byte_timeout(), with which the editor may ask the terminal for its width (ESC[6n). With neither, the editor assumes 80 columns."
-  consequence: "This port fills columns() from the width TinyDesk's Terminal window reports, through tdsh_bl616_terminal_set_columns() from the bridge's start() and resize(), and returns 0 at the console so the editor keeps 80, the console layer's width. It offers no read_byte_timeout(): at the console the layer and a host terminal would both answer the width query. Without columns() the editor wrapped the 76-column window at 80, which put four characters on the row after every full one."
-  sources:
-    - "third_party/tinydesk-shell @ 3b7d7f8, include/tdsh_terminal.h: tdsh_terminal_io_t and its comments"
-    - "third_party/tinydesk-shell @ 3b7d7f8, src/core/tdsh_terminal.c: terminal_columns()"
-  verification: "Built into this firmware on 2026-10-05; the user confirmed long lines wrap correctly in the console and in the Terminal window once columns() was filled, and that Tab completion works."
-  superseded_by: "TDSH-004"
+  verification: "A console mirror was built against this set and the user confirmed the result on the core's screen. Revised 2026-10-11 (core-log entry 10): the consequence cited ports/bl616/tang_osd_term.c, removed on 2026-10-04."
 
 - record_id: TDSH-004
   kind: EXTERNAL
   topic_id: TDSH
-  title: "TinyDesk Shell v0.1.5: board numbers without octal, root-only network switches"
+  title: "TinyDesk Shell v0.1.5: its script language, terminal interface and board numbers"
   status: VERIFIED
   verified_date: 2026-10-06
-  statement: "The shell is TinyDesk Shell v0.1.5 at commit 8456dd1d8c2fa88706c065edba483be67fcb3553, from its new home github.com/tinydesk-project/tinydesk-shell. Against v0.1.4 (TDSH-003) the core and headers change in two files: tdsh.h's TDSH_VERSION, and tdsh_board_int() in src/core/tdsh_board.c, which reads board configuration numbers as decimal or 0x hexadecimal, never octal (08 is 8 and 010 is 10). The ESP-IDF port makes network mode and network autowifi root-only. The release adds STANDARDS.md (TDSH-005). The script language and tdsh_terminal_io_t are unchanged from TDSH-003, whose columns() behaviour still holds."
-  consequence: "The update needed no change to this port: it does not use board configuration or the network commands. Built in a clean clone, its own host tests pass 8 of 8 with no warnings."
+  statement: "The shell is TinyDesk Shell v0.1.5 at commit 8456dd1d8c2fa88706c065edba483be67fcb3553, from github.com/tinydesk-project/tinydesk-shell, consumed as the third_party/tinydesk-shell submodule; its portable core is C11 and MIT licensed, and it also ships POSIX and Windows host ports. The script language, uScript 1.1.1, provides variables, quoting, command substitution, arithmetic, if/elseif/else/endif, while/endwhile, for/endfor, functions with return statuses, pipes up to eight stages, and redirection; tdsh run passes no arguments to a script, and a script inherits the caller's variables. The line editor redraws command lines that wrap over several rows. tdsh_terminal_io_t has two optional members: columns(), the terminal's width read once per line, and read_byte_timeout(), with which the editor may ask the terminal for its width (ESC[6n); with neither, the editor assumes 80 columns. tdsh_board_int() in src/core/tdsh_board.c reads board configuration numbers as decimal or 0x hexadecimal, never octal (08 is 8 and 010 is 10). The ESP-IDF port makes network mode and network autowifi root-only. The release carries STANDARDS.md (TDSH-005)."
+  consequence: "scripts/boot-cart.tdsh is written in this language and needs nothing beyond if, $?, and two variables; this port's commands are registered through tdsh_register_commands(). This port fills columns() from the width TinyDesk's Terminal window reports, through tdsh_bl616_terminal_set_columns() from the bridge's start() and resize(), and returns 0 at the console so the editor keeps 80. It offers no read_byte_timeout(), because at the console both the layer and a host terminal would answer the width query. Without columns() the editor wrapped the 76-column window at 80, putting four characters on the row after every full one. The port uses neither board configuration nor the network commands, so v0.1.5 needed no change here."
   sources:
-    - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): CHANGELOG.md, include/tdsh.h, src/core/tdsh_board.c"
-  verification: "Diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 8/8 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37)."
+    - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): CHANGELOG.md, include/tdsh.h, include/tdsh_terminal.h (tdsh_terminal_io_t), src/core/tdsh_terminal.c (terminal_columns()), src/core/tdsh_board.c"
+    - "third_party/tinydesk-shell/docs/SCRIPTING.md: the language reference, the run forms, and the limits table"
+  verification: "Built into this firmware and running since v0.1.3 (2026-10-03); boot-cart.tdsh has been run on its happy and guard paths. Under v0.1.4 on 2026-10-05 the user confirmed that long lines wrap correctly in the console and the Terminal window once columns() was filled, and that Tab completion works. v0.1.5 was diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 8/8 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37). Revised 2026-10-11 (core-log entry 10): folded in the language from the retired TDSH-001 and the terminal interface from the retired TDSH-003."
 
 - record_id: TDSH-005
   kind: EXTERNAL
@@ -1129,68 +1225,22 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "tinydesk-project/tinydesk-shell v0.1.5 (8456dd1): STANDARDS.md, README.md Community ports, CONTRIBUTING.md"
   verification: "Read on 2026-10-06; this port's script headers and platform string were checked against it, and the deviations listed come from its file and command names. Not yet discussed with the author."
 
-
-- record_id: TDSH-006
-  kind: EXTERNAL
-  topic_id: TDSH
-  title: "A script from the desktop runs out of heap in its first allocations"
-  status: SUPERSEDED
-  superseded_by: "TDSH-007"
-  verified_date: 2026-10-06
-  statement: "tdsh run starts each script with a tdsh_script_job_t holding a full copy of the session, then a worker task with TDSH_SCRIPT_TASK_STACK (32,768 B) of stack, then the script's runtime. On a 32-bit target tdsh_session_t is 19,096 B, of which 18,496 B is vars[TDSH_MAX_VARS], 64 entries of 1 + 32 + 256 bytes, and the job is 19,352 B; none of these limits can be overridden by a build in v0.1.5. This port caps worker stacks at 16 KB (BL6-009). With the Bluetooth stack and two devices connected, the heap at the console is 64,704 B free with a 40,536 B largest block and about 24 KB outside it; with the desktop open it is 48,208 B free with the same largest block and about 7.7 KB outside it. Opened from the desktop's Files app, castlevania.tdsh and phosphor.tdsh returned with no output: a 1,056 B tdsh_realloc of the script's line table (src/core/tdsh_script.c:189) was refused in task tdsh_script, and the task had used 3,704 B of stack. The same scripts run at the console."
-  consequence: "Scripts are to be started from the console, or with the desktop closed, until the limits can be sized for this heap. The findings were filed upstream as tinydesk-project/tinydesk-shell issue #2, proposing #ifndef around TDSH_SCRIPT_TASK_STACK, TDSH_MAX_VARS, TDSH_VAR_NAME_MAX and TDSH_VAR_VALUE_MAX (STANDARDS.md sections 3 and 10), with an offer of the pull request; 32 variables of 128-byte values would bring the session to about 5.8 KB."
-  sources:
-    - "third_party/tinydesk-shell @ 8456dd1: include/tdsh.h, src/core/tdsh_script.c, src/core/tdsh_core.c"
-    - "A listen-only capture of the desktop Terminal's output on USB, 2026-10-06, with crash and ble run in the Terminal"
-    - "https://github.com/tinydesk-project/tinydesk-shell/issues/2"
-  verification: "Measured on this board on 2026-10-06; the session size was computed for a 32-bit target and confirmed at 19,112 B on a 64-bit host build (core-log entry 39)."
-
-- record_id: TDSH-007
-  kind: EXTERNAL
-  topic_id: TDSH
-  title: "Configurable session limits let desktop scripts fit the heap"
-  status: SUPERSEDED
-  superseded_by: "TDSH-008"
-  verified_date: 2026-10-06
-  statement: "The carried patch against TinyDesk Shell v0.1.5 (8456dd1) wraps TDSH_MAX_VARS, TDSH_VAR_NAME_MAX, TDSH_VAR_VALUE_MAX and TDSH_SCRIPT_TASK_STACK in #ifndef, preserving defaults of 64, 32, 256 and 32768 and preserving each script's session and variable copy. The header and README require consistent definitions in every component including tdsh.h because the variable limits change tdsh_session_t's layout. Buffers include their terminating NUL. With definitions 32, 32, 128 and 16384, the BL616 ELF's s_session is 5752 B, its variable table is 5152 B and the script job is 6008 B instead of 19352 B; a 64-bit host has a 5768 B session and a 6024 B job. The static session and each script's copied session save 13344 B."
-  consequence: "TDSH-006's console-only workaround is no longer needed on this build: the user accepted repeated Castlevania and Phosphor script launches from the desktop and reported no failure. CMake applies the patch idempotently before compilation and sets the same definitions for shell, desktop, bridge and all C/C++ port sources. The port's chosen limits permit 32 variables, 31-character names and 127-character values; larger requirements still need a different memory budget. Remove the carried patch once a pinned upstream release supplies the guards. The separate upstream request for an error on script-loading allocation failure remains pending."
-  sources:
-    - "third_party/tinydesk-shell @ 8456dd1 with third_party/patches/tdsh/0001-configurable-script-limits.patch: include/tdsh.h, README.md and src/core/tdsh_script.c"
-    - "CMakeLists.txt, scripts/apply-tdsh-patches.sh and tools/tests/test_script_limits.sh with tb_script_limits.c"
-    - "https://github.com/tinydesk-project/tinydesk-shell/issues/2: author's 2026-10-06 reply approving guards, consistent overrides and unchanged variable copies"
-    - "BL616 ELF s_session symbol and two-wire platform, ble, crash and phosphor status readouts, 2026-10-06"
-  verification: "Firmware 4176a68-dirty.92d0758 was flashed and confirmed by platform after a cold power cycle; the user accepted the desktop tests. Afterwards no allocation refusals had been recorded since boot, crash reported 10728 B used of the 16384 B script stack and no previous crash, and Phosphor was playing a 44.1 kHz MP3 with zero underruns. The heap total was 138112 B, with 51280 B free and a 26200 B largest block during playback. Both upstream suites passed with defaults (Shell 8/8, TinyDesk 10/10) and with 48 variables and 128-byte values (8/8 and 10/10), without compiler warnings. At 32 variables, seven compatible Shell tests and all ten desktop tests passed; the full uScript fixture retains more than 32 variables. The native suites retained the default 32 KB stack because Linux pthread runs with 16 KB crashed in the script tests; separate probes checked the exact 16 KB request, variable boundaries, session isolation and cleanup. All eight existing TinyTang regression scripts passed, and reconstruction of the carried patch matched the submodule byte-for-byte with repeat application unchanged."
-
 - record_id: TDSH-008
   kind: EXTERNAL
   topic_id: TDSH
-  title: "A 48-variable session fits the full test fixture and the desktop heap"
+  title: "Script session limits: why desktop scripts failed, and the 48-variable session that fits"
   status: VERIFIED
   verified_date: 2026-10-06
-  statement: "The carried v0.1.5 patch and consistent-definition requirement from TDSH-007 remain. TinyTang now sets TDSH_MAX_VARS=48, TDSH_VAR_NAME_MAX=32, TDSH_VAR_VALUE_MAX=128 and TDSH_SCRIPT_TASK_STACK=16384. The 7728 B variable table produces an 8328 B target session and 8584 B script job, saving 10768 B per session against upstream defaults; the 64-bit host session and job are 8344 B and 8600 B. Each script still inherits its own session and variable copy. The comprehensive upstream fixture exceeds 32 variables and passes at 48; buffers include their NUL, so the chosen name and value limits are 31 and 127 bytes."
-  consequence: "The larger table is a port choice, not a standard limit or a guarantee for all future scripts. A later desktop launch while the Phosphor window was open failed at xTaskCreate's 16384 B stack allocation before tangload could stop playback; playback was not an intentional core-load interlock. The app previously reserved 24576 B for 256 names regardless of file count. Allocating 96 B per actual eligible file, capped at 256, reduces the tested 19-file catalog to 1824 B and lets those launches fit. The active-worker readouts support a bounded 16384 B future metadata/artwork budget for this configuration, not a reservation or a qualified decoder; docs/phosphor-memory-budget.md states the scope. Remove the carried patch when a pinned release supplies its guards."
+  statement: "tdsh run starts each script with a tdsh_script_job_t holding a full copy of the session, then a worker task with TDSH_SCRIPT_TASK_STACK of stack, then the script's runtime. Upstream v0.1.5 fixes TDSH_MAX_VARS 64, TDSH_VAR_NAME_MAX 32, TDSH_VAR_VALUE_MAX 256 and TDSH_SCRIPT_TASK_STACK 32768, giving a 19,096 B session on a 32-bit target (18,496 B of it the variable table) and a 19,352 B job, none overridable by a build. With those, on this board with Bluetooth and two devices connected and the desktop open, the heap had 48,208 B free with a 40,536 B largest block and about 7.7 KB outside it, and scripts opened from the Files app returned with no output: a 1,056 B tdsh_realloc of the script's line table (src/core/tdsh_script.c:189) was refused. TinyTang's carried patch, third_party/patches/tdsh/0001-configurable-script-limits.patch, wraps the four limits in #ifndef, keeping the upstream defaults and keeping each script's own session and variable copy; the header requires the same definitions in every component that includes tdsh.h, because the variable limits change tdsh_session_t's layout, and buffers include their terminating NUL. TinyTang sets TDSH_MAX_VARS=48, TDSH_VAR_NAME_MAX=32, TDSH_VAR_VALUE_MAX=128 and TDSH_SCRIPT_TASK_STACK=16384: the 7728 B variable table gives an 8328 B target session and an 8584 B script job, saving 10768 B per session against upstream defaults (8344 B and 8600 B on a 64-bit host). The comprehensive upstream fixture exceeds 32 variables and passes at 48; the usable name and value lengths are 31 and 127 bytes."
+  consequence: "The larger table is a port choice, not a standard limit or a guarantee for all future scripts. CMake applies the patch idempotently before compilation and sets the same definitions for the shell, desktop, bridge and all C/C++ port sources. A 32-variable configuration was tried first and dropped because the upstream fixture needs more. A later desktop launch while the Phosphor window was open failed at xTaskCreate's 16384 B stack allocation before tangload could stop playback; playback was not an intentional core-load interlock. The app reserved 24576 B for 256 names regardless of file count; allocating 96 B per actual eligible file, capped at 256, reduces the tested 19-file catalog to 1824 B and lets those launches fit. The active-worker readouts support a bounded 16384 B future metadata/artwork budget for this configuration, not a reservation or a qualified decoder; docs/phosphor-memory-budget.md states the scope. The findings are upstream issue tinydesk-project/tinydesk-shell #2, whose author approved guards, consistent overrides and unchanged variable copies; remove the carried patch when a pinned release supplies the guards. A separate upstream request for an error on script-loading allocation failure is pending."
   sources:
-    - "third_party/tinydesk-shell @ 8456dd1 with third_party/patches/tdsh/0001-configurable-script-limits.patch: include/tdsh.h, src/core/tdsh_script.c, tests/test_full_uscript.c and tests/scripts/test_full_uscript_1_1.tdsh"
-    - "CMakeLists.txt; tools/tests/test_script_limits.sh and tb_script_limits.c; BL616 ELF s_session symbol"
+    - "third_party/tinydesk-shell @ 8456dd1 with third_party/patches/tdsh/0001-configurable-script-limits.patch: include/tdsh.h, README.md, src/core/tdsh_script.c, src/core/tdsh_core.c, tests/test_full_uscript.c and tests/scripts/test_full_uscript_1_1.tdsh"
+    - "CMakeLists.txt, scripts/apply-tdsh-patches.sh, tools/tests/test_script_limits.sh and tb_script_limits.c; BL616 ELF s_session symbol"
     - "Bouffalo SDK components/os/freertos/tasks.c: xTaskCreate stack allocation, caller 0xa00416d6 in the failed builds"
     - "ports/bl616/phosphor/td_phosphor_app.cpp: launch, load_folder and on_close; tools/tests/test_phosphor_catalog.sh"
     - "tools/make_script_heap_probe.py and guarded two-wire ble/crash readouts on 2026-10-06"
-  verification: "Firmware f3097e1-dirty.a912290 was flashed, confirmed by platform and accepted by the user after repeated desktop core swaps while music played with the Phosphor window open. No allocations were refused after those tests and no crash record was present. With both Bluetooth devices ready, the generated Castlevania launcher measured 24936 B free of 135536 B, largest block 19372 B, at all three checkpoints while its copied session, worker stack and interpreter were live; the user confirmed completion. These are sampled values, not an all-time minimum. The final ordinary and diagnostic script stack use was 10728/16384 B. The catalog regression fails against the original scan and passes sizing, filtering, sorting, bounds, directory-change and error cleanup checks against the fix. Upstream host suites pass Shell 8/8 and TinyDesk 10/10 at defaults and at 48 variables/128-byte values; compact 32-variable checks remain. Native suites retain the default 32 KB stack, with the 16 KB request checked separately and on hardware."
-
-- record_id: TDESK-001
-  kind: EXTERNAL
-  topic_id: TDESK
-  title: "TinyDesk's port surface is four functions, and it pins the same shell revision"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "TinyDesk is a terminal desktop: it draws overlapping text-mode windows with ANSI escape sequences, reads the keyboard and mouse back from the terminal, and has no display hardware. Its whole port surface is td_hal_t, four function pointers - read_byte returning the next byte or -1 without blocking, write returning the number of bytes accepted, millis, and sleep_ms - plus a context pointer. It consumes tinydesk-shell as a submodule at 232a39fa, the same revision this project uses, and its core is portable C11."
-  consequence: "The port in ports/bl616/td_desktop_bl616.c is mostly a table of pointers over console calls this project already had. There is no second copy of the shell to keep in step."
-  sources:
-    - "third_party/tinydesk/include/tinydesk/td_hal.h: the td_hal_t definition and the comment 'This is the only thing a port has to provide.'"
-    - "third_party/tinydesk/README.md: the terminal-desktop description and the four-functions claim"
-    - "third_party/tinydesk/.gitmodules: submodule third_party/tdsh at 232a39fa3375f2c8eb2560cdc69440f7095f8a25"
-  verification: "Built into this firmware and running: the desktop draws, opens windows, and its Terminal runs the shell."
-  superseded_by: "TDESK-012"
+    - "https://github.com/tinydesk-project/tinydesk-shell/issues/2"
+  verification: "The upstream-default failure was measured on this board on 2026-10-06 and the session size confirmed at 19,112 B on a 64-bit host build (core-log entry 39). Firmware f3097e1-dirty.a912290 was flashed, confirmed by platform and accepted by the user after repeated desktop core swaps while music played with the Phosphor window open. No allocations were refused after those tests and no crash record was present. With both Bluetooth devices ready, the generated Castlevania launcher measured 24936 B free of 135536 B, largest block 19372 B, at all three checkpoints while its copied session, worker stack and interpreter were live; the user confirmed completion. These are sampled values, not an all-time minimum. Script stack use was 10728/16384 B. The catalog regression fails against the original scan and passes sizing, filtering, sorting, bounds, directory-change and error cleanup checks against the fix. Upstream host suites pass Shell 8/8 and TinyDesk 10/10 at defaults and at 48 variables/128-byte values; native suites keep the default 32 KB stack because Linux pthread runs with 16 KB crashed in the script tests, so the 16 KB request was checked separately and on hardware. Reconstruction of the carried patch matched the submodule byte for byte. Revised 2026-10-11 (core-log entry 10): folded in the failure from the retired TDSH-006 and the patch from the retired TDSH-007."
 
 - record_id: TDESK-002
   kind: EXTERNAL
@@ -1299,22 +1349,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "third_party/tinydesk-shell/docs/SCRIPTING.md: 'TinyDesk desktop: right-click, Run, opens the Terminal window and runs tdsh run'"
   verification: "The user worked through the desktop and found the filesystem, the Editor, the Terminal and window management working. The desktop-icon path was not separately exercised."
 
-- record_id: TDESK-010
-  kind: EXTERNAL
-  topic_id: TDESK
-  title: "Possible TinyDesk bug: the Files app's delete confirmation defaults to Delete, so two keystrokes remove a file"
-  status: SUPERSEDED
-  verified_date: 2026-10-04
-  statement: "files.c binds the Delete key to do_delete() (`case TD_KEY_DELETE: do_delete()`), which opens td_msgbox(\"Confirm\", \"Delete <name>?\", \"Delete|Cancel\"). td_msgbox adds its buttons in the order given, and a window's first focusable widget takes the focus (widgets.c: `if (focusable && !win->focus) win->focus = w`), so the focused button is Delete; a focused button activates on Enter or Space (widget_key), and delete_answer() removes the file for button 0 with no further step. The desktop's own icon menu reaches the same kind of confirmation through ask_delete()."
-  consequence: "On this board the keyboard sends Delete as ESC [ 3 ~ (tang_key.c), which the desktop's parser reads as TD_KEY_DELETE, and Enter is both a key and, under right-alt, the pointer's left click -- so a file in the selected row can be removed by Delete followed by Enter or Space, which is easy to do by accident while testing input. /scripts/boot.tdsh sorts first in that folder. When boot.tdsh is missing nothing runs tangload, the FPGA stays on the core it configured itself with at power-up, and the screen shows that core's TangCore splash rather than TinyDesk. Until TinyDesk changes the default (Cancel first, or no default on a destructive dialog), the card's boot chain is one confirmed dialog away from being removed, and restoring it is a tangput of scripts/boot.tdsh. This is a candidate for an upstream issue against TinyDesk rather than a local patch."
-  sources:
-    - "third_party/tinydesk @ 791cad8, apps/files.c: do_delete(), delete_answer(), the TD_KEY_DELETE case in the list's key handler"
-    - "third_party/tinydesk @ 791cad8, src/widgets.c: td_msgbox() button order, the first-focusable rule, widget_key() for TD_WT_BUTTON"
-    - "third_party/tinydesk @ 791cad8, apps/desktop.c: item_menu_chosen() and ask_delete()"
-    - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
-  verification: "Inferred from reading the source, not reproduced. On 2026-10-04 /scripts/boot.tdsh vanished from the card during the user's display testing, after the board had booted with it; no other file was missing or moved and no tool run from the host removes files, which is what made the Files app the suspect. The board then came up on the FPGA's own core (fpga reported core 0, the user saw TangCore), and restoring the file with tangput returned the boot chain."
-  superseded_by: "TDESK-011"
-
 - record_id: TDESK-011
   kind: EXTERNAL
   topic_id: TDESK
@@ -1322,41 +1356,26 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: SOURCED
   verified_date: 2026-10-04
   statement: "files.c binds the Delete key to do_delete(), which opens td_msgbox(\"Confirm\", \"Delete <name>?\", \"Delete|Cancel\"), and the desktop's icon menu reaches the same dialog through ask_delete(). td_msgbox adds its buttons in the order given and a window's first focusable widget takes the focus (widgets.c: `if (focusable && !win->focus) win->focus = w`), so Delete is focused; a focused button activates on Enter or Space (widget_key), and delete_answer() removes the file for button 0 with no further step."
-  consequence: "Delete followed by Enter or Space removes the selected file. On this board the keyboard's Delete arrives as ESC [ 3 ~ (tang_key.c), which the desktop reads as TD_KEY_DELETE. This is TinyDesk's design as written, recorded so it is not mistaken for a fault; the project is not raising it upstream. It supersedes TDESK-010, which suspected the dialog of removing /scripts/boot.tdsh on 2026-10-04 -- the user had deleted that file themselves."
+  consequence: "Delete followed by Enter or Space removes the selected file. On this board the keyboard's Delete arrives as ESC [ 3 ~ (tang_key.c), which the desktop reads as TD_KEY_DELETE. /scripts/boot.tdsh sorts first in its folder, and without it the board boots on the FPGA's own core (DEV-006); restoring it is a tangput of scripts/boot.tdsh. This is TinyDesk's design as written, recorded so it is not mistaken for a fault; the project is not raising it upstream. When boot.tdsh went missing on 2026-10-04 this dialog was first suspected, but the user had deleted the file themselves."
   sources:
     - "third_party/tinydesk @ 791cad8, apps/files.c: do_delete(), delete_answer(), the TD_KEY_DELETE case in the list's key handler"
     - "third_party/tinydesk @ 791cad8, apps/desktop.c: item_menu_chosen() and ask_delete()"
     - "third_party/tinydesk @ 791cad8, src/widgets.c: td_msgbox() button order, the first-focusable rule, widget_key() for TD_WT_BUTTON"
     - "ports/bl616/tang_key.c: usage 0x4C (Delete) sent as ESC [ 3 ~"
-  verification: "Read from the source; not exercised on hardware."
-
-- record_id: TDESK-012
-  kind: EXTERNAL
-  topic_id: TDESK
-  title: "TinyDesk v0.1.4: the same port surface, and a Terminal that reports its width"
-  status: SUPERSEDED
-  verified_date: 2026-10-05
-  statement: "TinyDesk v0.1.4 at commit f4c1d29f6327df1b3dd40e00fe301cf002021dd6 pins tinydesk-shell at 3b7d7f8, the same revision as this project's submodule, so there is still no second copy to keep in step. td_hal_t is unchanged: read_byte, write, millis and sleep_ms plus a context pointer (TDESK-001). The Terminal app's td_term_backend_t has start(cols, rows), read, write, resize(cols, rows), user and set_user, and the upstream shell bridges pass the window's width from start() and resize() to the line editor through columns() (TDSH-003). Release 0.1.4 also cuts text at character boundaries (td_utf8_copy, td_utf8_pad, td_utf8_skip), keeps the file name when the Editor saves, adds widget and Editor tests, and reformats every source with clang-format 16; its README lists TinyTang as a community port."
-  consequence: "The update needed no change to this port's td_hal_t or to the build's source lists; the bridge in ports/bl616/td_bridge_bl616.c gained a resize() and forwards the width. Diffs across the release should be read after formatting both sides with the release's .clang-format, since otherwise the reformatting hides the real changes."
-  sources:
-    - "third_party/tinydesk @ f4c1d29, apps/td_apps.h: td_term_backend_t"
-    - "third_party/tinydesk @ f4c1d29, include/tinydesk/td_hal.h: td_hal_t"
-    - "third_party/tinydesk commit 5ad7c45: 'the Terminal window gives the shell its width'"
-    - "third_party/tinydesk @ f4c1d29, .gitmodules and third_party/tdsh: the shell at 3b7d7f8"
-  verification: "Built and run on this board on 2026-10-05; the user confirmed the desktop, the Terminal, Files, the Editor's save and F12, and Castlevania from the Terminal."
-  superseded_by: "TDESK-013"
+  verification: "Read from the source; not exercised on hardware. Revised 2026-10-11 (core-log entry 10): folded in the boot.tdsh consequence from the retired TDESK-010."
 
 - record_id: TDESK-013
   kind: EXTERNAL
   topic_id: TDESK
-  title: "TinyDesk v0.1.5: the projects move to tinydesk-project"
+  title: "TinyDesk v0.1.5: its port surface, Terminal backend and shell pin"
   status: VERIFIED
   verified_date: 2026-10-06
-  statement: "TinyDesk v0.1.5 is tag v0.1.5 at commit feaf84130f03594845e5e9284817dca785b4d878, from github.com/tinydesk-project/tinydesk; its main branch carries two later documentation commits (docs/VALIDATION.md) that the release does not include. It pins tinydesk-shell at 8456dd1 (TDSH-004), the same revision as this project's submodule, so there is still no second copy. In the code this port builds only include/tinydesk/td.h changes: TD_VERSION becomes 0.1.5 and TD_REPO_URL and TD_SHELL_REPO_URL point at tinydesk-project. td_hal_t and the Terminal backend are unchanged from TDESK-012. The rest of the release is ESP32 over-the-air update work and documentation."
-  consequence: "The update needed no change to this port beyond the pins and the submodule URLs, which .gitmodules now gives as tinydesk-project. Built in a clean recursive clone, its own host tests pass 10 of 10 with no warnings."
+  statement: "TinyDesk v0.1.5 is tag v0.1.5 at commit feaf84130f03594845e5e9284817dca785b4d878, from github.com/tinydesk-project/tinydesk; its main branch carries two later documentation commits (docs/VALIDATION.md) that the release does not include. It is a terminal desktop: it draws overlapping text-mode windows with ANSI escape sequences, reads the keyboard and mouse back from the terminal, has no display hardware, and its core is portable C11. Its whole port surface is td_hal_t, four function pointers - read_byte returning the next byte or -1 without blocking, write returning the number of bytes accepted, millis, and sleep_ms - plus a context pointer. The Terminal app's td_term_backend_t has start(cols, rows), read, write, resize(cols, rows), user and set_user, and the upstream shell bridges pass the window's width from start() and resize() to the line editor through columns() (TDSH-004). It pins tinydesk-shell at 8456dd1 (TDSH-004), the same revision as this project's submodule. Against v0.1.4 the code this port builds changes only in include/tinydesk/td.h: TD_VERSION becomes 0.1.5 and TD_REPO_URL and TD_SHELL_REPO_URL point at tinydesk-project. v0.1.4 cut text at character boundaries (td_utf8_copy, td_utf8_pad, td_utf8_skip), kept the file name when the Editor saves, and reformatted every source with clang-format 16; its README lists TinyTang as a community port."
+  consequence: "The port in ports/bl616/td_desktop_bl616.c is mostly a table of pointers over console calls this project already had, and the bridge in ports/bl616/td_bridge_bl616.c forwards the window width from start() and resize(). There is no second copy of the shell to keep in step. v0.1.5 needed no change to this port beyond the pins and the submodule URLs, which .gitmodules gives as tinydesk-project. Diffs across releases should be read after formatting both sides with the release's .clang-format, since otherwise the v0.1.4 reformatting hides the real changes."
   sources:
-    - "tinydesk-project/tinydesk v0.1.5 (feaf841): include/tinydesk/td.h, RELEASE_NOTES.md, third_party/tdsh at 8456dd1"
-  verification: "Diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 10/10 passed in a clean clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37)."
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): include/tinydesk/td.h, include/tinydesk/td_hal.h (td_hal_t and 'This is the only thing a port has to provide.'), apps/td_apps.h (td_term_backend_t), RELEASE_NOTES.md, third_party/tdsh at 8456dd1"
+    - "third_party/tinydesk commit 5ad7c45: 'the Terminal window gives the shell its width'"
+  verification: "Built and running on this board since 2026-10-03: the desktop draws, opens windows, and its Terminal runs the shell; under v0.1.4 on 2026-10-05 the user confirmed the desktop, the Terminal, Files, the Editor's save, F12, and Castlevania from the Terminal. v0.1.5 was diffed against v0.1.4 and built into this firmware on 2026-10-06; upstream ctest 10/10 passed in a clean recursive clone; the user confirmed the console, the desktop, the Terminal, Files, F12, Castlevania and Phosphor (core-log entry 37). Revised 2026-10-11 (core-log entry 10): folded in the port surface from the retired TDESK-001 and the Terminal backend from the retired TDESK-012."
 
 - record_id: TDESK-014
   kind: EXTERNAL
@@ -1371,6 +1390,7 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "ports/bl616/td_bridge_bl616.c: backend_start, tang_td_terminal_start and td_bridge_bl616_stop"
     - "ports/bl616/td_desktop_bl616.c: desktop_run and cmd_desktop; tools/tests/test_terminal_lifecycle.sh"
   verification: "A host probe of the real upstream Terminal called start once across two backend installations. The lifecycle regression linked against the real upstream Terminal and BL616 bridge fails with the original startup and passes three reentries, keyboard/output rings, idempotent installation, graceful cleanup, failed allocation and retry with the fix. The user accepted the flashed restart fix and subsequent build; listen-only USB capture of a later desktop entry contains the fresh shell greeting and the successful diagnostic launcher, followed by desktop exit and a usable guarded console."
+
 - record_id: TDESK-015
   kind: EXTERNAL
   topic_id: TDESK
@@ -1397,318 +1417,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "github.com/tinydesk-project/tinydesk/issues/6, the author's reply of 2026-10-07T20:42Z"
     - "CMakeLists.txt; tools/tests/test_editor_limits.sh; tools/make_editor_test_files.py"
   verification: "On this board on 2026-10-07 with firmware 268021f-dirty.bab3b26 the user read System Monitor at 50 KB free with Files open and 38 KB with the Editor open on a 7,000-byte file, back to 50 KB on each close, against the 20 to 25 KB the Editor took before; the 7,000-byte file took an edit and kept it, and a 9,000-byte file opened read-only and stayed 9,000 bytes on the card (core-log entry 55)."
-
-- record_id: TOOL-001
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "CONFIG_CHERRYUSB_HOST is required to enumerate; CONFIG_NEWLIB prevents it"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "With FreeRTOS enabled and only the device stack built, the CDC never enumerates on this board; enabling CONFIG_CHERRYUSB_HOST, which brings in the FreeRTOS OSAL, is what fixes it. Separately, the SDK's newlib port stops the device enumerating, with or without its FatFS file layer."
-  consequence: "Both settings in proj.conf look wrong for a device-only firmware and are deliberate. The shell's stdio is therefore implemented over FatFS in ports/bl616 rather than taken from newlib."
-  sources:
-    - "Bouffalo SDK, components/usb/cherryusb/CMakeLists.txt: the host branch adding osal/usb_osal_freertos.c"
-    - "This project's proj.conf: the comments recording the bisection that isolated both facts"
-  verification: "Established by bisection on this board earlier in the project, and recorded in proj.conf; reconfirmed by the firmware running throughout this session."
-
-- record_id: TOOL-002
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The Gowin programmer's accepted IDCODEs"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "The vendored programmer accepts five parts: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b and GW2A-18 0x0000081b. Anything else is reported as an unknown board and programming stops."
-  consequence: "This is a second, independent way to confirm which silicon is on the bench, alongside the bitstream's own device declaration. It also means a load into the wrong board fails loudly rather than silently misconfiguring."
-  sources:
-    - "Tang-Control, fpga/programmer.cpp: IDCODE_GW5A_25, IDCODE_GW5AT_60, IDCODE_GWAST_138, IDCODE_GW5AT_138, IDCODE_GW2A_18, and the test in fpga_program()"
-  verification: "The board reports 0x0001081b, which is the GWAST-138 entry and the only one that matches."
-
-- record_id: TOOL-003
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "Build versions in use"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "The firmware is built against the Bouffalo SDK reporting PROJECT_SDK_VERSION 2.0.0, with the T-Head RISC-V GCC 10.2.0 toolchain for riscv64-unknown-elf, driven by CMake and the SDK's project.build. The FPGA images are built elsewhere, with Gowin EDA, and are consumed here as finished bitstreams."
-  consequence: "The SDK lives at ~/.cache/tangcore-dev/sdk and the toolchain at ~/.cache/tangcore-dev/toolchain by default, both overridable in the environment. Nothing in this project builds FPGA logic; the Gowin toolchain is not invoked here."
-  sources:
-    - "This project's build/generated/sdk_version.h: PROJECT_SDK_VERSION \"2.0.0\""
-    - "This project's Makefile: BL_SDK_BASE and TOOLCHAIN_BIN defaults"
-    - "Build output: the toolchain path resolving to riscv64-unknown-elf/10.2.0"
-  verification: "Read from the build tree. The Gowin version is not established here; it belongs to the core images, not to this firmware."
-
-- record_id: TOOL-004
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "A Gowin bitstream names its device, so images are not interchangeable"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "A Gowin project binds the device at generation time. nestang's build.tcl takes a device name and calls set_device accordingly, and for console138k that is GW5AST-LV138PG484AC1/I0 with device version B, using the 138K-specific PLL sources. The corresponding synthesis project records Device id GW5AST-138B."
-  consequence: "The 60K and 138K console images are not interchangeable, and the difference is visible in the artifact rather than only in a build script. Comparing a bitstream's size and its project declaration is a reliable way to tell which device it is for."
-  sources:
-    - "nestang, build.tcl: the console138k branch and its set_device line"
-    - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: the Device element"
-  verification: "Read from the build files; the 138K artifact is 4,593,044 bytes against the 60K image's 2,321,194, and the loaded image runs on this board."
-
-- record_id: TOOL-005
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The USB-enumeration bisection is kept in-tree, selected by environment variable"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "The configurations used to isolate TOOL-001 survive as three SDK config files - proj.min.conf, proj.nonewlib.conf and proj.rtos.conf - alongside the SDK's own device example vendored under ref/ as cdc_acm_template.c, ref_main.c and ref_rtos_main.c and built from inside this project. CMakeLists.txt picks them from the environment: TINYTANG_MIN, TINYTANG_RTOS and TINYTANG_NONEWLIB choose a config file, TINYTANG_REF selects the reference build, and TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL add compile definitions that strip the firmware to a USB-only, no-filesystem or no-shell build. The README describes the three config files as the ones that produced TOOL-001's result."
-  consequence: "The negative results in TOOL-001 have a reproducible witness rather than a recollection: setting an environment variable and rebuilding re-runs the bisection. Anyone removing these files or guards should know they are the evidence for why CONFIG_CHERRYUSB_HOST is set and CONFIG_NEWLIB is not."
-  sources:
-    - "This project's CMakeLists.txt: the TINYTANG_* guards and the config selection"
-    - "This project's proj.min.conf, proj.nonewlib.conf, proj.rtos.conf and ref/"
-  verification: "The files and the guards are present in the tree and were read directly. That these particular configs produced TOOL-001's result is this project's own account, not something re-run here."
-
-- record_id: TOOL-006
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "This project's host-side tools, and what they need"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "Three Python scripts in tools/ do the host-side work and all need pyserial: tinytang_flash.py writes a firmware image to the BL616 over the CDC with no BOOT button involved, tinytang_put.py puts a file onto the SD card, and tinytang_run.py runs a shell command on the board and streams its output. This is the live set; the retired Tang-Control helpers are recorded separately in TCTL-010. A build machine therefore needs Python with pyserial in addition to the SDK and the RISC-V toolchain of TOOL-003."
-  consequence: "These are the only supported ways to reflash the board and to place files on the card. tinytang_flash.py needs the CDC port free and a power cycle afterwards (FLS-001), and a live screen session holds the port."
-  sources:
-    - "This project's tools/: tinytang_flash.py, tinytang_put.py, tinytang_run.py"
-    - "This project's README.md: 'Python with pyserial for the tools in tools/'"
-  verification: "All three were used against this board: the firmware was flashed, files were put on the card, and shell commands were run and their output captured."
-
-- record_id: TOOL-007
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The vendored Gowin JTAG programmer is Apache-2.0, from nand2mario via Tang-Control"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "ports/bl616/tang_jtag_programmer.c is nand2mario's bit-banged GPIO JTAG programmer for Gowin GW5A and GW2A, (c) 2025.2, licensed Apache-2.0, itself based in part on openFPGALoader by Gwenhael Goavec-Merou. It was taken from Tang-Control's fpga/programmer.cpp and used unmodified apart from its include list. ports/bl616/tang_jtag_glue.h supplies what it expected from its own tree - the console, the card file, the GPIO device handle, and stubs for the FPGA UART bookkeeping - and documents that provenance."
-  consequence: "This is working code inherited from the previous firmware rather than reimplemented, so a claim that only board knowledge was carried over is not quite right: the programmer is a translation unit. Its licence is Apache-2.0 and travels with the file, which is a different licence from the MIT TinyDesk shell submodules (TDSH-001, TDESK-001)."
-  sources:
-    - "This project's ports/bl616/tang_jtag_programmer.c: the Apache-2.0 header, the 2025.2 nand2mario copyright and the openFPGALoader attribution"
-    - "This project's ports/bl616/tang_jtag_glue.h: the provenance comment"
-  verification: "Read from the file header and the glue header in the tree. The programmer is exercised on every tangload, which reports ID=0001081b (DEV-001)."
-
-- record_id: TOOL-008
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The SDK components this firmware actually links, and their licences"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "The Bouffalo SDK is Apache-2.0 for its own code but bundles third-party components under their own licences, and three of those are linked into this firmware. FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates, selected by CONFIG_FREERTOS in proj.conf. CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu, which is the device CDC console and the FreeRTOS OSAL hosting it. And FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition obliges only a redistribution of source to retain its notice. Not linked into this firmware: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
-  consequence: "This is the part PROV-002's list does not reach: naming the SDK is not naming what the SDK carries, and FreeRTOS's MIT text has to travel with copies and substantial portions, which is what this firmware's binary is. THIRD_PARTY.md now names all three. Anyone enabling a further SDK component - mbedTLS for the network apps, LVGL for graphics - inherits that component's licence at the moment they enable it."
-  sources:
-    - "Bouffalo SDK components/os/freertos/tasks.c: 'FreeRTOS Kernel V10.4.6 / Copyright (C) 2021 Amazon.com, Inc. or its affiliates. / SPDX-License-Identifier: MIT'"
-    - "Bouffalo SDK components/usb/cherryusb/core/usbd_core.c: the Apache-2.0 SPDX line and the three copyright holders"
-    - "Bouffalo SDK components/fs/fatfs/ff.c: 'FatFs - Generic FAT Filesystem Module R0.15 w/patch3' and ChaN's condition"
-    - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
-  verification: "Read from the SDK's own source headers at ~/.cache/tangcore-dev/sdk, and the FreeRTOS selection confirmed in proj.conf. The not-linked list was checked against this project's configuration and sources rather than the SDK's inventory."
-  superseded_by: "TOOL-016"
-
-- record_id: TOOL-009
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The console's input is exclusive, and a raw upload's bytes are keystrokes"
-  status: SUPERSEDED
-  verified_date: 2026-10-04
-  statement: "tangput takes raw bytes from the same CDC stream the desktop reads its typed input from, and on that wire a file and a burst of typing are the same thing: nothing distinguishes them, because the console is one byte stream with no framing of its own. The desktop, when it is running, is the reader holding it. So a transfer is safe only while the console is at a shell prompt, and tangput itself cannot tell the difference - it will accept whatever arrives and write it."
-  consequence: "A file sent while the desktop is up is delivered to whichever window has focus instead of to tangput. Nothing reports an error and tangput never sees a short write, so the failure is silent until the card is looked at. Observed on 2026-10-04: a 131088-byte ROM sent this way produced a root directory of new.txt and New folder entries with binary data where filenames belong, and damaged the allocation table badly enough that /cores, /scripts and /roms became unreachable. The board then booted a stock core (fpga reports core 0; the patched image reports 1) and boot.tdsh could not find its core. The recovery is fsck.vfat from a PC, before any reformat. tools/tinytang_put.py now refuses to send unless it sees a shell prompt, checking for the desktop's own markers ([Start], Terminal - tdsh, or the alternate-screen sequence) first; the check belongs in the tool because the alternative is remembering, and this was done twice."
-  sources:
-    - "This project's tools/tinytang_put.py: require_shell() and DESKTOP_MARKERS"
-    - "This project's ports/bl616/tang_osd_desk.c: the desktop layer reads the console's input and forwards it to the desktop"
-    - "Observed on this board, 2026-10-04"
-  verification: "Observed directly: the damaged directory listing was read back from the board, the card stopped accepting writes with 'cannot create', and the same send succeeded once the desktop was exited. The guard's refusing path has not itself been exercised."
-  superseded_by: "TOOL-011"
-
-- record_id: TOOL-010
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "A patch is no longer recognised once later work edits the lines it added"
-  status: VERIFIED
-  verified_date: 2026-10-04
-  statement: "scripts/apply-nestang-patches.sh decides whether a carried patch is already applied by asking git to reverse-apply it. That works while the patch's surroundings move, and it stops working the moment a later cycle edits the lines the patch itself added, because the reverse check requires those lines to be present verbatim and the forward check requires them to be absent. Neither is true, so the patch can be neither applied nor recognised."
-  consequence: "This happened on the pointer-mode cycle, which rewrote an assign that patch 0004 had introduced, and it stopped the core build outright. The script now falls back to presuming a series is applied when the tree has local changes, while still failing hard on a clean tree where a non-applying patch is a genuine fault. The guarantee that the series is correct is therefore not this check but the reconstruction test: apply every patch in order to a fresh clone and compare the result byte-for-byte with the tree, which is what is run before each patch is committed."
-  sources:
-    - "This project's scripts/apply-nestang-patches.sh: the strict pass, the -C1 fallback, and the local-changes presumption"
-    - "third_party/patches/0004-keyboard-link.patch, whose added lines 0006 rewrote"
-  verification: "Bitten once and fixed: the build failed with 'does not apply cleanly' on patch 0004 while the same series applied cleanly to a fresh clone. The reconstruction test then passed for all six patches with the tree reproduced byte-for-byte."
-
-- record_id: TOOL-011
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The console's input is exclusive, so the tools ask the board what holds it"
-  status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "The CDC console is one byte stream with one reader at a time: at the shell prompt a byte is part of a command line, while the desktop runs it is a keystroke into whichever window has focus, and while a command such as tangput runs it is that command's data. Nothing on the wire distinguishes them. The firmware therefore answers a status probe that never reaches any reader: the USB receive interrupt takes ESC [ ? 7 7 n out of the input, and the next task to read the console replies ESC [ ? 7 7 ; <state> n, with 1 at the shell prompt, 2 while the desktop runs and 3 for a command that reads the console. A command that reads nothing does not answer until it ends."
-  consequence: "TOOL-009's guard looked for the desktop's drawing on USB and sent a carriage return to wake a prompt. Once the desktop's drawing left USB (USB-007) it could not see the desktop, its carriage return was Enter in whatever window had focus, and with the Terminal window open the shell in it printed a real prompt to USB, so the guard could pass with the desktop up. USB-007 suggested following the desktop's start and exit lines instead; asking the board was chosen because it types nothing and does not depend on having seen the start of the session. tools/tinytang_console.py's require_shell() is used by tinytang_put.py, tinytang_flash.py, phosphor_format_sweep.py and tinytang_run.py, which had no guard before and now asks before each line, so a second command waits for the first to end. No answer is treated as not ready, which also covers a firmware that predates the probe; flashing the first firmware with the probe needed the old guard and the user's word that the console was at a prompt. The probe is matched within one USB packet, so a lone Esc typed at a terminal is not held, and tangput turns the matching off while it receives, because a file may contain the sequence."
-  sources:
-    - "This project's ports/bl616/usb_cdc_bl616.c: usbd_cdc_acm_bulk_out()'s probe matcher, tdsh_bl616_console_set_raw() and the reply in tdsh_bl616_console_read_byte()"
-    - "This project's ports/bl616/tdsh_platform_bl616.c: tdsh_bl616_console_state(), set around bl616_readline and, through tdsh_bl616_console_set_desktop(), around desktop_run() in td_desktop_bl616.c"
-    - "This project's tools/tinytang_console.py: PROBE, REPLY, console_state() and require_shell()"
-  verification: "Exercised on this board with firmware e912c5d-dirty.3417d90, 2026-10-05: state 1 at the prompt; no answer within 1 s during 'sleep 5' and state 1 4.8 s later, when the prompt returned; tinytang_run.py held a second command until 'sleep 3' ended; a 6120-byte file holding twenty copies of the probe arrived whole through tangput; and with the desktop and its Terminal window up the answer was 2, tinytang_run.py and tinytang_put.py both refused, and the user saw nothing typed on screen. State 3 was not observed, since no command that reads the console was running during the probe; the busy case was seen only as no answer."
-
-- record_id: TOOL-012
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "One-wire debugging reaches the FPGA directly, and nothing of TinyTang or TinyDesk"
-  status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "With the board in one-wire mode (BRD-006) the host drives the FPGA without the BL616's firmware in between. JTAG is FT2232 interface 0: openFPGALoader v0.13.1 with -c ft2232 --detect scanned the chain at 6 MHz and reported one Gowin GW5AST-138, IDCODE 0x0001081b (TOOL-002), and programmed nothing. Loading a core is an SRAM load and must use the .fs stream; a raw .bin is shifted in but does not start the FPGA, which leaves it unconfigured and the UART silent. The FPGA UART is interface 1, /dev/ttyUSB1, at 2,000,000 baud with the same 0xAA len_hi len_lo type framing the BL616 uses: the core-ID request AA 00 01 01 was answered AA 00 02 01 00, core 0. A core speaks only when asked, so four seconds of listening at 2 Mbaud and at 115200 with nothing sent returned no bytes; that silence is not evidence either way."
-  consequence: "One-wire is for the FPGA alone: identifying it, loading a bitstream into SRAM, and the 0xAA and extended (0x10) protocols from the host, which is how Tang-Phosphor developed its core (tools/fpga_uart.py, scripts/flash-otg.sh, scripts/uart_probe.py). It cannot see TinyTang or TinyDesk at all: the CDC, the shell, the status probe, tinytang_put/run/flash.py, phosphor, tangload and nesload all need two-wire. It also cannot inspect a fault reached under TinyDesk, because getting into one-wire takes a cold power-up that puts the FPGA back on its own core, and a core loaded over one-wire is replaced at the next two-wire boot when boot.tdsh loads the menu core. The port is opened with DTR and RTS held low so opening it moves no control line; with the BL616 running the debugger, the host is the only other party on the UART."
-  sources:
-    - "Observed on this board, 2026-10-05: openFPGALoader --detect output; AA 00 01 01 sent once on /dev/ttyUSB1 at 2 Mbaud and the five reply bytes; udevadm interface numbers for ttyUSB0 and ttyUSB1"
-    - "Tang-Phosphor, scripts/flash-otg.sh and tools/fpga_uart.py at 532e19d; its core-log entry 29 for the .fs-versus-.bin cause"
-    - "This project's ports/bl616/tang_fpga_link.h: the frame layout and FPGA_CMD_CORE_ID 0x01"
-  verification: "JTAG detect and the core-ID round trip were run on this board on 2026-10-05 with no change to the FPGA, which answered core 0 before and after. The .fs requirement is Tang-Phosphor's finding and was not repeated here, since no core was loaded over one-wire."
-
-- record_id: TOOL-013
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The one-wire core loop: deploy over JTAG, then debug and exercise over the UART"
-  status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "With the board in one-wire mode (BRD-006) a core is deployed, debugged and exercised from the host with no BL616 firmware involved. Deploy: Tang-Phosphor's scripts/flash-otg.sh <image>.fs runs oss-cad-suite's openFPGALoader v1.1.1 with -b tangmega138k and loads SRAM; the merged place3 image (build/merged/place3/tang_phosphor_merged.fs, 39929717 bytes, whose .bin twin is the card's phosphortang.bin at 4987082 bytes) loaded in 17 s. The script has no execute bit, so it is run with bash. Identify: AA 00 01 01 on /dev/ttyUSB1 at 2 Mbaud answered AA 00 02 01 50, core 0x50. Debug: tools/fpga_uart.py peek and poke work over the extended 0x10 channel; the scratch register 0x0020 (docs/debug-registers.md) took 0xC0FFEE42 and 0x12345678 and read both back, and was restored to 0. Exercise: scripts/play_stream.py --tpi <player> --input <file> sets cpu_mode, restarts the AE350 loader, streams the player and then the file, and polls 0x4020 for the run to complete; the qualified player (PHOS-008) took 10.1 s and a 402304-byte test.mp3 4.0 s, and the core then reported 441000 samples played at 0x68, 0 underruns at 0x6c and 44100 Hz at 0x70, with one completed run in 0x4020."
-  consequence: "This is the loop for working on a core by itself: rebuild, SRAM-load, peek and poke its registers, stream to it, all without touching the card or reflashing anything, and a power cycle with the power input returns the board to TinyTang with the core gone, since SRAM loads are volatile. At 2 Mbaud the link moves about 85 KB/s, so the player upload dominates; the extended channel's baud switch to 5 Mbaud (EXTCTL-001 opcode 0x03) is the next speed-up and has not been tried in one-wire. Two cautions carry over from Tang-Phosphor: a .bin does not start the FPGA (TOOL-012), and the player image must be the qualified one (PHOS-008). The MP3 result equals Tang-Phosphor entry 43's figure for the same file. Whether the tone was heard cleanly was not reported by the user."
-  sources:
-    - "Tang-Phosphor at 9e6f183: scripts/flash-otg.sh, scripts/play_stream.py, tools/fpga_uart.py, docs/debug-registers.md"
-    - "This project's tools/make_codec_corpus.sh, which regenerated test.mp3 (402304 bytes) and test.flac (131601 bytes, the size Tang-Phosphor entry 69 recorded)"
-    - "Observed on this board, 2026-10-05"
-  verification: "Every step above was run on this board on 2026-10-05 in one-wire mode with the reported figures read back over the UART."
-
-- record_id: TOOL-014
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "A Pico 2 CMSIS-DAP probe on U1201: a JTAG path of its own, beside one-wire and two-wire"
-  status: SOURCED
-  verified_date: 2026-10-05
-  statement: "A Raspberry Pi Pico 2 running CMSIS-DAP JTAG-probe firmware is wired to the FPGA module's 8-pin header U1201 (PSX-004) and plugs into the host as a separate USB device, 2e8a:000c, not through the BL616 or the FT2232. The user reports it set up and validated, and plugs it in on request. Tang-Phosphor's scripts/flash-pico.sh SRAM-loads a .fs with oss-cad-suite's openFPGALoader -c cmsisdap --vid 0x2e8a --pid 0x000c -b tangmega138k --freq 2000000 (PICO_VID, PICO_PID and PICO_FREQ override); like flash-otg.sh it refuses a .bin, which does not start the FPGA (TOOL-012). The probe bit-bangs JTAG, its clock must stay at or below 2 MHz (4 MHz and up read garbage IDCODEs), and its 64-byte bulk endpoint makes a full bitstream take about 10 to 20 minutes. Tang-Phosphor's README names its real value as GAO, Gowin's internal logic analyser, over the module's debug connector. Tang-PSX found the same probe (lonehog/JTAGprobe, CMSIS-DAP v2; TCK GP19, TMS GP14, TDI GP18, TDO GP21) under OpenOCD 0.12.0 with IDCODE 0x0001081B, where openFPGALoader 0.13.1 could not open it; Tang-Phosphor's later openFPGALoader from oss-cad-suite read the same IDCODE through it."
-  consequence: "This is the third way to reach the FPGA, beside the BL616's tangload in two-wire and the FT2232 in one-wire (TOOL-012, TOOL-013). Because it is its own USB device on its own header, it is not bound to the power-input choice that makes one-wire and two-wire exclusive (BRD-006, BRD-007): Tang-Control lists Pico 2 JTAG programming as part of its two-wire debug arrangement (TCTL-005), although Tang-Phosphor's README files flash-pico.sh under one-wire. So it is the candidate for JTAG access while TinyTang runs: GAO captures, a --detect or status read that checks a tangload's result independently of the BL616's own report, or a core load when the card or tangload is in question. It is too slow for routine loads; use tangload in two-wire or flash-otg.sh in one-wire. Two rules come from PSX-004: the probe shares TCK, TMS and TDI with the BL616, so it must be idle (or unplugged) whenever TinyTang runs tangload, and only pins 2 to 5 and 8 are wired to it, never pin 1 (about 4.4 V) or pins 6 and 7 (the core UART). A core loaded through it under TinyTang replaces the running core without the firmware being told, so the desktop layer and the Phosphor playback task do not know the core changed."
-  sources:
-    - "Tang-Phosphor at 4936ed1: scripts/flash-pico.sh (added in 67979d8, core-log entry 30) and README.md, section 'Pico 2 JTAG probe'"
-    - "Tang-PSX, .ai/core-reference.md record BRD-006 (copied here as PSX-004)"
-    - "TCTL-005: Tang-Control's two-wire debug arrangement, which includes JTAG programming through a Pico 2"
-    - "The user, 2026-10-05: the probe is set up, validated and available"
-  verification: "Not yet run by this project. Tang-Phosphor entry 30 verified the probe against the GW5AST-138 (IDCODE 0x1081b) at 2 MHz; Tang-PSX confirmed it under OpenOCD on 2026-09-29 (its core-log entry 44). Whether it works alongside a running TinyTang in two-wire is Tang-Control's statement and has not been tried on this board."
-
-- record_id: TOOL-015
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "Reentrant FatFS takes an RTOS mutex in every call, so no file call may run inside a critical section"
-  status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "The SDK's FatFS is R0.15 (components/fs/fatfs). With FF_FS_REENTRANT 1 every public file function locks the volume on entry and unlocks it on exit; under OS_TYPE 3 ffsystem.c implements that as xSemaphoreTake(Mutex[vol], FF_FS_TIMEOUT) and xSemaphoreGive on a FreeRTOS mutex, one per volume plus one for the system, and a take that times out makes the call return FR_TIMEOUT. FreeRTOS documents that its API functions must not be called from inside a taskENTER_CRITICAL section, where the scheduler and the tick are held off, so a take there cannot block safely and a give that wakes a higher-priority waiter yields from inside the section."
-  consequence: "Since this project turned FF_FS_REENTRANT on (fatfs_conf_user.h), no f_* call may run inside a critical section. nand2mario's JTAG programmer (TOOL-007) read the bitstream with f_read inside one; it worked at the bare console, where nothing else used the card, and failed tangload from TinyDesk's Terminal, where the desktop also uses it. The programmer now reads each block outside the section and shifts it to the FPGA inside, which still keeps the shift's whole-register GPIO writes free of interruption. FF_FS_TIMEOUT is in ticks, 1000 here, so a task that holds the volume for longer than a second makes the other user's call fail rather than wait."
-  sources:
-    - "Bouffalo SDK 2.0.0 at 7f44f9e (TOOL-003): components/fs/fatfs/ff.h (R0.15), ff.c lock_volume and unlock_volume, ffsystem.c ff_mutex_create, ff_mutex_take and ff_mutex_give under OS_TYPE == 3"
-    - "FreeRTOS kernel reference, taskENTER_CRITICAL(): FreeRTOS API functions must not be called from within a critical section, https://www.freertos.org/Documentation/02-Kernel/04-API-references/04-RTOS-kernel-control/01-taskENTER_CRITICAL_taskEXIT_CRITICAL"
-    - "ports/bl616/tang_jtag_programmer.c, fpga_program, the JTAG_FAST path"
-  verification: "Observed on this board on 2026-10-05: with FF_FS_REENTRANT on, tangload of phosphortang.bin failed from TinyDesk's Terminal and succeeded at the bare console; after the reads were moved out of the critical section it succeeded at the console and, by the user's test, from the desktop. Which of the blocked take or the yielding give broke the load was not traced; either is outside what FreeRTOS allows."
-
-- record_id: TOOL-016
-  kind: TOOLCHAIN
-  topic_id: TOOL
-  title: "The SDK components this firmware links, and their licences, now including the Bluetooth stack"
-  status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "Everything TOOL-008 recorded still holds: FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates; CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu; FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition reaches only source redistribution. Since blescan and blekbd (BLE-002) the firmware also links the SDK's Bluetooth stack, in three parts. The host, libblestack.a built from the SDK's source, is derived from Zephyr's Bluetooth host: its linked files are Apache-2.0 by SPDX tag, copyright Intel Corporation 2015-2018, Nordic Semiconductor ASA 2016-2017, Wind River Systems 2011-2014 and 2016-2017, Oticon A/S 2019 and Vinayak Kariappa Chettimada 2016, with Bouffalo Lab port files (2018, 2019) that carry no licence header. Inside the host, pairing's cryptography is TinyCrypt, Copyright (C) 2017 Intel Corporation under a BSD-3-Clause text; micro-ecc, Copyright (c) 2014 Kenneth MacKay under a BSD-2-Clause text, in ecc.c, ecc_dh.c, ecc_dsa.c and ecc_platform_specific.c; and ctr_prng.c, Copyright (c) 2016 Chris Morrison under a BSD-2-Clause text. All three BSD texts require a distribution in binary form to reproduce the notice, conditions and disclaimer in its documentation. The controller, libbtblecontroller_bl616_ble1m10s1bredr0.a, and the radio's libbl616_phyrf.a and librfparam.a are prebuilt binaries with no licence of their own; the controller's port file btblecontroller_port_uart.c reads 'Copyright (C) RivieraWaves 2009-2015', so the controller is CEVA RivieraWaves IP, and the SDK's root Apache-2.0 is the only grant found covering its redistribution. Not linked: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
-  consequence: "The firmware image is a binary distribution of all of these, so the BSD notices must travel with it: their texts are reproduced verbatim in LICENSES/BSD-3-Clause-tinycrypt.txt, LICENSES/BSD-2-Clause-micro-ecc.txt and LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt, and THIRD_PARTY.md names every part of the stack and its holders. Anyone publishing a firmware image should ship THIRD_PARTY.md and LICENSES/ with it. Whether CEVA or Bouffalo place any condition on the controller blob beyond the SDK's Apache-2.0 is not stated anywhere in the SDK; if a release ever depends on that, ask Bouffalo rather than infer it. Enabling CONFIG_BT_SETTINGS, mbedTLS or another SDK component later adds that component's licence at that moment."
-  sources:
-    - "build/build_out/tinytang_bl616.map: the 38 libblestack.a objects linked, and the controller, phyrf and rfparam archives"
-    - "Bouffalo SDK at 7f44f9e (TOOL-003), components/wireless/bluetooth/blestack/src: the copyright and SPDX lines of each linked object's source; src/common/tinycrypt/source/aes_encrypt.c, ecc.c and ctr_prng.c for the three BSD texts"
-    - "Bouffalo SDK components/wireless/bluetooth/btblecontroller/btblecontroller_port/btblecontroller_port_uart.c: 'Copyright (C) RivieraWaves 2009-2015'"
-    - "Bouffalo SDK root LICENSE: Apache-2.0; the SDK's only per-component licence files are for MQTT-C, TinyMaix, cmake and pikapython, none linked here"
-    - "TOOL-008 for FreeRTOS, CherryUSB and FatFs"
-  verification: "The linked-object list was taken from this build's map, and each object's source header was read from the SDK; the LICENSES texts were extracted programmatically from the SDK files named above, comment markers removed and wording unchanged. strings over the controller and PHY archives found no licence or copyright text."
-
-- record_id: TCTL-004
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "Tang-Control is a fork of nand2mario's firmware, and its USB identity is 0xFFFF:0x6160"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Tang-Control is a fork of nand2mario's firmware-bl616, the stock TangCore firmware for this board. Its CDC command console and the transport protocols behind it - the extended debug channel, the stream protocol and no-BOOT firmware update - are additions on its feature/usb-cdc-file-transfer branch, not stock behaviour. It identifies itself to the host as USB vendor 0xFFFF, product 0x6160."
-  consequence: "A host client keyed to 0xFFFF:0x6160 will not find TinyTang, which presents 0xFFFF:0x5454. Command names this project inherited, such as tangput and tangflash, come from that console and deliberately match it. The stock firmware it forks has neither the console nor the transports, so its capabilities are not a floor TinyTang was standing on."
-  sources:
-    - "Tang-Control, README.md: 'This repo is a fork of nand2mario's firmware-bl616' and the list of what the fork adds over stock"
-    - "Tang-Control, scripts/tangctl.py: USB_VID = 0xFFFF, USB_PID = 0x6160"
-  verification: "Read from the README and the client. Tang-Control was never run by this project; the record is a statement about that firmware, not about ours."
-
-- record_id: TCTL-005
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The three wiring modes, and which connector carries the CDC"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Tang-Control names three wiring arrangements. One-wire user mode runs TangCore normally. One-wire diag mode gives JTAG to the FPGA and the UART straight to the FPGA, for core load and execute, reached through the FT2232 debug cable. Two-wire debug mode connects the power cable and the CDC cable together, giving CDC file management, JTAG programming through a Pico 2, and no-BOOT BL616 flashing. The CDC arrives on the board's bottom-left USB-C port. Its client prints this explanation when it finds an FT2232 instead of a CDC device."
-  consequence: "This is the vocabulary behind every '1-wire' and '2-wire' remark in this project's history, including the several sessions where the console was missing because the host was on the wrong path. When ffff:5454 is absent and 0403:6010 is present, the host is on the debug path, which is the one-wire arrangement."
-  sources:
-    - "Tang-Control, README.md: the three mode diagrams and their captions"
-    - "Tang-Control, scripts/tangctl.py: the find_port() hint naming the FT2232, one-wire mode, and the bottom-left USB-C port for the CDC"
-  verification: "Read from the README and the client. The FT2232 half is independently confirmed by BRD-004, which observed that device on this workstation while the CDC was absent."
-
-- record_id: TCTL-006
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The TangCore core inventory and where an image is looked for"
-  status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "TangCore's core table is: id 1 NES, directory nes, image nestang.bin; id 2 SNES, snes, snestang.bin; id 3 Game Boy Advance, gba, gbatang.bin; id 4 MegaDrive or Genesis, genesis, mdtang.bin; id 5 Sega Master System, sms, smstang.bin; id 6 IBM PC/XT, pc, pctang.bin; and id 0x50 Phosphor, music, phosphortang.bin. An image is looked for first at cores/<board>/<name> and then at cores/<name>, taking the first that exists and is non-empty."
-  consequence: "This is the naming every core image on the card follows, and why /cores/console138k/ is the directory that matters here. It also explains the core IDs the UART reports: nestang answers 1."
-  sources:
-    - "Tang-Control, core/cores.cpp: init_core_list() and find_core_for_board()"
-  verification: "Confirmed against this board's own card: ls /cores/console138k lists nestang.bin, snestang.bin, gbatang.bin, mdtang.bin, smstang.bin, pctang.bin and phosphortang.bin among others, matching the table's names."
-
-- record_id: TCTL-007
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The retired host client's command surface"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "tangctl.py offers ping, status, rxstats with an optional reset, caps, peek, poke, baud, stream, bench, put, get, ls, rm, mkdir and firmware, run over the CDC as line commands with raw byte phases for transfers. caps, peek, poke and baud need a Phosphor core. There is no rename: rename is get, put under the new name, then rm. The firmware command patches and installs a BL616 image and the client waits for the device to disappear and return."
-  consequence: "This is the capability being retired, and the list to consult when deciding what TinyTang should grow next. Two of these already have equivalents here - put and the firmware install, as tangput and tangflash - and the rest do not: TinyTang has a shell rather than a command protocol, so a client of this shape cannot talk to it unchanged."
-  sources:
-    - "Tang-Control, README.md: the tangctl.py command table and the note that rename does not exist"
-    - "Tang-Control, scripts/tangctl.py: the command implementations"
-  verification: "Read from the README and the client. None of these commands were exercised on hardware by this project."
-
-- record_id: TCTL-008
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The no-BOOT firmware update procedure, in full"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "A build intended for installation has its boot header rewritten before transfer: the body length is written little-endian at 0x84 as the file size less 0x1000, and a CRC-32 of the first 252 bytes is written little-endian at 0xFC. The patched image is then sent over CDC with the firmware command, and the board is power-cycled afterwards, because the BL616 resets into its vendor loader and TangCore only returns on power-on. The client verifies the transfer by reading back the application's SHA-256 and comparing it with the local build, and it requires the transfer to sustain at least a megabyte per second while doing so."
-  consequence: "This is the same header layout this project validates in FLS-001, now with the procedure and the verification step that surround it. The power-cycle requirement matches this project's experience exactly. Note that tangflash here does not patch a header: it expects an image already carrying a valid one."
-  sources:
-    - "Tang-Control, README.md: the inline header-patching script and the two-case flashing section"
-    - "Tang-Control, scripts/tangctl.py: FW_APP_MAX_SIZE, FW_BOOT_HEADER_SIZE, FW_HEADER_REGION, check_boot_image(), read_status(), CRC_VERIFY_MIN_BYTES_PER_SECOND"
-  verification: "Read from the README and the client. The header layout it depends on is confirmed independently by FLS-001."
-
-- record_id: TCTL-009
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The FPGA UART receive path's design, and the counters it kept"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Tang-Control reworked the FPGA UART receive path to interrupt-driven RX with a TX mutex, reporting that this fixed gamepad and OSD stutter. Its receive task maintains counters for bytes drained, complete joypad frames, hardware FIFO overflows, the most bytes found waiting when the task woke, bytes skipped while searching for 0xAA, frames dropped for an unrecognised type, and the longest interval between polls. Its client exposes them through an rxstats command and can reset them."
-  consequence: "This project reached the same conclusion independently - tang_fpga_uart.c drains the RX ring from an interrupt because the 32-byte FIFO cannot hold a burst at 2 Mbaud - and the counter set is worth adopting: resync_bytes and fifo_overflows are the two that would have diagnosed the framing and rate problems faster than the logs did."
-  sources:
-    - "Tang-Control, utils/utils.h: struct fpga_rx_stats and fpga_rx_get_stats/fpga_rx_reset_stats"
-    - "Tang-Control, README.md: 'FPGA UART RX rework - interrupt-driven RX + a TX mutex (fixes gamepad/OSD stutter)'"
-  verification: "Read from the header and the README. This project's own ISR-drained ring is confirmed working by every UART operation it performs; the counters are not implemented here."
-
-- record_id: TCTL-010
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "The helper scripts that are being retired"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Alongside the client, Tang-Control carries liveuart.py and liveuart_draw.py to decode and visualise BL616 to FPGA UART traffic, print_uart.py for a raw dump, jtag.py with tdi_compare.py and crc16.sh as JTAG programming verification helpers, and fs.py to convert a Gowin .fs bitstream to the .bin this board loads."
-  consequence: "liveuart is the most directly useful of these: it is a decoder for the exact protocol PROT-001 describes, and its visualiser would make the joypad and OSD traffic visible in a way neither project's text logs do. fs.py matters because this board consumes .bin, not .fs."
-  sources:
-    - "Tang-Control, README.md: the debug scripts section"
-    - "Tang-Control, scripts/: the file listing"
-  verification: "Read from the README and the directory listing. None of these scripts was run by this project."
 
 - record_id: EXTCTL-001
   kind: EXTERNAL
@@ -1894,7 +1602,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Phosphor src/audio/pcm_sink.sv, src/ae350/ae350_play_stream.sv, src/ae350/ae350_subsystem.sv, src/stream/stream_debug_sink.sv and docs/debug-registers.md"
   verification: "On this board on 2026-10-05: with the sink held paused across the next load, the track never started and the stuck queue read 0x64 = 2048 with 0x30 unmoved; unpausing drained 2562 samples. Without the hold, a track after a stop reported 168717 underruns. With drain and hold, tracks after a stop and after a replacement played with 0 underruns, and the format sweep passed (core-log entry 27)."
 
-
 - record_id: PHOS-010
   kind: EXTERNAL
   topic_id: PHOS
@@ -1946,97 +1653,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Phosphor's untracked docs/experiment-resident-player.md, Open points, read on 2026-10-07"
   verification: "Inferred by code review of the uncommitted working tree on 2026-10-07; never built, deployed or tested. The baseline defect was found by reading start_track against ae350_file_server_begin, not by observation."
 
-- record_id: PMOD-001
-  kind: BOARD
-  topic_id: PMOD
-  title: "The dock's two PMOD sockets, and Sipeed's interleaved pin numbering"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "The dock carries two PMOD sockets. PMOD1, beside the HDMI port, exposes PMOD1_IO0-IO7 on FPGA balls W19 W20 F19 F20 E22 D22 E21 D21, and PMOD0 exposes PMOD0_IO0-IO7 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33. Sipeed's IO numbering interleaves the socket rows: IO0, IO2, IO4 and IO6 are Digilent module pins 1-4 and IO1, IO3, IO5 and IO7 are pins 7-10, so a connector index is Sipeed's IO number and not the linear pin order. Turning a module over swaps pins 1-4 with pins 7-10 while GND stays on pins 5/11 and VCC on 6/12."
-  consequence: "This is the board half of the PMOD story, and it is kept in Tang-Phosphor's own reference, where the constraint file (src/boards/console138k_pmod.cst) and the personalities (src/pmod/) live; this project cites it rather than copying it, so the dock does not acquire a second, driftable source. It matters here only because the firmware chooses which core image to load, and a personality built into that image has to match what the user has seated."
-  sources:
-    - "Tang-Phosphor, .ai/core-reference.md, the 'Dock PMOD Sockets' record"
-    - "Tang-Phosphor, src/pmod/pmod_slot.sv: the socket and orientation comment"
-  verification: "Read from Tang-Phosphor's reference and pmod_slot.sv. Not measured on this bench; the underlying dock facts were confirmed during Tang-Phosphor's own OLED bring-up, which this project has not repeated."
-
-- record_id: PMOD-002
-  kind: EXTERNAL
-  topic_id: PMOD
-  title: "The tang.ini socket contract, and which project owns its parser"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "PMOD modules carry no identification pins, so physical seating cannot be detected and the gateware can only be told what is attached. Tang-Phosphor therefore makes /tang.ini at the SD-card root the contract between what is seated and what the core drives: flat keys under one [tang] section, pmod0 = <module> and pmod0_flip = yes or no, and the same for pmod1. A missing file, or a socket with no entry, leaves that socket released, so the absent file is the safe state. Unknown module names, a vga_j1 without its vga_j2 partner, and flip for a module that is not flip-safe are refused rather than guessed. Tang-Phosphor's reference assigns the parser to the firmware that owns the SD card and the transport, naming Tang-Control there, while the registry of supported personalities lives beside the RTL that implements it."
-  consequence: "That assignment lands here. Tang-Control is being retired into TinyTang, so the /tang.ini parser is inherited work in this project rather than in Tang-Phosphor, and a record elsewhere that still points at Tang-Control for it now points here. Nothing in this firmware reads /tang.ini today, which is safe only because no personality is selected unless the user writes one down."
-  sources:
-    - "Tang-Phosphor, .ai/core-reference.md, the 'PMOD configuration file (tang.ini)' record"
-  verification: "Read from Tang-Phosphor's reference. The contract is documented and not implemented here: this tree contains no /tang.ini parsing, and none was exercised."
-
-- record_id: PMOD-003
-  kind: EXTERNAL
-  topic_id: PMOD
-  title: "Register 0x10 is the socket control register the tang.ini parser would write"
-  status: SUPERSEDED
-  superseded_by: "PMOD-004"
-  verified_date: 2026-10-03
-  statement: "In Tang-Phosphor the PMOD socket selection is register 0x10: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1. Personality numbering is 0 none, 1 oledrgb, 2 vga J1 and 3 vga J2. Register 0x14 is scratch. Power-on defaults select the panel on PMOD0 and nothing on PMOD1, and the host is the only party that validates a declaration, because it is the only party that knows what the user wrote."
-  consequence: "This is the seam the tang.ini contract would write through, and so the register a TinyTang-side parser would target. Note the name collision: extended-protocol legacy frame type 0x10 (EXTCTL-001) is a transport opcode and not this register, and the two must not be conflated."
-  sources:
-    - "Tang-Phosphor, .ai/core-reference.md, the 0x10 socket control register record"
-  verification: "Read from Tang-Phosphor's reference. Not exercised here, and no register write of this kind exists in this tree."
-
-- record_id: PMOD-004
-  kind: EXTERNAL
-  topic_id: PMOD
-  title: "On the merged Phosphor core the socket control register is 0xc0, and both sockets power up released"
-  status: VERIFIED
-  verified_date: 2026-10-06
-  statement: "PMOD-003's 0x10 is the address in Tang-Phosphor's bring-up core. In its merged player core, the one TinyTang loads as phosphortang.bin, the socket control word is 0xc0 with the same layout: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1, and a read adds the renderer's frame selector at 18:16. Personalities are 0 none, 1 oledrgb, 2 vga J1, 3 vga J2 and 4 rotary encoder. Both sockets power up released, which is that project's safe state, so nothing is driven until a host declares it."
-  consequence: "Until the /tang.ini parser exists, scripts/phosphor.tdsh declares 0xc0 = 0x2410, the OLEDrgb on PMOD0 and the encoder on PMOD1 with its seating bit, after the link probe; a session's PMOD variable overrides it and PMOD=0 declares nothing. Bit 0 must not be used for stream routing, which moved to 0xa8 (PHOS-011)."
-  sources:
-    - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, docs/debug-registers.md, and its .ai/core-reference.md record on socket control and stream routing in the merged player map"
-    - "Tang-Phosphor src/pmod_mirror_core.sv: PERS_NONE through PERS_ENC"
-  verification: "On this board on 2026-10-06 phosphor.tdsh declared 0x2410, 0xc0 read 0x2410 before, during and after two tracks, the panel frame counter at 0xd8 advanced throughout and the panel signature matched the source at 0x76491800; the user confirmed the OLED lit (core-log entry 45)."
-
-- record_id: PMOD-005
-  kind: EXTERNAL
-  topic_id: PMOD
-  title: "Personality 5 is the I2S2, and how TinyTang applies /tang.ini"
-  status: SUPERSEDED
-  superseded_by: "PMOD-006"
-  verified_date: 2026-10-07
-  statement: "Tang-Phosphor's merged core, at register ABI 1.10 (0x0001000a), adds personality 5 to PMOD-004's socket control word 0xc0: I2S2 stereo PCM playback, present when the I2S2 backend is compiled in, which the merged core enables; Tang-Phosphor's own launch declared it as 0xc0 = 0x50, PMOD0 with JP1 at SLV. The tang.ini contract (PMOD-002) names oledrgb, vga_j1 and vga_j2 only; TinyTang names personality 4 encoder and personality 5 i2s2."
-  consequence: "This supersedes PMOD-002's consequence that nothing here reads /tang.ini. ports/bl616/tang_ini.c parses the file with no card or core access, so tools/tests/test_ini.sh checks it on the host, including that docs/tang.ini parses to 0x2410. After every successful tangload, ports/bl616/phosphor/pmod_sockets.cpp asks the core for its ID and, for ID 0x50 at ABI 1.8 or later, writes the word to 0xc0 and reads it back, masking the frame selector at 18:16; other cores, including the bring-up core whose 0x04 is not an ABI, get nothing. A missing file or entry releases the socket; an unknown module, a flip other than yes or no, or one VGA half without the other releases that socket with a console line; unknown keys, other sections and keys outside [tang] are warned about and ignored. Flip is applied as declared for any module: the user chose to defer flip-safety enforcement. tangini shows the declaration and the loaded core's sockets, tangini apply resends it, and scripts/phosphor.tdsh no longer declares the sockets or reads PMOD. The module table is TinyTang's own copy of Tang-Phosphor's numbering until the core reports its personalities."
-  sources:
-    - "Tang-Phosphor 7cf9ede: docs/debug-registers.md (0x04 ABI 1.10, 0x00c0 personality 5), src/pmod_mirror_core.sv PERS_I2S2, docs/i2s2-bringup.md (socket and setup)"
-    - "ports/bl616/tang_ini.c, ports/bl616/tang_ini.h, ports/bl616/phosphor/pmod_sockets.cpp, docs/tang.ini; tools/tests/test_ini.sh"
-  verification: "The parser passes its host test under AddressSanitizer and UBSan, which failed when the VGA pairing rule and the bad-flip refusal were each removed. Firmware 969e6ff-dirty.71fe989 carrying it was installed on 2026-10-07, but no hardware test has run (core-log entry 57)."
-
-- record_id: PMOD-006
-  kind: EXTERNAL
-  topic_id: PMOD
-  title: "Hardware-qualified PMOD declarations, encoder row selection and PmodVGA header order"
-  status: VERIFIED
-  verified_date: 2026-10-07
-  statement: "Tang-Phosphor's socket word at 0xc0 selects personalities 0 none, 1 OLEDrgb, 2 PmodVGA J1, 3 PmodVGA J2, 4 encoder and, when compiled in, 5 I2S2. The socket flip bit swaps the two signal rows; for a single-row Pmod ENC it also selects row 7-12 instead of row 1-6 without requiring the component side to face down. PmodVGA J1 carries red and blue, and J2 carries green and sync; the component-side-up seating exercised on this dock puts J1 on PMOD1 and J2 on PMOD0. Both sockets reset released, and the firmware must declare the fitted modules."
-  consequence: "TinyTang's tangload reads /tang.ini and applies its declaration to core ID 0x50 at ABI 1.8 or later, while tangini reports the file and read-back and tangini apply resends it. Verified layouts are I2S2 normally seated on PMOD0 with PMOD1 released (0x0050), encoder face up on PMOD1 row 7-12 with PMOD0 released (0x2400), OLED normally seated on PMOD0 with that encoder (0x2410), and PmodVGA with PMOD0 vga_j2 and PMOD1 vga_j1, neither flipped (0x0230). The initial 0x0320 VGA declaration did not match that physical seating; module names must follow the actual headers. A missing file releases both sockets and an unknown module releases the affected socket with a line-numbered warning. Firmware applies declared flips without checking module flip safety, as the user directed. This supersedes PMOD-005's unqualified parser evidence without extending hardware qualification to every host-tested parser case."
-  sources:
-    - "Tang-Phosphor 7cf9ede: src/pmod/pmod_slot.sv (row permutation), src/pmod/pmod_enc.sv (input pins and count), src/pmod/pmod_vga.sv (J1/J2), src/pmod_mirror_core.sv (personality registry), docs/i2s2-bringup.md (I2S2) and .ai/core-reference.md (single-row encoder flip meaning)"
-    - "Tang-PSX 61974ca: .ai/core-reference.md BRD-004 and BRD-005, including the verified J1-on-PMOD1 placement"
-    - "TinyTang 42e9f9b: ports/bl616/tang_ini.c, ports/bl616/phosphor/pmod_sockets.cpp and docs/tang.ini; firmware 969e6ff-dirty.71fe989"
-  verification: "On this board on 2026-10-07, entries 58-60 exercised all four listed layouts through automatic core-load declaration and read-back. Entry 58 records a full 3:19 track at 44.1 kHz with zero underruns and user acceptance of I2S2 audio and the oscilloscope. Entry 59 records encoder counts of exactly four per detent in both directions, button and switch transitions, matching OLED/source signatures with advancing panel frames and user acceptance of the image, reapplication and unknown-module rejection. Entry 60 records no VGA picture at 0x0320, mirrored HDMI and CRT images accepted by the user at 0x0230 without moving the module, then a matching /tang.ini and automatic declaration after reload. Missing-file release was verified in entry 58. No hardware test of every invalid-flip, section or VGA-pair parser case is claimed."
-
-- record_id: TCTL-011
-  kind: EXTERNAL
-  topic_id: TCTL
-  title: "Tang-Control's standing: the architecture of record for Phosphor and later cores"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Stated by the user on 2026-10-03: Tang-Control is the architecture of record for the Phosphor core and for the cores that follow it, and it is hardware-verified as a whole because this project was built starting from it. The lineage is visible in this tree, where the board layer, the JTAG path, the SD gate, the UART1 contract and the flash layout all descend from Tang-Control."
-  consequence: "This is why the TCTL records are worth carrying past retirement, and why a board-layer question should be taken to Tang-Control rather than to nand2mario's stock firmware. It does not make any individual claim verified: a record's own status still reports whether that specific fact was confirmed on this hardware or only read from a source."
-  sources:
-    - "Project statement recorded with the user, 2026-10-03"
-  verification: "The lineage is visible in this tree and the inherited board layer has been exercised here. Tang-Control's hardware verification as a whole is the user's assertion and is not something this project's own runs can establish."
-
 - record_id: PROV-001
   kind: EXTERNAL
   topic_id: PROV
@@ -2050,22 +1666,6 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "nand2mario/tangcore README.md: 'TangCore firmware is licensed under Apache 2.0. Each core maintains its original license - please check individual core directories for details.'"
     - "Tang-Control README.md line 3: 'This repo is a fork of nand2mario's firmware-bl616' (https://github.com/nand2mario/tangcore)"
   verification: "The TangCore origin and the Tang-Control fork are confirmed in the trees, and the split licence (firmware Apache-2.0, cores per-directory) is in nand2mario's README. The DDR3 configuration is Apache-2.0 values from Sipeed's TangMega-138K-example design while the generated controller is Gowin EDA vendor IP, and TinyDesk is the two MIT submodules. The memory module resolved to the JTAG programmer by the user's correction of 2026-10-03, and colibri's licence was read from the port's own NOTICE and LICENSES/ directory."
-
-- record_id: PROV-002
-  kind: TOOLCHAIN
-  topic_id: PROV
-  title: "The licence and third-party notice, and what they cover"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "TinyTang carries a LICENSE and a THIRD_PARTY.md at the repository root, both added on 2026-10-03. The licence is Apache-2.0, which is the right one because this project descends from TangCore's Apache-2.0 firmware by way of Tang-Control. THIRD_PARTY.md names TangCore's firmware as the lineage for the board knowledge, Tang-Control as the intermediate, the vendored Gowin JTAG programmer with its retained nand2mario copyright and openFPGALoader behind it, both TinyDesk submodules at their pinned MIT commits, nestang's iosys_bl616.v read as a specification but not copied (GPL-3.0), the Bouffalo SDK (Apache-2.0), and colibri (PROV-003). Before this the tree held neither file and only usb_config.h carried an SPDX tag, and that is a vendor file."
-  consequence: "The obligation this project had is discharged. The one claim in THIRD_PARTY.md that has to stay true is the one about the core UART protocol: it was read from a GPL-3.0 source as a specification and reimplemented, and that is the sentence that keeps a GPL-3.0 reading from becoming an unlicensed copy. Any file vendored from here on needs a line in that document and a record here."
-  sources:
-    - "This project's LICENSE and THIRD_PARTY.md, added 2026-10-03"
-    - "nand2mario/tangcore README.md: the Apache-2.0 firmware licence"
-    - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model followed"
-    - "TOOL-007, TDSH-001 and TDESK-001: the vendored programmer and the two submodules"
-  verification: "Both files exist in the tree, and each entry in THIRD_PARTY.md was written from a licence read directly: tangcore's README, the programmer's own header, Tang-Control's LICENSE, the two submodules' VERSION and commit, the SDK's LICENSE, and colibri's NOTICE and LICENSES/."
-  superseded_by: "PROV-004"
 
 - record_id: PROV-003
   kind: EXTERNAL
@@ -2082,6 +1682,22 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "CERN EP department announcement and the FPGA Developers' Forum material on colibri, 2024-2026"
     - "Project statement recorded with the user, 2026-10-03: that future agents will reference it"
   verification: "The licence and the upstream pin were read from the port's own NOTICE, LICENSES/ directory and AGENTS.md, and the project, mirror and port were all confirmed to exist. The library is not present in this tree: no colibri source is vendored here."
+
+- record_id: PROV-005
+  kind: TOOLCHAIN
+  topic_id: PROV
+  title: "MIT with thirteen Apache-2.0 files, the TangCore lineage, and what the notices must keep true"
+  status: VERIFIED
+  verified_date: 2026-10-06
+  statement: "TinyTang's own code is MIT (LICENSE). Thirteen files are Apache-2.0, with the text at LICENSES/Apache-2.0.txt: ports/bl616/tang_jtag_programmer.c, nand2mario's Gowin JTAG programmer (TOOL-007; in Tang-Control's history 9 of its 10 commits are his), whose header gained a comment pointing at that text because its original sentence pointed at the root LICENSE of the tree it was written in; and ae350_play.cpp, ae350_play.h, flac_stream_prefix.h, fpga_debug.cpp, fpga_debug.h, fpga_ext_frame.h, fpga_file_stream.cpp, fpga_file_stream.h, fpga_stream.cpp and fpga_stream.h in ports/bl616/phosphor/ with tools/tests/fpga_ext_frame_test.cpp and flac_stream_prefix_test.cpp, whose every Tang-Control commit is this project's author's. Tang-Control is this project's author's fork of nand2mario's TangCore firmware-bl616 (66 of its commits are his), and TinyTang started from its board layer, so TinyTang descends from TangCore: its board knowledge was learned there, the BL616-to-core UART protocol is his design read from nestang (PROT-001), and the NES core is his nestang carried as patches. No other TangCore source file is in the tree. THIRD_PARTY.md names that lineage, the vendored programmer with openFPGALoader behind it, both TinyDesk submodules at their pinned MIT commits, nestang's iosys_bl616.v read as a specification but not copied (GPL-3.0), the Bouffalo SDK and the components linked from it (TOOL-016), and colibri (PROV-003). The project licence was Apache-2.0 when LICENSE and THIRD_PARTY.md were added on 2026-10-03 and changed to MIT the same day, at the user's preference for MIT unless Apache-2.0 was required."
+  consequence: "Apache-2.0 was never required: it is permissive, so an Apache-2.0 file may sit inside an MIT project provided it keeps its notices and licence text. Choosing MIT gives up Apache-2.0's express patent grant, and means GPL-3.0 gateware from Tang-Phosphor cannot be copied into this tree. The sentence in THIRD_PARTY.md that must stay true is the one about the core UART protocol: it was read from a GPL-3.0 source as a specification and reimplemented, and that is what keeps a GPL-3.0 reading from becoming an unlicensed copy. Any file vendored from here on needs a line in THIRD_PARTY.md and a record here. The README once called TinyTang 'from-scratch' and said it did not 'inherit from TangCore', which was inaccurate; since 2026-10-06 README.md and THIRD_PARTY.md state the lineage and every Apache-2.0 file with its author. The Phosphor files are the project author's own and could be relicensed to MIT if ever wanted; until then they keep Apache-2.0."
+  sources:
+    - "This project's LICENSE, LICENSES/Apache-2.0.txt, README.md, THIRD_PARTY.md and the headers of the thirteen files"
+    - "git log --follow in /run/media/vash/GIT/Tang-Control for fpga/programmer.cpp and utils/ (fpga_*, flac_stream_prefix.h, ae350_play.*), and its README: 'a fork of nand2mario's firmware-bl616'"
+    - "nand2mario/tangcore README.md: the Apache-2.0 firmware licence"
+    - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model followed"
+    - "Project statement recorded with the user, 2026-10-03: a preference for MIT unless Apache-2.0 turned out to be required"
+  verification: "On 2026-10-06 every file under ports, tools, scripts and cmake was searched for Apache-2.0 and for nand2mario, TangCore and Tang-Control, and the authorship of each carried-over file was read from Tang-Control's history (core-log entry 38). Each THIRD_PARTY.md entry was written from a licence read directly. Revised 2026-10-11 (core-log entry 10): folded in THIRD_PARTY.md's coverage from the retired PROV-002 and the MIT trade-offs from the retired PROV-004."
 
 - record_id: PSX-001
   kind: DEVICE
@@ -2162,47 +1778,19 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
     - "Tang-Control commit 26e975bef22b: utils/fpga_debug.h and scripts/tangctl.py"
   verification: "Read from Tang-PSX's reference, where the status lines were observed repeatedly while a core answered. This project's own fpga probe returning core 1 for nestang is consistent with the low-byte rule, but is not a measurement of the byte."
 
-- record_id: PROV-004
-  kind: TOOLCHAIN
-  topic_id: PROV
-  title: "The project licence is MIT, with one file left Apache-2.0"
-  status: SUPERSEDED
-  verified_date: 2026-10-03
-  statement: "TinyTang's own code is MIT, in LICENSE at the repository root, which supersedes the Apache-2.0 choice PROV-002 recorded. The one exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file (TOOL-007): the Apache-2.0 text is reproduced at LICENSES/Apache-2.0.txt, and that file's header gained a comment saying so, because its original sentence pointed at the root LICENSE of the tree it was written in."
-  consequence: "Apache-2.0 was never required, which is the point worth keeping: it is permissive, not copyleft, so an Apache-2.0 file may sit inside an MIT project provided that file keeps its notices and its licence text. The cost of MIT is a mixed-licence repository rather than a uniform one, which is ordinary here - Tang-Phosphor is GPL-3.0 with MIT, BSD-2-Clause and Apache-2.0 files inside it. Two consequences follow and should be known rather than discovered: the express patent grant Apache-2.0 carries is given up, and GPL-3.0 gateware from Tang-Phosphor can no longer be copied into this tree, which a GPL project could do and a permissive one cannot."
-  sources:
-    - "This project's LICENSE, LICENSES/Apache-2.0.txt, THIRD_PARTY.md and ports/bl616/tang_jtag_programmer.c, all changed 2026-10-03"
-    - "Project statement recorded with the user, 2026-10-03: a preference for MIT unless Apache-2.0 turned out to be required"
-    - "PROV-002, which this record supersedes"
-  verification: "Checked that nothing forces a copyleft licence: outside third_party and build, the only file in the tree carrying a licence of its own is the vendored programmer, so the project's inbound licensing is one file wide. Both licence texts are present and were read back after being written."
-  superseded_by: "PROV-005"
-
-- record_id: PROV-005
-  kind: TOOLCHAIN
-  topic_id: PROV
-  title: "MIT with thirteen Apache-2.0 files, and the TangCore lineage stated"
-  status: VERIFIED
-  verified_date: 2026-10-06
-  statement: "TinyTang's own code is MIT (LICENSE). Thirteen files are Apache-2.0, with the text at LICENSES/Apache-2.0.txt: ports/bl616/tang_jtag_programmer.c, nand2mario's Gowin JTAG programmer (TOOL-007; in Tang-Control's history 9 of its 10 commits are his); and ae350_play.cpp, ae350_play.h, flac_stream_prefix.h, fpga_debug.cpp, fpga_debug.h, fpga_ext_frame.h, fpga_file_stream.cpp, fpga_file_stream.h, fpga_stream.cpp and fpga_stream.h in ports/bl616/phosphor/ with tools/tests/fpga_ext_frame_test.cpp and flac_stream_prefix_test.cpp, which were added by entries 19 and 20 after PROV-004 was written and whose every Tang-Control commit is this project's author's. Tang-Control is this project's author's fork of nand2mario's TangCore firmware-bl616 (66 of its commits are his), and TinyTang started from its board layer, so TinyTang descends from TangCore: its board knowledge was learned there, the BL616-to-core UART protocol is his design read from nestang (PROT-001), and the NES core is his nestang carried as patches. No other TangCore source file is in the tree."
-  consequence: "PROV-004's 'one exception' went stale when the Phosphor port landed, and the README's earlier claim that TinyTang was 'from-scratch' and did not 'inherit from TangCore' was inaccurate and read as discounting nand2mario's work. As of 2026-10-06 README.md and THIRD_PARTY.md state the lineage and every Apache-2.0 file with its author. The Phosphor files are the project author's own and could be relicensed to MIT if ever wanted; until then they keep Apache-2.0."
-  sources:
-    - "This project's LICENSE, LICENSES/Apache-2.0.txt, README.md, THIRD_PARTY.md and the headers of the thirteen files"
-    - "git log --follow in /run/media/vash/GIT/Tang-Control for fpga/programmer.cpp and utils/ (fpga_*, flac_stream_prefix.h, ae350_play.*), and its README: 'a fork of nand2mario's firmware-bl616'"
-  verification: "On 2026-10-06 every file under ports, tools, scripts and cmake was searched for Apache-2.0 and for nand2mario, TangCore and Tang-Control, and the authorship of each carried-over file was read from Tang-Control's history (core-log entry 38)."
-
 - record_id: BLE-001
   kind: BOARD
   topic_id: BLE
-  title: "The Bluetooth antenna is a bare U.FL jack, and the radio works close up without one"
+  title: "The Bluetooth antenna is a U.FL jack with nothing fitted from the factory; an external antenna is now on it"
   status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "The BL616 on the dock is U9, BL616C-50-Q2I-QFN40. Its antenna pin, net BL616_ANT, runs through L9 (0 ohm) to U35, an IPEX U.FL Gen1 jack; C186 and C187 on that net are not fitted, and the board carries no antenna of its own. The jack is fitted, on the dock's underside, marked ANT, to the left of the upper USB-A port beside the RETRO READY logo. With nothing on it the radio received a phone and a Logitech K950 at arm's length, the K950 at -76 to -94 dBm, and connected to the K950, but some connection attempts ended with HCI status 0x3E (connection failed to be established), each cleared by trying again."
-  consequence: "Bluetooth works on this board as delivered for a device near it, which is enough for a keyboard or controller in front of the console. A connection attempt can fail on signal alone, so a client must expect 0x3E and try again rather than treat it as the device refusing. An antenna on U35 (a U.FL 2.4 GHz whip, or about 31 mm of wire on the centre pin) is the remedy if range or reliability matters; none has been tried."
+  verified_date: 2026-10-10
+  statement: "The BL616 on the dock is U9, BL616C-50-Q2I-QFN40. Its antenna pin, net BL616_ANT, runs through L9 (0 ohm) to U35, an IPEX U.FL Gen1 jack; C186 and C187 on that net are not fitted, and the board carries no antenna of its own. The jack is on the dock's underside, marked ANT, to the left of the upper USB-A port beside the RETRO READY logo. With nothing on it the radio received a phone and a Logitech K950 at arm's length, the K950 at -76 to -94 dBm, and connected to the K950, but some connection attempts ended with HCI status 0x3E (connection failed to be established), each cleared by trying again; the Xbox Wireless Controller read about -70 dBm held against the board and -83 dBm further away, and its connections failed repeatedly with 0x3E. On 2026-10-10 a 2.4 GHz 6 dBi antenna was fitted to U35 through a U.FL/IPEX to RP-SMA pigtail, and the same controller then read -33 dBm, with the 0x3E failures and wedged connection attempts gone."
+  consequence: "This board's Bluetooth reliability depends on that antenna: a board without one works only close up, and the bare board's failures (0x3E at connect, failed first encryption) look like protocol problems while being signal. If the antenna is ever removed or the board replaced, expect those failures back before suspecting the firmware. A client must still treat 0x3E as retryable rather than as the device refusing. Seating the U.FL connector on the dock's underside is a blind job."
   sources:
     - "Sipeed Tang Mega NEO dock schematics 31004 and 31005, Rev 1.4, page 8 (USB-JTAG & UART): U9, BL616_ANT, L9, U35, C186, C187"
     - "Photographs of this board's underside supplied by the user, 2026-10-05, showing the fitted jack"
-    - "This project's ports/bl616/tang_ble.c: blescan's RSSI table and blekbd's connection-failure report"
-  verification: "Observed on this board on 2026-10-05 with nothing on U35: blescan listed the user's phone and the K950 by name, and blekbd failed with 0x3E on several attempts and connected on a later one each time."
+    - "This project's ports/bl616/tang_ble.c: blescan's RSSI table and the connection-failure reports"
+  verification: "Bare jack observed on this board on 2026-10-05: blescan listed the user's phone and the K950 by name, and blekbd failed with 0x3E on several attempts and connected on a later one each time. Antenna fitted by the user and measured with blescan on 2026-10-10; the first pairing attempt afterwards encrypted, bonded and ran the whole setup (core-log entry 6). Revised 2026-10-11 (core-log entry 10): the record said nothing was fitted and no antenna had been tried."
 
 - record_id: BLE-002
   kind: TOOLCHAIN
@@ -2210,15 +1798,15 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   title: "The SDK's Bluetooth build: which controller library, how it starts, and what it costs"
   status: VERIFIED
   verified_date: 2026-10-05
-  statement: "The SDK selects the BL616's Bluetooth controller by CONFIG_BTBLECONTROLLER_LIB. ble1m10s1bredr0 is the all-roles build: central, peripheral, broadcaster and observer, 10 connections, no BR/EDR, and the one examples/btble/central uses. ble1m0s1bredr0 has no central and no observer role and one connection, and ble1m0s1sbredr1 adds BR/EDR but still has no central role. The stack is brought up in the order examples/btble/central uses: rfparam_init, btble_controller_init, hci_driver_init, then bt_enable, whose ready callback reports the result; there is no call to shut the controller down again. CONFIG_BT_SETTINGS defaults to 0, in which case the host keeps nothing in flash, so pairing keys last only until reset. Built into this firmware, against the same tree without Bluetooth, ble1m10s1bredr0 with CONFIG_RF 1 grows the image from 346,160 to 582,256 bytes (+236,096: the controller library 113,954, the host stack libblestack 69,615, libbl616_phyrf 35,744, librfparam 6,639, about 10 KB else), shrinks the linker's ram_memory region from 447 KB to 415 KB, adds 17.4 KB of .bss and 0.8 KB of ITCM, and cuts the heap available at boot (__HeapLimit - __HeapBase) from 192,196 to 139,588 bytes."
-  consequence: "proj.conf sets CONFIG_BLUETOOTH 1, CONFIG_BTBLECONTROLLER_LIB ble1m10s1bredr0, CONFIG_RF 1 and CONFIG_BLE_USE_MAC2 0, because scanning and connecting to a keyboard need the observer and central roles. ports/bl616/tang_ble.c starts the stack on the first blescan or blekbd rather than at boot, so a board that never uses Bluetooth runs as before, and once started it stays up until reset. The image no longer fitted the 0x80000 slot, which is why the slot grew (FLS-002). The heap the running stack takes after bring-up has not been measured. Keeping a pairing across resets needs CONFIG_BT_SETTINGS and somewhere to store it."
+  statement: "The SDK selects the BL616's Bluetooth controller by CONFIG_BTBLECONTROLLER_LIB. ble1m10s1bredr0 is the all-roles build: central, peripheral, broadcaster and observer, 10 connections, no BR/EDR, and the one examples/btble/central uses. ble1m0s1bredr0 has no central and no observer role and one connection, and ble1m0s1sbredr1 adds BR/EDR but still has no central role. The stack is brought up in the order examples/btble/central uses: rfparam_init, btble_controller_init, hci_driver_init, then bt_enable, whose ready callback reports the result; there is no call to shut the controller down again. CONFIG_BT_SETTINGS defaults to 0, in which case the host keeps nothing in flash, so the host alone keeps pairing keys only until reset. Built into this firmware, against the same tree without Bluetooth, ble1m10s1bredr0 with CONFIG_RF 1 grows the image from 346,160 to 582,256 bytes (+236,096: the controller library 113,954, the host stack libblestack 69,615, libbl616_phyrf 35,744, librfparam 6,639, about 10 KB else), shrinks the linker's ram_memory region from 447 KB to 415 KB, adds 17.4 KB of .bss and 0.8 KB of ITCM, and cuts the heap available at boot (__HeapLimit - __HeapBase) from 192,196 to 139,588 bytes."
+  consequence: "proj.conf sets CONFIG_BLUETOOTH 1, CONFIG_BTBLECONTROLLER_LIB ble1m10s1bredr0, CONFIG_RF 1 and CONFIG_BLE_USE_MAC2 0, because scanning and connecting need the observer and central roles. ports/bl616/tang_ble.c starts the stack on the first Bluetooth command, or quietly after the boot script when pairings are saved on the card (BLE-012), so a board that never uses Bluetooth runs as before; once started it stays up until reset. The image no longer fitted the old 0x80000 slot, which is why the slot grew (FLS-002). Pairings survive a reset through the card, not CONFIG_BT_SETTINGS (BLE-012), and the heap the running stack takes is BLE-014."
   sources:
     - "Bouffalo SDK 7f44f9e (2025-04-27), components/wireless/bluetooth/ble_common.cmake: the role settings for each CONFIG_BTBLECONTROLLER_LIB value"
     - "Bouffalo SDK 7f44f9e, examples/btble/central/proj.conf and its main: the library choice and bring-up order"
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/btblecontroller/lib: libbtblecontroller_bl616_ble1m10s1bredr0.a, ble1m0s1bredr0.a and ble1m0s1sbredr1.a"
     - "This project's proj.conf and ports/bl616/tang_ble.c: ble_start()"
     - "Linker maps of this firmware at cb9e7d4 with and without the Bluetooth block, compared on 2026-10-05"
-  verification: "Both builds were made from the same tree on 2026-10-05 and their maps and images compared; the Bluetooth build ran blescan and blekbd on this board."
+  verification: "Both builds were made from the same tree on 2026-10-05 and their maps and images compared; the Bluetooth build ran blescan and blekbd on this board. Revised 2026-10-11 (core-log entry 10): the consequence still described start-on-first-command only, keys in RAM only and the heap as unmeasured, all overtaken by BLE-012 and BLE-014."
 
 - record_id: BLE-003
   kind: TOOLCHAIN
@@ -2254,10 +1842,10 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-05
   statement: "Issuing about fifteen ATT operations (subscribes, writes and reads) back to back from inside a host callback left the host stopped for good: the requests beyond the stack's few ATT TX buffers wait for a buffer, and the buffers are released by the same host context that is waiting, so none is ever freed. Issuing one operation at a time, each from the completion callback of the one before, completed the whole set."
-  consequence: "ports/bl616/tang_ble.c queues the setup of a device (protocol mode, every subscription, the read-backs) and runs it through kbd_setup_next and kbd_setup_step_done, one operation in flight at a time. Any further GATT client work, such as a mouse or a controller, must go through the same kind of sequencer."
+  consequence: "ports/bl616/tang_ble.c queues the setup of a device (the pre-subscription reads, every subscription, the read-backs, then Exit Suspend) in hid_setup_reports() and runs it through hid_setup_next(), one operation in flight at a time, each started from the previous one's completion. Any further GATT client work must go through the same sequencer."
   sources:
-    - "This project's ports/bl616/tang_ble.c: kbd_setup_reports(), kbd_setup_next() and kbd_setup_step_done()"
-  verification: "Observed on this board on 2026-10-05: the build that issued everything at once stalled in the discovering state with no further callbacks, and the sequenced build completed setup and reached ready on the next run."
+    - "This project's ports/bl616/tang_ble.c: hid_setup_reports() and hid_setup_next()"
+  verification: "Observed on this board on 2026-10-05: the build that issued everything at once stalled in the discovering state with no further callbacks, and the sequenced build completed setup and reached ready on the next run. Revised 2026-10-11 (core-log entry 10): the consequence named kbd_setup_reports(), kbd_setup_next() and kbd_setup_step_done(), since renamed when the keyboard code became the generic HID slot."
 
 - record_id: BLE-006
   kind: EXTERNAL
@@ -2266,12 +1854,12 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-05
   statement: "The Logitech K950 keyboard (the keyboard of the MK955 Signature Slim set), in Bluetooth mode rather than on its Bolt receiver, is a HID over GATT device on Bluetooth LE advertising as 'Logi K950'. It uses a random address that increases by one each time it is put into pairing mode by holding an Easy-Switch key (seen as DB:88:A7:81:D9:CF to D9:D4). It accepts Just Works pairing at security level 2. Its primary services are 0x1800, 0x1801, 0x180A, 0x180F (battery), the HID service 0x1812 at 0x001F-0x004D, Logitech's 0xFD72 and a 128-bit vendor service from 0x005B. In the HID service, HID Information is at value handle 0x21, Boot Keyboard Input at 0x23 (notify, CCC 0x24), Boot Keyboard Output at 0x26, the Report Map at 0x28, Reports at 0x2A, 0x2E, 0x31, 0x34, 0x38, 0x3C, 0x40, 0x44 and 0x48 (notifying at 0x2A, 0x34, 0x38, 0x3C, 0x40 and 0x44), the Control Point at 0x4B and Protocol Mode at 0x4D. Writing 0 to Protocol Mode puts it in boot protocol, which reads back as 00, and it then sends the standard 8-byte boot report: modifiers, a reserved byte and six keycodes."
-  consequence: "The boot report is byte-for-byte the format the wired keyboard link carries, so the existing translation in tang_key.c applies to it unchanged. Because the address changes with every pairing and pairings are not kept across a reset (BLE-002), the device must be found by blescan before each blekbd; connecting by name or by the HID appearance would remove that step. In boot protocol it still sent one 19-byte notification on 0x0044 beginning FF 04 00 01 01 01, presumably Logitech's own report, which a client should ignore."
+  consequence: "The boot report is byte-for-byte the format the wired keyboard link carries, so the existing translation in tang_key.c applies to it unchanged. Because the address changes with every pairing, a new pairing needs the device found in pairing mode; once paired, the bond on the card brings it back after a reset without that step (BLE-012). In boot protocol it still sent one 19-byte notification on 0x0044 beginning FF 04 00 01 01 01, presumably Logitech's own report, which a client should ignore."
   sources:
     - "Logitech MK955 Signature Slim product specifications: Bluetooth Low Energy connection beside the Logi Bolt receiver"
     - "GATT discovery and read-backs of this K950 by this project's ports/bl616/tang_ble.c (blekbd), 2026-10-05"
     - "Bluetooth SIG HID over GATT Profile 1.0: Protocol Mode, Boot Keyboard Input Report"
-  verification: "On this board on 2026-10-05 blekbd paired with the K950, set boot protocol, wrote all seven CCCs and read them back as 01 00, and decoded 404 boot reports while the user typed: letters, Space, Enter, punctuation, right Shift, right Ctrl and right Alt, up to four keys held at once and every release. The user confirmed the result. Arrows, Esc and the function keys were not typed."
+  verification: "On this board on 2026-10-05 blekbd paired with the K950, set boot protocol, wrote all seven CCCs and read them back as 01 00, and decoded 404 boot reports while the user typed: letters, Space, Enter, punctuation, right Shift, right Ctrl and right Alt, up to four keys held at once and every release. The user confirmed the result. Arrows, Esc and the function keys were not typed. Revised 2026-10-11 (core-log entry 10): the consequence said pairings are not kept across a reset, which BLE-012 changed."
 
 - record_id: BLE-007
   kind: TOOLCHAIN
@@ -2320,11 +1908,11 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   status: VERIFIED
   verified_date: 2026-10-05
   statement: "In the SDK's Bluetooth host, remove_subscriptions() in blestack/src/host/gatt.c removes a subscription on disconnect only if the peer is not bonded or the subscription's flags carry BT_GATT_SUBSCRIBE_FLAG_VOLATILE; otherwise the bt_gatt_subscribe_params stays linked in the host's subscriptions list and is re-sent when the peer reconnects. bt_gatt_subscribe() returns -EALREADY (-120 here) when the params struct passed is already in that list."
-  consequence: "A client that re-subscribes on every connection from its own params structs must mark them volatile, or a reconnect from a bonded peer (or a new pairing of the same device within one boot) finds them still linked: re-initialising one rewrites a list node the host is using, and subscribing it fails with -EALREADY. hid_add_sub() in ports/bl616/tang_ble.c sets the flag. Bonds are in RAM only here (BLE-002), so this arises within one boot."
+  consequence: "A client that re-subscribes on every connection from its own params structs must mark them volatile, or a reconnect from a bonded peer, or a new pairing of the same device, finds them still linked: re-initialising one rewrites a list node the host is using, and subscribing it fails with -EALREADY. hid_add_sub() in ports/bl616/tang_ble.c sets the flag. Bonds now persist across resets (BLE-012), so this applies to every reconnect, not only within one boot."
   sources:
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/gatt.c: remove_subscriptions(), bt_gatt_subscribe()"
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: BT_GATT_SUBSCRIBE_FLAG_VOLATILE"
-  verification: "On 2026-10-05, without the flag, the M750's re-pairing after a dropout logged 'subscribe 0x002C failed (-120)', and its failed reconnect showed the host completing a CCC write nobody had issued. With the flag the next pairing subscribed all three inputs (core-log entry 32)."
+  verification: "On 2026-10-05, without the flag, the M750's re-pairing after a dropout logged 'subscribe 0x002C failed (-120)', and its failed reconnect showed the host completing a CCC write nobody had issued. With the flag the next pairing subscribed all three inputs (core-log entry 32). Revised 2026-10-11 (core-log entry 10): the consequence said bonds were in RAM only, which BLE-012 changed."
 
 - record_id: BLE-011
   kind: TOOLCHAIN
@@ -2342,41 +1930,264 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
 - record_id: BLE-012
   kind: TOOLCHAIN
   topic_id: BLE
-  title: "Pairings are kept on the SD card"
+  title: "Pairings are kept on the SD card, and what a failed re-encryption means"
   status: VERIFIED
-  verified_date: 2026-10-05
-  statement: "With CONFIG_BT_SETTINGS 0 the host keeps no keys across a reset (BLE-002), and its settings backend (host/settings.c) stores through easyflash, which needs a key-value partition this board's flash layout does not have (FLS-002). The host's key table is reachable instead: bt_keys_find_addr() after pairing_complete gives the device's entry, and bt_keys_get_addr() at boot makes one that can be filled with the saved LTK (legacy or LE Secure Connections), IRK, flags and key size, after which a connection encrypts with it without pairing. Both the K950 and the M750 accepted that. On a reconnect, with the device near the board, the first encryption attempt often fails with security level 1, error 8 and then a disconnect with HCI 0x3E, and a following attempt succeeds: seen on the M750 at the gate check, where the second try encrypted, and on the K950 after the power cycle, where the third did."
-  consequence: "tang_ble.c captures the entry on pairing_complete into a record per slot, and the background task writes /sd/ble/bonds.bin (format in ports/bl616/tang_ble_bonds.h: magic, version, two 80-byte records, CRC-32; a damaged file means no pairings), reads it after the boot script, starts the stack quietly, restores the keys and puts the devices on the reconnect whitelist (BLE-011). The keys are stored unencrypted, so whoever holds the card can impersonate the board to those devices. Because a failed first attempt goes back to waiting, the retry needs no special handling."
+  verified_date: 2026-10-10
+  statement: "With CONFIG_BT_SETTINGS 0 the host keeps no keys across a reset (BLE-002), and its settings backend (host/settings.c) stores through easyflash, which needs a key-value partition this board's flash layout does not have (FLS-002). The host's key table is reachable instead: bt_keys_find_addr() after pairing_complete gives the device's entry, and bt_keys_get_addr() at boot makes one that can be filled with the saved LTK (legacy or LE Secure Connections), IRK, flags and key size, after which a connection encrypts with it without pairing. Both the K950 and the M750 accepted that. On a reconnect of those two, on the bare jack (BLE-001), the first encryption attempt often failed with security level 1, error 8 (UNSPECIFIED) and then a disconnect with HCI 0x3E, and a following attempt succeeded: seen on the M750, where the second try encrypted, and on the K950 after a power cycle, where the third did. A different failure has the same surface: when a device has forgotten its key, for example because it was put back into pairing mode, the board's stored key can never encrypt again. Then the security callback may report error 2 (PIN_OR_KEY_MISSING), or may not fire at all, the connection showing only 'connected; requesting encryption' followed by HCI 0x3E with no 'encrypted' line; on the Xbox Wireless Controller that repeated on every attempt until the key was dropped by hand."
+  consequence: "tang_ble.c captures the entry on pairing_complete into a record per slot, and the background task writes /sd/ble/bonds.bin (format in ports/bl616/tang_ble_bonds.h: magic, version, two 80-byte records, CRC-32; a damaged file means no pairings), reads it after the boot script, starts the stack quietly, restores the keys and puts the devices on the reconnect whitelist (BLE-011). The keys are stored unencrypted, so whoever holds the card can impersonate the board to those devices. An error-8 failure goes back to waiting and the next connection retries it, so it needs no handling, and it must not be used to drop a key: error 8 also arrives on signal alone, and dropping on it threw away good pairings. hid_security_changed() drops the stored key on PIN_OR_KEY_MISSING only, through hid_drop_key(), leaving the slot armed so the next connection pairs afresh. The silent case, a connection that reaches 'requesting encryption' and dies without ever logging 'encrypted', is not handled, and only blekbd forget (or blemouse forget) clears it; the narrow trigger, if one is added, is that sequence on a bonded slot, not the HCI code alone, because 0x3E is also a signal failure."
   sources:
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/host/keys.h: struct bt_keys, bt_keys_find_addr(), bt_keys_get_addr(); host/settings.c: easyflash backend"
-    - "This project's ports/bl616/tang_ble.c, hid_capture_bond() and hid_restore_keys(); ports/bl616/tang_ble_bonds.c"
-  verification: "tools/tests/test_bonds.sh checks the file format (15 checks). On 2026-10-05 the user paired both devices once with blemouse pair and blekbd pair, power-cycled the board without pairing mode and woke them, and both reconnected; the user also saw one go out of range and come back (core-log entry 33)."
-
-- record_id: BLE-013
-  kind: TOOLCHAIN
-  topic_id: BLE
-  title: "Heap taken by the running Bluetooth stack"
-  status: SUPERSEDED
-  verified_date: 2026-10-05
-  statement: "This SDK builds FreeRTOS with heap_3, so heap use is read from its own allocator, kfree_size() and g_kmemheap.heapsize in components/mm/mem.h. In firmware 1cea7b9-dirty.a296b3b the heap is 127,248 B; starting the Bluetooth stack took it from 84,120 B free to 68,292 B, 15,828 B; with the M750 connected 67,592 B were free. After a desktop session with both devices connected 41,764 B were free, 42,464 B with the mouse disconnected, and three off/on cycles of the mouse returned to 41,764 B each time."
-  consequence: "Bluetooth costs about 16 KB of heap at run time on top of the static cost BLE-002 recorded, and about 700 B per connection. Reconnecting does not leak. The `ble` command reports these figures. There is no lowest-ever counter in this allocator, so a transient peak is not measured."
-  sources:
-    - "Bouffalo SDK 7f44f9e, components/mm/mem.h and mem.c: kfree_size(); components/os/freertos/CMakeLists.txt: heap_3.c"
-    - "This project's ports/bl616/tang_ble.c, ble_start_ex() and cmd_ble()"
-  verification: "Read from the board with `ble` on 2026-10-05 (core-log entry 33)."
-  superseded_by: "BLE-014"
+    - "This project's ports/bl616/tang_ble.c: hid_capture_bond(), hid_restore_keys(), hid_security_changed() and hid_drop_key(); ports/bl616/tang_ble_bonds.c"
+  verification: "tools/tests/test_bonds.sh checks the file format (15 checks). On 2026-10-05 the user paired both Logitech devices once, power-cycled the board without pairing mode and woke them, and both reconnected; the user also saw one go out of range and come back (core-log entry 33). On 2026-10-11 the M750 reconnected from the card after a power cycle and encrypted on its first attempt with the antenna fitted (core-log entry 9). The stale-key forms were observed with the Xbox controller on 2026-10-10: six error-8 attempts and then error 2 (core-log entry 3), and four silent 'requesting encryption' then 0x3E attempts ended by blekbd forget (core-log entry 5). Revised 2026-10-11 (core-log entry 10): the record said a failed first encryption needs no special handling, without the stale-key case."
 
 - record_id: BLE-014
   kind: TOOLCHAIN
   topic_id: BLE
-  title: "Heap taken by the running Bluetooth stack, without the loader's leak"
+  title: "Heap taken by the running Bluetooth stack"
   status: VERIFIED
   verified_date: 2026-10-05
-  statement: "Everything BLE-013 measured about the stack holds: about 15.8 KB of heap to start it (84,120 B free before and 68,292 B after in that build, 82,364 and 66,536 in a later one), about 700 B per connection, and reconnects returning free heap to the same figure. BLE-013's 41,764 B 'after a desktop session' was not the desktop: every tangload, including the boot script's, leaked 4 KB (BL6-009). With that fixed and both devices connected, 64,704 B of the 124,768 B heap stayed free, with a 40,536 B largest block, before and after seven cartridge loads and a desktop session."
+  statement: "This SDK builds FreeRTOS with heap_3, so heap use is read from its own allocator, kfree_size() and g_kmemheap.heapsize in components/mm/mem.h; the allocator keeps no lowest-ever counter, so a transient peak is not measured. Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 B free before and 68,292 B after in firmware 1cea7b9-dirty.a296b3b, 82,364 and 66,536 in a later one), and a connection about 700 B; reconnects return free heap to the same figure, so they do not leak. With both devices connected, 64,704 B of the 124,768 B heap stayed free, with a 40,536 B largest block, before and after seven cartridge loads and a desktop session. An earlier reading of 41,764 B free after a desktop session was not the desktop: every tangload, including the boot script's, leaked 4 KB (BL6-009) until that was fixed."
   consequence: "Bluetooth with two devices leaves about 65 KB of heap and a 40 KB largest block for everything else. A request near that size, such as the 32 KB script stack TinyDesk Shell asks for, can still fail once the heap fragments, which is why worker stacks are capped (BL6-009). `ble` reports free heap and the largest block."
   sources:
-    - "This project's ports/bl616/tang_heap.c tang_heap_info() and ports/bl616/tang_ble.c cmd_ble()"
-  verification: "Read from the board with `ble` and `crash` on 2026-10-05 (core-log entry 35)."
+    - "Bouffalo SDK 7f44f9e, components/mm/mem.h and mem.c: kfree_size(); components/os/freertos/CMakeLists.txt: heap_3.c"
+    - "This project's ports/bl616/tang_heap.c tang_heap_info() and ports/bl616/tang_ble.c ble_start_ex() and cmd_ble()"
+  verification: "Read from the board with `ble` on 2026-10-05 (core-log entry 33), and with `ble` and `crash` after the leak fix (core-log entry 35). On 2026-10-11 `ble` read 64,984 B free of 122,744 B with a 52,664 B largest block, with the M750 paired (core-log entry 9). Revised 2026-10-11 (core-log entry 10): folded in the allocator details and the first measurement from the retired BLE-013."
+
+- record_id: BLE-015
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "Xbox Wireless Controller over Bluetooth LE: pairing mode and GATT map"
+  status: VERIFIED
+  verified_date: 2026-10-10
+  statement: "The Xbox Wireless Controller is a HID over GATT device on Bluetooth LE: it advertises the HID service UUID 0x1812 over LE and does not answer a Classic BR/EDR inquiry. Its light blinks fast in pairing mode and slowly when idle and not pairing; pairing mode lasts a few minutes. Its HID service is at 0x0016-0x0023: HID Information value 0x0018, HID Control Point 0x001A, Report Map 0x001C (283 bytes), an input Report at 0x001E (notify and read, CCC 0x001F) and an output Report at 0x0022 (write only). Its handle 0x0003 is the GAP Device Name, 'Xbox Wireless Controller'. A 128-bit vendor service 00000001-5F60-4C4F-9C83-A7953298D40D sits at 0x0024-0x002A, with characteristics 00000002-... at value 0x0026 (read), 00000003-... at 0x0028 (read) and 00000004-... at 0x002A (write). It pairs with LE Secure Connections at security level 2 with a 16-byte key, distributing an IRK (bt_keys keys 0x0022, LTK_P256 and IRK). On a Linux host (Ubuntu 26.04, BlueZ 5.85) it paired, BlueZ built an input device from its own Report Map (Bus=0005, js1), and it produced 782 events with axes across the full range and buttons 0-14."
+  consequence: "The pad works as a plain LE HID device on a known-good host, and Bluepad32's uni_hid_parser_xboxone.c performs no vendor-service write, so the vendor service is not a prerequisite for reports and nothing in it has been read or written here. Commands fired at the pad from this board mean something only while it blinks fast: a slow-blinking pad is not advertising for pairing. Its behaviour on this board's host is BLE-017, and its input report is BLE-016."
+  sources:
+    - "GATT discovery, reads and blescan of this controller by this project's ports/bl616/tang_ble.c, 2026-10-10"
+    - "The user's desktop: kernel input log and /dev/input/js1 with the controller paired through BlueZ 5.85, 2026-10-10"
+    - "Bluepad32's Xbox One parser, uni_hid_parser_xboxone.c"
+  verification: "Observed on this board on 2026-10-10 across several pairings (core-log entries 3, 4, 5, 6 and 8); the vendor UUIDs were printed in both byte orders to fix their orientation; the blink meanings were confirmed by the user after several runs had read them backwards (core-log entry 8)."
+
+- record_id: BLE-016
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "Xbox Wireless Controller: its 17-byte input report, from its Report Map"
+  status: VERIFIED
+  verified_date: 2026-10-10
+  statement: "The controller's 283-byte Report Map describes a Game Pad (usage page 0x01, usage 0x05). Input Report ID 1 is 17 bytes after the ID: X, Y, Z and Rz as four 16-bit axes with a logical range of 0 to 65535; Brake and Accelerator as 10-bit fields with a logical range of 0 to 1023, each followed by six bits of padding; one 4-bit Hat switch, logical 1 to 8 with a null state and a physical range in degrees; fifteen 1-bit buttons; and one Consumer-page bit followed by seven bits of padding. Report ID 3 is an output report on the PID usage page: four 8-bit motor-scale fields on 0 to 100 and three 8-bit fields on 0 to 255."
+  consequence: "A 17-byte report fits one notification at the default ATT MTU of 23 with room to spare, so the MTU is not an obstacle to reports and nothing needs to negotiate one. The Report Map arrives 22 bytes at a time at that MTU and has to be read with offsets, because the SDK does not continue a long read (gatt.h: 'the caller will need to read the remaining data separately using the handle and offset'); hid_read_done() re-issues the read from the next offset whenever a chunk fills the MTU. No report from this pad has ever reached this board, so the layout is decoded but has not been parsed live here."
+  sources:
+    - "The controller's Report Map read from value handle 0x001C by this project's ports/bl616/tang_ble.c, 2026-10-10, in 12-byte offset-tagged chunks"
+    - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/blestack/src/include/bluetooth/gatt.h: bt_gatt_read() long-value note"
+    - "USB HID Usage Tables: Generic Desktop Game Pad, Simulation Controls Brake and Accelerator, Physical Interface Device page"
+  verification: "Decoded by hand from the full map on 2026-10-10 (core-log entry 4); BlueZ's input device built from the same map gave axes swinging the full range and buttons 0-14 on the user's desktop (core-log entry 6)."
+
+- record_id: BLE-017
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "Xbox Wireless Controller on this host: no report has ever arrived, and two ways the link ends"
+  status: VERIFIED
+  verified_date: 2026-10-10
+  statement: "On this board the controller has never delivered an input report, in two failure forms. In the first, seen on the bare jack (BLE-001) before the antenna was fitted, a fresh pairing at least once ran the whole setup -- discovery, the subscription with CCC 0x001F reading back 01 00, the full Report Map, Exit Suspend written to the Control Point and accepted, ready -- and the controller then sent no notification with buttons held and ended the link with HCI 0x13 (remote user terminated); at other times it ended the link earlier. In the second, seen consistently after the antenna was fitted, it bonds with LE Secure Connections on a link created at interval 40 (50 ms), latency 0 and supervision timeout 400 (4 s), never asks for other connection parameters, and answers no ATT request once the security procedure completes: a read of 0x0003 sent before security returned 22 bytes and then 2, 'Xbox Wireless Controller', while the same read after it never came back, primary discovery found 0 services, and a later bt_gatt_read() returned -ENOTCONN (-128) because the host held the link to be gone. With nothing issued after encryption -- no discovery, no subscription, no bond save -- the link was reported alive at 1, 2, 3, 5 and 8 s, none of five probe reads was answered, and it ended 8750 to 8801 ms after bonding with HCI 0x08, a supervision timeout, placing the controller's last packet near 4.75 s. On the next connection the controller reports error 2 (PIN_OR_KEY_MISSING), so it did not keep the bond this board saved. Once a bond exists it answers an unencrypted read with ATT 0x05 (Insufficient Authentication). Separately, an ATT MTU exchange sent while security was in progress drew ATT 0x0E (Unlikely Error) and HCI 0x3E on four attempts out of four."
+  consequence: "This is an open defect, and these are its established facts. Ruled out as the cause of the second form: signal (antenna fitted), connection parameters (never requested, and BlueZ imposes none either), the ATT MTU (BLE-016), the order of the GATT setup steps (setup never starts), the vendor service (BLE-015), legacy pairing (the bond is LE Secure Connections), and this firmware's post-pairing work (the hands-off run issued none). That the controller then refuses the key it was just given points at the end of pairing, its key distribution, as the place to look; that is a lead, not a finding. What changed between the two forms besides the antenna is not established: the controller was also paired to the user's desktop between them, and that bond has since been removed. A capture of the same controller pairing with a working host (btmon, which needs CAP_NET_ADMIN) is the comparison that would settle it. Do not issue an ATT MTU exchange while security is in progress."
+  sources:
+    - "This project's ports/bl616/tang_ble.c console logs on 2026-10-10: setup steps, connection info, the probe reads of 0x0003, the hands-off hold and the disconnect reasons"
+    - "Bouffalo SDK toolchain sys/errno.h (ENOTCONN 128) and components/wireless/bluetooth/blestack/src/host/gatt.c"
+    - "Linux net/bluetooth/hci_core.c: the default LE connection interval 0x0018-0x0028 a BlueZ host uses"
+  verification: "Observed on this board on 2026-10-10: the first form in core-log entries 3 to 5, the second over the instrumented builds of entries 7 and 8, with the pre-security answer and the post-security silence each seen on the same build. The probe builds were not kept: the firmware since core-log entry 9 is the entry-7 build, which logs connection info and the service count but carries no probes."
+
+- record_id: TOOL-001
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "CONFIG_CHERRYUSB_HOST is required to enumerate; CONFIG_NEWLIB prevents it"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "With FreeRTOS enabled and only the device stack built, the CDC never enumerates on this board; enabling CONFIG_CHERRYUSB_HOST, which brings in the FreeRTOS OSAL, is what fixes it. Separately, the SDK's newlib port stops the device enumerating, with or without its FatFS file layer."
+  consequence: "Both settings in proj.conf look wrong for a device-only firmware and are deliberate. The shell's stdio is therefore implemented over FatFS in ports/bl616 rather than taken from newlib."
+  sources:
+    - "Bouffalo SDK, components/usb/cherryusb/CMakeLists.txt: the host branch adding osal/usb_osal_freertos.c"
+    - "This project's proj.conf: the comments recording the bisection that isolated both facts"
+  verification: "Established by bisection on this board earlier in the project, and recorded in proj.conf; reconfirmed by the firmware running throughout this session."
+
+- record_id: TOOL-002
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The Gowin programmer's accepted IDCODEs"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The vendored programmer accepts five parts: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b and GW2A-18 0x0000081b. Anything else is reported as an unknown board and programming stops."
+  consequence: "This is a second, independent way to confirm which silicon is on the bench, alongside the bitstream's own device declaration. It also means a load into the wrong board fails loudly rather than silently misconfiguring."
+  sources:
+    - "Tang-Control, fpga/programmer.cpp: IDCODE_GW5A_25, IDCODE_GW5AT_60, IDCODE_GWAST_138, IDCODE_GW5AT_138, IDCODE_GW2A_18, and the test in fpga_program()"
+  verification: "The board reports 0x0001081b, which is the GWAST-138 entry and the only one that matches."
+
+- record_id: TOOL-003
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "Build versions in use"
+  status: SOURCED
+  verified_date: 2026-10-03
+  statement: "The firmware is built against the Bouffalo SDK reporting PROJECT_SDK_VERSION 2.0.0, with the T-Head RISC-V GCC 10.2.0 toolchain for riscv64-unknown-elf, driven by CMake and the SDK's project.build. The FPGA images are built elsewhere, with Gowin EDA, and are consumed here as finished bitstreams."
+  consequence: "The SDK lives at ~/.cache/tangcore-dev/sdk and the toolchain at ~/.cache/tangcore-dev/toolchain by default, both overridable in the environment. Nothing in this project builds FPGA logic; the Gowin toolchain is not invoked here."
+  sources:
+    - "This project's build/generated/sdk_version.h: PROJECT_SDK_VERSION \"2.0.0\""
+    - "This project's Makefile: BL_SDK_BASE and TOOLCHAIN_BIN defaults"
+    - "Build output: the toolchain path resolving to riscv64-unknown-elf/10.2.0"
+  verification: "Read from the build tree. The Gowin version is not established here; it belongs to the core images, not to this firmware."
+
+- record_id: TOOL-004
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A Gowin bitstream names its device, so images are not interchangeable"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "A Gowin project binds the device at generation time. nestang's build.tcl takes a device name and calls set_device accordingly, and for console138k that is GW5AST-LV138PG484AC1/I0 with device version B, using the 138K-specific PLL sources. The corresponding synthesis project records Device id GW5AST-138B."
+  consequence: "The 60K and 138K console images are not interchangeable, and the difference is visible in the artifact rather than only in a build script. Comparing a bitstream's size and its project declaration is a reliable way to tell which device it is for."
+  sources:
+    - "nestang, build.tcl: the console138k branch and its set_device line"
+    - "nestang, impl/gwsynthesis/nestang_console138k_ds2.prj: the Device element"
+  verification: "Read from the build files; the 138K artifact is 4,593,044 bytes against the 60K image's 2,321,194, and the loaded image runs on this board."
+
+- record_id: TOOL-005
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The USB-enumeration bisection is kept in-tree, selected by environment variable"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "The configurations used to isolate TOOL-001 survive as three SDK config files - proj.min.conf, proj.nonewlib.conf and proj.rtos.conf - alongside the SDK's own device example vendored under ref/ as cdc_acm_template.c, ref_main.c and ref_rtos_main.c and built from inside this project. CMakeLists.txt picks them from the environment: TINYTANG_MIN, TINYTANG_RTOS and TINYTANG_NONEWLIB choose a config file, TINYTANG_REF selects the reference build, and TINYTANG_USB_ONLY, TINYTANG_NO_FS and TINYTANG_NO_SHELL add compile definitions that strip the firmware to a USB-only, no-filesystem or no-shell build. The README describes the three config files as the ones that produced TOOL-001's result."
+  consequence: "The negative results in TOOL-001 have a reproducible witness rather than a recollection: setting an environment variable and rebuilding re-runs the bisection. Anyone removing these files or guards should know they are the evidence for why CONFIG_CHERRYUSB_HOST is set and CONFIG_NEWLIB is not."
+  sources:
+    - "This project's CMakeLists.txt: the TINYTANG_* guards and the config selection"
+    - "This project's proj.min.conf, proj.nonewlib.conf, proj.rtos.conf and ref/"
+  verification: "The files and the guards are present in the tree and were read directly. That these particular configs produced TOOL-001's result is this project's own account, not something re-run here."
+
+- record_id: TOOL-006
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "This project's host-side tools, and what they need"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "Three Python scripts in tools/ do the host-side work and all need pyserial: tinytang_flash.py writes a firmware image to the BL616 over the CDC with no BOOT button involved, tinytang_put.py puts a file onto the SD card, and tinytang_run.py runs a shell command on the board and streams its output. This is the live set; the retired Tang-Control helpers are recorded separately in TCTL-010. A build machine therefore needs Python with pyserial in addition to the SDK and the RISC-V toolchain of TOOL-003."
+  consequence: "These are the only supported ways to reflash the board and to place files on the card. tinytang_flash.py needs the CDC port free and a power cycle afterwards (FLS-002), and a live screen session holds the port."
+  sources:
+    - "This project's tools/: tinytang_flash.py, tinytang_put.py, tinytang_run.py"
+    - "This project's README.md: 'Python with pyserial for the tools in tools/'"
+  verification: "All three were used against this board: the firmware was flashed, files were put on the card, and shell commands were run and their output captured."
+
+- record_id: TOOL-007
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The vendored Gowin JTAG programmer is Apache-2.0, from nand2mario via Tang-Control"
+  status: VERIFIED
+  verified_date: 2026-10-03
+  statement: "ports/bl616/tang_jtag_programmer.c is nand2mario's bit-banged GPIO JTAG programmer for Gowin GW5A and GW2A, (c) 2025.2, licensed Apache-2.0, itself based in part on openFPGALoader by Gwenhael Goavec-Merou. It was taken from Tang-Control's fpga/programmer.cpp and used unmodified apart from its include list. ports/bl616/tang_jtag_glue.h supplies what it expected from its own tree - the console, the card file, the GPIO device handle, and stubs for the FPGA UART bookkeeping - and documents that provenance."
+  consequence: "This is working code inherited from the previous firmware rather than reimplemented, so a claim that only board knowledge was carried over is not quite right: the programmer is a translation unit. Its licence is Apache-2.0 and travels with the file, which is a different licence from the MIT TinyDesk shell submodules (TDSH-004, TDESK-013)."
+  sources:
+    - "This project's ports/bl616/tang_jtag_programmer.c: the Apache-2.0 header, the 2025.2 nand2mario copyright and the openFPGALoader attribution"
+    - "This project's ports/bl616/tang_jtag_glue.h: the provenance comment"
+  verification: "Read from the file header and the glue header in the tree. The programmer is exercised on every tangload, which reports ID=0001081b (DEV-001)."
+
+- record_id: TOOL-010
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A patch is no longer recognised once later work edits the lines it added"
+  status: VERIFIED
+  verified_date: 2026-10-04
+  statement: "scripts/apply-nestang-patches.sh decides whether a carried patch is already applied by asking git to reverse-apply it. That works while the patch's surroundings move, and it stops working the moment a later cycle edits the lines the patch itself added, because the reverse check requires those lines to be present verbatim and the forward check requires them to be absent. Neither is true, so the patch can be neither applied nor recognised."
+  consequence: "This happened on the pointer-mode cycle, which rewrote an assign that patch 0004 had introduced, and it stopped the core build outright. The script now falls back to presuming a series is applied when the tree has local changes, while still failing hard on a clean tree where a non-applying patch is a genuine fault. The guarantee that the series is correct is therefore not this check but the reconstruction test: apply every patch in order to a fresh clone and compare the result byte-for-byte with the tree, which is what is run before each patch is committed."
+  sources:
+    - "This project's scripts/apply-nestang-patches.sh: the strict pass, the -C1 fallback, and the local-changes presumption"
+    - "third_party/patches/0004-keyboard-link.patch, whose added lines 0006 rewrote"
+  verification: "Bitten once and fixed: the build failed with 'does not apply cleanly' on patch 0004 while the same series applied cleanly to a fresh clone. The reconstruction test then passed for all six patches with the tree reproduced byte-for-byte."
+
+- record_id: TOOL-011
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The console's input is exclusive, so the tools ask the board what holds it"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The CDC console is one byte stream with one reader at a time: at the shell prompt a byte is part of a command line, while the desktop runs it is a keystroke into whichever window has focus, and while a command such as tangput runs it is that command's data. Nothing on the wire distinguishes them. The firmware therefore answers a status probe that never reaches any reader: the USB receive interrupt takes ESC [ ? 7 7 n out of the input, and the next task to read the console replies ESC [ ? 7 7 ; <state> n, with 1 at the shell prompt, 2 while the desktop runs and 3 for a command that reads the console. A command that reads nothing does not answer until it ends."
+  consequence: "Before the probe the console had no such answer, and a raw upload sent while the desktop held it became keystrokes: on 2026-10-04 a 131088-byte ROM produced root-directory entries named new.txt and New folder with binary data for names and damaged the allocation table until /cores, /scripts and /roms were unreachable, with no error on either side; the recovery is fsck.vfat from a PC before any reformat. The first guard, in tools/tinytang_put.py, looked for the desktop's drawing on USB and sent a carriage return to wake a prompt. Once the desktop's drawing left USB (USB-007) it could not see the desktop, its carriage return was Enter in whatever window had focus, and with the Terminal window open the shell in it printed a real prompt to USB, so the guard could pass with the desktop up. USB-007 suggested following the desktop's start and exit lines instead; asking the board was chosen because it types nothing and does not depend on having seen the start of the session. tools/tinytang_console.py's require_shell() is used by tinytang_put.py, tinytang_flash.py, phosphor_format_sweep.py and tinytang_run.py, which had no guard before and now asks before each line, so a second command waits for the first to end. No answer is treated as not ready, which also covers a firmware that predates the probe; flashing the first firmware with the probe needed the old guard and the user's word that the console was at a prompt. The probe is matched within one USB packet, so a lone Esc typed at a terminal is not held, and tangput turns the matching off while it receives, because a file may contain the sequence."
+  sources:
+    - "This project's ports/bl616/usb_cdc_bl616.c: usbd_cdc_acm_bulk_out()'s probe matcher, tdsh_bl616_console_set_raw() and the reply in tdsh_bl616_console_read_byte()"
+    - "This project's ports/bl616/tdsh_platform_bl616.c: tdsh_bl616_console_state(), set around bl616_readline and, through tdsh_bl616_console_set_desktop(), around desktop_run() in td_desktop_bl616.c"
+    - "This project's tools/tinytang_console.py: PROBE, REPLY, console_state() and require_shell()"
+  verification: "The FAT damage was read back from the board on 2026-10-04, and the same send succeeded once the desktop was exited. Exercised on this board with firmware e912c5d-dirty.3417d90, 2026-10-05: state 1 at the prompt; no answer within 1 s during 'sleep 5' and state 1 4.8 s later, when the prompt returned; tinytang_run.py held a second command until 'sleep 3' ended; a 6120-byte file holding twenty copies of the probe arrived whole through tangput; and with the desktop and its Terminal window up the answer was 2, tinytang_run.py and tinytang_put.py both refused, and the user saw nothing typed on screen. State 3 was not observed, since no command that reads the console was running during the probe; the busy case was seen only as no answer. Revised 2026-10-11 (core-log entry 10): folded in the upload incident from the retired TOOL-009."
+
+- record_id: TOOL-012
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "One-wire debugging reaches the FPGA directly, and nothing of TinyTang or TinyDesk"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "With the board in one-wire mode (BRD-006) the host drives the FPGA without the BL616's firmware in between. JTAG is FT2232 interface 0: openFPGALoader v0.13.1 with -c ft2232 --detect scanned the chain at 6 MHz and reported one Gowin GW5AST-138, IDCODE 0x0001081b (TOOL-002), and programmed nothing. Loading a core is an SRAM load and must use the .fs stream; a raw .bin is shifted in but does not start the FPGA, which leaves it unconfigured and the UART silent. The FPGA UART is interface 1, /dev/ttyUSB1, at 2,000,000 baud with the same 0xAA len_hi len_lo type framing the BL616 uses: the core-ID request AA 00 01 01 was answered AA 00 02 01 00, core 0. A core speaks only when asked, so four seconds of listening at 2 Mbaud and at 115200 with nothing sent returned no bytes; that silence is not evidence either way."
+  consequence: "One-wire is for the FPGA alone: identifying it, loading a bitstream into SRAM, and the 0xAA and extended (0x10) protocols from the host, which is how Tang-Phosphor developed its core (tools/fpga_uart.py, scripts/flash-otg.sh, scripts/uart_probe.py). It cannot see TinyTang or TinyDesk at all: the CDC, the shell, the status probe, tinytang_put/run/flash.py, phosphor, tangload and nesload all need two-wire. It also cannot inspect a fault reached under TinyDesk, because getting into one-wire takes a cold power-up that puts the FPGA back on its own core, and a core loaded over one-wire is replaced at the next two-wire boot when boot.tdsh loads the menu core. The port is opened with DTR and RTS held low so opening it moves no control line; with the BL616 running the debugger, the host is the only other party on the UART."
+  sources:
+    - "Observed on this board, 2026-10-05: openFPGALoader --detect output; AA 00 01 01 sent once on /dev/ttyUSB1 at 2 Mbaud and the five reply bytes; udevadm interface numbers for ttyUSB0 and ttyUSB1"
+    - "Tang-Phosphor, scripts/flash-otg.sh and tools/fpga_uart.py at 532e19d; its core-log entry 29 for the .fs-versus-.bin cause"
+    - "This project's ports/bl616/tang_fpga_link.h: the frame layout and FPGA_CMD_CORE_ID 0x01"
+  verification: "JTAG detect and the core-ID round trip were run on this board on 2026-10-05 with no change to the FPGA, which answered core 0 before and after. The .fs requirement is Tang-Phosphor's finding and was not repeated here, since no core was loaded over one-wire."
+
+- record_id: TOOL-013
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The one-wire core loop: deploy over JTAG, then debug and exercise over the UART"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "With the board in one-wire mode (BRD-006) a core is deployed, debugged and exercised from the host with no BL616 firmware involved. Deploy: Tang-Phosphor's scripts/flash-otg.sh <image>.fs runs oss-cad-suite's openFPGALoader v1.1.1 with -b tangmega138k and loads SRAM; the merged place3 image (build/merged/place3/tang_phosphor_merged.fs, 39929717 bytes, whose .bin twin is the card's phosphortang.bin at 4987082 bytes) loaded in 17 s. The script has no execute bit, so it is run with bash. Identify: AA 00 01 01 on /dev/ttyUSB1 at 2 Mbaud answered AA 00 02 01 50, core 0x50. Debug: tools/fpga_uart.py peek and poke work over the extended 0x10 channel; the scratch register 0x0020 (docs/debug-registers.md) took 0xC0FFEE42 and 0x12345678 and read both back, and was restored to 0. Exercise: scripts/play_stream.py --tpi <player> --input <file> sets cpu_mode, restarts the AE350 loader, streams the player and then the file, and polls 0x4020 for the run to complete; the qualified player (PHOS-008) took 10.1 s and a 402304-byte test.mp3 4.0 s, and the core then reported 441000 samples played at 0x68, 0 underruns at 0x6c and 44100 Hz at 0x70, with one completed run in 0x4020."
+  consequence: "This is the loop for working on a core by itself: rebuild, SRAM-load, peek and poke its registers, stream to it, all without touching the card or reflashing anything, and a power cycle with the power input returns the board to TinyTang with the core gone, since SRAM loads are volatile. At 2 Mbaud the link moves about 85 KB/s, so the player upload dominates; the extended channel's baud switch to 5 Mbaud (EXTCTL-001 opcode 0x03) is the next speed-up and has not been tried in one-wire. Two cautions carry over from Tang-Phosphor: a .bin does not start the FPGA (TOOL-012), and the player image must be the qualified one (PHOS-008). The MP3 result equals Tang-Phosphor entry 43's figure for the same file. Whether the tone was heard cleanly was not reported by the user."
+  sources:
+    - "Tang-Phosphor at 9e6f183: scripts/flash-otg.sh, scripts/play_stream.py, tools/fpga_uart.py, docs/debug-registers.md"
+    - "This project's tools/make_codec_corpus.sh, which regenerated test.mp3 (402304 bytes) and test.flac (131601 bytes, the size Tang-Phosphor entry 69 recorded)"
+    - "Observed on this board, 2026-10-05"
+  verification: "Every step above was run on this board on 2026-10-05 in one-wire mode with the reported figures read back over the UART."
+
+- record_id: TOOL-014
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "A Pico 2 CMSIS-DAP probe on U1201: a JTAG path of its own, beside one-wire and two-wire"
+  status: SOURCED
+  verified_date: 2026-10-05
+  statement: "A Raspberry Pi Pico 2 running CMSIS-DAP JTAG-probe firmware is wired to the FPGA module's 8-pin header U1201 (PSX-004) and plugs into the host as a separate USB device, 2e8a:000c, not through the BL616 or the FT2232. The user reports it set up and validated, and plugs it in on request. Tang-Phosphor's scripts/flash-pico.sh SRAM-loads a .fs with oss-cad-suite's openFPGALoader -c cmsisdap --vid 0x2e8a --pid 0x000c -b tangmega138k --freq 2000000 (PICO_VID, PICO_PID and PICO_FREQ override); like flash-otg.sh it refuses a .bin, which does not start the FPGA (TOOL-012). The probe bit-bangs JTAG, its clock must stay at or below 2 MHz (4 MHz and up read garbage IDCODEs), and its 64-byte bulk endpoint makes a full bitstream take about 10 to 20 minutes. Tang-Phosphor's README names its real value as GAO, Gowin's internal logic analyser, over the module's debug connector. Tang-PSX found the same probe (lonehog/JTAGprobe, CMSIS-DAP v2; TCK GP19, TMS GP14, TDI GP18, TDO GP21) under OpenOCD 0.12.0 with IDCODE 0x0001081B, where openFPGALoader 0.13.1 could not open it; Tang-Phosphor's later openFPGALoader from oss-cad-suite read the same IDCODE through it."
+  consequence: "This is the third way to reach the FPGA, beside the BL616's tangload in two-wire and the FT2232 in one-wire (TOOL-012, TOOL-013). Because it is its own USB device on its own header, it is not bound to the power-input choice that makes one-wire and two-wire exclusive (BRD-006, BRD-007): Tang-Control lists Pico 2 JTAG programming as part of its two-wire debug arrangement (TCTL-005), although Tang-Phosphor's README files flash-pico.sh under one-wire. So it is the candidate for JTAG access while TinyTang runs: GAO captures, a --detect or status read that checks a tangload's result independently of the BL616's own report, or a core load when the card or tangload is in question. It is too slow for routine loads; use tangload in two-wire or flash-otg.sh in one-wire. Two rules come from PSX-004: the probe shares TCK, TMS and TDI with the BL616, so it must be idle (or unplugged) whenever TinyTang runs tangload, and only pins 2 to 5 and 8 are wired to it, never pin 1 (about 4.4 V) or pins 6 and 7 (the core UART). A core loaded through it under TinyTang replaces the running core without the firmware being told, so the desktop layer and the Phosphor playback task do not know the core changed."
+  sources:
+    - "Tang-Phosphor at 4936ed1: scripts/flash-pico.sh (added in 67979d8, core-log entry 30) and README.md, section 'Pico 2 JTAG probe'"
+    - "Tang-PSX, .ai/core-reference.md record BRD-006 (copied here as PSX-004)"
+    - "TCTL-005: Tang-Control's two-wire debug arrangement, which includes JTAG programming through a Pico 2"
+    - "The user, 2026-10-05: the probe is set up, validated and available"
+  verification: "Not yet run by this project. Tang-Phosphor entry 30 verified the probe against the GW5AST-138 (IDCODE 0x1081b) at 2 MHz; Tang-PSX confirmed it under OpenOCD on 2026-09-29 (its core-log entry 44). Whether it works alongside a running TinyTang in two-wire is Tang-Control's statement and has not been tried on this board."
+
+- record_id: TOOL-015
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "Reentrant FatFS takes an RTOS mutex in every call, so no file call may run inside a critical section"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The SDK's FatFS is R0.15 (components/fs/fatfs). With FF_FS_REENTRANT 1 every public file function locks the volume on entry and unlocks it on exit; under OS_TYPE 3 ffsystem.c implements that as xSemaphoreTake(Mutex[vol], FF_FS_TIMEOUT) and xSemaphoreGive on a FreeRTOS mutex, one per volume plus one for the system, and a take that times out makes the call return FR_TIMEOUT. FreeRTOS documents that its API functions must not be called from inside a taskENTER_CRITICAL section, where the scheduler and the tick are held off, so a take there cannot block safely and a give that wakes a higher-priority waiter yields from inside the section."
+  consequence: "Since this project turned FF_FS_REENTRANT on (fatfs_conf_user.h), no f_* call may run inside a critical section. nand2mario's JTAG programmer (TOOL-007) read the bitstream with f_read inside one; it worked at the bare console, where nothing else used the card, and failed tangload from TinyDesk's Terminal, where the desktop also uses it. The programmer now reads each block outside the section and shifts it to the FPGA inside, which still keeps the shift's whole-register GPIO writes free of interruption. FF_FS_TIMEOUT is in ticks, 1000 here, so a task that holds the volume for longer than a second makes the other user's call fail rather than wait."
+  sources:
+    - "Bouffalo SDK 2.0.0 at 7f44f9e (TOOL-003): components/fs/fatfs/ff.h (R0.15), ff.c lock_volume and unlock_volume, ffsystem.c ff_mutex_create, ff_mutex_take and ff_mutex_give under OS_TYPE == 3"
+    - "FreeRTOS kernel reference, taskENTER_CRITICAL(): FreeRTOS API functions must not be called from within a critical section, https://www.freertos.org/Documentation/02-Kernel/04-API-references/04-RTOS-kernel-control/01-taskENTER_CRITICAL_taskEXIT_CRITICAL"
+    - "ports/bl616/tang_jtag_programmer.c, fpga_program, the JTAG_FAST path"
+  verification: "Observed on this board on 2026-10-05: with FF_FS_REENTRANT on, tangload of phosphortang.bin failed from TinyDesk's Terminal and succeeded at the bare console; after the reads were moved out of the critical section it succeeded at the console and, by the user's test, from the desktop. Which of the blocked take or the yielding give broke the load was not traced; either is outside what FreeRTOS allows."
+
+- record_id: TOOL-016
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The SDK components this firmware links, and their licences, now including the Bluetooth stack"
+  status: VERIFIED
+  verified_date: 2026-10-05
+  statement: "The Bouffalo SDK is Apache-2.0 for its own code but bundles third-party components under their own licences, and these are linked into this firmware: FreeRTOS Kernel V10.4.6, MIT, Copyright (C) 2021 Amazon.com, Inc. or its affiliates, selected by CONFIG_FREERTOS in proj.conf; CherryUSB, Apache-2.0, Copyright (C) 2006 Bertrik Sikken, (c) 2016 Intel Corporation and (c) 2022 sakumisu, which is the device CDC console and the FreeRTOS OSAL hosting it; FatFs R0.15 w/patch3, Copyright (C) 2022 ChaN, whose condition reaches only source redistribution. Since blescan and blekbd (BLE-002) the firmware also links the SDK's Bluetooth stack, in three parts. The host, libblestack.a built from the SDK's source, is derived from Zephyr's Bluetooth host: its linked files are Apache-2.0 by SPDX tag, copyright Intel Corporation 2015-2018, Nordic Semiconductor ASA 2016-2017, Wind River Systems 2011-2014 and 2016-2017, Oticon A/S 2019 and Vinayak Kariappa Chettimada 2016, with Bouffalo Lab port files (2018, 2019) that carry no licence header. Inside the host, pairing's cryptography is TinyCrypt, Copyright (C) 2017 Intel Corporation under a BSD-3-Clause text; micro-ecc, Copyright (c) 2014 Kenneth MacKay under a BSD-2-Clause text, in ecc.c, ecc_dh.c, ecc_dsa.c and ecc_platform_specific.c; and ctr_prng.c, Copyright (c) 2016 Chris Morrison under a BSD-2-Clause text. All three BSD texts require a distribution in binary form to reproduce the notice, conditions and disclaimer in its documentation. The controller, libbtblecontroller_bl616_ble1m10s1bredr0.a, and the radio's libbl616_phyrf.a and librfparam.a are prebuilt binaries with no licence of their own; the controller's port file btblecontroller_port_uart.c reads 'Copyright (C) RivieraWaves 2009-2015', so the controller is CEVA RivieraWaves IP, and the SDK's root Apache-2.0 is the only grant found covering its redistribution. Not linked: the SDK's LVGL, TJpgDec, mbedTLS, littlefs and multimedia codecs."
+  consequence: "Naming the SDK is not naming what the SDK carries. The firmware image is a binary distribution of all of these, so FreeRTOS's MIT text and the BSD notices must travel with it: their texts are reproduced verbatim in LICENSES/BSD-3-Clause-tinycrypt.txt, LICENSES/BSD-2-Clause-micro-ecc.txt and LICENSES/BSD-2-Clause-tinycrypt-ctr_prng.txt, and THIRD_PARTY.md names every part of the stack and its holders. Anyone publishing a firmware image should ship THIRD_PARTY.md and LICENSES/ with it. Whether CEVA or Bouffalo place any condition on the controller blob beyond the SDK's Apache-2.0 is not stated anywhere in the SDK; if a release ever depends on that, ask Bouffalo rather than infer it. Enabling CONFIG_BT_SETTINGS, mbedTLS or another SDK component later adds that component's licence at that moment."
+  sources:
+    - "build/build_out/tinytang_bl616.map: the 38 libblestack.a objects linked, and the controller, phyrf and rfparam archives"
+    - "Bouffalo SDK at 7f44f9e (TOOL-003), components/wireless/bluetooth/blestack/src: the copyright and SPDX lines of each linked object's source; src/common/tinycrypt/source/aes_encrypt.c, ecc.c and ctr_prng.c for the three BSD texts"
+    - "Bouffalo SDK components/wireless/bluetooth/btblecontroller/btblecontroller_port/btblecontroller_port_uart.c: 'Copyright (C) RivieraWaves 2009-2015'"
+    - "Bouffalo SDK root LICENSE: Apache-2.0; the SDK's only per-component licence files are for MQTT-C, TinyMaix, cmake and pikapython, none linked here"
+    - "Bouffalo SDK components/os/freertos/tasks.c: 'FreeRTOS Kernel V10.4.6 / Copyright (C) 2021 Amazon.com, Inc. or its affiliates. / SPDX-License-Identifier: MIT'"
+    - "Bouffalo SDK components/usb/cherryusb/core/usbd_core.c: the Apache-2.0 SPDX line and the three copyright holders"
+    - "Bouffalo SDK components/fs/fatfs/ff.c: 'FatFs - Generic FAT Filesystem Module R0.15 w/patch3' and ChaN's condition"
+    - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
+  verification: "The linked-object list was taken from this build's map, and each object's source header was read from the SDK; the LICENSES texts were extracted programmatically from the SDK files named above, comment markers removed and wording unchanged. strings over the controller and PHY archives found no licence or copyright text. The FreeRTOS, CherryUSB and FatFs lines were read from the SDK's own source headers on 2026-10-03, and the not-linked list was checked against this project's configuration and sources. Revised 2026-10-11 (core-log entry 10): folded in the retired TOOL-008, so this record stands alone."
 ```
 
 ---
@@ -2388,14 +2199,13 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
   kind: DEVICE | BOARD | SOC | USB | FLASH | PROTOCOL | EXTERNAL | TOOLCHAIN
   topic_id: <TOPIC>
   title: "Short noun phrase"
-  status: VERIFIED | SOURCED | INFERRED | SUPERSEDED
+  status: VERIFIED | SOURCED | INFERRED
   verified_date: YYYY-MM-DD
   statement: "What the source says, with exact values and units"
   consequence: "What it means for this project, or where it is implemented"
   sources:
     - "Document or repository, revision/commit/path/symbol, URL"
-  verification: "How and when it was confirmed, or why it is not yet confirmed"
-  superseded_by: "<record_id>"   # only on a SUPERSEDED record
+  verification: "How and when it was confirmed, or why it is not yet confirmed; then any 'Revised <date> (core-log entry N): ...' notes"
 ```
 
 ---
@@ -2407,9 +2217,34 @@ BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap (84,120 free 
 - The exception is a project being archived. Tang-PSX is backed up and kept, but stops being a live source, so the records that bear on this firmware were copied here as PSX-001 through PSX-006. Copying is for reach, not for preservation: nothing is lost when that project is archived, but its reference stops being the thing anyone consults day to day.
 - Keep build results, failures, rationale, and chronology in `core-log.md`; cite a log entry number in `verification` instead of repeating it.
 - Do not add speculative records for topics that have not been looked up. An unanswered question stays out of this file until a source answers it.
-- When a record's source is superseded by a newer document or tool version, add a new record rather than editing the old statement.
+- Keep this file current rather than historical: when a record's source is replaced by a newer document or tool version, or its fact changes, revise the record in place and let git and `core-log.md` carry the history (section 1).
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-03
+last_reviewed: 2026-10-11
 ```
+
+---
+
+## 8. Retired record ids
+
+These ids are no longer records. Each one's facts that are still true were carried into the record named, so code, documents and log entries that cite a retired id should be read as citing that record. The summary is what the retired record said, kept so an old citation can be understood; it is not current fact. The full text is in git history.
+
+| Retired id | Now in | What it said |
+|---|---|---|
+| DEV-003 | DEV-006 | Recorded the FPGA as unconfigured at power-up, which held only because tangload always replaced what was there before it was seen |
+| PMOD-003 | PMOD-004 | Recorded the socket control register as 0x10, which is the bring-up core's map only |
+| PMOD-005 | PMOD-006 | Tang-Phosphor's merged core adds personality 5, I2S2 stereo PCM playback; TinyTang parses /tang.ini (tang_ini.c) and sends it to a core with ID 0x50 at ABI 1.8 or later after every tangload, accepting none, oledrgb, encoder, i2s2, vga_j1 and vga_j2, refusing per the contract and warning about unknown keys; flip is applied as declared, with no flip-safety check yet; on the board only through host tests so far |
+| FLS-001 | FLS-002 | Recorded the application slot as at most 0x80000 bytes with staging at 0x100000, a limit Tang-Control chose rather than one the flash or the vendor loader imposes |
+| TDSH-001 | TDSH-004 | Recorded TinyDesk Shell v0.1.3 at 232a39f and its scripting language |
+| TDSH-003 | TDSH-004 | TinyDesk Shell v0.1.4 at 3b7d7f8, the same language as v0.1.3; its terminal interface adds optional columns() and read_byte_timeout(), and without either the line editor assumes 80 columns |
+| TDSH-006 | TDSH-008 | Each tdsh run clones a 19,096 B session (97% the 64-entry variable table) into a 19,352 B job and asks for a 32 KB stack; with the desktop open only ~7.7 KB lies outside the 40.5 KB largest block, so a script's own small allocations are refused and it returns silently (upstream issue #2) |
+| TDSH-007 | TDSH-008 | TinyTang's first smaller configuration used 32 variables, 32-byte names, 128-byte values and a 16 KB stack, bringing its session to 5,752 B |
+| TDESK-001 | TDESK-013 | Recorded TinyDesk's four-function port surface and its shell pin at 232a39f |
+| TDESK-010 | TDESK-011 | Called the Files app's delete dialog a possible TinyDesk bug and suspected it of removing /scripts/boot.tdsh, which the user had deleted themselves |
+| TDESK-012 | TDESK-013 | TinyDesk v0.1.4 at f4c1d29 pins the shell at 3b7d7f8, the same as this project; td_hal_t is unchanged, and the Terminal passes its window width to the backend's start() and resize() for the shell bridge to hand to the line editor |
+| PROV-002 | PROV-005 | Recorded the licence and notice files when they landed, at which point the project licence was Apache-2.0 |
+| PROV-004 | PROV-005 | TinyTang's own code is MIT, in LICENSE; the single exception is ports/bl616/tang_jtag_programmer.c, which stays Apache-2.0 as nand2mario's file with its text at LICENSES/Apache-2.0.txt and a note added to its header. Apache-2.0 was never required - it is permissive, and there is no copyleft in the tree |
+| BLE-013 | BLE-014 | Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect |
+| TOOL-008 | TOOL-016 | Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked |
+| TOOL-009 | TOOL-011 | Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending |
