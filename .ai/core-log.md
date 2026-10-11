@@ -981,3 +981,38 @@ None.
 - User Test: PASS
 
 ---
+
+## 32 COMMIT Unreleased 2026-10-11T16:49:57-07:00
+
+#### Coming From:
+
+Unreleased 6715393
+
+#### Purpose:
+
+Remove the diagnostic scaffolding the migration and the Bluetooth investigation accumulated, restore the BRD-009 recovery wording, record what the cycle established, and close the Bluetooth controller as unsupported.
+
+#### Outcome:
+
+The tree is clean of diagnostics and the project is closed out. Removed: the radio-start flash crumbs and their whole facility, the `blestart` and `blecrumb` commands and their table entries, the heartbeat that the crash recorder's watchdog task called, the `bt_conn_ref`/`bt_conn_unref` reference ring with its link-time wraps in `CMakeLists.txt`, the `BLE_STEP` console trace, the now-unused `bflb_flash.h` include, and the migration-debug guards `TINYTANG_NO_FS`, `TINYTANG_NO_SHELL`, `TINYTANG_NO_CRASH`, `TINYTANG_NO_WRAPS` and `TINYTANG_UART_TRACE` together with `main.cpp`'s UART trace and its `bflb_uart.h`/`bflb_gpio.h` includes -- 436 lines out against 66 in, the latter almost all reference records. The TOOL-001 reference-build switches (`TINYTANG_USB_ONLY`, `TINYTANG_MIN`, `TINYTANG_RTOS`, `TINYTANG_NONEWLIB`, `TINYTANG_REF`) stay, because TOOL-001 documents them and the reference example is still built from them. `tools/tinytang_flash.py`'s closing hint no longer names `make flash`: it now says to hold BOOT at power-up, where the BL616 presents its ROM bootloader as `349b:6160` on `/dev/ttyACM0`, and to write only the application at `0x40000` with `BLFlashCommand --write`, never `make flash`, which BRD-009 forbids. The firmware built clean with `make -k CHIP=bl616 BOARD=bl616dk BL_SDK_BASE=$HOME/.cache/tangcore-dev/sdk-2.3.36` as `6715393-dirty.a597e26`, 607,312 bytes -- the size it was before the diagnostics went in -- and the desktop core was rebuilt clean from the committed sources with `tools/build_desktop_core.sh`, which reported `timing PASS: setup +1.957 ns, hold +0.166 ns` and produced a bitstream whose SHA-256, `95e9b3e1cb884d99e4b6073651c2ba167798a6b92c8869eb499a392ca29549e3`, is identical to the one already on the card and verified on the monitor, so the core build is reproducible from the repository. The cleaned firmware was installed with `tools/tinytang_flash.py --yes`; after the user's power cycle `platform` reported `6715393-dirty.a597e26` and `ble` reported the radio up with the K950 keyboard and the M750 mouse both paired and reconnecting by themselves, so removing the diagnostics cost nothing at runtime. `.ai/core-reference.md` gained three records and closed a fourth: USB-008, that starting the radio takes the BL616's USB device down while the CPU lives and that `tdsh_bl616_console_restart()` brings it back; BLE-018, that 2.3.36's `bt_conn_unref` asserts on an over-release where the fork was silent and that `bt_conn_create_le()` returns a caller reference only for a newly created connection; TOOL-017, that a Gowin build of the desktop core must let the vendor place the PLLs, because the open-flow `INS_LOC` pins leave `hclk5` off the HDMI serializer; and BLE-017, revised in place to closed and unsupported on this board, with the two facts that bound it -- the BL616 has no link command to send input into a core, and no other BLE-HID gamepad was available to test. The index gained three lines, the routing four, and BLE-017's index line was rewritten. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 32 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+No engineering work is pending in this repository. The board runs upstream Bouffalo SDK 2.3.36 with TinyDesk on the SD card, the desktop core driving both the HDMI and the VGA display, cores loading from the card, firmware updating over USB, and a BLE keyboard and mouse paired and reconnecting; the card's `/cores/console138k/desktop.bin` is the HDMI-capable build with the previous one kept beside it as `desktop.bin.pre-hdmi-fix` and stock nestang kept as `nestang-stock.bin`. What is not done is deliberate and recorded: the Xbox Wireless Controller is unsupported (BLE-017), no BLE gamepad path exists from the BL616 into a core (core-log entry 29), and a USB controller on this board would have to be the loaded core's, on the FPGA's own USB host (BRD-003). If any of those is ever wanted, the starting points are BLE-017's ruled-out list, TOOL-017 for anything touching the core build, and USB-008 for anything that starts the radio. Two housekeeping notes: `../tangcore/nestang` is an empty submodule, so a core build needs `NESTANG_DIR` pointed at a real nestang checkout, and the `third_party/tinydesk` submodule carries its usual patch-applied dirt, which is expected and stays.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- main.cpp
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_crash.c
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

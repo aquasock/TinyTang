@@ -162,6 +162,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why is there no host deinit, and what must be done by hand? | USB | USB-005 |
 | How do I tell whether a host is attached? | USB | USB-006 |
 | Why is TinyDesk on HDMI laggy with the computer attached? | USB | USB-007 |
+| Why does the console vanish when the Bluetooth radio starts? | USB | USB-008 |
 | Where does the application live in flash, and what does a soft reset do? | FLS | FLS-002 |
 | What does a watchdog reset do, and where is a crash record kept across it? | FLS | FLS-003 |
 | Which BL616 loader does the board have, and where are the full flash backups? | FLS | FLS-004 |
@@ -182,6 +183,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What does the Xbox Wireless Controller expose, and how is it put in pairing mode? | BLE | BLE-015 |
 | What is in the Xbox controller's input report? | BLE | BLE-016 |
 | Why does the Xbox controller not work here, and what has been ruled out? | BLE | BLE-017 |
+| Why does a Bluetooth connection assert and reset the board? | BLE | BLE-018 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
 | Which UART and rate reach a loaded core? | PROT | PROT-003 |
@@ -242,6 +244,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 | Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-016 |
+| Why is the core's HDMI output dark? | TOOL | TOOL-017 |
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
 | How is a core deployed, debugged and exercised entirely over one-wire? | TOOL | TOOL-013 |
@@ -302,6 +305,7 @@ USB-004: "usbd_add_endpoint() assigns by endpoint index, not by appending, and u
 USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-only, and usb_hc_low_level_init() has no counterpart, so the port must be returned to device mode by hand"
 USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
 USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
+USB-008: "Starting the Bluetooth radio takes the BL616's USB device down while the CPU keeps running, and re-asserting its clock with GLB_Set_USB_CLK_From_WIFIPLL plus a device re-init brings the console back as a fresh ffff:5454 with no power cycle (tdsh_bl616_console_restart())"
 FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000; boot header magic at 0x00/0x08/0x64, body length at 0x84, CRC-32 of the first 252 bytes at 0xFC; the commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 FLS-003: "A watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, so only a power cycle (which scrambles RAM) brings TinyTang back; the crash recorder keeps its record in the last flash sector, 0x3FF000"
 FLS-004: "The BL616 loader at 0x0 is not TangCore 0.9's bl616_fpga_partner_console138k.bin (60,741 of 88,672 bytes differ); full backups of the BL616 and FPGA flashes are in /run/media/vash/GIT/Tang-Console-138K-backups with SHA256SUMS.txt"
@@ -386,7 +390,8 @@ BLE-012: "Pairings are kept on the SD card in /sd/ble/bonds.bin (keys unencrypte
 BLE-014: "Starting the Bluetooth stack takes about 15.8 KB of heap and a connection about 700 B (heap_3, read with kfree_size(); no lowest-ever counter); with both devices connected about 64.7 KB stays free (largest block 40.5 KB) across cartridge loads and desktop sessions, and reconnects do not leak"
 BLE-015: "Xbox Wireless Controller: BLE HID only, public address, PnP 045E:0B13; fast blink is pairing mode; pairs LE Secure Connections Just Works wanting the host's IdKey; prefers 7.5-15 ms interval; sends reports unsolicited from link start; HID service 0x0016-0x0023 (input 0x001E, CCC 0x001F); vendor service 00000001-5F60-4C4F-9C83-A7953298D40D; works on BlueZ"
 BLE-016: "Xbox Wireless Controller input Report ID 1 is 16 bytes over GATT: four 16-bit axes 0-65535, Brake and Accelerator 10-bit 0-1023 padded to 16, a 4-bit hat padded to a byte, fifteen buttons padded to 16 and one Consumer bit; its 283-byte Report Map must be read with offsets, 22 bytes at a time"
-BLE-017: "Xbox Wireless Controller on this host: no report has ever arrived; with this board's host traffic matching BlueZ's packet for packet it still stops answering as pairing completes, so the fault is in the BL616's binary controller library; the SDK here is nand2mario's fork at 7f44f9e (2025-04), upstream's controller 2.3.36 hangs the board when dropped in alone because it needs upstream's PHY library and memory layout too; open defect"
+BLE-017: "Xbox Wireless Controller on this host: closed as unsupported on this board. No report has ever arrived; with this board's host traffic matching BlueZ's packet for packet it still stops answering as pairing completes, and the newer controller library in Bouffalo SDK 2.3.36 behaves identically, so the fault is the BL616's binary controller library rather than the host, the SDK version or the radio path"
+BLE-018: "2.3.36's bt_conn_unref ends with BT_ASSERT(old > 0) where the fork was only atomic_dec, and bt_conn_create_le() returns a caller reference only for a newly created connection; releasing one that was not taken asserts in recv_thread and resets the board"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Bouffalo SDK 2.0.0 at ~/.cache/tangcore-dev/sdk with the T-Head RISC-V GCC 10.2.0 toolchain"
@@ -401,6 +406,7 @@ TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs ove
 TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
 TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
 TOOL-016: "Linked out of the SDK under their own licences: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com), CherryUSB (Apache-2.0), FatFs R0.15 w/patch3 (ChaN), and the Bluetooth stack: the Zephyr-derived host (Apache-2.0; Intel, Nordic, Wind River, Oticon, Chettimada), TinyCrypt (BSD-3-Clause, Intel 2017), micro-ecc (BSD-2-Clause, Kenneth MacKay 2014) and ctr_prng (BSD-2-Clause, Chris Morrison 2016), whose binary-form notices are reproduced in LICENSES/, plus the binary-only RivieraWaves-based controller and PHY libraries under the SDK's Apache-2.0 alone; LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
+TOOL-017: "A Gowin build (gowinsynthesis) of the desktop core must let the vendor's place-and-route choose the PLL sites: the open-flow INS_LOC pins stop hclk5 reaching the HDMI serializer's FCLK and leave HDMI dark while every other clock and the VGA path work"
 ```
 
 ---
@@ -870,6 +876,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "ports/bl616/usb_cdc_bl616.c: console_flush(), usbd_cdc_acm_bulk_in() and usbd_cdc_acm_set_dtr()"
     - "Linux cdc-acm: read URBs are submitted when the tty is opened and killed when it is closed"
   verification: "On this board on 2026-10-05 the user found TinyDesk on HDMI smooth with the cable attached and nothing reading the port, where before it had been unusable; a listen-only capture while the user dragged windows and ran ls /music in the Terminal held only the transcript -- the desktop's start line, the prompt, the command, its output and 'desktop: exited' -- with no cursor positioning at all, and the console answered after the desktop exited."
+
+- record_id: USB-008
+  kind: USB
+  topic_id: USB
+  title: "Starting the Bluetooth radio takes the BL616's USB device down; re-asserting its clock brings it back"
+  status: VERIFIED
+  verified_date: 2026-10-11
+  statement: "With the radio's bring-up run from the shell, the board leaves USB entirely -- no CDC and no FT2232, so nothing the device stack could report is available -- while the processor keeps running and the system stays up.  A flash breadcrumb written at each step of ble_start_ex() lands, the last one included, and the crash recorder's watchdog task keeps being fed through the whole window (about 29 s of heartbeat in one run), so the radio start completes and the CPU is alive; only the USB device is gone.  Re-asserting the USB clock with GLB_Set_USB_CLK_From_WIFIPLL(1) and re-initialising the device makes the console come back and stay: it re-enumerates as a fresh ffff:5454 device with no power cycle."
+  consequence: "The BL616 clocks its USB device from a divided output of the WiFi PLL, which the BSP's bsp/board/bl616dk/board.c sets up with GLB_Set_USB_CLK_From_WIFIPLL, and the radio's RF bring-up disturbs it.  ports/bl616/usb_cdc_bl616.c provides tdsh_bl616_console_restart(), which re-asserts the clock and re-initialises the device (re-registration is legal, USB-004), and ports/bl616/tang_ble.c calls it once the radio is up.  This is why the console's disappearance at radio start is neither a crash nor a reset, and leaves no record."
+  sources:
+    - "This project's ports/bl616/usb_cdc_bl616.c: tdsh_bl616_console_restart() and tdsh_bl616_console_init()"
+    - "This project's ports/bl616/tang_ble.c: the call after the stack comes up, and the flash-crumb diagnostic that established it (removed in core-log entry 32)"
+    - "core-log entries 27 to 30"
+  verification: "Established on the board on 2026-10-11: the crumbs showed ble_start_ex completing every step while the heartbeat advanced, and the console re-enumerated as a new device after the restart, then survived a full blescan and two device pairings."
 
 - record_id: FLS-002
   kind: FLASH
@@ -2013,7 +2033,21 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "bouffalolab/bouffalo_sdk 8a3df34: btblecontroller/lib/libbtblecontroller_bl616_ble1m10s1bredr0.a, btble_inc/hci_onchip.h and btble_lib_api.h, blestack/src/bl_hci_wrapper/bl_hci_wrapper.c, BLUETOOTH-LIBS.md; commit history of drivers/soc/bl616/phyrf and bsp/board/bl616dk/bl616_ram.ld"
     - "Bouffalo SDK toolchain sys/errno.h (ENOTCONN 128) and components/wireless/bluetooth/blestack/src/host/gatt.c; host/smp.c ID_DIST, SEND_KEYS and RECV_KEYS"
     - "Bluepad32 CHANGELOG.md, 5.0.0-beta0: 'Disabled LE Secure Connections by default to improve compatibility with BLE controllers that fail key exchange.'"
-  verification: "Observed on this board on 2026-10-10: the first form in core-log entries 3 to 5, the second over the instrumented builds of entries 7 and 8, with the pre-security answer and the post-security silence each seen on the same build. The privacy-off test ran on 2026-10-11 (core-log entry 11). Revised 2026-10-11 (core-log entry 11): added the privacy-off result, the comparison with the working BlueZ capture, and the untested differences that remain. Revised 2026-10-11 (core-log entry 12): added the legacy-pairing result and the connection update as the point of failure. Revised 2026-10-11 (core-log entry 13): the parameter update ruled out by refusing it; the 0x3E connect failures added. Revised 2026-10-11 (core-log entry 14): added the HCI trace findings. Revised 2026-10-11 (core-log entry 15): address resolution ruled out. Revised 2026-10-11 (core-log entry 16): the MTU exchange ruled out; the parameter request as the controller's last act. Revised 2026-10-11 (core-log entry 17): BlueZ's connection parameters and data length request ruled out. Revised 2026-10-11 (core-log entry 18): host traffic now matches BlueZ's; the fault placed in the controller library; newer upstream libraries noted. Revised 2026-10-11 (core-log entry 19): the newer controller library tried alone and found to hang the board."
+  verification: "Observed on this board on 2026-10-10: the first form in core-log entries 3 to 5, the second over the instrumented builds of entries 7 and 8, with the pre-security answer and the post-security silence each seen on the same build. The privacy-off test ran on 2026-10-11 (core-log entry 11). Revised 2026-10-11 (core-log entry 11): added the privacy-off result, the comparison with the working BlueZ capture, and the untested differences that remain. Revised 2026-10-11 (core-log entry 12): added the legacy-pairing result and the connection update as the point of failure. Revised 2026-10-11 (core-log entry 13): the parameter update ruled out by refusing it; the 0x3E connect failures added. Revised 2026-10-11 (core-log entry 14): added the HCI trace findings. Revised 2026-10-11 (core-log entry 15): address resolution ruled out. Revised 2026-10-11 (core-log entry 16): the MTU exchange ruled out; the parameter request as the controller's last act. Revised 2026-10-11 (core-log entry 17): BlueZ's connection parameters and data length request ruled out. Revised 2026-10-11 (core-log entry 18): host traffic now matches BlueZ's; the fault placed in the controller library; newer upstream libraries noted. Revised 2026-10-11 (core-log entry 19): the newer controller library tried alone and found to hang the board. Revised 2026-10-11 (core-log entries 28 and 31): closed as unsupported on this board.  The move to Bouffalo SDK 2.3.36, made for this pad's controller library, changed nothing -- the pad pairs, encrypts, bonds and then goes silent exactly as the forms above record -- so the fault is confirmed to be the BL616's binary controller library and not the host, the SDK version or anything this project changes; rfparam_init() is called exactly as the SDK's own examples call it, so the radio path is not misconfigured either.  Two further facts close the question of what a working pad would have bought: the BL616's core link carries no command to send input into a core (ports/bl616/tang_fpga_link.h, core-log entry 29), so a BLE pad could only ever have driven TinyDesk and never a running core; and no other BLE-HID gamepad was available to test, so whether this host path handles gamepads at all is untested, while a BLE keyboard and mouse both pair and report (core-log entry 31)."
+
+- record_id: BLE-018
+  kind: BLE
+  topic_id: BLE
+  title: "2.3.36's bt_conn_unref asserts on an over-release, where the fork was silent"
+  status: VERIFIED
+  verified_date: 2026-10-11
+  statement: "In blestack 2.3.36, bt_conn_unref() ends with BT_ASSERT(old > 0): it disassembles to an atomic_dec, a branch and a call to bt_assert, so releasing a reference that is not held asserts.  The fork's bt_conn_unref (nand2mario/bouffalo_sdk 7f44f9e) is only atomic_dec and a debug print, so the same over-release was silent there.  A connection object from bt_conn_create_le() comes with a reference the caller owns only when it is newly created; with an object already present for the peer it returns that object without one (conn.c, the 'not ref if conn of this peer has existed' fix), and bt_conn_lookup_handle() and bt_conn_lookup_addr_le() each take one of their own."
+  consequence: "A connection reference must be released only when it was taken.  This port released references the SDK's own disconnect teardown already drops -- in hid_disconnected() and in hid_connected()'s error path -- which on 2.3.36 asserted in recv_thread and reset the board on every Xbox controller attempt, hiding the pad's own defect behind a crash."
+  sources:
+    - "Bouffalo SDK 2.3.36 components/wireless/bluetooth/blestack/src/host/conn.c: bt_conn_unref(), bt_conn_create_le(), bt_conn_lookup_handle(), bt_conn_lookup_addr_le() and bt_conn_set_state()"
+    - "nand2mario/bouffalo_sdk 7f44f9e, components/wireless/bluetooth/blestack/src/host/conn.c: bt_conn_unref() with no assert"
+    - "core-log entries 28 and 30"
+  verification: "Established on the board on 2026-10-11: the crash record's assert was resolved against the ELF to hci_disconn_complete's final bt_conn_unref, and a link-time wrap of bt_conn_ref and bt_conn_unref that read conn->ref (offset 72, from bt_conn_unref's own disassembly) showed two references and three releases; removing this port's two releases closed it, and two pairing attempts then ran the full churn with no reset."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN
@@ -2209,6 +2243,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "Bouffalo SDK components/fs/fatfs/ff.c: 'FatFs - Generic FAT Filesystem Module R0.15 w/patch3' and ChaN's condition"
     - "This project's proj.conf: set(CONFIG_FREERTOS 1)"
   verification: "The linked-object list was taken from this build's map, and each object's source header was read from the SDK; the LICENSES texts were extracted programmatically from the SDK files named above, comment markers removed and wording unchanged. strings over the controller and PHY archives found no licence or copyright text. The FreeRTOS, CherryUSB and FatFs lines were read from the SDK's own source headers on 2026-10-03, and the not-linked list was checked against this project's configuration and sources. Revised 2026-10-11 (core-log entry 10): folded in the retired TOOL-008, so this record stands alone."
+
+- record_id: TOOL-017
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The desktop core needs the vendor's own PLL placement; open-flow INS_LOC pins leave HDMI dark"
+  status: VERIFIED
+  verified_date: 2026-10-11
+  statement: "GW5AST-LV138PG484AC1/I0 revision C, Gowin EDA 1.9.11.03.  The desktop core builds with gowinsynthesis (fpga/desktop/build.tcl; board.v carries `define GW_IDE) and compiles the HDMI PLL and the whole TMDS chain (gowin_pll_hdmi, hdmi.sv, serializer.sv, tmds_channel.sv), with the tmds pins constrained in fpga/desktop/desktop.cst.  With no PLL placement constraints, Gowin's place-and-route routes the 5x pixel clock hclk5 (371.25 MHz) to the HDMI serializer's FCLK and the core drives HDMI: a build measures setup +1.957 ns and hold +0.166 ns with zero violations.  Pinning pll_27, pll_hdmi and pll_nes with INS_LOC -- the lines carried over from the open flow, named with nextpnr's flattened cell names -- stops that routing and the HDMI output is dark while every other clock and the VGA path keep working.  nestang's own console.cst pins no PLL at all."
+  consequence: "fpga/desktop/desktop.cst carries no PLL placement constraints, and a build must not re-add them: under Gowin they are the fault, and under the open flow their object names do not resolve.  The reference for a working core on this board is nestang's own console138k build loaded as-is, which needs no patches to drive HDMI."
+  sources:
+    - "This project's fpga/desktop/build.tcl, board.v and desktop.cst"
+    - "nestang c2450818e1f0c858e13c5dd16746ee5221a5c760: build.tcl, src/boards/console.cst, src/nestang_top.sv"
+    - "This build's Gowin timing report, impl/pnr/desktop_tr_content.html"
+  verification: "On this board on 2026-10-11: the stock nestang console138k core, built from the pinned commit with nestang's own build.tcl and loaded with tangload, drove the user's primary monitor; the desktop core with the INS_LOC pins did not, and with them removed it did.  fmon read the pixel clock at 74,249,611 Hz throughout, so the clock itself was never at fault (core-log entry 30)."
 ```
 
 ---

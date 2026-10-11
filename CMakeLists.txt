@@ -29,33 +29,6 @@ if(DEFINED ENV{TINYTANG_USB_ONLY})
     sdk_add_compile_definitions(-DTINYTANG_USB_ONLY=1)
 endif()
 
-# Diagnostic: skip the SD card mount, to tell card init apart from the USB
-# stack and the shell.
-if(DEFINED ENV{TINYTANG_NO_FS})
-    sdk_add_compile_definitions(-DTINYTANG_NO_FS=1)
-endif()
-
-# Diagnostic: run the scheduler and the USB console but never initialise the
-# shell, to tell a shell fault from a console fault.
-if(DEFINED ENV{TINYTANG_NO_SHELL})
-    sdk_add_compile_definitions(-DTINYTANG_NO_SHELL=1)
-endif()
-
-# Diagnostic: disable the crash recorder (its exception/platform_reset wraps
-# and its init), the one structural difference from the working reference
-# build, to test entry 23's trap-vector finding as the cause of the USB
-# bring-up failure.
-if(DEFINED ENV{TINYTANG_NO_CRASH})
-    sdk_add_compile_definitions(-DTINYTANG_NO_CRASH=1)
-endif()
-
-# Diagnostic: report boot progress on UART1 (GPIO27/28), which the SIPEED
-# FT2232 taps as /dev/ttyUSB1.  The USB console is dead in exactly the case
-# this is for, so this is the only channel that says how far the app got.
-if(DEFINED ENV{TINYTANG_UART_TRACE})
-    sdk_add_compile_definitions(-DTINYTANG_UART_TRACE=1)
-endif()
-
 if(DEFINED ENV{TINYTANG_REF} OR DEFINED ENV{TINYTANG_RTOS})
     # Reference build: the SDK's own device CDC example, unmodified, compiled
     # in this project with this proj.conf.  It answers whether the failure is
@@ -166,23 +139,15 @@ else()
     # failure, so its wrappers only record the refused request rather than
     # replace the allocation (ports/bl616/tang_heap.h).  None is weak, so the
     # linker renames them.
-    if(NOT DEFINED ENV{TINYTANG_NO_CRASH})
-        sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset)
-    endif()
-    if(NOT DEFINED ENV{TINYTANG_NO_WRAPS})
-        sdk_add_link_options(-Wl,--wrap=kmalloc -Wl,--wrap=krealloc)
-        # Diagnostic: the Bluetooth host's HCI monitor hook, which proj.conf
-        # turns on with CONFIG_BT_DEBUG_MONITOR, records into RAM for `bletrace`
-        # instead of printing to an unconnected UART (tang_ble_trace.c).
-        sdk_add_link_options(-Wl,--wrap=bt_monitor_send)
-        # Diagnostic: public-address Bluetooth devices are kept out of the
-        # controller's resolving list (ports/bl616/tang_ble.c __wrap_bt_id_add).
-        sdk_add_link_options(-Wl,--wrap=bt_id_add -Wl,--wrap=bt_id_del)
-        # Diagnostic: record the last bt_conn_ref/unref calls and the per-connection
-        # net, to name who drops a connection reference too many times
-        # (ports/bl616/tang_ble.c).
-        sdk_add_link_options(-Wl,--wrap=bt_conn_unref -Wl,--wrap=bt_conn_ref)
-    endif()
+    sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset)
+    sdk_add_link_options(-Wl,--wrap=kmalloc -Wl,--wrap=krealloc)
+    # The Bluetooth host's HCI monitor hook, which the build turns on with
+    # CONFIG_BT_DEBUG_MONITOR, records into RAM for `bletrace` instead of
+    # printing to an unconnected UART (tang_ble_trace.c).
+    sdk_add_link_options(-Wl,--wrap=bt_monitor_send)
+    # Public-address Bluetooth devices are kept out of the controller's
+    # resolving list (ports/bl616/tang_ble.c __wrap_bt_id_add).
+    sdk_add_link_options(-Wl,--wrap=bt_id_add -Wl,--wrap=bt_id_del)
     # The firmware's build identity: the commit, plus a hash of any uncommitted
     # changes, regenerated on every build so it cannot go stale (see
     # cmake/tinytang_build_id.cmake).  `platform` and the startup banner print
