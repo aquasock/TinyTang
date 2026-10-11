@@ -482,3 +482,33 @@ Copy BlueZ's first move after encryption: send an ATT MTU exchange when the link
 - User Test: FAIL
 
 ---
+
+## 16 COMMIT Unreleased 2026-10-11T09:51:05-07:00
+
+#### Coming From:
+
+Unreleased 2a3e59b
+
+#### Purpose:
+
+Copy BlueZ's first operation after encryption, an ATT MTU exchange, to see whether the Xbox Wireless Controller waits for it before treating the host as set up.
+
+#### Outcome:
+
+`ports/bl616/tang_ble.c` now sends an ATT MTU exchange as soon as the link is encrypted and starts discovery from its completion, logging both; entry 5's exchange had gone out during the security procedure and drawn ATT 0x0E, which this one avoids. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `2a3e59b-dirty.e957079`, 660656 bytes, MD5 `23467e12adaed6d8676f93eea93d35e7`, was installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the user's power cycle. In a traced session with the controller alone, 371 packets, four encrypted sessions each logged `mtu exchange done (err 0), mtu 23`, the same MTU BlueZ got, and the controller still stopped sending data as pairing completed, so the MTU exchange is ruled out. The trace makes the controller's last act precise: in every encrypted session its last two data packets are the GATT answer to the board's first request and an L2CAP Connection Parameter Update Request about 0.1 s after pairing completes, after which only the link layer stays up, for 4 to 5 s. The controller never sent that request to BlueZ, which moved it to 15 ms on its own about 2 s in, so it treats this board's link differently before any GATT difference arises; what still differs at the link is BlueZ's 45 ms interval and 420 ms supervision timeout at connection against this board's 50 ms and 4 s, and BlueZ's 251-octet data length, which this board never sets because `CONFIG_BT_DATA_LEN_UPDATE` is off in this build. BLE-017 records this. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 16 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Make this board's link match BlueZ's: create the gamepad slot's connection at 45 ms with a 420 ms supervision timeout, and set the data length to 251 octets with `bt_le_set_data_len()` once connected. The two are changed together because each test costs the user a pairing session; if the controller then keeps talking, a following cycle separates them.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

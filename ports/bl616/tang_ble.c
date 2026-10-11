@@ -619,6 +619,7 @@ typedef struct {
     struct bt_gatt_subscribe_params subs[HID_MAX_SUBS];
     unsigned nsubs;
     struct bt_gatt_read_params reads[HID_MAX_READS];
+    struct bt_gatt_exchange_params mtu_xchg;  /* the exchange after encryption */
     unsigned nreads;
 
     /* Setup after discovery is a sequence of ATT operations: every
@@ -720,11 +721,10 @@ static hid_dev_t *hid_by_conn(struct bt_conn *conn)
 
 /* The input a slot hands the desk layer, cleared so nothing stays held. */
 /* The stack's own report of the ATT MTU, available because
- * BFLB_BLE_MTU_CHANGE_CB is defined in the SDK.  Kept after the exchange we
- * used to send was removed: if a device negotiates one from its side, this is
- * where it would show.  The board itself runs at the default 23, and that is
- * fine -- a long value is read in pieces by hid_read_done, and the pad's own
- * report is 17 bytes. */
+ * BFLB_BLE_MTU_CHANGE_CB is defined in the SDK.  It fires after the exchange
+ * hid_security_changed() starts, or if a device negotiates one from its side.
+ * A long value is read in pieces by hid_read_done either way, and the Xbox
+ * pad's report is 16 bytes, which the default 23 carries. */
 static void hid_mtu_changed(struct bt_conn *conn, int mtu)
 {
     hid_dev_t *d = hid_by_conn(conn);
@@ -1443,6 +1443,21 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
 
 static void hid_drop_key(hid_dev_t *d);
 
+static void hid_mtu_exchanged(struct bt_conn *conn, u8_t err,
+                              struct bt_gatt_exchange_params *params)
+{
+    (void)params;
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return;
+    }
+    hid_log(d, "mtu exchange done (err %u), mtu %u", (unsigned)err,
+            (unsigned)bt_gatt_get_mtu(conn));
+    if (d->state == HID_SECURING) {
+        hid_start_discovery(d);
+    }
+}
+
 static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
                                  enum bt_security_err err)
 {
@@ -1472,6 +1487,20 @@ static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
     }
     hid_log(d, "encrypted (level %d)", level);
     if (level >= BT_SECURITY_L2 && d->state == HID_SECURING) {
+        /* Exchange the ATT MTU first and discover from its completion: that is
+         * BlueZ's first operation once the link is encrypted, and with BlueZ
+         * the Xbox Wireless Controller keeps talking, while on this board,
+         * which went straight to discovery, it fell silent as pairing completed
+         * (.ai/core-reference.md BLE-017).  An exchange sent during the
+         * security procedure drew ATT 0x0E and a dead link (core-log entry 5);
+         * this one waits for encryption. */
+        d->mtu_xchg.func = hid_mtu_exchanged;
+        int rc = bt_gatt_exchange_mtu(conn, &d->mtu_xchg);
+        if (rc == 0) {
+            hid_log(d, "mtu exchange sent");
+            return;
+        }
+        hid_log(d, "mtu exchange not sent (%d)", rc);
         hid_start_discovery(d);
     }
 }
