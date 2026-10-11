@@ -140,6 +140,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
 | Can one-wire and two-wire run together? | BRD | BRD-007 |
 | Can a Raspberry Pi HAT go on the dock's 40-pin headers? | BRD | BRD-008 |
+| How is the BL616 recovered if a firmware stops it before USB comes up? | BRD | BRD-009 |
 | Where are the board's PMOD sockets, and how are their pins numbered? | PMOD | PMOD-001 |
 | How does the core learn what is seated in the PMOD sockets? | PMOD | PMOD-002 |
 | Which register selects a PMOD personality, and what are the values? | PMOD | PMOD-004 |
@@ -280,6 +281,7 @@ BRD-005: "The board has two power inputs and runs on either; a power cycle is un
 BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered"
 BRD-007: "One-wire and two-wire cannot be combined: by the user's account the board's modules are powered from one input or the other, never both, and making the two work together was tried at length in the earlier projects without success; no written record of that work was found"
 BRD-008: "The dock's two 2x20 2.54 mm headers are the SDRAM connectors J9 (SDRAM0) and J10 (SDRAM1), MiSTer-style: FPGA I/O on pins 1-10, 13-28 and 31-40, +5 V on pin 11, ground on pin 12; they are not Raspberry Pi headers, and a Pi HAT fitted directly would put the board's 5 V on a HAT signal and short eight FPGA pins through the HAT's ground pins"
+BRD-009: "The BL616 has a BOOT button inside the case for its ROM bootloader; a recovery writes only the application at 0x40000 with BLFlashCommand --write, never make flash, which would overwrite Sipeed's loader at 0x0"
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tang.ini at the SD root is the socket contract (pmod0/pmod1 plus _flip, flat under [tang]); a missing file or absent entry releases the socket and unknown modules are refused; modules carry no ID pins, so presence can never be detected; this firmware parses it (tang_ini.c) and, by the user's choice, does not enforce flip safety"
 PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them; the bring-up core has the same layout at 0x10, which is not extended frame type 0x10"
@@ -592,6 +594,19 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "this project's own photograph of the dock's front edge, which showed the two headers (`images/circuit_boards/dock_front.jpg`, removed from this repository on 2026-10-10)"
     - "Adafruit, 2.2-inch PiTFT HAT guide: ILI9340 over the Pi's SPI with GPIO 25 and four buttons"
   verification: "Read from the schematic text and the board photograph on 2026-10-06; nothing was fitted or measured (core-log entry 41). The HAT's own pin assignments beyond those Adafruit's guide states were not checked against its schematic."
+
+- record_id: BRD-009
+  kind: BOARD
+  topic_id: BRD
+  title: "The BL616 has a BOOT button for its ROM bootloader, inside the case"
+  status: SOURCED
+  verified_date: 2026-10-11
+  statement: "The board's BL616 has a BOOT button that puts it into its ROM bootloader at power-up; it is reached by taking the console apart, and the user has written the BL616's firmware through the ROM bootloader with it in the past. Bouffalo's BLFlashCommand (tools/bflb_tools/bouffalo_flash_cube in the SDK) can then read and write any flash range: --read or --write with --start, --len and --file. The SDK's standard make flash writes a complete image from 0x0, where Sipeed's loader lives (FLS-004)."
+  consequence: "This is the recovery path if a firmware image stops the board before its USB console comes up, so that tinytang_flash.py has nothing to talk to. A recovery writes only the application, the same image tinytang_flash.py installs, at 0x40000 with BLFlashCommand --write, and never uses make flash, which would replace Sipeed's loader and with it the one-wire and two-wire choice and the FT2232 debugger (BRD-006, FLS-004). The full-flash backup of FLS-004 restores everything if the loader is ever damaged."
+  sources:
+    - "The user's account, 2026-10-11: the BOOT button exists, is inside the case, and was used to write firmware before"
+    - "Bouffalo SDK tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu --help (read, write, start, len, file)"
+  verification: "Not exercised in this project: the user declined a recovery test as unnecessary, the console being awkward to open (core-log entry 21). The BLFlashCommand options were read from its help text."
 
 - record_id: PMOD-001
   kind: BOARD

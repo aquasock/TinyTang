@@ -632,3 +632,35 @@ Before Phase 1, the recovery path has to be settled with the user: either a conf
 - User Test: N/A
 
 ---
+
+## 21 COMMIT Unreleased 2026-10-11T10:27:59-07:00
+
+#### Coming From:
+
+Unreleased 7a57868
+
+#### Purpose:
+
+Hand the move to upstream Bouffalo SDK 2.3.36 to the next agent at the user's request, part way through Phase 1, with the work done so far, the state of the board and the plan.
+
+#### Outcome:
+
+The move exists because the Xbox Wireless Controller's failure was placed in the BL616's binary BLE controller (entry 18) and upstream's newer controller could not be taken alone (entry 19); the user chose to move the whole SDK, expecting other fixes with it. The user approved this plan: Phase 0, sizing, done in entry 20; Phase 1, port and boot with Bluetooth unused, checking the USB console, flashing, the SD card, the desktop, core loading and Phosphor; Phase 2, Bluetooth on the M750 as a regression baseline; Phase 3, the controller, traced with `bletrace`; Phase 4, removing the diagnostic changes and updating TOOL-003, TOOL-016, the BLE records and `THIRD_PARTY.md`. Each phase is its own cycle, and a finding that changes the plan goes back to the user. The upstream SDK is at `~/.cache/tangcore-dev/sdk-2.3.36` (`8a3df34cb73f459ac71deb1bdf0b33fa016ab6fb`, shallow) and the old fork stays at `~/.cache/tangcore-dev/sdk` as the rollback; a build against the new one is `make CHIP=bl616 BOARD=bl616dk BL_SDK_BASE=$HOME/.cache/tangcore-dev/sdk-2.3.36`, best with `-k` to see every error, and the Makefile's default is to move to it only once Phase 1 boots. The new SDK reads `defconfig`, committed in entry 20, and ignores `proj.conf`; the old reads `proj.conf` and ignores `defconfig`. Before Phase 1 the user stated that the BL616 has a BOOT button inside the case and that firmware used to be written through its ROM bootloader, and declined a recovery test as unnecessary; BRD-009 now records that path, with the rule that a recovery writes only the application at 0x40000 with BLFlashCommand and never runs `make flash`, which would overwrite Sipeed's loader at 0x0. The agent had wrongly told the user that the reference says the board has no BOOT button; it says nothing either way, and BRD-009 fills that gap. Phase 1 has ported three things, none built yet. `usb_config.h` is replaced: the old file was a copy of CherryUSB v1.0.0's template, and the new one includes upstream's `cherryusb_config_template.h` and, as upstream's own BL616 USB console does, silences CherryUSB's prints and sets `CONFIG_USB_HS`. `ports/bl616/usb_cdc_bl616.c` uses CherryUSB's bus-id API on bus 0 with register base 0, descriptor callbacks with C strings in place of the raw descriptor array (VID, PID and the three strings unchanged, plus a device-qualifier descriptor for high speed), endpoint callbacks taking the bus id, and an event handler passed to `usbd_initialize()`. `ports/bl616/tang_usb_role.c` calls `usbd_deinitialize(0)`, `usbh_initialize(0, 0, NULL)` and `usbh_deinitialize(0)`; its header comments describe the old CherryUSB's re-initialisation behaviour (USB-004, USB-005) and must be re-checked against the new one. Still to port, from entry 20's list: the heap, where `mem.h` is replaced by `components/mm/mm.h` with a TLSF or heap5 backend, `kfree_size()` now taking a heap id, `kmax_free_size()` and `kmin_free_size()` added, and allocations that return NULL on failure rather than spinning, so `ports/bl616/tang_heap.c`'s wraps of `bflb_malloc` (BL6-008, BL6-009) may no longer be needed and must be re-derived from `mm.c` rather than carried over, with `td_desktop_bl616.c` and `tang_ble.c` also reading the heap; the Bluetooth host's include layout (`uuid.h` in `tang_ble.c`) and every host-internal call `tang_ble.c` makes (`smp_set_auth`, `bt_le_set_data_len`, `bt_keys`, the link-time wraps of `bt_id_add`, `bt_id_del` and `bt_monitor_send`); the C++ brace-initialisation error in `ports/bl616/phosphor/phosphor_player.cpp`; and two `defconfig` gaps, the Bluetooth CLI wanting the shell component and the SD card port wanting `sdh_sd.h`; link errors are expected after these. Risks for the first boot are USB enumeration (TOOL-001: with the old SDK newlib stopped it, and upstream keeps no newlib switch), whether upstream's image and flash layout still suit Sipeed's loader and FLS-002's slot, the crash recorder's wraps of `exception_entry` and `platform_reset`, and the UART fast path (BL6-007). The board runs `32299f4-dirty.17f81b2`, the entry-18 diagnostic image on the old SDK, with no pairings saved, so Bluetooth stays off at boot; that image still carries BlueZ's pairing flags, privacy off, the resolving-list wrap, the MTU exchange, BlueZ's 45 ms and 420 ms link, the data length request and the HCI trace, and the M750 and K950 are unpaired until Phase 4. When Bluetooth is tested, every `tinytang_run.py` output must be saved whole before it is filtered, because the board's Bluetooth log hands each line out once, and a long `bletrace dump` is fetched in ranges because one command's output is cut after about 4.5 KB (TOOL-006). This commit carries the three unbuilt Phase 1 files, so `main` builds against neither SDK until Phase 1 finishes; `7a57868` is the last commit that builds against the old SDK. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 21 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Continue Phase 1 from the remaining ports above, in this order: the heap, re-deriving `tang_heap.c` from upstream's `components/mm`; the Bluetooth includes and host-internal calls; the C++ error; the two `defconfig` gaps; then link errors. Build with `-k` against `sdk-2.3.36` after each. When it builds, compare the image's boot header and flash layout with FLS-002 before installing it with `tools/tinytang_flash.py --yes`, then have the user power-cycle and check the console, flashing, the SD card, the desktop, core loading and Phosphor. If the board does not come back, recover through BRD-009, writing only the application at 0x40000.
+
+#### Files Modified:
+
+- usb_config.h
+- ports/bl616/usb_cdc_bl616.c
+- ports/bl616/tang_usb_role.c
+
+#### Status:
+
+- Build: NOT RUN
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---

@@ -24,6 +24,9 @@
 #define CDC_OUT_EP 0x02
 #define CDC_INT_EP 0x83
 
+/* CherryUSB numbers its controllers; the BL616 has one. */
+#define CDC_BUSID  0
+
 #define USBD_VID       0xFFFF
 #define USBD_PID       0x5454   /* "TT" — distinct from the firmware we replace */
 #define USBD_MAX_POWER 100
@@ -37,20 +40,63 @@
 
 #define USB_CONFIG_SIZE (9 + CDC_ACM_DESCRIPTOR_LEN)
 
-static const uint8_t cdc_descriptor[] = {
+/* CherryUSB asks for each descriptor through a callback, and builds the
+ * string descriptors itself from C strings. */
+static const uint8_t cdc_device_descriptor[] = {
     USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0xEF, 0x02, 0x01, USBD_VID, USBD_PID, 0x0100, 0x01),
+};
+
+static const uint8_t cdc_config_descriptor[] = {
     USB_CONFIG_DESCRIPTOR_INIT(USB_CONFIG_SIZE, 0x02, 0x01, USB_CONFIG_BUS_POWERED, USBD_MAX_POWER),
     CDC_ACM_DESCRIPTOR_INIT(0x00, CDC_INT_EP, CDC_OUT_EP, CDC_IN_EP, CDC_MAX_MPS, 0x02),
-    USB_LANGID_INIT(USBD_LANGID_STRING),
-    0x12, USB_DESCRIPTOR_TYPE_STRING,  /* "TinyTang" */
-    'T', 0x00, 'i', 0x00, 'n', 0x00, 'y', 0x00,
-    'T', 0x00, 'a', 0x00, 'n', 0x00, 'g', 0x00,
-    0x1a, USB_DESCRIPTOR_TYPE_STRING,  /* "TinyTang CDC" */
-    'T', 0x00, 'i', 0x00, 'n', 0x00, 'y', 0x00, 'T', 0x00, 'a', 0x00, 'n', 0x00, 'g', 0x00,
-    ' ', 0x00, 'C', 0x00, 'D', 0x00, 'C', 0x00,
-    0x0c, USB_DESCRIPTOR_TYPE_STRING,  /* "0.1.3" */
-    '0', 0x00, '.', 0x00, '1', 0x00, '.', 0x00, '3', 0x00,
-    0x00
+};
+
+#ifdef CONFIG_USB_HS
+static const uint8_t cdc_qualifier_descriptor[] = {
+    0x0a, USB_DESCRIPTOR_TYPE_DEVICE_QUALIFIER, 0x00, 0x02, 0xEF, 0x02, 0x01, 0x40, 0x01, 0x00,
+};
+#endif
+
+static const uint8_t *cdc_device_descriptor_cb(uint8_t speed)
+{
+    (void)speed;
+    return cdc_device_descriptor;
+}
+
+static const uint8_t *cdc_config_descriptor_cb(uint8_t speed)
+{
+    (void)speed;
+    return cdc_config_descriptor;
+}
+
+static const uint8_t *cdc_qualifier_descriptor_cb(uint8_t speed)
+{
+    (void)speed;
+#ifdef CONFIG_USB_HS
+    return cdc_qualifier_descriptor;
+#else
+    return NULL;
+#endif
+}
+
+static const char *cdc_string_descriptor_cb(uint8_t speed, uint8_t index)
+{
+    static const char langid[] = { (char)(USBD_LANGID_STRING & 0xFF), (char)(USBD_LANGID_STRING >> 8) };
+    (void)speed;
+    switch (index) {
+    case USB_STRING_LANGID_INDEX:  return langid;
+    case USB_STRING_MFC_INDEX:     return "TinyTang";
+    case USB_STRING_PRODUCT_INDEX: return "TinyTang CDC";
+    case USB_STRING_SERIAL_INDEX:  return "0.1.3";
+    default:                       return NULL;
+    }
+}
+
+static const struct usb_descriptor cdc_descriptor = {
+    .device_descriptor_callback = cdc_device_descriptor_cb,
+    .config_descriptor_callback = cdc_config_descriptor_cb,
+    .device_quality_descriptor_callback = cdc_qualifier_descriptor_cb,
+    .string_descriptor_callback = cdc_string_descriptor_cb,
 };
 
 /* The endpoint callbacks run in interrupt context, so the buffers live in
@@ -110,7 +156,7 @@ static void console_flush(const uint8_t *buf, size_t len)
         if (chunk > CDC_MAX_MPS) chunk = CDC_MAX_MPS;
         memcpy(s_in_buf, buf + done, chunk);
         s_tx_busy = true;
-        usbd_ep_start_write(CDC_IN_EP, s_in_buf, chunk);
+        usbd_ep_start_write(CDC_BUSID, CDC_IN_EP, s_in_buf, chunk);
         const uint64_t started = bflb_mtimer_get_time_ms();
         while (s_tx_busy) {
             if (bflb_mtimer_get_time_ms() - started >= TX_CHUNK_TIMEOUT_MS) {
@@ -122,13 +168,14 @@ static void console_flush(const uint8_t *buf, size_t len)
     }
 }
 
-void usbd_event_handler(uint8_t event)
+static void cdc_event_handler(uint8_t busid, uint8_t event)
 {
+    (void)busid;
     switch (event) {
     case USBD_EVENT_CONFIGURED:
         s_configured = true;
         s_tx_busy = false;
-        usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+        usbd_ep_start_read(CDC_BUSID, CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
         break;
     case USBD_EVENT_DISCONNECTED:
         s_configured = false;
@@ -165,8 +212,9 @@ static void ring_put(uint8_t b)
     }
 }
 
-void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
+static void usbd_cdc_acm_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes)
 {
+    (void)busid;
     (void)ep;
     /* Interrupt context.  This is the sole producer of the ring, and the shell
      * task is the sole consumer, so the head/tail pair needs no lock -- and a
@@ -205,17 +253,18 @@ void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
     uint16_t used = (uint16_t)((s_rx_head - s_rx_tail) & RX_RING_MASK);
     if ((uint16_t)(RX_RING_SIZE - 1u - used) >= CDC_MAX_MPS) {
         s_rx_rearm_pending = false;
-        usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+        usbd_ep_start_read(CDC_BUSID, CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
     } else {
         s_rx_rearm_pending = true;
     }
 }
 
-void usbd_cdc_acm_bulk_in(uint8_t ep, uint32_t nbytes)
+static void usbd_cdc_acm_bulk_in(uint8_t busid, uint8_t ep, uint32_t nbytes)
 {
+    (void)busid;
     (void)ep;
     if ((nbytes % CDC_MAX_MPS) == 0 && nbytes) {
-        usbd_ep_start_write(CDC_IN_EP, NULL, 0);   /* zlp */
+        usbd_ep_start_write(CDC_BUSID, CDC_IN_EP, NULL, 0);   /* zlp */
     } else {
         s_tx_busy = false;
     }
@@ -226,20 +275,22 @@ static struct usbd_endpoint cdc_in_ep  = { .ep_addr = CDC_IN_EP,  .ep_cb = usbd_
 static struct usbd_interface intf0;
 static struct usbd_interface intf1;
 
-void usbd_cdc_acm_set_dtr(uint8_t intf, bool dtr)
+void usbd_cdc_acm_set_dtr(uint8_t busid, uint8_t intf, bool dtr)
 {
+    (void)busid;
     (void)intf;
     s_dtr = dtr;
 }
 
 void tdsh_bl616_console_init(void)
 {
-    usbd_desc_register(cdc_descriptor);
-    usbd_add_interface(usbd_cdc_acm_init_intf(&intf0));
-    usbd_add_interface(usbd_cdc_acm_init_intf(&intf1));
-    usbd_add_endpoint(&cdc_out_ep);
-    usbd_add_endpoint(&cdc_in_ep);
-    usbd_initialize();
+    usbd_desc_register(CDC_BUSID, &cdc_descriptor);
+    usbd_add_interface(CDC_BUSID, usbd_cdc_acm_init_intf(CDC_BUSID, &intf0));
+    usbd_add_interface(CDC_BUSID, usbd_cdc_acm_init_intf(CDC_BUSID, &intf1));
+    usbd_add_endpoint(CDC_BUSID, &cdc_out_ep);
+    usbd_add_endpoint(CDC_BUSID, &cdc_in_ep);
+    /* The register base is 0: CherryUSB's BL616 port knows its own block. */
+    usbd_initialize(CDC_BUSID, 0, cdc_event_handler);
 }
 
 bool tdsh_bl616_console_connected(void)
@@ -272,7 +323,7 @@ int tdsh_bl616_console_read_byte(void)
         uint16_t used = (uint16_t)((s_rx_head - s_rx_tail) & RX_RING_MASK);
         if ((uint16_t)(RX_RING_SIZE - 1u - used) >= CDC_MAX_MPS) {
             s_rx_rearm_pending = false;
-            usbd_ep_start_read(CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
+            usbd_ep_start_read(CDC_BUSID, CDC_OUT_EP, s_out_buf, CDC_MAX_MPS);
         }
     }
     return out;

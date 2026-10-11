@@ -151,15 +151,15 @@ static void role_log(const char *fmt, ...)
 static void go_host(void)
 {
     /* The console goes first: its endpoints belong to the other stack. */
-    usbd_deinitialize();
-    (void)usbh_initialize();
+    usbd_deinitialize(0);
+    (void)usbh_initialize(0, 0, NULL);
     s_role = 1;
     role_log("go_host");
 }
 
 static void go_device(void)
 {
-    (void)usbh_deinitialize();
+    (void)usbh_deinitialize(0);
     port_back_to_device();
     /* Idempotent, per the note at the top of the file. */
     tdsh_bl616_console_init();
