@@ -417,3 +417,37 @@ Stop testing single guesses and build the instrument: an HCI trace on the board,
 - User Test: FAIL
 
 ---
+
+## 14 COMMIT Unreleased 2026-10-11T09:40:18-07:00
+
+#### Coming From:
+
+Unreleased 68ca825
+
+#### Purpose:
+
+Build an HCI trace into the firmware so that a Xbox Wireless Controller pairing on this board can be read packet by packet and compared with the BlueZ capture, after three single-variable tests had each failed to find the fault.
+
+#### Outcome:
+
+The SDK host already calls `bt_monitor_send()` for every HCI command, event and ACL packet in both directions when `CONFIG_BT_DEBUG_MONITOR` is set, using the Linux monitor protocol's packet types; its own implementation prints to a debug UART this board does not bring out. `proj.conf` now sets that option, `CMakeLists.txt` wraps the function at link time, and the new `ports/bl616/tang_ble_trace.c` records each packet with a microsecond timestamp into a 16 KB linear capture, counting LE advertising reports instead of storing them, behind a new `bletrace [clear | dump [from [count]]]` command. The new `tools/ble_trace_to_btsnoop.py` turns a dump into a btsnoop file in the monitor datalink, which btmon 5.85 decodes; a synthetic HCI Reset round-tripped first. The controller's parameter request is accepted again, the SDK's behaviour, and still logged. The first build, `68ca825-dirty.eebf1ab`, captured a 627-packet session, but its dump came back cut off after about 4.5 KB and the capture was lost to the reflash that fixed it; the agent had not tried a full-size dump before asking for the session. The second build, `68ca825-dirty.c2a36fd`, 659568 bytes, MD5 `9b100e9fefceb82d6cac79cf0fd774e4`, added a one-tick pause per line and dump ranges; a 227-packet test trace of scans still came back cut at 137 lines unranged but complete in three ranges, identical where they overlapped and in time order, so one command's console output is capped at about 4.5 KB and dumps are fetched 80 packets at a time, which TOOL-006 now records. Both images were built with `make CHIP=bl616 BOARD=bl616dk`, installed with `tools/tinytang_flash.py --yes` and confirmed by `platform`; the full rebuild the configuration change forced shows the long-standing warnings in the vendored `tang_jtag_programmer.c` and a C++ flag warning, none from the new code. Two traced sessions followed with the controller alone. The first held three `0x3E` connects: the board's `LE Create Connection` matches BlueZ's apart from a 4 s supervision timeout against 420 ms, the controller reports the connection complete, and six connection events later it gives up, so the peer never answered at the link layer. The second, 409 packets, held four encrypted sessions: in each the controller's last data packet arrives about 0.15 s after its Identity Address Information, just after pairing completes on both sides, the link timing out about 8.7 to 9.7 s after connection, and at that same moment this board's host issues `LE Add Device To Resolving List`, `LE Set Privacy Mode` and `LE Set Address Resolution Enable` from `bt_id_add()`, which BlueZ never issued in its session. The agent first told the user the resolving-list commands were absent from the later sessions, which was a matching error in its own script against btmon's shortened command names, and corrected it. BLE-017 records the trace findings. No report arrived. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 14 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Separate the two causes that coincide when the controller goes silent: this board's controller turning on address resolution for the controller's IRK, which BlueZ does not do, and anything in the controller itself at pairing completion. The test is to keep public-address peers out of the controller's resolving list, which the controller's public address never needs, by wrapping `bt_id_add()` and `bt_id_del()` at link time for public addresses only, and to trace one more pairing.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- proj.conf
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble_trace.c
+- tools/ble_trace_to_btsnoop.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

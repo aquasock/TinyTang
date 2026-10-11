@@ -1296,24 +1296,19 @@ static void hid_le_param_updated(struct bt_conn *conn, u16_t interval,
 }
 
 /* le_param_req: a device asks for different connection parameters.  Every
- * request is logged.  The gamepad's slot refuses it (diagnostic): the Xbox
- * Wireless Controller asks for 7.5-15 ms soon after pairing, and on this board
- * the link has died within one supervision timeout of every such switch,
- * while BlueZ, which starts the same switch itself, keeps the controller
- * (.ai/core-reference.md BLE-017).  Refusing keeps the link at 50 ms, so the
- * next run shows whether the switch is what breaks it.  Other slots accept,
- * as before. */
+ * request is logged and accepted, which is what the SDK does without this
+ * callback.  Refusing the Xbox Wireless Controller's request (7.5-15 ms) kept
+ * its link at 50 ms and did not stop it dying, so the switch is not the fault
+ * (.ai/core-reference.md BLE-017). */
 static bool hid_le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 {
     hid_dev_t *d = hid_by_conn(conn);
-    if (!d) {
-        return true;
+    if (d) {
+        hid_log(d, "link params asked: interval %u-%u latency %u timeout %u; accepted",
+                param->interval_min, param->interval_max, param->latency,
+                param->timeout);
     }
-    const bool refuse = d == &s_hid[HID_KBD];
-    hid_log(d, "link params asked: interval %u-%u latency %u timeout %u; %s",
-            param->interval_min, param->interval_max, param->latency,
-            param->timeout, refuse ? "refused (diagnostic)" : "accepted");
-    return !refuse;
+    return true;
 }
 
 static void hid_connected(struct bt_conn *conn, u8_t err)
@@ -2462,6 +2457,9 @@ void tang_ble_info(tang_ble_info_t *out)
     }
 }
 
+/* ports/bl616/tang_ble_trace.c */
+int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv);
+
 static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
       "Bluetooth status: the radio, the heap, the pairings and both devices",
@@ -2475,6 +2473,9 @@ static const tdsh_command_t s_ble_commands[] = {
     { "blemouse", "blemouse pair [name] | <addr> | watch | off | on | forget",
       "Pair a Bluetooth LE mouse as the desktop's pointer; it reconnects by itself after that",
       cmd_blemouse, 0 },
+    { "bletrace", "bletrace [clear | dump [from [count]]]",
+      "Diagnostic HCI trace of the Bluetooth stack (tools/ble_trace_to_btsnoop.py reads a dump)",
+      tang_ble_trace_cmd, 0 },
 };
 
 int tang_ble_register(void)
