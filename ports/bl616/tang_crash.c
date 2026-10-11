@@ -14,6 +14,7 @@
 #include "task.h"
 
 #include "bflb_flash.h"
+#include "bflb_name.h"
 #include "bflb_wdg.h"
 #include "bl616_glb.h"
 #include "ff.h"
@@ -185,7 +186,11 @@ void tang_crash_init(void)
 static void wdt_start(void)
 {
     if (!s_wdg) {
-        s_wdg = bflb_device_get_by_name("watchdog");
+        /* The SDK's own name macro, because the watchdog device was renamed:
+         * it is "watchdog" in the forked SDK and "watchdog0" in 2.3.36, and
+         * bflb_device_get_by_name() asserts on an unknown name there where the
+         * fork returned NULL, which killed the boot in the watchdog task. */
+        s_wdg = bflb_device_get_by_name(BFLB_NAME_WDT);
     }
     if (!s_wdg) {
         return;

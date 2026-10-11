@@ -796,3 +796,33 @@ Read `0x3FF000` through the ROM bootloader once more and resolve the new `mepc` 
 - User Test: FAIL
 
 ---
+
+## 26 COMMIT Unreleased 2026-10-11T13:42:13-07:00
+
+#### Coming From:
+
+Unreleased bf42518
+
+#### Purpose:
+
+Fix the last boot fault the bisect of entry 25 left, so the SDK 2.3.36 image boots to its USB console on this board.
+
+#### Outcome:
+
+The move to upstream Bouffalo SDK 2.3.36 now boots, and entry 25's diagnosis is confirmed to its last detail. The remaining fault was a watchdog device rename: the SDK's own name macro `BFLB_NAME_WDT` is `"watchdog"` in the forked SDK and `"watchdog0"` in 2.3.36, and upstream's `bflb_device_get_by_name()` calls `LHAL_PARAM_ASSERT(0)` and `bflb_lhal_assert_func` when a name is not found, where the fork only returned NULL, so `wdt_start()` in `ports/bl616/tang_crash.c` looked up a name that no longer existed and the `ebreak` assert killed the boot inside the watchdog task, which is exactly what the crash record showed once entries 23 and 25 had made a fault readable. The lookup now uses `BFLB_NAME_WDT` with `bflb_name.h` included, so it follows the SDK rather than spelling a name that can move again, and the other two lookups in the port, `"gpio"` and `"uart1"`, were checked against the 2.3.36 device table and are unchanged. The image built with `make -k CHIP=bl616 BOARD=bl616dk BL_SDK_BASE=$HOME/.cache/tangcore-dev/sdk-2.3.36` as `bf42518-dirty.475b83d`, 607,312 bytes, was written at `0x40000` through the ROM bootloader and verified, and after a cold power cycle the board enumerated as `ffff:5454 TinyTang CDC` and `platform` answered `bl616/freertos, tinytang bf42518-dirty.475b83d` with the TinyDesk Shell 0.1.5 prompt, and `help` listed the full command set, so the console, the shell, the SD mount that now runs in the shell task and the FreeRTOS scheduler are all live on the new SDK. The user reported that the HDMI screen no longer shows the factory TangCore splash, which is the expected signature of this firmware running: `boot.tdsh` reached `tangload` and replaced the FPGA's stored core with this project's VGA-only desktop core, where the splash had been the factory core showing precisely because the BL616 never booted. The three fixes of this migration are now all in: the crash recorder's masked-mcause guard, the SD mount moved out of `main`, and this device name; the diagnostic scaffolding committed in `bf42518` (the `TINYTANG_NO_*` and `TINYTANG_UART_TRACE` guards, the UART trace in `main.cpp`) is no longer needed and should be removed before Phase 4. The required core-syntax audit re-read `core.md` and `core-syntax.md`, inspected the complete `.ai` diff, confirmed `core.md` unchanged and no settled entry rewritten, and validated this entry as number 26 with six canonical sections, prose, allowed Status values and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Run the rest of the Phase 1 checklist that entries 20 and 21 set out, which this cycle did not cover: the SD card, the desktop, core loading and Phosphor, and then the flashing path. Phase 2 follows with Bluetooth on the M750 as a regression baseline, and Phase 3 the Xbox controller under the newer controller library, which is what the move to 2.3.36 was for. Before Phase 4, remove the diagnostic scaffolding committed in `bf42518` and update TOOL-003, TOOL-016 and the BLE records, and restore the BRD-009 wording in `tools/tinytang_flash.py`, which still names `make flash`. A record is also owed for the two porting hazards this cycle found, that upstream asserts on an unknown `bflb_device_get_by_name()` name and that its FreeRTOS trap handler passes `mcause` rather than a register frame to `exception_entry`, so neither costs a session again.
+
+#### Files Modified:
+
+- ports/bl616/tang_crash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
