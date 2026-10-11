@@ -267,3 +267,33 @@ The next cycle has to explain the pad's post-encryption silence rather than theo
 - User Test: FAIL
 
 ---
+
+## 9 COMMIT Unreleased 2026-10-11T07:41:53-07:00
+
+#### Coming From:
+
+Unreleased 009368e
+
+#### Purpose:
+
+Record the user's revert of `ports/bl616/tang_ble.c` to the entry-7 firmware after entry 8's build stopped the Logitech M750 working, and bring the repository back in line with what the board runs.
+
+#### Outcome:
+
+Entry 8's firmware is dropped. Its `tang_ble.c` (the revert to `799c0ac`, the hands-off hold, the ATT probes and the churn bound) stopped the M750 working, so the user restored `tang_ble.c` from `286b133`, the entry-7 build, and built and flashed it after entry 8 was committed; that restore is the only source change in this commit, and the file is byte-identical to `286b133`'s. The image is `build/build_out/tinytang_bl616.bin`, built 2026-10-10T23:48 with `make CHIP=bl616 BOARD=bl616dk`, 657936 bytes, MD5 `bccd20bdcaf0e1a3b149fc0ea5c0a005`, identity `009368e-dirty.0a842a7`, and `platform` on the board reported that identity on 2026-10-11. The identity reads `009368e` only because that commit was checked out at build time; the firmware it carries is entry 7's. On that image `ble` showed the radio up, pairings loaded from `/sd/ble/bonds.bin`, 64,984 B of heap free with a 52,664 B largest block, the M750 paired and waiting, and the K950 slot unpaired. When the user moved the mouse it reconnected through the whitelist initiator without pairing, encrypted at level 2 on the first attempt, found its 7 services and 8 characteristics, read back all three CCCs as `01 00`, took Exit Suspend and reached ready in boot protocol with 188 reports counted. It also asked for and was granted new link parameters (interval 9, 11.25 ms; latency 44; timeout 216, 2160 ms), the request the Xbox pad has never made, which agrees with entry 7's elimination of connection parameters for the pad. The user did not report whether the pointer moved in the desktop, so the user test is not recorded as passed. The `third_party/tinydesk` submodule was reset with `git checkout -- apps/settings.c` after its diff was confirmed line for line equal to `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`, which `scripts/apply-tinydesk-patches.sh` reapplies at every configure, so the submodule shows dirty again after each build. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 9 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The next cycle is project-control work: add to `.ai/core-reference.md` the records entries 7 and 8 left owed, namely the Xbox pad's GATT map, its 17-byte Report ID 1 input report decoded from the 283-byte Report Map, the first-encryption-fails signature, the pad answering ATT before the bond and not after it, and fast blink as pairing mode with slow blink as idle, each checked against the log entry that established it. The Xbox pad work resumes from this firmware afterwards, not from entry 8's, and any instrumentation added for it must leave the keyboard and mouse paths behaving as they do here. The user's confirmation that the pointer moves in the desktop on this image is still to be given.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

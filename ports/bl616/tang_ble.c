@@ -567,18 +567,6 @@ typedef struct {
     unsigned nsubs;
     struct bt_gatt_read_params reads[HID_MAX_READS];
     unsigned nreads;
-    struct bt_gatt_read_params probe_read;   /* the empty-discovery probe */
-    struct bt_gatt_read_params probe_pre;    /* the pre-security probe */
-
-    /* The hands-off experiment.  After a bond completes this slot touches
-     * nothing for HID_HOLD_MS: no discovery, no arming, no bond save, no
-     * whitelist change.  A liveness probe at 1 s, 2 s and 3 s says whether the
-     * pad hangs up unaided or only when this port acts. */
-    volatile bool hold;
-    uint32_t hold_started;
-    uint8_t hold_step;
-    uint8_t fails;                /* consecutive connections that never got ready */
-    uint32_t bonded_at;           /* tick when the security procedure completed */
 
     /* Setup after discovery is a sequence of ATT operations: every
      * subscription, then the read-backs.  They are issued one at a time, each
@@ -587,6 +575,10 @@ typedef struct {
      * allocation then waits forever on the very task that would free them. */
     unsigned setup_sub;
     unsigned setup_read;
+    /* Reads [0, setup_read_pre) are issued before the subscriptions: the
+     * device is asked for its HID Information and Report Map first, and only
+     * then are notifications turned on.  Reads from here on come afterwards. */
+    unsigned setup_read_pre;
     bool setup_active;
     const void *setup_pending;
 } hid_dev_t;
@@ -613,14 +605,10 @@ static tang_bond_t s_bonds[TANG_BOND_SLOTS];
 #define BLE_EV_SAVE 0x2u     /* write s_bonds to the card */
 #define BLE_EV_ARM  0x4u     /* arm s_arm_pending, then update the reconnect */
 #define BLE_EV_JOB  0x8u     /* run s_job, a request of the Bluetooth window's */
-#define BLE_EV_DISCOVER 0x10u /* start service discovery from this task, not
-                               * from the host callback that caught it */
-#define BLE_EV_HOLD     0x20u /* the hands-off hold after a bond finished */
 #define BLE_REARM_MS 500
 #define BLE_RETRY_MS 1000
 
 static volatile uint8_t s_arm_pending;     /* bit per slot */
-static volatile uint8_t s_disc_pending;    /* bit per slot: discovery to start */
 static volatile bool s_auto_running;       /* the whitelist initiator is on */
 static void ble_signal(uint32_t ev);
 static int hid_slot(const hid_dev_t *d) { return (int)(d - s_hid); }
@@ -632,11 +620,6 @@ static void ble_arm_later(const hid_dev_t *d)
     taskEXIT_CRITICAL();
     ble_signal(BLE_EV_ARM);
 }
-
-#define HID_HOLD_MS    8000u  /* diagnostic: the post-bond hands-off window.
-                               * Longer than the 4 s supervision timeout, so a
-                               * link the pad abandons dies INSIDE the hold. */
-#define HID_FAIL_LIMIT 3u     /* stop re-arming after this many duds in a row */
 
 /* The keyboard's current boot report, and the mouse's movement and wheel
  * since the desk layer last asked, with its buttons now.  Written by the
@@ -841,11 +824,6 @@ static u8_t hid_read_done(struct bt_conn *conn, u8_t err,
     if (!d) {
         return BT_GATT_ITER_STOP;
     }
-    if (params == &d->probe_pre || params == &d->probe_read) {
-        hid_log(d, "probe %s came back: err %u, %u byte(s)",
-                params == &d->probe_pre ? "pre-security" : "hold",
-                (unsigned)err, (unsigned)length);
-    }
     if (err) {
         hid_log(d, "read 0x%04X failed (ATT 0x%02X)", params->single.handle, err);
     } else if (data) {
@@ -890,6 +868,25 @@ static u8_t hid_read_done(struct bt_conn *conn, u8_t err,
 static void hid_setup_next(hid_dev_t *d)
 {
     while (d->setup_active) {
+        /* Order matters, and this is the order the implementations that work
+         * use: ask the device for its HID Information and Report Map BEFORE
+         * turning notifications on.  BlueZ cannot build the HID device until
+         * it has parsed the map, and it enables notifications only after
+         * that; Bluepad32 goes further and never subscribes at all until it
+         * has the map.  This host did it the other way round, and the pad
+         * answered by dropping the link the moment its input report's CCC was
+         * written -- at -33 dBm, reproducibly, with the whole standard setup
+         * otherwise complete. */
+        if (d->setup_read < d->setup_read_pre) {
+            struct bt_gatt_read_params *rp = &d->reads[d->setup_read++];
+            d->setup_pending = rp;
+            int err = bt_gatt_read(d->conn, rp);
+            if (err == 0) {
+                return;
+            }
+            hid_log(d, "read 0x%04X not sent (%d)", rp->single.handle, err);
+            continue;
+        }
         if (d->setup_sub < d->nsubs) {
             struct bt_gatt_subscribe_params *sp = &d->subs[d->setup_sub++];
             d->setup_pending = sp;
@@ -928,7 +925,6 @@ static void hid_setup_next(hid_dev_t *d)
                     control_point->value_handle, rc);
         }
         d->state = HID_READY;
-        d->fails = 0;
         hid_log(d, "ready - %s", d->ready_hint);
     }
 }
@@ -1009,19 +1005,27 @@ static void hid_setup_reports(hid_dev_t *d)
             hid_add_sub(d, c);
         }
     }
-    if (mode) {
-        hid_add_read(d, mode->value_handle);
+    /* Everything down to setup_read_pre is issued BEFORE the subscriptions.
+     * HID Information first (a HID host is supposed to have it), then the
+     * Report Map, which is the only thing that says which bit of an input
+     * report is which control.  A gamepad's report is not a keyboard's, and
+     * nothing here had ever read the map at all. */
+    hid_chrc_t *info = hid_find_chrc(d, 0x2A4A);
+    if (info) {
+        hid_add_read(d, info->value_handle);
     }
-    for (unsigned i = 0; i < d->nsubs; i++) {
-        hid_add_read(d, d->subs[i].ccc_handle);
-    }
-    /* The Report Map is the only thing that says which bit of an input report
-     * is which button.  A gamepad's report is not a keyboard's, and reading
-     * this characteristic is what turns an opaque notification into a control
-     * layout.  Nothing here has ever read it. */
     hid_chrc_t *map = hid_find_chrc(d, 0x2A4B);
     if (map) {
         hid_add_read(d, map->value_handle);
+    }
+    if (mode) {
+        hid_add_read(d, mode->value_handle);
+    }
+    d->setup_read_pre = d->nreads;
+    /* After the subscriptions: reading a CCC back says what the device
+     * accepted, which means nothing until it has been written. */
+    for (unsigned i = 0; i < d->nsubs; i++) {
+        hid_add_read(d, d->subs[i].ccc_handle);
     }
     hid_log(d, "%s protocol requested; subscribing to %u input(s)",
             d->boot ? "boot" : "report", d->nsubs);
@@ -1163,28 +1167,6 @@ static void hid_start_chrc_discovery(hid_dev_t *d)
     }
 }
 
-/* One explicit ATT read of 0x0003 (the GAP Device Name value on a standard
- * attribute layout), used to make the pad's ATT server answer for itself.
- * hid_read_done reports the ATT error or the data; a probe that is never
- * answered at all is itself the finding.  Two tags are in use: "pre-security",
- * issued on connect before any security is requested, and "hold", issued
- * during the post-bond hands-off window.  If the pad answers the first and not
- * the second, the security procedure is what stops it serving. */
-static void hid_probe(hid_dev_t *d, struct bt_gatt_read_params *rp, const char *tag)
-{
-    if (!d->conn) {
-        hid_log(d, "probe %s skipped: no connection", tag);
-        return;
-    }
-    memset(rp, 0, sizeof(*rp));
-    rp->func = hid_read_done;
-    rp->handle_count = 1;
-    rp->single.handle = 0x0003;
-    rp->single.offset = 0;
-    const int rc = bt_gatt_read(d->conn, rp);
-    hid_log(d, "probe %s read 0x0003 sent (%d)", tag, rc);
-}
-
 /* Every primary service is listed (useful while bringing up a new device);
  * the HID service's range is kept and walked once the list is complete. */
 static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -1197,13 +1179,8 @@ static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr
     }
     if (!attr) {
         if (!d->hids_end) {
-            /* The old message here could not say whether the request failed,
-             * was never sent, or was answered with nothing at all -- and that
-             * ambiguity cost several cycles.  The count is now carried, and a
-             * probe read goes out so the ATT layer has to answer for itself. */
             hid_log(d, "primary discovery done: %u service(s) seen, no HID service",
                     d->svc_count);
-            hid_probe(d, &d->probe_read, "hold");
             return BT_GATT_ITER_STOP;
         }
         hid_log(d, "primary discovery done: %u service(s), HID 0x%04X-0x%04X",
@@ -1271,6 +1248,40 @@ static void hid_start_discovery(hid_dev_t *d)
     }
 }
 
+/* Names for the HCI error codes that turn up here; the numeric code is
+ * always logged too, this only makes the reason read at a glance.  Diagnosis
+ * build: logging only, no behaviour change. */
+static const char *hid_hci_reason(u8_t reason)
+{
+    switch (reason) {
+    case 0x05: return "auth failure";
+    case 0x08: return "connection timeout (supervision)";
+    case 0x13: return "remote user terminated";
+    case 0x16: return "local host terminated";
+    case 0x28: return "instant passed";
+    case 0x3B: return "unacceptable conn parameters";
+    case 0x3D: return "MIC failure";
+    case 0x3E: return "conn establishment failed";
+    default:   return "other";
+    }
+}
+
+/* The link's actual interval, latency and supervision timeout as the stack
+ * reports them (interval unit 1.25 ms, timeout unit 10 ms).  Registered on
+ * le_param_updated: if the pad asks for a change, or the link settles away
+ * from the default 30-50 ms it was created with, this says so. */
+static void hid_le_param_updated(struct bt_conn *conn, u16_t interval,
+                                 u16_t latency, u16_t timeout)
+{
+    hid_dev_t *d = hid_by_conn(conn);
+    if (d) {
+        hid_log(d, "link params: interval %u (%u.%02u ms) latency %u timeout %u (%u ms)",
+                interval, (unsigned)(interval * 125u / 100u),
+                (unsigned)((interval * 125u) % 100u), latency, timeout,
+                (unsigned)(timeout * 10u));
+    }
+}
+
 static void hid_connected(struct bt_conn *conn, u8_t err)
 {
     hid_dev_t *d = hid_by_conn(conn);
@@ -1303,14 +1314,14 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
         s_auto_running = false;
     }
     ble_signal(BLE_EV_ARM);
-    /* Before any security is requested: does this device serve ATT at all on
-     * this host?  If it answers here and goes silent after pairing, the
-     * security procedure is what stops it -- which is a much smaller thing to
-     * attack than "BLE".  If it answers neither time, the pad never served
-     * ATT on this host and the difference from a working host is in the
-     * connection itself. */
-    hid_probe(d, &d->probe_pre, "pre-security");
     hid_log(d, "connected; requesting encryption");
+    {
+        struct bt_conn_info ci;
+        if (bt_conn_get_info(conn, &ci) == 0) {
+            hid_log(d, "conn info: interval %u latency %u timeout %u role %u",
+                    ci.le.interval, ci.le.latency, ci.le.timeout, ci.role);
+        }
+    }
     d->state = HID_SECURING;
     int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (rc) {
@@ -1325,55 +1336,21 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
      * is worth having only with evidence that something needs it. */
 }
 
-/* Names for the HCI codes that turn up here; the number is always logged too.
- * Diagnosis build: logging only, no behaviour change. */
-static const char *hid_hci_reason(u8_t reason)
-{
-    switch (reason) {
-    case 0x05: return "auth failure";
-    case 0x08: return "connection timeout (supervision)";
-    case 0x13: return "remote user terminated";
-    case 0x16: return "local host terminated";
-    case 0x28: return "instant passed";
-    case 0x3B: return "unacceptable conn parameters";
-    case 0x3D: return "MIC failure";
-    case 0x3E: return "conn establishment failed";
-    default:   return "other";
-    }
-}
-
 static void hid_disconnected(struct bt_conn *conn, u8_t reason)
 {
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
         return;
     }
-    const hid_state_t was = d->state;
-    d->hold = false;
-    hid_log(d, "disconnected (HCI 0x%02X %s)%s", reason, hid_hci_reason(reason),
-            d->armed ? "; waiting for it to come back" : "");
-    /* How long the link survived the bond.  ~4000 ms is the supervision
-     * timeout expiring because the pad stopped answering when the security
-     * procedure finished; a value at the hold's end instead means this port
-     * broke it by resuming. */
-    if (d->bonded_at) {
-        const uint32_t since = (uint32_t)(xTaskGetTickCount() - d->bonded_at) *
-                               (uint32_t)portTICK_PERIOD_MS;
-        hid_log(d, "%u ms after bonding, the link went away", (unsigned)since);
-        d->bonded_at = 0;
-    }
-    /* Bound the churn: a link that never reaches ready, three times running,
-     * stops being retried by itself and waits for an explicit `on`.  Without
-     * this a failed pair drops the key and re-pairs for ever, which is what
-     * makes these traces unreadable and took the console down in entry 6. */
-    if (was != HID_READY) {
-        if (d->fails < 255u) {
-            d->fails++;
-        }
-        if (d->fails >= HID_FAIL_LIMIT && d->armed) {
-            d->armed = false;
-            hid_log(d, "%u connections in a row never reached ready; leaving it alone",
-                    (unsigned)d->fails);
+    {
+        struct bt_conn_info ci;
+        const bool have = (bt_conn_get_info(conn, &ci) == 0);
+        hid_log(d, "disconnected (HCI 0x%02X %s)%s", reason,
+                hid_hci_reason(reason),
+                d->armed ? "; waiting for it to come back" : "");
+        if (have) {
+            hid_log(d, "  last link: interval %u latency %u timeout %u",
+                    ci.le.interval, ci.le.latency, ci.le.timeout);
         }
     }
     bt_conn_unref(d->conn);
@@ -1426,19 +1403,7 @@ static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
     }
     hid_log(d, "encrypted (level %d)", level);
     if (level >= BT_SECURITY_L2 && d->state == HID_SECURING) {
-        /* Hands-off experiment.  Discovery is NOT started here, and the bond
-         * save and the arming are deferred with it: for the next
-         * HID_HOLD_MS this slot issues no HCI command and no ATT request at
-         * all.  The probe at 1 s, 2 s and 3 s is the only thing that touches
-         * the link, and its return code distinguishes a pad that hangs up on
-         * its own from one this port breaks. */
-        d->hold = true;
-        d->hold_started = xTaskGetTickCount();
-        d->bonded_at = d->hold_started;
-        d->hold_step = 0;
-        hid_log(d, "hold: hands off for %u ms, probing at 1/2/3 s",
-                (unsigned)HID_HOLD_MS);
-        ble_signal(BLE_EV_HOLD);
+        hid_start_discovery(d);
     }
 }
 
@@ -1449,20 +1414,6 @@ static bool hid_capture_bond(hid_dev_t *d, struct bt_conn *conn)
 {
     const bt_addr_le_t *dst = bt_conn_get_dst(conn);
     struct bt_keys *k = bt_keys_find_addr(BT_ID_DEFAULT, dst);
-    /* What was actually negotiated.  The pad serves ATT perfectly before the
-     * security procedure and stops the instant it completes, and it answers
-     * PIN_OR_KEY_MISSING on every reconnect -- so the question is whether the
-     * two sides walk away with the same bond.  BT_KEYS_SC is the LE Secure
-     * Connections flag, BT_KEYS_LTK_P256 the P-256 LTK; a legacy bond has
-     * neither and carries an EDIV/Rand-based LTK instead. */
-    hid_log(d, "security level %d, enc_size %u, keys 0x%04X, flags 0x%02X",
-            (int)bt_conn_get_security(conn), k ? k->enc_size : 0u,
-            k ? (unsigned)k->keys : 0u, k ? (unsigned)k->flags : 0u);
-    hid_log(d, "key parts: %s%s%s; %s",
-            (k && (k->keys & BT_KEYS_LTK_P256)) ? "LTK_P256 " : "",
-            (k && (k->keys & BT_KEYS_LTK)) ? "LTK " : "",
-            (k && (k->keys & BT_KEYS_IRK)) ? "IRK" : "",
-            (k && (k->flags & BT_KEYS_SC)) ? "LE Secure Connections" : "LEGACY");
     if (!k || !(k->keys & (BT_KEYS_LTK | BT_KEYS_LTK_P256))) {
         return false;
     }
@@ -1493,12 +1444,8 @@ static void hid_pairing_complete(struct bt_conn *conn, bool bonded)
     }
     if (bonded && hid_capture_bond(d, conn)) {
         hid_log(d, "paired (bonded; saving to the card)");
-        if (d->hold) {
-            hid_log(d, "hold: bond save and arming deferred to the end of the hold");
-        } else {
-            ble_signal(BLE_EV_SAVE);
-            ble_arm_later(d);
-        }
+        ble_signal(BLE_EV_SAVE);
+        ble_arm_later(d);
     } else {
         hid_log(d, "paired (%s)", bonded ? "bonded, but no key to keep" : "not bonded");
     }
@@ -1516,6 +1463,7 @@ static struct bt_conn_cb s_conn_cb = {
     .connected = hid_connected,
     .disconnected = hid_disconnected,
     .security_changed = hid_security_changed,
+    .le_param_updated = hid_le_param_updated,
 };
 
 /* Only completion callbacks, no passkey ones, so the stack reports
@@ -1807,79 +1755,14 @@ static void ble_boot(void)
 
 static void ble_run_job(void);
 
-static bool hid_any_holding(void)
-{
-    for (int i = 0; i < HID_SLOTS; i++) {
-        if (s_hid[i].hold) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* The hands-off experiment's clock.  Each probe is one bt_conn_get_info and
- * one explicit ATT read, logged with its return code: -ENOTCONN (128) means
- * the pad has already hung up, data means the link is healthy and this port is
- * what breaks it.  Return codes of every call are logged, not inferred. */
-static void hid_hold_poll(void)
-{
-    const TickType_t now = xTaskGetTickCount();
-    for (int i = 0; i < HID_SLOTS; i++) {
-        hid_dev_t *d = &s_hid[i];
-        if (!d->hold) {
-            continue;
-        }
-        if (!d->conn) {
-            d->hold = false;
-            continue;
-        }
-        const uint32_t ms = (uint32_t)(now - d->hold_started) * (uint32_t)portTICK_PERIOD_MS;
-        static const uint16_t marks[] = { 1000, 2000, 3000, 5000, 8000 };
-        const unsigned nmarks = (unsigned)(sizeof(marks) / sizeof(marks[0]));
-        while (d->hold_step < nmarks && ms >= (uint32_t)marks[d->hold_step]) {
-            const unsigned mark = (unsigned)marks[d->hold_step];
-            d->hold_step++;
-            struct bt_conn_info ci;
-            if (bt_conn_get_info(d->conn, &ci) == 0) {
-                hid_log(d, "hold %ums: info interval %u latency %u timeout %u role %u",
-                        mark, ci.le.interval, ci.le.latency, ci.le.timeout, ci.role);
-            } else {
-                hid_log(d, "hold %ums: bt_conn_get_info says no connection", mark);
-            }
-            hid_probe(d, &d->probe_read, "hold");
-        }
-        if (ms >= HID_HOLD_MS) {
-            d->hold = false;
-            hid_log(d, "hold over: resuming discovery, bond save and arming");
-            if (d->conn && d->state == HID_SECURING) {
-                hid_start_discovery(d);
-            }
-            if (d->conn) {
-                if (s_bonds[i].valid) {
-                    ble_signal(BLE_EV_SAVE);
-                }
-                ble_arm_later(d);
-            }
-        }
-    }
-}
-
 static void ble_task(void *arg)
 {
     (void)arg;
     for (;;) {
         uint32_t ev = 0;
-        /* While a slot is holding its post-bond silence the task wakes often
-         * enough to run the probes and does nothing else at all. */
-        const bool holding = hid_any_holding();
-        const TickType_t wait = holding
-                ? pdMS_TO_TICKS(200)
-                : (s_auto_retry ? pdMS_TO_TICKS(BLE_RETRY_MS) : portMAX_DELAY);
-        hid_hold_poll();
+        const TickType_t wait = s_auto_retry ? pdMS_TO_TICKS(BLE_RETRY_MS) : portMAX_DELAY;
         if (xTaskNotifyWait(0, 0xFFFFFFFFu, &ev, wait) != pdTRUE) {
-            if (!holding) {
-                ble_reconnect_update();    /* the retry */
-            }
+            ble_reconnect_update();        /* the retry */
             continue;
         }
         if (ev & BLE_EV_BOOT) {
@@ -1890,18 +1773,6 @@ static void ble_task(void *arg)
         }
         if (ev & BLE_EV_JOB) {
             ble_run_job();
-        }
-        if (ev & BLE_EV_DISCOVER) {
-            taskENTER_CRITICAL();
-            const uint8_t m = s_disc_pending;
-            s_disc_pending = 0;
-            taskEXIT_CRITICAL();
-            for (int i = 0; i < HID_SLOTS; i++) {
-                hid_dev_t *hd = &s_hid[i];
-                if ((m & (1u << i)) && hd->conn && hd->state == HID_SECURING) {
-                    hid_start_discovery(hd);
-                }
-            }
         }
         if (ev & BLE_EV_ARM) {
             /* A short pause, so a device that keeps failing to connect is
