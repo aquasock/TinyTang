@@ -240,7 +240,10 @@ static void hid_mtu_changed(struct bt_conn *conn, int mtu);
  * authentication flags its pairing requests carry (BFLB_BLE_SMP_LOCAL_AUTH,
  * defined in the SDK's config.h), and the Bonding flag. */
 extern void smp_set_auth(u8_t auth);
-#define TANG_SMP_AUTH_BONDING 0x01
+/* BlueZ's pairing request to the Xbox Wireless Controller: Bonding (0x01),
+ * MITM (0x04), Secure Connections (0x08), CT2 (0x20).  Against the
+ * controller's NoInputNoOutput it is still Just Works. */
+#define TANG_SMP_AUTH_BLUEZ 0x2D
 
 /* host/hci_core.h: LE Set Data Length for one connection. */
 extern int bt_le_set_data_len(struct bt_conn *conn, u16_t tx_octets, u16_t tx_time);
@@ -318,13 +321,13 @@ static int ble_start_ex(bool verbose)
     }
 
     hid_register_callbacks();
-    /* Pair with LE legacy pairing, not LE Secure Connections: request Bonding
-     * and nothing else.  The Xbox Wireless Controller bonds with Secure
-     * Connections here and then goes silent and drops the bond, while BlueZ
-     * pairs it with Secure Connections fine; Bluepad32 turned Secure
-     * Connections off by default for controllers that fail key exchange
-     * (.ai/core-reference.md BLE-017).  Existing bonds are unaffected. */
-    smp_set_auth(TANG_SMP_AUTH_BONDING);
+    /* Pair with exactly the flags BlueZ sends the Xbox Wireless Controller.
+     * Legacy pairing (Bonding only) made the controller answer after
+     * encryption but still fall silent as pairing completed; with every other
+     * host-side difference from BlueZ now removed, this replicates BlueZ's
+     * pairing too (.ai/core-reference.md BLE-017).  Existing bonds are
+     * unaffected. */
+    smp_set_auth(TANG_SMP_AUTH_BLUEZ);
     /* BFLB_BLE_MTU_CHANGE_CB is on, so the stack reports the negotiated MTU.
      * The exchange's own completion callback carries no value, which makes
      * this the only place the number is visible. */

@@ -542,3 +542,33 @@ The one remaining host-side difference from BlueZ is the pairing: legacy pairing
 - User Test: FAIL
 
 ---
+
+## 18 COMMIT Unreleased 2026-10-11T10:03:53-07:00
+
+#### Coming From:
+
+Unreleased b6a8490
+
+#### Purpose:
+
+Replicate BlueZ's pairing request to the Xbox Wireless Controller exactly, the last host-side difference left, so that a failure would place the fault below the host.
+
+#### Outcome:
+
+`ports/bl616/tang_ble.c` now passes `smp_set_auth()` BlueZ's flags, 0x2D (Bonding, MITM, Secure Connections, CT2), in place of legacy pairing, with privacy off, the resolving-list wrap, the MTU exchange, the 45 ms and 420 ms link and the data length request all kept. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `b6a8490-dirty.f783aa8`, 661008 bytes, MD5 `8031b0894f192083eb8cf1aa98c007e9`; the first install found no board on USB, neither the CDC nor the FT2232, and after the user's power cycle the board came back on the previous image with no crash record and a power-up as its last reset, so the board had lost power or its USB link rather than failed, and the second install with `tools/tinytang_flash.py --yes` succeeded and `platform` confirmed it after a power cycle. In a traced session with the controller alone, 393 packets, every encrypted session went exactly as BlueZ's had through the moment of failure: LE Secure Connections Just Works, encryption, this board's MTU Exchange Request, the controller's Identity Information and Identity Address Information, and no keys from the host. BlueZ's request was answered within 90 ms and the reports started; this board's was acknowledged at the link layer and never answered, the exchange ending with ATT error 14 when the link timed out, about 4.8 s of link-layer life after the last data. With the host's traffic now matching BlueZ's, the fault is placed below the HCI, in the BL616's binary controller library, which also fits the frequent `0x3E` connects that BlueZ's adapter never had and the data length change that is never reported. A check of upstream found that the SDK in use is nand2mario's fork at `7f44f9e` (2025-04-27), while `bouffalolab/bouffalo_sdk` has released `components/wireless/bluetooth/btblecontroller` about twenty times since, up to version 2.3.36 on 2026-10-03, without release notes saying what changed; the user was told, as `.ai/core.md` requires for a newer source. BLE-017 records all of this. The Logitech devices stay unpaired and the board keeps the diagnostic image until the user chooses a direction. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 18 of the active log with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The host-side search is exhausted, and the next step is the user's choice between stopping and documenting, trying a newer upstream controller library, which means first finding out whether the newer `libbtblecontroller_bl616_ble1m10s1bredr0.a` can be linked against this fork's host stack or needs the newer host as well, and getting a link-layer view with an over-the-air sniffer to see what this board's controller sends that BlueZ's adapter does not. Whatever is chosen, the diagnostic changes in `proj.conf`, `CMakeLists.txt` and `tang_ble.c` should be reviewed before the M750 and K950 are paired again.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
