@@ -285,8 +285,14 @@ void __wrap_exception_entry(uintptr_t *regs)
         }
     }
     inside = true;
+    /* SDK 2.3.36's FreeRTOS trap handler passes the masked mcause in a0 when it
+     * calls exception_entry, where the old SDK's bare-metal vector passed a
+     * register frame.  Treating that code as a frame faults a second time
+     * before the original exception can be recorded.  When the "frame" is the
+     * exception code itself, record the exception and no callee register. */
+    const bool code_argument = (uintptr_t)regs == (cause & 0x807fffffu);
     record_and_wait(KIND_TRAP, cause, csr_mepc(), csr_mtval(),
-                    regs ? (uint32_t)regs[1] : 0, current_task_name());
+                    regs && !code_argument ? (uint32_t)regs[1] : 0, current_task_name());
 }
 
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name)

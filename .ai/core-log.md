@@ -760,3 +760,39 @@ Diagnose why the new-SDK image does not come up, keeping the flash-then-recover 
 - User Test: FAIL
 
 ---
+
+## 25 COMMIT Unreleased 2026-10-11T13:33:32-07:00
+
+#### Coming From:
+
+Unreleased 7b12792
+
+#### Purpose:
+
+Take the SDK 2.3.36 image to its first hardware boot under the USB gate, bisect why it never enumerates, and record the root cause before fixing it.
+
+#### Outcome:
+
+The image links, the recovery path works, and the boot failure is now diagnosed to a single mechanism. The full firmware built with `make CHIP=bl616 BOARD=bl616dk BL_SDK_BASE=$HOME/.cache/tangcore-dev/sdk-2.3.36` as `7b12792-dirty.c402c31`, 607,312 bytes, and was flashed with the ROM bootloader; the board never enumerated as `ffff:5454`. Everything around the fault was eliminated first. The loader is not at fault: the image's first 4 KiB, including its embedded flash and clock config, is byte-identical to the working `32299f4` image apart from the body length and header CRC, and the SDK's own device CDC example, refreshed into `ref/` for the new SDK and built by the `TINYTANG_REF` path with this project's `defconfig` and `usb_config.h`, enumerated as `ffff:ffff CherryUSB_CDC_DEMO` on this board, so the SDK, the configuration and the clocks are sound and the fault is in this project's code. The ROM bootloader path was proven and used repeatedly: with BOOT held at power-up the BL616 presents `349b:6160 Bouffalo CDC DEMO` on `/dev/ttyACM0`, `BLFlashCommand` reads and writes flash there, a 4 KiB read at `0x40000` was byte-identical to the saved image, and every write verified by the device's own SHA-256, so no attempt could strand the board. A bisect of the app then narrowed the fault: with the crash recorder present the board lands in the Sipeed loader, and with it removed the app runs far enough to claim the USB port (the FT2232 disappears) but still does not enumerate; removing the link wraps, skipping the SD mount and skipping the shell each left the board still not enumerating. The decisive evidence came from reading the crash recorder's sector `0x3FF000` through the ROM bootloader after the exception-handler fix entry 23 named was applied, so that a fault is recorded instead of faulting again inside the recorder: the record is `kind=TRAP`, `mcause=0x30000005` (load access fault), `task="(no task)"` — that is, before `vTaskStartScheduler` — with `mepc` resolving exactly, against the recorded build's own ELF, first to `xTaskCheckForTimeOut` at `tasks.c:3631` with `mtval=0x18`-family offsets of the null `pxCurrentTCB`, and after `INCLUDE_xTaskAbortDelay` was returned to the SDK's default of 0, to `vTaskPlaceOnEventList` and `vListInsert` instead. The mechanism is therefore a blocking take or receive with a timeout made before the scheduler starts, which has no current task to block and so dereferences a null `pxCurrentTCB`; the working reference build never makes such a call, which is why it enumerates and this firmware does not. Three fixes were applied and kept — the exception-handler masked-mcause guard (entry 23's; it is what made the fault readable), `INCLUDE_xTaskAbortDelay` back to the SDK's default of 0, and the SD mount moved out of `main` into the shell task because `f_mount` takes the FatFS reentrancy mutex with a timeout (TOOL-015) — and the app still faults, so at least one more pre-scheduler blocking call remains, in `tdsh_bl616_console_init` or in the CherryUSB OSAL it reaches. The required core-syntax audit re-read `core.md` and `core-syntax.md`, inspected the complete `.ai` diff, confirmed `core.md` unchanged and no settled entry rewritten, and validated this entry as number 25 with six canonical sections, prose, allowed Status values and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Read `0x3FF000` through the ROM bootloader once more and resolve the new `mepc` and `ra` against this build's ELF to name the remaining pre-scheduler blocking call; if it lands in the CherryUSB OSAL reached from `tdsh_bl616_console_init`, bring the USB console up from a task after `vTaskStartScheduler` rather than in `main`, which removes every pre-scheduler blocking call at once. Once the board enumerates, carry out the Phase 1 checklist that entries 20 and 21 set out — the console, flashing, the SD card, the desktop, core loading and Phosphor — and then Phase 2, Bluetooth on the M750 as a regression baseline. The diagnostic scaffolding added here (the `TINYTANG_NO_CRASH`, `TINYTANG_NO_FS`, `TINYTANG_NO_WRAPS`, `TINYTANG_UART_TRACE` guards, the UART trace in `main.cpp`) is for this diagnosis and should be removed before Phase 4, and `tools/tinytang_flash.py`'s closing hint still names `make flash`, which BRD-009 forbids, because the file was restored to `32299f4`; restore the BRD-009 wording in the cycle that next touches it. The board is left running the failed image and is recovered with `BLFlashCommand --write` of `tinytang_bl616_32299f4-dirty.17f81b2.bin` at `0x40000`.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- FreeRTOSConfig.h
+- main.cpp
+- ports/bl616/tang_crash.c
+- ports/bl616/usb_cdc_bl616.c
+- ref/cdc_acm_template.c
+- ref/ref_rtos_main.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

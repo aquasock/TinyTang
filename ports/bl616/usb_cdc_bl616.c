@@ -17,7 +17,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "usbd_core.h"
-#include "usbd_cdc.h"
+#include "usbd_cdc_acm.h"   /* declares usbd_cdc_acm_init_intf; usbd_cdc.h does not */
 #include "bflb_mtimer.h"
 
 #define CDC_IN_EP  0x81
