@@ -165,3 +165,45 @@ Read `0x0026` and `0x0028` in the vendor service, which is safe and may name the
 - User Test: FAIL
 
 ---
+
+## 6 COMMIT Unreleased 2026-10-10T20:03:15-07:00
+
+#### Coming From:
+
+Unreleased 799c0ac
+
+#### Purpose:
+
+Record the cycle that proved the pad works over LE HID on a known-good host, fitted the antenna the board never had, reordered the GATT setup to match the hosts that work, and located the remaining failure at the link layer rather than in the HID conversation.
+
+#### Outcome:
+
+Four things were established, three of them corrections to what entries 3 to 5 believed.
+
+The antenna was the missing hardware, and it fixed the connection. Board fact 17 says the board has no Bluetooth antenna, only a U.FL jack, and every cycle so far ran with nothing on it. A 2.4 GHz 6 dBi antenna on a U.FL/IPEX to RP-SMA pigtail was fitted -- the user had to seat a U.FL connector blind on the dock's underside, which is a job in itself. The pad read -70 dBm held against the board before, and -83 dBm further away; it now reads **-33 dBm**. Every connection failure on record -- the `HCI 0x3E` at `requesting encryption`, the wedged slots, the flaky pairing, the "then you never can" the user first reported -- stopped happening. The first pairing attempt after the antenna fitted encrypted, bonded and ran the entire setup. Signal was a far larger part of this problem than entries 3 to 5 credited, and `BLE-001`'s note that this board reports `0x3E` on signal alone was the right read of it.
+
+The pad demonstrably works on a known-good host, which settles where the fault is. The pad was paired to the user's desktop -- Ubuntu 26.04, BlueZ 5.85, on an adapter that had never been used before -- and BlueZ built a HID device from the pad's own Report Map: the kernel logged `Bus=0005` with `Handlers=kbd event27 js1`, and with the user pressing buttons `/dev/input/js1` produced **782 live events**, axes swinging the full +/-32767 and buttons 0 through 14. So the pad is an ordinary LE HID device that reports over GATT, and the descriptor this project decoded in entry 4 was correct. The fault is in this port's GATT host. Two theories died with it: the pad advertises `UUID 0x1812` over LE and does **not** answer a classic BR/EDR inquiry, so the Bluetooth-Classic theory raised late in the cycle is dead; and Bluepad32's `uni_hid_parser_xboxone.c` performs no vendor write at all -- it hard-codes a known HID descriptor, never reads the pad's own map, and simply receives -- so the vendor service at `0x002A` that entry 5 named is real and worth knowing, but writing to it is not a prerequisite for this pad reporting.
+
+The GATT setup was reordered to match the implementations that work. This firmware subscribed to the input report and read the Report Map afterwards. Both BlueZ and Bluepad32 have the map in hand before notifications are enabled, and BlueZ cannot build the HID device until it has parsed it. HID Information (`0x2A4A`, which this firmware had never once fetched) and the Report Map are now read before the subscriptions, with the CCC read-backs after them: `hid_setup_next` runs reads up to `setup_read_pre`, then subscriptions, then the rest. The change made no difference to the pad's behaviour, but it is the correct order and it stays.
+
+The remaining failure is at the link layer, during discovery. With the correct order in place the pad pairs -- `encrypted (level 2)`, `paired (bonded; saving to the card)` -- and then comes `no HID service on this device` followed by `disconnected (HCI 0x08)`. `0x08` is a supervision timeout, and "no HID service" is this code's message for primary discovery completing with nothing recorded, which cannot mean the services are absent on a device whose six services BlueZ enumerated an hour earlier. The discovery is being run on a link that has already gone. Worse, entry 3's fix then drops the key and the slot re-pairs, so the whole thing repeats: the board churned through that loop hard enough that the console stopped answering the status probe and needed a power cycle to recover.
+
+Four agent errors belong here. The MTU exchange removed in entry 5 was never the issue and its removal changed nothing. A full hour went into a Bluetooth-Classic theory that one `blescan` disproved. The user's PC was left bonded to the pad, and because BlueZ's HID profile auto-reconnects to a bonded device, the PC kept taking the controller away from the board mid-test. And `tail` was used on console output three times, twice cutting out the decisive line.
+
+#### Next Steps:
+
+Connection parameters are the lead. A peripheral that asks for a particular interval, latency and supervision timeout terminates a link the host does not configure, and a supervision timeout immediately after pairing is that fingerprint; entry 3 named these as the suspect and the antenna has since removed signal as the competing explanation. Log the connection parameter update request and grant what the pad asks for. Second: the `no HID service` path is being reached on a dying link and should say why -- an ATT error, a failed discovery, or a link that went away -- because as written it reports a device with no HID service when the truth is a device that had already left the building, and that misdirection cost time in this cycle.
+
+Operating notes for whoever continues: the pad's pairing mode lasts only a few minutes and `HID_PAIR_SCAN_SECS` is a fixed 8 seconds, so an attempt has to be fired while the pad is still advertising, and a retry loop longer than the window wastes its later passes and can wedge the slot; `blekbd off` clears a wedged slot. `blekbd forget` clears a bad key by hand, though entry 3's fix now does it automatically on `PIN_OR_KEY_MISSING`. Capture console output whole. And the pad holds a key for this board from a pairing later in the cycle, while the desktop's bond was removed.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

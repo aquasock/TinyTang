@@ -574,6 +574,10 @@ typedef struct {
      * allocation then waits forever on the very task that would free them. */
     unsigned setup_sub;
     unsigned setup_read;
+    /* Reads [0, setup_read_pre) are issued before the subscriptions: the
+     * device is asked for its HID Information and Report Map first, and only
+     * then are notifications turned on.  Reads from here on come afterwards. */
+    unsigned setup_read_pre;
     bool setup_active;
     const void *setup_pending;
 } hid_dev_t;
@@ -863,6 +867,25 @@ static u8_t hid_read_done(struct bt_conn *conn, u8_t err,
 static void hid_setup_next(hid_dev_t *d)
 {
     while (d->setup_active) {
+        /* Order matters, and this is the order the implementations that work
+         * use: ask the device for its HID Information and Report Map BEFORE
+         * turning notifications on.  BlueZ cannot build the HID device until
+         * it has parsed the map, and it enables notifications only after
+         * that; Bluepad32 goes further and never subscribes at all until it
+         * has the map.  This host did it the other way round, and the pad
+         * answered by dropping the link the moment its input report's CCC was
+         * written -- at -33 dBm, reproducibly, with the whole standard setup
+         * otherwise complete. */
+        if (d->setup_read < d->setup_read_pre) {
+            struct bt_gatt_read_params *rp = &d->reads[d->setup_read++];
+            d->setup_pending = rp;
+            int err = bt_gatt_read(d->conn, rp);
+            if (err == 0) {
+                return;
+            }
+            hid_log(d, "read 0x%04X not sent (%d)", rp->single.handle, err);
+            continue;
+        }
         if (d->setup_sub < d->nsubs) {
             struct bt_gatt_subscribe_params *sp = &d->subs[d->setup_sub++];
             d->setup_pending = sp;
@@ -981,19 +1004,27 @@ static void hid_setup_reports(hid_dev_t *d)
             hid_add_sub(d, c);
         }
     }
-    if (mode) {
-        hid_add_read(d, mode->value_handle);
+    /* Everything down to setup_read_pre is issued BEFORE the subscriptions.
+     * HID Information first (a HID host is supposed to have it), then the
+     * Report Map, which is the only thing that says which bit of an input
+     * report is which control.  A gamepad's report is not a keyboard's, and
+     * nothing here had ever read the map at all. */
+    hid_chrc_t *info = hid_find_chrc(d, 0x2A4A);
+    if (info) {
+        hid_add_read(d, info->value_handle);
     }
-    for (unsigned i = 0; i < d->nsubs; i++) {
-        hid_add_read(d, d->subs[i].ccc_handle);
-    }
-    /* The Report Map is the only thing that says which bit of an input report
-     * is which button.  A gamepad's report is not a keyboard's, and reading
-     * this characteristic is what turns an opaque notification into a control
-     * layout.  Nothing here has ever read it. */
     hid_chrc_t *map = hid_find_chrc(d, 0x2A4B);
     if (map) {
         hid_add_read(d, map->value_handle);
+    }
+    if (mode) {
+        hid_add_read(d, mode->value_handle);
+    }
+    d->setup_read_pre = d->nreads;
+    /* After the subscriptions: reading a CCC back says what the device
+     * accepted, which means nothing until it has been written. */
+    for (unsigned i = 0; i < d->nsubs; i++) {
+        hid_add_read(d, d->subs[i].ccc_handle);
     }
     hid_log(d, "%s protocol requested; subscribing to %u input(s)",
             d->boot ? "boot" : "report", d->nsubs);
