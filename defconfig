@@ -1,19 +1,31 @@
 # TinyTang SDK configuration for the upstream Bouffalo SDK (Kconfig), the
-# counterpart of proj.conf, which the older fork SDK reads.  See proj.conf for
-# why each option is set.
-CONFIG_FREERTOS =y
-CONFIG_BFLB_LOG =n
-CONFIG_NEWLIB_FATFS =n
-CONFIG_CHERRYUSB =y
-CONFIG_CHERRYUSB_HOST =y
-CONFIG_CHERRYUSB_DEVICE =y
-CONFIG_CHERRYUSB_DEVICE_CDC =y
-CONFIG_BLUETOOTH =y
-CONFIG_BTBLECONTROLLER_LIB =ble1m10s1bredr0
-CONFIG_RF =y
-CONFIG_BLE_USE_MAC2 =n
-CONFIG_DISABLE_BT_HOST_PRIVACY =y
-CONFIG_BT_DEBUG_MONITOR =y
-CONFIG_FATFS =y
-CONFIG_BSP_SDH_SDCARD =y
-CONFIG_FATFS_SDH_SDCARD =y
+# counterpart of proj.conf, which the older forked SDK reads.  See proj.conf
+# for why each option is set; this file is the same set of choices expressed in
+# the upstream SDK's Kconfig names (CONFIG_BFLOG became CONFIG_BFLB_LOG, and the
+# newlib switches are not carried because their file layer is the only part
+# upstream keeps).
+CONFIG_FREERTOS=y
+CONFIG_BFLB_LOG=n
+CONFIG_CHERRYUSB=y
+CONFIG_CHERRYUSB_HOST=y
+CONFIG_CHERRYUSB_DEVICE=y
+CONFIG_CHERRYUSB_DEVICE_CDC=y
+CONFIG_CHERRYUSB_DEVICE_CDC_ACM=y
+CONFIG_BLUETOOTH=y
+CONFIG_BTBLECONTROLLER_LIB=ble1m10s1bredr0
+# The stack's own shell CLI commands are off: they need the SDK shell component,
+# and this firmware's console is TinyDesk Shell, not the SDK's.
+CONFIG_BT_STACK_CLI=n
+CONFIG_RF=y
+CONFIG_BLE_USE_MAC2=n
+CONFIG_DISABLE_BT_HOST_PRIVACY=y
+CONFIG_BT_DEBUG_MONITOR=y
+# The memory manager's own low-water mark, which the desktop's System Monitor
+# reports (kmin_free_size()).
+CONFIG_MM_ENABLE_MIN_FREE_TRACKING=y
+CONFIG_FATFS=y
+# BSP_SDH_SD (not the BSP_SDH_SDCARD legacy alias) is what adds the SD driver's
+# include directory and its sources.
+CONFIG_BSP_SDH_SD=y
+CONFIG_BSP_SDH_SDCARD=y
+CONFIG_FATFS_SDH_SDCARD=y

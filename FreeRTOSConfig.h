@@ -40,6 +40,9 @@
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
 
+/* SDK 2.3.36 supplies these addresses through its own FreeRTOS target, so
+ * define them only when nothing upstream already has. */
+#ifndef configMTIME_BASE_ADDRESS
 #if defined(BL602) || defined(BL702) || defined(BL702L)
 #define configMTIME_BASE_ADDRESS    (0x02000000UL + 0xBFF8UL)
 #define configMTIMECMP_BASE_ADDRESS (0x02000000UL + 0x4000UL)
@@ -52,6 +55,7 @@
 #define configMTIMECMP_BASE_ADDRESS ((0xE0000000UL) + 0x4000UL)
 #endif
 #endif
+#endif /* configMTIME_BASE_ADDRESS */
 
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configUSE_PREEMPTION                    1

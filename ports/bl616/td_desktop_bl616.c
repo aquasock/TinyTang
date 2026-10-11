@@ -40,7 +40,8 @@
 #include "task.h"
 #include "bflb_mtimer.h"
 #include "bflb_clock.h"
-#include "mem.h"          /* the SDK's heap: g_kmemheap, kfree_size() */
+#include "mm.h"           /* the SDK's memory manager: kfree_size(), kmin_free_size() */
+#include "tang_heap.h"    /* tang_heap_info(): total size across the active heaps */
 
 #include "tinydesk/td.h"
 #include "td_apps.h"
@@ -224,36 +225,30 @@ void td_apps_register_all(void)
 // it needs new machinery: the allocator the SDK actually uses, and FreeRTOS,
 // already know both things.
 //
-// The heap is TLSF, not FreeRTOS's -- so xPortGetFreeHeapSize() does not even
-// exist in this build, which the linker was quick to point out.  The SDK's own
-// mem.h keeps the running free figure and the usable size, updating the former
-// on every allocation and free.  It keeps no low-water mark, so this tracks
-// one across its own samples: a minimum of the readings, not of every
-// allocation.
+// The heap is the SDK's memory manager, not FreeRTOS's -- so
+// xPortGetFreeHeapSize() does not even exist in this build, which the linker
+// was quick to point out.  mm.h reports the free bytes across the active heaps
+// and, with CONFIG_MM_ENABLE_MIN_FREE_TRACKING, the low-water mark the SDK
+// itself keeps.
 //
-// There is one heap.  mem.h maps PMEM_HEAP to the same g_kmemheap unless the
-// chip is a BL618, so this board has no external RAM and the app is told so
-// with NULL rather than a zero.
-
-static uint32_t s_heap_min;
+// This board has no external RAM; the app is told so with NULL rather than a
+// zero.
 
 static uint32_t heap_free(void)
 {
-    return kfree_size();
+    return kfree_size(0);
 }
 
 static uint32_t heap_min_free(void)
 {
-    const uint32_t now = kfree_size();
-    if (s_heap_min == 0 || now < s_heap_min) {
-        s_heap_min = now;
-    }
-    return s_heap_min;
+    return kmin_free_size();
 }
 
 static uint32_t heap_total(void)
 {
-    return (uint32_t)g_kmemheap.heapsize;
+    tang_heap_info_t heap;
+    tang_heap_info(&heap);
+    return (uint32_t)heap.total;
 }
 
 static int sys_task_count(void)     { return (int)uxTaskGetNumberOfTasks(); }

@@ -724,3 +724,39 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 24 COMMIT Unreleased 2026-10-11T12:18:22-07:00
+
+#### Coming From:
+
+Unreleased 02e68f4
+
+#### Purpose:
+
+Port TinyTang to upstream Bouffalo SDK 2.3.36 so the firmware links against the newer Bluetooth stack, prove the board's ROM-bootloader recovery, and take the new image to its first hardware boot.
+
+#### Outcome:
+
+The port links, the recovery path is proven, and the new image does not boot yet. The tree was first restored to the code the board runs, `32299f4`, with the `.ai` memory kept and the previous agent's uncommitted migration and startup-recovery experiment set aside verbatim in `/run/media/vash/GIT/Tang-Console-138K-backups/tinytang-preamigration-20261011T115054-0700.tar.gz` and its `.diff`. The port then re-derived the areas entry 20 named. `defconfig` carries the new SDK's Kconfig choices, mapping `proj.conf` by name (`CONFIG_BFLB_LOG` for `BFLOG`) and adding `CONFIG_CHERRYUSB_DEVICE_CDC_ACM` (the ACM class's own gate, not the base `CONFIG_CHERRYUSB_DEVICE_CDC`), `CONFIG_BSP_SDH_SD` (the SD driver's include directory is gated on that and not on the `BSP_SDH_SDCARD` legacy alias), `CONFIG_BT_STACK_CLI=n` (the stack's CLI wants the SDK shell, and this firmware's console is TinyDesk Shell) and `CONFIG_MM_ENABLE_MIN_FREE_TRACKING`. The heap was re-derived rather than carried: `components/mm` replaces the old TLSF, `tang_heap.c` now wraps `kmalloc` and `krealloc` only to record refused requests, since upstream already returns NULL where the old `bflb_malloc` spun with interrupts off (BL6-008), and `tang_heap_info` reports through `kfree_size(0)`, `kmax_free_size(0)` and `g_mem_manager`, taking the mm lock only for the heap-list walk so the SDK's own locking getters are not called inside it; `td_desktop_bl616.c` and `tang_ble.c` follow, the latter also moving `uuid.h` to `bt_uuid.h`. `CMakeLists.txt` splits the language standard into `-std=gnu11` for C and `-std=gnu++17` for C++, which is what the SDK's `phosphor_player.cpp` needs, and renames the allocator wraps to `--wrap=kmalloc` and `--wrap=krealloc`, and `FreeRTOSConfig.h` guards the MTIME addresses that upstream's FreeRTOS target now supplies. It built clean with `make -k CHIP=bl616 BOARD=bl616dk BL_SDK_BASE=$HOME/.cache/tangcore-dev/sdk-2.3.36` as identity `02e68f4-dirty.4fb2d07`, 607,312 bytes, valid boot header, the only warnings the vendored programmer's and the SDK's own. The recovery path was then proven without a write: with BOOT held at power-up the BL616 presents its own USB CDC `349b:6160 Bouffalo CDC DEMO` on `/dev/ttyACM0`, not the FT2232 and needing no `ttyUSB` or sudo, `BLFlashCommand` handshook, and a `--read` of 4096 bytes at `0x40000` came back byte-identical to the saved image's first 4 KiB (SHA-256 `dc438973ea671c4a54eb9f82257bae7a32a3a65787061adeef116179921c6fdc`), recorded as `rom_read_20261011_0x40000_len0x1000.bin`; the chip UID is `e8ca50f49d69` and the flash `c86016`, 4 MiB. The new image was then installed with `tools/tinytang_flash.py --yes`, staged and commit-verified, but the board did not run it: after a cold power cycle in two-wire mode it came up as the SIPEED `USB_Debugger` FT2232 (`0403:6010`, serial `2025041420`) with no CDC, where the same cabling had shown `ffff:5454` before the flash, the same signature as entries 21 to 23. It was recovered through the ROM bootloader with `BLFlashCommand --write` of the saved image at `0x40000`, whose device SHA-256 matched `f8cb34557b0da70595954d756d833fb47c7c5d83637b0f22d954c1309fa137c2`, and after a power cycle `platform` reported `32299f4-dirty.17f81b2` again, which also confirms the two-wire setup itself is sound and isolates the new image as the fault. The required core-syntax audit re-read `core.md` and `core-syntax.md`, inspected the complete `.ai` diff, confirmed `core.md` unchanged and no settled entry rewritten, and validated this entry as number 24 with six canonical sections, prose, allowed Status values and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Diagnose why the new-SDK image does not come up, keeping the flash-then-recover loop this cycle proved cheap. Build the smallest new-SDK image first with `TINYTANG_USB_ONLY=1` (TOOL-005): if that enumerates as `ffff:5454`, USB bring-up is sound and the fault is in what runs above it, so add the shell and then storage back one at a time; if it does not, the bring-up itself is at fault, and the prime suspect is entry 23's finding that the new SDK routes IRQs to the FreeRTOS trap handler, so a USB interrupt that fires before `vTaskStartScheduler()` enters a task-dependent handler with no task and hangs, which can be tested by starting the USB but enabling its interrupt only once the scheduler runs. Whichever it is, the diagnostic changes belong in `defconfig` and `CMakeLists.txt` and must be removed before Phase 4. Separately, `tools/tinytang_flash.py`'s closing hint still tells the user to reflash with `make flash`, which BRD-009 forbids, because the file was restored to `32299f4` and lost the BRD-009 wording; restore it in the cycle that next touches the file. The Bluetooth regression of Phase 2 and the controller of Phase 3 wait on a booting image.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- FreeRTOSConfig.h
+- defconfig
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_heap.c
+- ports/bl616/tang_heap.h
+- ports/bl616/td_desktop_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

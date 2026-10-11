@@ -1,13 +1,10 @@
 // TinyTang — heap allocation that fails instead of freezing.
 //
-// The SDK's allocator (bflb_malloc and its siblings over TLSF) never returns
-// NULL: a failed allocation prints to a UART this board does not expose, then
-// spins with interrupts off, and only the watchdog ends it (BL6-008).  With the
-// Bluetooth stack and two devices connected the heap is small and fragmented
-// enough for that to happen -- `tdsh run` asking for a large task stack froze
-// the board.  The linker renames those functions (--wrap) to the versions in
-// tang_heap.c, which are the same TLSF calls under the same lock but return
-// NULL on failure and note it, so the caller can fail cleanly.
+// SDK 2.3.36's allocator returns NULL on allocation failure, so the old SDK's
+// TLSF replacements -- which existed only to prevent a silent spin (BL6-008) --
+// are gone.  The linker now wraps kmalloc and krealloc only to record the
+// refused request, task and caller; allocation, locking and heap accounting
+// stay in the SDK.
 //
 // SPDX-License-Identifier: MIT
 
@@ -31,7 +28,7 @@ typedef struct {
     char     last_task[16];
 } tang_heap_info_t;
 
-/* A snapshot, including a walk of the heap for its largest free block. */
+/* A snapshot across the SDK's active heaps, with the largest free block. */
 void tang_heap_info(tang_heap_info_t *out);
 
 /* Print the snapshot as one or two lines prefixed with `who`. */

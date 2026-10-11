@@ -11,8 +11,7 @@
 #include "task.h"
 
 #include "bflb_irq.h"
-#include "mem.h"
-#include "tlsf.h"
+#include "mm.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -23,7 +22,7 @@ static size_t s_last_size;
 static uintptr_t s_last_caller;
 static char s_last_task[16];
 
-/* Called with interrupts off, from inside the allocator's lock. */
+/* Called with interrupts off, after the SDK has refused an allocation. */
 static void note_failure(size_t size, void *caller)
 {
     s_failures++;
@@ -37,108 +36,73 @@ static void note_failure(size_t size, void *caller)
     s_last_task[i] = '\0';
 }
 
-static void count_out(struct mem_heap_s *heap, void *ptr)
-{
-    heap->free_bytes -= tlsf_block_size(ptr);
-    heap->free_bytes -= tlsf_alloc_overhead();
-}
+/* The SDK's allocator (components/mm) already returns NULL when it cannot
+ * satisfy a request -- it does not spin with interrupts off the way the old
+ * SDK's bflb_malloc did (BL6-008) -- so nothing needs replacing.  The linker
+ * wraps kmalloc and krealloc only to record the request that was refused; the
+ * allocation, its locking and the heap accounting all stay in the SDK. */
 
-/* The SDK's functions, renamed by the linker (CMakeLists.txt).  They differ
- * from the originals only in what happens on failure; bflb_realloc also counts
- * the new block's size rather than the old pointer's, which the original reads
- * after the block may have moved. */
+void *__real_kmalloc(size_t size, uint32_t flags);
+void *__real_krealloc(void *ptr, size_t size);
 
-void *__wrap_bflb_malloc(struct mem_heap_s *heap, size_t nbytes)
+void *__wrap_kmalloc(size_t size, uint32_t flags)
 {
-    const uintptr_t flag = bflb_irq_save();
-    void *ret = tlsf_memalign(heap->priv, 32, nbytes);
-    if (ret) {
-        count_out(heap, ret);
-    } else {
-        note_failure(nbytes, __builtin_return_address(0));
-    }
-    bflb_irq_restore(flag);
-    return ret;
-}
-
-void *__wrap_bflb_malloc_align(struct mem_heap_s *heap, size_t align, size_t size)
-{
-    const uintptr_t flag = bflb_irq_save();
-    void *ret = tlsf_memalign(heap->priv, align, size);
-    if (ret) {
-        count_out(heap, ret);
-    } else {
+    void *ret = __real_kmalloc(size, flags);
+    if (!ret && size != 0) {
+        const uintptr_t irq = bflb_irq_save();
         note_failure(size, __builtin_return_address(0));
+        bflb_irq_restore(irq);
     }
-    bflb_irq_restore(flag);
     return ret;
 }
 
-void *__wrap_bflb_calloc(struct mem_heap_s *heap, size_t count, size_t size)
+void *__wrap_krealloc(void *ptr, size_t size)
 {
-    if (count == 0 || size == 0 || count > SIZE_MAX / size) {
-        return NULL;
-    }
-    const size_t total = count * size;
-    const uintptr_t flag = bflb_irq_save();
-    void *ptr = tlsf_memalign(heap->priv, 32, total);
-    if (ptr) {
-        count_out(heap, ptr);
-        memset(ptr, 0, total);
-    } else {
-        note_failure(total, __builtin_return_address(0));
-    }
-    bflb_irq_restore(flag);
-    return ptr;
-}
-
-void *__wrap_bflb_realloc(struct mem_heap_s *heap, void *ptr, size_t nbytes)
-{
-    const uintptr_t flag = bflb_irq_save();
-    const size_t before = ptr ? tlsf_block_size(ptr) : 0;
-    void *ret = tlsf_realloc(heap->priv, ptr, nbytes);
-    if (ret) {
-        heap->free_bytes += before;
-        heap->free_bytes -= tlsf_block_size(ret);
-        if (!ptr) {
-            heap->free_bytes -= tlsf_alloc_overhead();
+    /* A NULL pointer is an allocation, not a resize; handle it here so a
+     * refused realloc(NULL, n) is recorded once rather than not at all. */
+    if (!ptr) {
+        void *ret = __real_kmalloc(size, MM_FLAG_HEAP_ANY);
+        if (!ret && size != 0) {
+            const uintptr_t irq = bflb_irq_save();
+            note_failure(size, __builtin_return_address(0));
+            bflb_irq_restore(irq);
         }
-    } else if (nbytes != 0) {
-        /* The old block is untouched, as realloc promises. */
-        note_failure(nbytes, __builtin_return_address(0));
-    } else if (ptr) {
-        heap->free_bytes += before + tlsf_alloc_overhead();   /* realloc(p, 0) freed it */
+        return ret;
     }
-    bflb_irq_restore(flag);
+    void *ret = __real_krealloc(ptr, size);
+    if (!ret && size != 0) {
+        const uintptr_t irq = bflb_irq_save();
+        note_failure(size, __builtin_return_address(0));
+        bflb_irq_restore(irq);
+    }
     return ret;
 }
 
 /* ------------------------------------------------------------ reporting */
 
-static void largest_walker(void *ptr, size_t size, int used, void *user)
-{
-    (void)ptr;
-    size_t *largest = user;
-    if (!used && size > *largest) {
-        *largest = size;
-    }
-}
-
 void tang_heap_info(tang_heap_info_t *out)
 {
     memset(out, 0, sizeof(*out));
-    struct mem_heap_s *heap = KMEM_HEAP;
-    /* A few hundred blocks at most; walked under the allocator's own lock so
-     * the picture is consistent. */
-    const uintptr_t flag = bflb_irq_save();
-    out->total = heap->heapsize;
-    out->free = heap->free_bytes;
-    tlsf_walk_pool(tlsf_get_pool(heap->priv), largest_walker, &out->largest);
+
+    /* The heap size, summed over the SDK's active heaps.  Held under the mm
+     * lock so the list does not change under us. */
+    const uintptr_t flag = mm_lock_save();
+    for (uint32_t i = 1; i < CONFIG_MM_HEAP_COUNT; i++) {
+        const mm_heap_t *heap = g_mem_manager.heaps[i];
+        if (heap && heap->is_active) {
+            out->total += heap->total_size;
+        }
+    }
+    mm_unlock_restore(flag);
+
+    /* kfree_size() and kmax_free_size() take the mm lock themselves, so they
+     * are called outside the section above rather than nested inside it. */
+    out->free = kfree_size(0);
+    out->largest = kmax_free_size(0);
     out->failures = s_failures;
     out->last_size = s_last_size;
     out->last_caller = s_last_caller;
     memcpy(out->last_task, s_last_task, sizeof(out->last_task));
-    bflb_irq_restore(flag);
 }
 
 void tang_heap_print(const char *who)

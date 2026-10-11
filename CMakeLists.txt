@@ -16,9 +16,11 @@ find_package(bouffalo_sdk REQUIRED HINTS $ENV{BL_SDK_BASE})
 sdk_add_include_directories(. ports/bl616 third_party/tinydesk-shell/include)
 
 # TinyDesk Shell's core is C11 (it uses max_align_t) while the SDK compiles C
-# as gnu99, so raise the standard for this project.  This is the one flag the
-# port needs; the core itself is untouched.
-sdk_add_compile_options(-std=gnu11)
+# as gnu99, so raise the standard.  Phosphor also uses C++17 aggregate
+# initialisation, which the SDK otherwise compiles as C++11, so the two
+# languages are given their flags separately.
+sdk_add_compile_options($<$<COMPILE_LANGUAGE:C>:-std=gnu11>
+                        $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>)
 
 # Diagnostic: build without the scheduler and shell, to isolate the USB
 # bring-up from everything above it.  Selected by the environment so it does
@@ -145,13 +147,12 @@ else()
     # The crash recorder takes over the SDK's exception handler, which would
     # otherwise print to an unconnected UART and spin, and the Bluetooth
     # controller library's fatal-error exit, which would jump to address 0
-    # (ports/bl616/tang_crash.h); and the allocator's four entry points, which
-    # spin with interrupts off when an allocation fails, are replaced by ones
-    # that return NULL (ports/bl616/tang_heap.h).  None is weak, so the linker
-    # renames them.
+    # (ports/bl616/tang_crash.h).  Upstream's allocator already returns NULL on
+    # failure, so its wrappers only record the refused request rather than
+    # replace the allocation (ports/bl616/tang_heap.h).  None is weak, so the
+    # linker renames them.
     sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset
-                         -Wl,--wrap=bflb_malloc -Wl,--wrap=bflb_malloc_align
-                         -Wl,--wrap=bflb_calloc -Wl,--wrap=bflb_realloc)
+                         -Wl,--wrap=kmalloc -Wl,--wrap=krealloc)
     # Diagnostic: the Bluetooth host's HCI monitor hook, which proj.conf turns
     # on with CONFIG_BT_DEBUG_MONITOR, records into RAM for `bletrace` instead
     # of printing to an unconnected UART (ports/bl616/tang_ble_trace.c).

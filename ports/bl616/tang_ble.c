@@ -42,14 +42,14 @@
 #include "bluetooth.h"
 #include "conn.h"
 #include "gatt.h"
-#include "uuid.h"
+#include "bt_uuid.h"
 #include "hci_driver.h"
 #include "btble_lib_api.h"
 #include "rfparam_adapter.h"
 
 #include "keys.h"
 #include "ff.h"
-#include "mem.h"
+#include "mm.h"
 
 #include "tdsh.h"
 #include "tang_ble.h"
@@ -277,7 +277,7 @@ static int ble_start_ex(bool verbose)
         return s_enable_result;
     }
 
-    s_heap_before = kfree_size();
+    s_heap_before = kfree_size(0);
     int32_t rc = rfparam_init(0, NULL, 0);
     if (rc != 0) {
         if (verbose) {
@@ -332,7 +332,7 @@ static int ble_start_ex(bool verbose)
      * The exchange's own completion callback carries no value, which makes
      * this the only place the number is visible. */
     bt_gatt_register_mtu_callback(hid_mtu_changed);
-    s_heap_after = kfree_size();
+    s_heap_after = kfree_size(0);
     s_start_phase = 2;
 
     if (verbose) {
@@ -2383,7 +2383,7 @@ const char *tang_ble_scan_start(void)
         return "the radio failed to start; see ble in the Terminal";
     }
     if (s_start_phase == 0) {
-        const uint32_t free_now = kfree_size();
+        const uint32_t free_now = kfree_size(0);
         if (free_now < BLE_START_MIN_FREE) {
             snprintf(s_reason, sizeof(s_reason),
                      "starting the radio needs %u KB free; %lu KB is free",
