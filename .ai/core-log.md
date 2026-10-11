@@ -125,3 +125,43 @@ The 128-bit vendor-specific service at `0x0024`-`0x002A` is the next surface to 
 - User Test: FAIL
 
 ---
+
+## 5 COMMIT Unreleased 2026-10-10T18:43:53-07:00
+
+#### Coming From:
+
+Unreleased 5ddeb99
+
+#### Purpose:
+
+Name the Xbox pad's vendor service, remove the ATT MTU exchange that was wrong twice, and record that the stale-key deadlock presents as a connection failure rather than a security error.
+
+#### Outcome:
+
+Three things came out of this cycle. Two of them are corrections to work already recorded.
+
+The vendor service is named. Primary discovery had always seen a 128-bit service at `0x0024`-`0x002A`, but the log could only print `uuid (128-bit) 0x0000`, because the code pulled a 16-bit value out of a UUID and had nothing to show for a 128-bit one. It now prints the full value in both byte orders, so there is no doubt which end is which, and the first 128-bit service's range is recorded during primary discovery and its characteristics enumerated after the HID pass, which then carries on as before. The service is `00000001-5F60-4C4F-9C83-A7953298D40D`; a characteristic `00000002-5F60-4C4F-9C83-A7953298D40D` at value handle `0x0026` with properties `0x02` (read); `00000003-...` at value `0x0028`, properties `0x02` (read); and `00000004-...` at value `0x002A`, properties `0x08` (write). That is a vendor base UUID with Microsoft's own numbering rather than anything the Bluetooth SIG defines: two readable values and one writable, none of which this firmware has ever touched. Nothing is read or written in it yet -- describing an unknown vendor surface is safe, and poking one is how a working bond becomes a paperweight.
+
+The ATT MTU exchange is removed, having been wrong twice. It was added in entry 4 on the theory that the default MTU of 23 could not carry the Report Map. Entry 4 already recorded that theory as dead, because the map is fetched in 22-byte pieces by `hid_read_done` and the pad's input report is 17 bytes, which fits a 23-byte MTU notification. This cycle showed the exchange was worse than useless on top of that: sent concurrently with the security procedure, the pad answered `BT_ATT_ERR_UNLIKELY` (ATT `0x0E`) and the link died immediately afterwards with `HCI 0x3E`, four attempts out of four, before discovery had begun -- so four pairing attempts produced nothing else at all. Removing it restored the earlier behaviour on the same pad at the same signal, and the next attempt completed the whole setup. `hid_mtu_changed` and its registration stay, because they cost nothing and would report an MTU negotiated from the device's side, but nothing is requested from ours.
+
+The stale-key deadlock presents as a connection failure, not a security error, which is why entry 3's fix cannot see it. Four attempts in a row gave `connected; requesting encryption` and then `disconnected (HCI 0x3E)` with no `security failed` line between them. `blekbd forget`, which drops the stored key without disconnecting or disarming, ended it: the next connection ran the full setup. So the failure is exactly the deadlock entry 3 diagnosed and fixed, seen from a different angle -- the pad has forgotten its key entering pairing mode while the board still holds one, so every connect tries to ENCRYPT against a key the pad no longer has. Entry 3's fix keys on `PIN_OR_KEY_MISSING` arriving from the security callback, and in this failure mode that callback never fires, so the fix never reaches it and the slot loops. The trap is that `HCI 0x3E` is also what this board reports on signal alone (`BLE-001`), and entry 3 already paid an hour for acting on a code too broadly when it used `err 8`. The narrow trigger is a connect that reaches `requesting encryption` and then dies without ever logging `encrypted`, on a bonded slot -- a marginal link that never got that far would not fire it.
+
+What still does not work is unchanged and now more precisely located. The pad connects, completes a textbook HID setup -- discovery, subscription, the full 283-byte Report Map, Exit Suspend -- reaches `ready`, and then hangs up with `HCI 0x13`. Not one report has ever arrived, with buttons held down. It is not the HID service: the pad does everything asked of it there and then leaves. The vendor service above is the unexplored surface, and its single write characteristic is where a device that behaves this way usually wants a handshake.
+
+Two agent errors belong here so they cost nothing next time. The retry loop around `pair` is necessary because `HID_PAIR_SCAN_SECS` is a fixed 8 seconds and one attempt races the turn that starts it, but a pass still connecting wedges the slot and every later pass answers `already connecting; use 'blekbd off' first`, so the loop must clear the slot first or it wastes three passes in four. And `tail -N` was used twice on console output that contained the thing being looked for: the first time it cut the `mtu exchange failed` line out of a setup log, hiding that the exchange was failing rather than absent; the second time it cut the vendor discovery out of the very pass that produced it. Capture console output whole.
+
+#### Next Steps:
+
+Read `0x0026` and `0x0028` in the vendor service, which is safe and may name the handshake outright; the read machinery and its long-value continuation are already in place. Then `0x002A`, the write, which is the likely key to reports and deserves thought before it is poked. Separately, the stale-key trigger wants narrowing as described, because a pad put into pairing mode currently wedges the slot until `forget` is run by hand, and that is the user-visible behaviour that started this whole line of work.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

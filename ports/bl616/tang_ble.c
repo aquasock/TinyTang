@@ -548,6 +548,12 @@ typedef struct {
 
     uint16_t hids_start;
     uint16_t hids_end;
+    /* The first 128-bit service seen.  Not walked for reports: listed and
+     * described, because a device that completes a standard HID setup and
+     * then declines to report is usually waiting on its vendor surface. */
+    uint16_t vendors_start;
+    uint16_t vendors_end;
+    bool vendor_walked;
     hid_chrc_t chrcs[HID_MAX_CHRCS];
     unsigned nchrcs;
     uint16_t boot_value_handle;
@@ -555,11 +561,11 @@ typedef struct {
     struct bt_gatt_discover_params disc_primary;
     struct bt_gatt_discover_params disc_chrc;
     struct bt_gatt_discover_params disc_ccc;
+    struct bt_gatt_discover_params disc_vendor;
     struct bt_gatt_subscribe_params subs[HID_MAX_SUBS];
     unsigned nsubs;
     struct bt_gatt_read_params reads[HID_MAX_READS];
     unsigned nreads;
-    struct bt_gatt_exchange_params mtu;   /* ATT MTU, asked for once per link */
 
     /* Setup after discovery is a sequence of ATT operations: every
      * subscription, then the read-backs.  They are issued one at a time, each
@@ -655,25 +661,17 @@ static hid_dev_t *hid_by_conn(struct bt_conn *conn)
 }
 
 /* The input a slot hands the desk layer, cleared so nothing stays held. */
-/* The link starts at the default ATT MTU of 23 -- smaller than the HID Report
- * Map and too small for any input report that is not a keyboard's eight bytes.
- * Nothing here ever asked for more, so every read was capped at 22 and the
- * controller's map was unreachable.  Ask once per connection (the API permits
- * no more than that) and log what the stack says the link settled on. */
+/* The stack's own report of the ATT MTU, available because
+ * BFLB_BLE_MTU_CHANGE_CB is defined in the SDK.  Kept after the exchange we
+ * used to send was removed: if a device negotiates one from its side, this is
+ * where it would show.  The board itself runs at the default 23, and that is
+ * fine -- a long value is read in pieces by hid_read_done, and the pad's own
+ * report is 17 bytes. */
 static void hid_mtu_changed(struct bt_conn *conn, int mtu)
 {
     hid_dev_t *d = hid_by_conn(conn);
     if (d) {
         hid_log(d, "mtu now %d", mtu);
-    }
-}
-
-static void hid_mtu_exchanged(struct bt_conn *conn, u8_t err,
-                              struct bt_gatt_exchange_params *params)
-{
-    hid_dev_t *d = hid_by_conn(conn);
-    if (d && err) {
-        hid_log(d, "mtu exchange failed (ATT 0x%02X)", err);
     }
 }
 
@@ -1070,6 +1068,58 @@ static u8_t hid_discover_chrc(struct bt_conn *conn, const struct bt_gatt_attr *a
     return BT_GATT_ITER_CONTINUE;
 }
 
+static void hid_start_chrc_discovery(hid_dev_t *d);
+
+/* A 128-bit service's characteristics, listed and not read.  This is what the
+ * HID service walk does not cover, and what a device that connects, subscribes
+ * and then stays silent tends to be waiting on. */
+static u8_t hid_discover_vendor_chrc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+                                     struct bt_gatt_discover_params *params)
+{
+    (void)params;
+    hid_dev_t *d = hid_by_conn(conn);
+    if (!d) {
+        return BT_GATT_ITER_STOP;
+    }
+    if (!attr) {
+        d->vendor_walked = true;
+        hid_start_chrc_discovery(d);      /* the HID walk carries on from here */
+        return BT_GATT_ITER_STOP;
+    }
+    const struct bt_gatt_chrc *chrc = attr->user_data;
+    if (chrc->uuid->type == BT_UUID_TYPE_16) {
+        hid_log(d, "  vendor chrc 0x%04X value 0x%04X props 0x%02X uuid 0x%04X",
+                attr->handle, chrc->value_handle, chrc->properties,
+                BT_UUID_16(chrc->uuid)->val);
+    } else {
+        const struct bt_uuid_128 *u = (const struct bt_uuid_128 *)chrc->uuid;
+        hid_log(d, "  vendor chrc 0x%04X value 0x%04X props 0x%02X",
+                attr->handle, chrc->value_handle, chrc->properties);
+        hid_log(d, "    uuid %02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+                u->val[15], u->val[14], u->val[13], u->val[12],
+                u->val[11], u->val[10], u->val[9], u->val[8],
+                u->val[7], u->val[6], u->val[5], u->val[4],
+                u->val[3], u->val[2], u->val[1], u->val[0]);
+    }
+    return BT_GATT_ITER_CONTINUE;
+}
+
+static void hid_start_vendor_discovery(hid_dev_t *d)
+{
+    memset(&d->disc_vendor, 0, sizeof(d->disc_vendor));
+    d->disc_vendor.uuid = NULL;
+    d->disc_vendor.func = hid_discover_vendor_chrc;
+    d->disc_vendor.start_handle = d->vendors_start + 1;
+    d->disc_vendor.end_handle = d->vendors_end;
+    d->disc_vendor.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+    int err = bt_gatt_discover(d->conn, &d->disc_vendor);
+    if (err) {
+        hid_log(d, "vendor discovery failed (%d)", err);
+        d->vendor_walked = true;
+        hid_start_chrc_discovery(d);
+    }
+}
+
 static void hid_start_chrc_discovery(hid_dev_t *d)
 {
     d->nchrcs = 0;
@@ -1101,16 +1151,43 @@ static u8_t hid_discover_primary(struct bt_conn *conn, const struct bt_gatt_attr
             return BT_GATT_ITER_STOP;
         }
         hid_log(d, "HID service 0x%04X-0x%04X", d->hids_start, d->hids_end);
-        hid_start_chrc_discovery(d);
+        if (d->vendors_end && !d->vendor_walked) {
+            hid_log(d, "vendor service 0x%04X-0x%04X", d->vendors_start, d->vendors_end);
+            hid_start_vendor_discovery(d);
+        } else {
+            hid_start_chrc_discovery(d);
+        }
         return BT_GATT_ITER_STOP;
     }
     const struct bt_gatt_service_val *svc = attr->user_data;
-    uint16_t uuid = svc->uuid->type == BT_UUID_TYPE_16 ? BT_UUID_16(svc->uuid)->val : 0;
-    hid_log(d, "  service 0x%04X-0x%04X uuid %s0x%04X", attr->handle, svc->end_handle,
-            svc->uuid->type == BT_UUID_TYPE_16 ? "" : "(128-bit) ", uuid);
-    if (uuid == 0x1812 && !d->hids_end) {
-        d->hids_start = attr->handle;
-        d->hids_end = svc->end_handle;
+    if (svc->uuid->type == BT_UUID_TYPE_16) {
+        const uint16_t uuid = BT_UUID_16(svc->uuid)->val;
+        hid_log(d, "  service 0x%04X-0x%04X uuid 0x%04X", attr->handle,
+                svc->end_handle, uuid);
+        if (uuid == 0x1812 && !d->hids_end) {
+            d->hids_start = attr->handle;
+            d->hids_end = svc->end_handle;
+        }
+        return BT_GATT_ITER_CONTINUE;
+    }
+    /* A 128-bit service printed in full, both orders: BT_UUID_128 holds the
+     * value little-endian, so the reversed form is the one the spec and any
+     * vendor document print, and the raw form is here to be certain. */
+    const struct bt_uuid_128 *u = (const struct bt_uuid_128 *)svc->uuid;
+    hid_log(d, "  service 0x%04X-0x%04X uuid", attr->handle, svc->end_handle);
+    hid_log(d, "    %02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+            u->val[15], u->val[14], u->val[13], u->val[12],
+            u->val[11], u->val[10], u->val[9], u->val[8],
+            u->val[7], u->val[6], u->val[5], u->val[4],
+            u->val[3], u->val[2], u->val[1], u->val[0]);
+    hid_log(d, "    raw %02X%02X%02X%02X%02X%02X%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X",
+            u->val[0], u->val[1], u->val[2], u->val[3],
+            u->val[4], u->val[5], u->val[6], u->val[7],
+            u->val[8], u->val[9], u->val[10], u->val[11],
+            u->val[12], u->val[13], u->val[14], u->val[15]);
+    if (!d->vendors_end) {
+        d->vendors_start = attr->handle;
+        d->vendors_end = svc->end_handle;
     }
     return BT_GATT_ITER_CONTINUE;
 }
@@ -1120,6 +1197,9 @@ static void hid_start_discovery(hid_dev_t *d)
     d->state = HID_DISCOVERING;
     d->hids_start = 0;
     d->hids_end = 0;
+    d->vendors_start = 0;
+    d->vendors_end = 0;
+    d->vendor_walked = false;
     memset(&d->disc_primary, 0, sizeof(d->disc_primary));
     d->disc_primary.uuid = NULL;
     d->disc_primary.func = hid_discover_primary;
@@ -1170,16 +1250,13 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
     if (rc) {
         hid_log(d, "set_security failed (%d)", rc);
     }
-    /* Ask for a wider ATT MTU before discovery, so the Report Map read and any
-     * report wider than a keyboard's eight bytes have room.  Sent alongside
-     * SMP rather than after it: the two ride different L2CAP channels, so they
-     * do not contend for the ATT buffers that setup is careful to serialise. */
-    memset(&d->mtu, 0, sizeof(d->mtu));
-    d->mtu.func = hid_mtu_exchanged;
-    rc = bt_gatt_exchange_mtu(conn, &d->mtu);
-    if (rc) {
-        hid_log(d, "mtu exchange not sent (%d)", rc);
-    }
+    /* No ATT MTU exchange here.  One was sent for a while on the theory that
+     * the default 23 could not carry the Report Map; that was wrong -- the map
+     * is fetched in 22-byte pieces by hid_read_done, and the pad's report is 17
+     * bytes, which fits.  Worse, asking during the security procedure made the
+     * pad answer BT_ATT_ERR_UNLIKELY (0x0E) and the link died straight after,
+     * four attempts in a row, before discovery had even started.  A wider MTU
+     * is worth having only with evidence that something needs it. */
 }
 
 static void hid_disconnected(struct bt_conn *conn, u8_t reason)
