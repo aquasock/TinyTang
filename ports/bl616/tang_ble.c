@@ -47,7 +47,6 @@
 #include "btble_lib_api.h"
 #include "rfparam_adapter.h"
 #include "bflb_flash.h"
-#include "bl616_glb.h"
 
 #include "keys.h"
 #include "ff.h"
@@ -208,13 +207,7 @@ enum {
 
 #define BLE_CRUMB_READ_WORDS  (BLE_CRUMB_BEAT_BASE + BLE_CRUMB_BEAT_SLOTS + 4u)
 
-/* Raw values (not markers), for the USB-clock investigation: the WiFi PLL
- * register the USB clock comes from, either side of the radio start, and
- * whether the revive was attempted. */
-#define BLE_CRUMB_PLL_BEFORE   16u
-#define BLE_CRUMB_PLL_AFTER    17u
-#define BLE_CRUMB_USB_REVIVE   18u
-
+/* Raw values (not markers) go into their own slots where needed. */
 static volatile bool s_crumb_armed;
 
 static const char *const s_crumb_names[] = {
@@ -246,12 +239,6 @@ static void ble_crumbs_arm(void)
 {
     (void)bflb_flash_erase(BLE_CRUMB_ADDR, BLE_CRUMB_SECTOR);
     ble_crumb_write(BLE_CRUMB_ENTER);
-}
-
-/* Write one raw value (not a marker) into a crumb slot. */
-static void ble_crumb_put(unsigned slot, uint32_t value)
-{
-    (void)bflb_flash_write(BLE_CRUMB_ADDR + slot * 4u, (uint8_t *)&value, sizeof(value));
 }
 
 /* ------------------------------------------------------- bt_conn_unref probe --
@@ -470,7 +457,6 @@ static int ble_start_ex(bool verbose)
 
     ble_crumbs_arm();
     s_heap_before = kfree_size(0);
-    ble_crumb_put(BLE_CRUMB_PLL_BEFORE, BL_RD_REG(GLB_BASE, GLB_WIFI_PLL_CFG10));
     /* Diagnostic: straight to the console, not through ble_say, which buffers
      * into the drained-once ring when it runs on the ble task -- the ring never
      * drains if the radio start hangs, which is the failure being chased.  The
@@ -551,11 +537,12 @@ static int ble_start_ex(bool verbose)
     s_start_phase = 2;
     ble_crumb_write(BLE_CRUMB_DONE);
     s_crumb_armed = true;               /* the heartbeat may start now */
-    /* The radio is up and the USB clock is likely down (see blecrumb).  Record
-     * the PLL register, then try to bring the console back. */
-    ble_crumb_put(BLE_CRUMB_PLL_AFTER, BL_RD_REG(GLB_BASE, GLB_WIFI_PLL_CFG10));
+    /* Starting the radio takes the USB clock down with it, so the console
+     * disappears while the CPU keeps running: the controller's RF bring-up
+     * disturbs the WiFi PLL the USB device is clocked from, which the BSP's
+     * board.c sets up with GLB_Set_USB_CLK_From_WIFIPLL.  Re-assert the clock
+     * and re-initialise the device, and the console comes back. */
     tdsh_bl616_console_restart();
-    ble_crumb_put(BLE_CRUMB_USB_REVIVE, 1u);
 
     if (verbose) {
         bt_addr_le_t own;
@@ -2837,19 +2824,6 @@ static int cmd_blecrumb(tdsh_session_t *session, int argc, char **argv)
     } else {
         tdsh_printf("blecrumb: last = %s\r\n", s_crumb_names[last]);
     }
-    /* The WiFi PLL register the USB clock is divided from, either side of the
-     * radio start: if the radio cleared the USB output bits, the two differ. */
-    const uint32_t pll_before = words[BLE_CRUMB_PLL_BEFORE];
-    const uint32_t pll_after = words[BLE_CRUMB_PLL_AFTER];
-    if (pll_before == 0xFFFFFFFFu && pll_after == 0xFFFFFFFFu) {
-        tdsh_printf("blecrumb: PLL_CFG10 not recorded\r\n");
-    } else {
-        tdsh_printf("blecrumb: PLL_CFG10 before %08lx after %08lx %s\r\n",
-                    (unsigned long)pll_before, (unsigned long)pll_after,
-                    pll_before == pll_after ? "(unchanged)" : "(CHANGED)");
-    }
-    tdsh_printf("blecrumb: usb revive %s\r\n",
-                words[BLE_CRUMB_USB_REVIVE] == 1u ? "attempted" : "-");
     /* The bt_conn_ref/unref ring, from its own sector, newest first.  Each
      * entry is the connection (low bit set for a ref), the caller, and
      * conn->ref as it stood when the call was made. */

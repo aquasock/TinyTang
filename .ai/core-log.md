@@ -891,3 +891,33 @@ Promote the USB revive out of the diagnostic code into a clean, commented call a
 - User Test: NOT RUN
 
 ---
+
+## 29 COMMIT Unreleased 2026-10-11T16:31:07-07:00
+
+#### Coming From:
+
+Unreleased 0c53bd6
+
+#### Purpose:
+
+Promote the working USB-clock revive out of the diagnostic scaffolding into a permanent documented fix, and establish how input actually reaches this board.
+
+#### Outcome:
+
+The revive that keeps the console alive across the Bluetooth radio start is now a plain call in `ble_start_ex()` -- `tdsh_bl616_console_restart()`, with a comment saying what it does and why the radio's bring-up takes the USB clock down -- instead of sitting between the PLL crumbs that were only there to investigate it; the three USB-investigation crumbs (`BLE_CRUMB_PLL_BEFORE`, `BLE_CRUMB_PLL_AFTER`, `BLE_CRUMB_USB_REVIVE`), the raw-value helper `ble_crumb_put()` and the now-unused `bl616_glb.h` include are gone, and the rest of the diagnostic scaffolding (the radio-start crumbs, `blestart`, `blecrumb`, the heartbeat, the reference ring and the `bt_conn_ref`/`bt_conn_unref` wraps) is deliberately left for the cleanup cycle. Built against `sdk-2.3.36` as `0c53bd6-dirty.57f0e39` and installed with `tools/tinytang_flash.py --yes`; after the user's power cycle `platform` reported that identity and `ble` reported the radio up with the stack's 16,860 bytes taken, which is the boot path exercising the revive -- the M750's saved pairing starts the radio at boot, taking the USB clock down, and the console is alive because the revive ran. The cycle also settled a question that had been costing the controller work: the BL616 has no route into a core's input at all. `ports/bl616/tang_fpga_link.h` carries commands only for the core ID, the OSD, the desktop layer and cartridge loading (0x01, 0x04, 0x05, 0x08, 0x13, 0x14, 0x15, 0x06, 0x07), while the input it carries runs the other way -- `tang_fpga_joypad()` and `tang_fpga_keyboard()` read what the core already has. A core takes its controller from the FPGA's own USB host on the two USB-A ports (BRD-003), so no BLE device, working or not, could ever have reached a core; the Xbox pad's failure was therefore never on the path to a controller for a core, which this entry records so the work is not resumed as if it were. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, and validated this entry as number 29 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set, and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The BLE controller line is closed as far as this board allows: the pad is the BL616's binary controller, and the BL616 cannot feed a core, so no further pairing sessions are owed. What remains is the cleanup cycle the diagnostics were always waiting for -- removing the radio-start crumbs, `blestart`, `blecrumb`, the heartbeat, the reference ring and the two `bt_conn_ref`/`bt_conn_unref` wraps, and the `TINYTANG_NO_*` and UART-trace guards committed in `bf42518` -- along with the three records this project is owed: the radio start taking the USB clock down (with `tdsh_bl616_console_restart()` as the fix), `bt_conn_unref` asserting on an over-release where the old SDK was silent, and the OTG port supplying no VBUS, which USB-003 already holds but which the controller work re-learned. `tools/tinytang_flash.py` still names `make flash` in its closing hint, which BRD-009 forbids. The M750's pointer movement in the desktop was never confirmed and is not required.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
