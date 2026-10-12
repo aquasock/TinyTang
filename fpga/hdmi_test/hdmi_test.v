@@ -15,6 +15,10 @@
 // reconstructed nestang tree), and the serialiser and output-buffer wiring
 // matches nestang's serializer.sv (GW_IDE branch) and nes2hdmi.sv.  The
 // picture is eight colour bars, DVI only: no data islands, no audio.
+// The same bars go to the PmodVGA (J1 on PMOD1, J2 on PMOD0, as /tang.ini's
+// vga_j1/vga_j2 and fpga/desktop/desktop_pmod.sv), registered on the same
+// pixel clock, so a VGA picture shows the PLLs and divider run even when HDMI
+// does not.
 //
 // MODE_480P selects 640x480@60 (pixel 25.2 MHz, bit clock 126 MHz, with a
 // pll_hdmi variant the build script generates) instead of 1280x720@60 (74.25
@@ -25,10 +29,17 @@ module hdmi_test (
     output       tmds_clk_p,
     output       tmds_clk_n,
     output [2:0] tmds_d_p,
-    output [2:0] tmds_d_n
+    output [2:0] tmds_d_n,
+    output [7:0] pmod0_io,      // PmodVGA J2: green, HSYNC, VSYNC
+    output [7:0] pmod1_io       // PmodVGA J1: red, blue
 );
 
 parameter MODE_480P = 0;
+// SER_ODDR (480p only) bypasses the HCLK block and the OSER10s: the PLL's 5x
+// clock runs the pixel pipeline with a 1-in-5 clock enable, and each lane is a
+// fabric shift register into an ODDR, two bits per 126 MHz cycle.  It splits
+// the serialiser path (OSER10, FCLK lanes, CLKDIV) from the output buffers.
+parameter SER_ODDR = 0;
 
 localparam H_ACTIVE = MODE_480P ? 640  : 1280;
 localparam H_FP     = MODE_480P ? 16   : 110;
@@ -57,26 +68,44 @@ always @(posedge sys_clk) begin
         resetn <= 1'b1;
 end
 
-CLKDIV #(.DIV_MODE("5")) div5 (
-    .CLKOUT(hclk),
-    .HCLKIN(hclk5),
-    .RESETN(resetn),
-    .CALIB(1'b0)
-);
+// The pixel pipeline's clock and enable: hclk from the divider, every cycle;
+// or, with SER_ODDR, hclk5 itself with an enable on one cycle in five.
+wire pix_clk;
+reg  [2:0] phase = 3'd0;
+wire pix_ce = SER_ODDR ? phase == 3'd4 : 1'b1;
+generate
+    if (SER_ODDR) begin : no_div
+        assign pix_clk = hclk5;
+        assign hclk = 1'b0;
+    end else begin : div
+        CLKDIV #(.DIV_MODE("5")) div5 (
+            .CLKOUT(hclk),
+            .HCLKIN(hclk5),
+            .RESETN(resetn),
+            .CALIB(1'b0)
+        );
+        assign pix_clk = hclk;
+    end
+endgenerate
 
 reg [2:0] rst_sync = 3'b111;
-always @(posedge hclk or negedge resetn)
+always @(posedge pix_clk or negedge resetn)
     if (!resetn) rst_sync <= 3'b111;
     else         rst_sync <= {rst_sync[1:0], 1'b0};
 wire reset = rst_sync[2];
 
+always @(posedge pix_clk)
+    phase <= reset || phase == 3'd4 ? 3'd0 : phase + 3'd1;
+
 // ---------------------------------------------------------------- raster --
 reg [11:0] hcnt = 12'd0;
 reg [11:0] vcnt = 12'd0;
-always @(posedge hclk)
+always @(posedge pix_clk)
     if (reset) begin
         hcnt <= 12'd0;
         vcnt <= 12'd0;
+    end else if (!pix_ce) begin
+        // hold
     end else if (hcnt == H_TOTAL - 1) begin
         hcnt <= 12'd0;
         vcnt <= vcnt == V_TOTAL - 1 ? 12'd0 : vcnt + 12'd1;
@@ -98,7 +127,7 @@ wire b_on = bar == 3'd0 || bar == 3'd2 || bar == 3'd4 || bar == 3'd6;
 
 reg       de = 1'b0, hs = 1'b0, vs = 1'b0;
 reg [7:0] red = 8'd0, green = 8'd0, blue = 8'd0;
-always @(posedge hclk) begin
+always @(posedge pix_clk) if (pix_ce) begin
     de    <= active;
     hs    <= SYNC_POS ? h_sync : ~h_sync;
     vs    <= SYNC_POS ? v_sync : ~v_sync;
@@ -107,31 +136,71 @@ always @(posedge hclk) begin
     blue  <= b_on ? 8'd192 : 8'd16;
 end
 
+// ------------------------------------------------------------------- VGA --
+// desktop_pmod.sv's lanes: J1 = {blue, red}, J2 = {0, 0, vs, hs, green}; pin
+// io carries lane io/2 + (io%2)*4 because the dock interleaves the rows.  J2's
+// lanes 6 and 7 are the PmodVGA's unconnected pins 9 and 10, driven low here.
+// Colour is black outside the active area (de), as VGA requires.
+wire [7:0] vga_j1 = de ? {blue[7:4], red[7:4]} : 8'd0;
+wire [7:0] vga_j2 = {2'b00, vs, hs, de ? green[7:4] : 4'd0};
+genvar io;
+generate
+    for (io = 0; io < 8; io = io + 1) begin : vga_pin
+        assign pmod1_io[io] = vga_j1[io / 2 + (io % 2) * 4];
+        assign pmod0_io[io] = vga_j2[io / 2 + (io % 2) * 4];
+    end
+endgenerate
+
 // ------------------------------------------------------- encode, serialise --
 wire [9:0] tmds_ch [0:2];
-tmds_encoder enc0 (.clk(hclk), .reset(reset), .de(de), .ctrl({vs, hs}), .d(blue),  .q(tmds_ch[0]));
-tmds_encoder enc1 (.clk(hclk), .reset(reset), .de(de), .ctrl(2'b00),    .d(green), .q(tmds_ch[1]));
-tmds_encoder enc2 (.clk(hclk), .reset(reset), .de(de), .ctrl(2'b00),    .d(red),   .q(tmds_ch[2]));
+tmds_encoder enc0 (.clk(pix_clk), .ce(pix_ce), .reset(reset), .de(de), .ctrl({vs, hs}), .d(blue),  .q(tmds_ch[0]));
+tmds_encoder enc1 (.clk(pix_clk), .ce(pix_ce), .reset(reset), .de(de), .ctrl(2'b00),    .d(green), .q(tmds_ch[1]));
+tmds_encoder enc2 (.clk(pix_clk), .ce(pix_ce), .reset(reset), .de(de), .ctrl(2'b00),    .d(red),   .q(tmds_ch[2]));
 
-wire [2:0] tmds;
+wire [3:0] tmds;     // {clock lane, red, green, blue}
 genvar i;
 generate
-    for (i = 0; i < 3; i = i + 1) begin : ser
-        OSER10 gwSer (
-            .Q(tmds[i]),
-            .D0(tmds_ch[i][0]), .D1(tmds_ch[i][1]), .D2(tmds_ch[i][2]),
-            .D3(tmds_ch[i][3]), .D4(tmds_ch[i][4]), .D5(tmds_ch[i][5]),
-            .D6(tmds_ch[i][6]), .D7(tmds_ch[i][7]), .D8(tmds_ch[i][8]),
-            .D9(tmds_ch[i][9]),
-            .PCLK(hclk),
-            .FCLK(hclk5),
-            .RESET(reset)
-        );
+    if (SER_ODDR) begin : oddr
+        // Each lane shifts out two bits a cycle, lowest first, and reloads on
+        // the cycle the encoders update; the clock lane sends 1111100000.
+        for (i = 0; i < 4; i = i + 1) begin : lane
+            wire [9:0] word;
+            if (i == 3) begin : clk_lane
+                assign word = 10'b0000011111;
+            end else begin : data_lane
+                assign word = tmds_ch[i];
+            end
+            reg [9:0] sh = 10'd0;
+            always @(posedge pix_clk)
+                sh <= pix_ce ? word : {2'b00, sh[9:2]};
+            ODDR gwDdr (
+                .Q0(tmds[i]),
+                .Q1(),
+                .D0(sh[0]),
+                .D1(sh[1]),
+                .TX(1'b0),
+                .CLK(pix_clk)
+            );
+        end
+    end else begin : oser
+        for (i = 0; i < 3; i = i + 1) begin : ser
+            OSER10 gwSer (
+                .Q(tmds[i]),
+                .D0(tmds_ch[i][0]), .D1(tmds_ch[i][1]), .D2(tmds_ch[i][2]),
+                .D3(tmds_ch[i][3]), .D4(tmds_ch[i][4]), .D5(tmds_ch[i][5]),
+                .D6(tmds_ch[i][6]), .D7(tmds_ch[i][7]), .D8(tmds_ch[i][8]),
+                .D9(tmds_ch[i][9]),
+                .PCLK(hclk),
+                .FCLK(hclk5),
+                .RESET(reset)
+            );
+        end
+        assign tmds[3] = hclk;
     end
 endgenerate
 
 ELVDS_OBUF tmds_bufds [3:0] (
-    .I({hclk, tmds}),
+    .I(tmds),
     .O({tmds_clk_p, tmds_d_p}),
     .OB({tmds_clk_n, tmds_d_n})
 );
@@ -141,6 +210,7 @@ endmodule
 // DVI 1.0 TMDS encoder (section 3.3.3); q[0] is the first bit on the wire.
 module tmds_encoder (
     input            clk,
+    input            ce,
     input            reset,
     input            de,
     input      [1:0] ctrl,
@@ -171,6 +241,8 @@ always @(posedge clk)
     if (reset) begin
         cnt <= 5'sd0;
         q   <= 10'd0;
+    end else if (!ce) begin
+        // hold
     end else if (!de) begin
         cnt <= 5'sd0;
         case (ctrl)

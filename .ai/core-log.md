@@ -1157,3 +1157,36 @@ Stop testing decoded differences one at a time and bisect by transplant, as the 
 - User Test: FAIL
 
 ---
+
+## 37 COMMIT Unreleased 2026-10-11T19:00:27-07:00
+
+#### Coming From:
+
+Unreleased 78d22dc
+
+#### Purpose:
+
+Bisect the open flow's HDMI failure to the deciding fuses by transplanting Gowin's configuration into the open build, and take the result to the desktop core.
+
+#### Outcome:
+
+The open flow now drives HDMI. The desktop core shows the console mirrored on HDMI and VGA together from an open-flow build, and the cause was the packer, not the clock network. The new `tools/gowin_pack_transplant.py` runs the apicula fork's `gowin_pack` and edits its tilemap just before the bitmap is written, so the packer still computes every frame CRC and the footer checksum. It can OR in a donor bitstream's unmodelled fuses for selected tiles, copy the donor into every tile the open build leaves empty or holds as a subset of the donor's, set a modelled pip, set or clear a raw fuse, or add raw PLL attributes. It was needed because the 138C footer checksum could not be reproduced and apicula's `write_bitstream` does not round-trip a 138C `.fs`. A plain repack of the desktop core's seed-17 netlist through it reproduces `90d3fa3a84fa` exactly. The bisection ran as follows, with every test preceded by a Gowin control the user confirmed. The only unmodelled fuses Gowin sets and the open build does not are 16 in the bottom clock hub R109C91; adding them changed nothing. Copying Gowin's full contents into the 17,817 tiles the open design leaves empty or as a subset changed nothing either, which placed the fault in tiles the open design uses. The test core then gained a PmodVGA output on the same pixel clock (`fpga/hdmi_test/hdmi_test.v`, `hdmi_test.cst`). The Gowin control showed bars on both monitors. The open 480p build showed VGA but no HDMI, which proved that the open build's PLLs, its `CLKDIV` and the fabric-routed `hclk5` all run. The test core also gained a `SER_ODDR` mode (`tools/build_hdmi_test.sh open|gowin 480p-oddr`), with no `CLKDIV` and no `OSER10`: each lane is a fabric shift register into an `ODDR` at 126 MHz, and the open build needed placement seed 2 to meet hold. Gowin's ODDR build passed. The open one failed, also with R57C182 `(1,121)`/`(4,134)` and bank-10 R109C182 `(1,123)`/`(9,122)` added, and passed on both monitors once fuse `(11,134)` was cleared in the four TMDS IOLOGIC tiles (decoded `ODDR` open against `ODDRC` Gowin, `cb70dd7cd210`). Comparing the `OSER10` builds' configuration fuses, meaning everything not explained by a decoded pip, then named what the packer omits: `(7,132) (8,121) (11,125) (11,134)` in each serialiser tile R58, R101 and R103 of column 182, and `(0,134) (1,131) (5,134) (6,122) (8,127) (10,133) (11,126)` in the tile below each (R59, R102 and R104), the gearbox's second half, which the fork records as costing no fuse. The plain open 480p `OSER10` build, with left-edge PLLs and fabric `hclk5`, plus those 33 fuses (`c02147242cb5`) passed on HDMI and VGA. So did the open 720p build at the full 371.25 MHz bit clock (`c32651b53b9e`). So did the desktop core's own seed-17 netlist repacked with them (`67583d390cdc`, 4,463,286 bytes), uploaded as `/cores/console138k/desktop-oserfuses.bin`. It answered core 84 with its sockets declared, and the user saw the console mirrored on HDMI and VGA. The card's `/cores/console138k/desktop.bin` is still the seed-17 core without HDMI. TOOL-017 is rewritten around the packer cause. This also refutes Tang-Build's TOOL-031 consequence and README, which hold that an open-flow build cannot carry HDMI because of the clock model; that repository was not edited. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 37 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Make the fix part of the build and then of the packer. The first step is to have `tools/desktop_open/build.sh` pack through `tools/gowin_pack_transplant.py` with the 33 fuses, rebuild, and with the user's approval install the result as the card's `/cores/console138k/desktop.bin`. The proper step is to fix the apicula fork's `OSER10` encoder so it emits the four IOLOGIC fuses and the seven second-half fuses for any placement, and its `ODDR` encoder so it stops setting `(11,134)`. Those fuses should be found in the vendor tables the fork already reads, by the same fuzzing method the fork uses, rather than copied per tile, and then pushed to the user's fork. Two smaller items follow. It is not yet known which of the 33 fuses are strictly needed. The correction of Tang-Build's records is for the user to schedule. The records owed since entry 33 (TOOL-003, TOOL-005, and BL6-003, BL6-008 and BL6-009) are still owed.
+
+#### Files Modified:
+
+- fpga/hdmi_test/hdmi_test.cst
+- fpga/hdmi_test/hdmi_test.v
+- tools/build_hdmi_test.sh
+- tools/gowin_pack_transplant.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

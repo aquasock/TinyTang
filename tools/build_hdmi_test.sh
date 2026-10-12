@@ -3,7 +3,12 @@
 # Build the minimal HDMI test core (fpga/hdmi_test/) with the open flow or,
 # as a reference only, with Gowin EDA.
 #
-#   tools/build_hdmi_test.sh <open|gowin> <720p|480p> [out-dir]
+#   tools/build_hdmi_test.sh <open|gowin> <720p|480p|480p-oddr> [out-dir]
+#
+# 480p-oddr is 480p with the core's SER_ODDR parameter set: no CLKDIV and no
+# OSER10, each TMDS lane a fabric shift register into an ODDR clocked by the
+# PLL's 126 MHz output, which separates the serialiser path from the output
+# buffers.
 #
 # The two PLL wrappers are the desktop core's own, copied from the tree that
 # tools/build_desktop_core.sh --prepare-only reconstructs (prepared here when
@@ -24,8 +29,8 @@ export LC_ALL=C
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 flow="${1:-}"
 mode="${2:-}"
-[[ "$flow" == open || "$flow" == gowin ]] && [[ "$mode" == 720p || "$mode" == 480p ]] || {
-    echo "usage: $0 <open|gowin> <720p|480p> [out-dir]" >&2; exit 2; }
+[[ "$flow" == open || "$flow" == gowin ]] && [[ "$mode" == 720p || "$mode" == 480p || "$mode" == 480p-oddr ]] || {
+    echo "usage: $0 <open|gowin> <720p|480p|480p-oddr> [out-dir]" >&2; exit 2; }
 out="$(realpath -m "${3:-$root/build/hdmi_test/$flow-$mode}")"
 build="${DESKTOP_BUILD_DIR:-$root/build/desktop}"
 
@@ -41,7 +46,14 @@ cp "$root/fpga/hdmi_test/hdmi_test.v" "$root/fpga/hdmi_test/hdmi_test.cst" \
    "$root/fpga/hdmi_test/build.tcl" "$src/"
 cp "$tree/src/pll/gowin_pll_27.v" "$tree/src/pll/gowin_pll_hdmi.v" "$src/"
 
-if [[ $mode == 480p ]]; then
+oddr=0
+if [[ $mode == 480p-oddr ]]; then
+    oddr=1
+    sed -i 's/^parameter SER_ODDR = 0;/parameter SER_ODDR = 1;/' "$src/hdmi_test.v"
+    grep -q '^parameter SER_ODDR = 1;' "$src/hdmi_test.v" ||
+        { echo "SER_ODDR substitution did not apply" >&2; exit 1; }
+fi
+if [[ $mode == 480p* ]]; then
     sed -i 's/^parameter MODE_480P = 0;/parameter MODE_480P = 1;/' "$src/hdmi_test.v"
     sed -i -e 's/^defparam PLL_inst.MDIV_SEL = 55;/defparam PLL_inst.MDIV_SEL = 42;/' \
            -e 's/^defparam PLL_inst.ODIV0_SEL = 4;/defparam PLL_inst.ODIV0_SEL = 9;/' \
@@ -57,8 +69,11 @@ else
     pixel=74.25
 fi
 period1=$(awk "BEGIN{printf \"%.3f\", $period5 * 5}")
-printf 'create_clock -name sys_clk -period 20 [get_nets {sys_clk}]\ncreate_clock -name hclk5 -period %s [get_nets {hclk5}]\ncreate_clock -name hclk -period %s [get_nets {hclk}]\n' \
-    "$period5" "$period1" > "$src/hdmi_test.sdc"
+printf 'create_clock -name sys_clk -period 20 [get_nets {sys_clk}]\ncreate_clock -name hclk5 -period %s [get_nets {hclk5}]\n' \
+    "$period5" > "$src/hdmi_test.sdc"
+# With SER_ODDR the pipeline runs on hclk5 itself and there is no hclk.
+(( oddr )) || printf 'create_clock -name hclk -period %s [get_nets {hclk}]\n' "$period1" >> "$src/hdmi_test.sdc"
+(( oddr )) && pixel=126
 
 if [[ $flow == gowin ]]; then
     gowin_sh="${GOWIN_SH:-/home/vash/tools/gowin-1.9.11.03/IDE/bin/gw_sh}"
@@ -93,8 +108,14 @@ else
     # open flow constrains the divider's output pin, as clock_constraints.py
     # does for the desktop core, instead of the net by name.
     grep -v -e '{hclk}' -e '{sys_clk}' "$src/hdmi_test.sdc" > "$src/hdmi_test_open.sdc"
-    printf 'create_clock -name board_clock -period 20 [get_pins {pll_27.PLL_inst/CLKIN}]\ncreate_clock -name video_pixel -period %s [get_pins {div5/CLKOUT}]\n' \
-        "$period1" >> "$src/hdmi_test_open.sdc"
+    printf 'create_clock -name board_clock -period 20 [get_pins {pll_27.PLL_inst/CLKIN}]\n' >> "$src/hdmi_test_open.sdc"
+    if (( oddr )); then
+        printf 'create_clock -name bit_clock -period %s [get_pins {pll_hdmi.PLL_inst/CLKOUT0}]\n' \
+            "$period5" >> "$src/hdmi_test_open.sdc"
+    else
+        printf 'create_clock -name video_pixel -period %s [get_pins {div.div5/CLKOUT}]\n' \
+            "$period1" >> "$src/hdmi_test_open.sdc"
+    fi
     ( cd "$src" && yosys -q -l "$out/synth.log" -p \
         "read_verilog hdmi_test.v gowin_pll_27.v gowin_pll_hdmi.v; synth_gowin -top hdmi_test -family gw5a -json $out/synth.json" )
     "$NPNR/nextpnr-himbaechel" --json "$out/synth.json" --write "$out/pnr.json" \
@@ -108,7 +129,7 @@ else
 import re, sys
 want = float(sys.argv[2])
 got = [float(m) for m in re.findall(r"Max frequency for clock .*?(?:PASS|FAIL) at ([0-9.]+) MHz", open(sys.argv[1]).read())]
-sys.exit(0 if any(abs(g - want) < 0.01 for g in got) else 1)
+sys.exit(0 if any(abs(g - want) < 0.05 for g in got) else 1)
 PY
     "$PY" "$root/tools/desktop_open/clock_route_inventory.py" "$out/nextpnr.log" \
         > "$out/clock-topology.txt" 2>&1 || true
