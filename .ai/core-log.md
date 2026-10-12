@@ -1402,3 +1402,35 @@ Make a script launched from the desktop's menu start by letting FreeRTOS task st
 - User Test: PASS
 
 ---
+
+## 43 COMMIT Unreleased 2026-10-12T06:21:10-07:00
+
+#### Coming From:
+
+Unreleased b405c3a
+
+#### Purpose:
+
+Let a script launched from the desktop's menu start, which failed because its 16 KB worker stack could only come from the OCRAM heap.
+
+#### Outcome:
+
+The linker now wraps FreeRTOS's `pvPortMalloc` (`CMakeLists.txt` line 146) with `__wrap_pvPortMalloc` in `ports/bl616/tang_heap.c`, which is SDK 2.3.36's heap_3 version with `MM_FLAG_HEAP_ANY` in place of `MM_FLAG_HEAP_OCRAM_0`: it still tries OCRAM first, then the WRAM heap, records a refusal for `crash` and calls the malloc-failed hook. The disassembly shows `xTaskCreate`, `xQueueGenericCreate`, `xTimerCreate`, the USB OSAL allocators and the Bluetooth controller's `btblecontroller_malloc` calling the wrapper and nothing calling the SDK's version. The build `b405c3a-dirty.547ec23`, 607328 bytes, MD5 `23b26bba4c5394c8cc24626d538ba53f`, compiled with no new warnings, was installed with `tools/tinytang_flash.py` and confirmed by `platform` after a power cycle, with 79,128 B free of 138,104 B and no refusal. The user launched `phosphor.tdsh` from the desktop's menu and reported that it works. Which heap the worker stack came from was not read, and allocations that once failed outright, the Bluetooth controller's among them, can now land in WRAM. BL6-010 was revised to match, every YAML block in the reference parses, and the core-syntax audit of the `.ai/` changes passed.
+
+#### Next Steps:
+
+Raising the silent script-load failure with the TinyDesk Shell author remains optional. BL6-002, BL6-004 and BLE-014 still describe the fork's heap and should be revised when the heap is next worked on, and the Wii Classic Controller PMOD work waits for its scope.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_heap.c
+- ports/bl616/tang_heap.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

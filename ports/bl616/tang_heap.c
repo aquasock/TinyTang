@@ -40,7 +40,8 @@ static void note_failure(size_t size, void *caller)
  * satisfy a request -- it does not spin with interrupts off the way the old
  * SDK's bflb_malloc did (BL6-008) -- so nothing needs replacing.  The linker
  * wraps kmalloc and krealloc to record the request that was refused, and
- * krealloc also to move a block to another heap when its own is full; the
+ * krealloc also to move a block to another heap when its own is full.  It
+ * also wraps FreeRTOS's pvPortMalloc so task stacks may use either heap; the
  * allocation, its locking and the heap accounting all stay in the SDK. */
 
 void *__real_kmalloc(size_t size, uint32_t flags);
@@ -53,6 +54,32 @@ void *__wrap_kmalloc(size_t size, uint32_t flags)
         const uintptr_t irq = bflb_irq_save();
         note_failure(size, __builtin_return_address(0));
         bflb_irq_restore(irq);
+    }
+    return ret;
+}
+
+/* FreeRTOS's allocator, heap_3.c's pvPortMalloc, asks the SDK for OCRAM only,
+ * so a task's stack could not use the WRAM heap however much of it was free,
+ * and a script launched from the desktop could not start (BL6-010).  This is
+ * heap_3's version with MM_FLAG_HEAP_ANY, which still tries OCRAM first. */
+void vApplicationMallocFailedHook(void);
+
+void *__wrap_pvPortMalloc(size_t size)
+{
+    void *ret;
+    vTaskSuspendAll();
+    {
+        ret = __real_kmalloc(size, MM_FLAG_HEAP_ANY);
+        traceMALLOC(ret, size);
+    }
+    (void)xTaskResumeAll();
+    if (!ret) {
+        if (size != 0) {
+            const uintptr_t irq = bflb_irq_save();
+            note_failure(size, __builtin_return_address(0));
+            bflb_irq_restore(irq);
+        }
+        vApplicationMallocFailedHook();
     }
     return ret;
 }

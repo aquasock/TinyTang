@@ -141,6 +141,9 @@ else()
     # linker renames them.
     sdk_add_link_options(-Wl,--wrap=exception_entry -Wl,--wrap=platform_reset)
     sdk_add_link_options(-Wl,--wrap=kmalloc -Wl,--wrap=krealloc)
+    # FreeRTOS's pvPortMalloc takes OCRAM only; the wrapper lets task stacks
+    # fall back to the WRAM heap (ports/bl616/tang_heap.c).
+    sdk_add_link_options(-Wl,--wrap=pvPortMalloc)
     # The Bluetooth host's HCI monitor hook, which the build turns on with
     # CONFIG_BT_DEBUG_MONITOR, records into RAM for `bletrace` instead of
     # printing to an unconnected UART (tang_ble_trace.c).

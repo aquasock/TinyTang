@@ -4,8 +4,9 @@
 // TLSF replacements -- which existed only to prevent a silent spin (BL6-008) --
 // are gone.  The linker now wraps kmalloc and krealloc to record the refused
 // request, task and caller, and krealloc also to move a block to the other
-// heap when its own heap cannot grow it (BL6-010); allocation, locking and
-// heap accounting stay in the SDK.
+// heap when its own heap cannot grow it (BL6-010).  FreeRTOS's pvPortMalloc
+// is wrapped so task stacks may come from either heap.  Allocation, locking
+// and heap accounting stay in the SDK.
 //
 // SPDX-License-Identifier: MIT
 
