@@ -11,9 +11,9 @@
 //   -> 4 x ELVDS_OBUF on the desktop core's TMDS pins
 //
 // The PLL wrappers are the desktop core's own gowin_pll_27.v and
-// gowin_pll_hdmi.v (tools/build_hdmi_test.sh copies them from the
-// reconstructed nestang tree), and the serialiser and output-buffer wiring
-// matches nestang's serializer.sv (GW_IDE branch) and nes2hdmi.sv.  The
+// gowin_pll_hdmi.v (tools/build_hdmi_test.sh copies them from
+// fpga/desktop/pll/), and the serialiser and output-buffer wiring matches
+// fpga/desktop/hdmi/serializer.sv (GW_IDE branch) and desktop_hdmi.sv.  The
 // picture is eight colour bars, DVI only: no data islands, no audio.
 // The same bars go to the PmodVGA (J1 on PMOD1, J2 on PMOD0, as /tang.ini's
 // vga_j1/vga_j2 and fpga/desktop/desktop_pmod.sv), registered on the same

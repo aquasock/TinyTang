@@ -6,14 +6,22 @@ keyboard link and F12 switching. HDMI and PmodVGA mirror the same compositor;
 the background is black when the layer is disabled. Physical DS2 controllers
 and the old LED outputs are removed to release the PMOD pins.
 
-The source is reconstructed from nestang commit
-`c2450818e1f0c858e13c5dd16746ee5221a5c760`, the seven common patches, the menu
-patch and the desktop patch. `tools/build_desktop_core.sh` creates an isolated
-checkout and never edits the supplied upstream checkout. It needs that commit
-in `NESTANG_DIR` (default `../tangcore/nestang`), Gowin EDA 1.9.11.03 and Python.
+Every source is in this directory: `desktop_top.sv`, the UART link
+(`desktop_link.v`), the compositor and HDMI output (`desktop_hdmi.sv`, `hdmi/`),
+the 80×45 layer (`textdisp_wide.sv`), the keyboard link, the register endpoint,
+PMOD sockets, OLED terminal and PLL wrappers. The top, link and compositor
+began as nestang's `nestang_top.sv`, `iosys_bl616.v` and `nes2hdmi.sv`
+(nand2mario, GPL-3.0); the NES machine, cartridge loader, controllers, frame
+buffer and scaler are gone. No nestang checkout or patch is involved.
+
+The open flow (`tools/build_desktop_core_open.sh`) needs only yosys, the
+nextpnr and apicula forks and Python. The Gowin reference build below needs
+Gowin EDA 1.9.11.03.
 
 ```bash
 tools/tests/test_desktop_core.sh
+tools/build_desktop_core_open.sh
+# build/desktop/open-s<seed>/desktop.bin
 tools/build_desktop_core.sh 2
 # build/desktop/place2/desktop.bin
 tools/sweep_desktop_core.sh
@@ -101,8 +109,10 @@ The regression exercises the real 2 Mbaud UART, reply CRCs through an
 independent Python implementation, legacy keyboard/layer traffic, invalid
 requests and acknowledgement latency. An independent PMOD simulation checks
 row mapping and flips, released pins, frame-boundary commits, blanking and
-sync counts across a full 720p frame. The legacy desktop decoder regression
-also runs without `DESKTOP_CORE`. A streamed compositor regression independently
+sync counts across a full 720p frame. The link regression checks the layer
+commands (enable, cursor, cell runs, row wrap). The compositor regression
+checks that the layer covers the raster only with the overlay up and the
+output is black otherwise. A streamed compositor regression independently
 checks the physical VGA color/sync pins over a full raster and all HDMI visible
 pixels against a reference glyph image, including line and frame wraps.
 

@@ -20,6 +20,9 @@ A nextpnr log describes each clock net's routing in one of four ways:
     Info:     'NAME' net was routed using global resources only.
         completed, but on the global-resource fabric, not the clock spine.
         There is NO warning for this; a gate that reads warnings misses it.
+        Measured on 2026-10-11: with nextpnr allowed the `PLL_L[0]` hop
+        MPLLCLKOUT0 -> TLPLL0CLK0, `clk` routed this way, passed setup and
+        hold, and the core was dead on the board.
 
     Info:     'NAME' net was routed but not connected end to end; leaving it to
               the router.
@@ -35,7 +38,7 @@ A nextpnr log describes each clock net's routing in one of four ways:
 On this die a PLL's clock reaches the clock plane through fabric and a logic
 gate -- the fork's own measured note says so -- and no clock pip anywhere is
 sourced from a PLL output wire.  So "every clock dedicated" is a bar **no build
-on record meets**: the hardware-proven baseline has `clk` fabric for 943 sinks,
+on record meets**: the hardware-proven baseline has `clk` fabric for 1199 sinks,
 `hclk5` 4, `clk27` 1, and the 74.25 MHz pixel clock on global resources.  A
 gate demanding all-dedicated refuses every build by construction, which is a
 wall, not a check.

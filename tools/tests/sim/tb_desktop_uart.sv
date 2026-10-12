@@ -34,9 +34,9 @@ module tb_desktop_uart;
         if(cell_index>=384) $fatal(1,"out-of-range cell write");
         cells[cell_index]=cell_word;writes++;
     end
-    iosys_bl616 #(.FREQ(21_492_000), .CORE_ID(16'h0054)) dut (
+    desktop_link #(.FREQ(21_492_000), .CORE_ID(16'h0054)) dut (
         .clk(clk), .hclk(pixel_clk), .resetn(resetn), .sys_clk(ref_clk),
-        .overlay(), .overlay_x(8'd0), .overlay_y(8'd0), .overlay_color(),
+        .overlay(),
         .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
         .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
         .joy1(12'd0), .joy2(12'd0), .link_mods(8'd0), .link_keys(48'd0),

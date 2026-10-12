@@ -239,16 +239,17 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 #   ... then power-cycle the board (see fact 6), and confirm with `platform`:
 #   it prints the build identity, which must match build/tinytang/tinytang_build_id.h
 
-# Build the FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
-# at ../tangcore/nestang, or NESTANG_DIR)
+# Build the FPGA cores. desktop.bin is TinyTang's own (fpga/desktop/) and
+# needs only the open flow; the NES and menu cores need Gowin EDA 1.9.11.03
+# and a nestang checkout at ../tangcore/nestang (or NESTANG_DIR)
+tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, apicula fork >= 93761f4): HDMI + VGA
 tools/build_nestang_core.sh     # the NES core, with the desktop layer
-tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, apicula fork >= 1c2b6cb): HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /cores/console138k/nestang-desk.bin
-tools/tinytang_put.py build/desktop/open-s17/desktop.bin               /cores/console138k/desktop.bin   # 67583d390cdc
+tools/tinytang_put.py build/desktop/open-s2/desktop.bin                /cores/console138k/desktop.bin   # 89f3ae9350c4
 tools/tinytang_put.py scripts/boot.tdsh      /scripts/boot.tdsh
 tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
 
@@ -306,7 +307,9 @@ the screen shows a TangCore splash (fact 14).
 
 ## The FPGA cores
 
-The cores derive from nand2mario's nestang, carried as patches against upstream rather
+The default host, `desktop.bin`, is TinyTang's own core in `fpga/desktop/`
+(below). The NES and menu cores derive from nand2mario's nestang, carried as
+patches against upstream rather
 than as a fork. The checkout stays pristine at commit `c2450818`, and
 `scripts/apply-nestang-patches.sh` applies `third_party/patches/0001` through
 `0007` before a build:
@@ -326,18 +329,19 @@ menu core: the NES machine, its loader and SDRAM are not instantiated, and the
 legacy text page is removed. It remains the legacy HDMI-only rollback host.
 
 The default host is `desktop.bin`, built with the open flow by
-`tools/build_desktop_core_open.sh`. It reconstructs the pinned source in an
-isolated build directory with `tools/build_desktop_core.sh --prepare-only`
-(the common, menu and `third_party/patches/desktop/` patches, then
-`fpga/desktop/`), applies `third_party/patches/desktop/open/`, and runs
-`tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
+`tools/build_desktop_core_open.sh`. Its sources all live in `fpga/desktop/`:
+the top, the UART link and the HDMI compositor began as nestang's, with the
+NES machine, loader, controllers, frame buffer and scaler removed, and no
+nestang checkout or patch is involved. The script stages them with
+`tools/build_desktop_core.sh --prepare-only` and runs `tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
 clock-topology gate against the recorded profile, and the apicula fork's
 `gowin_pack`. It needs the apicula fork (`aquasock/apicula`, branch
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
 the vendor's HCLK block, with nextpnr rebuilt against that database; at the
-default seed 17 it builds `desktop.7b21952ec575.bin`, which drives HDMI and VGA
-together. It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
+default seed 2 it builds `desktop.89f3ae9350c4.bin`, which drives HDMI and VGA
+together (`pll_nes` at `PLL_L[0]`, the main clock still on fabric; see
+`fpga/desktop/desktop.cst`). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
 VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.
@@ -416,8 +420,10 @@ STM32's own DFU bootloader.
   build.
 - `third_party/tinydesk-shell`, `third_party/tinydesk` — the shell and the
   desktop, as submodules.
-- `third_party/patches/` — the nestang patch series, the menu-core patch and
-  the QMK keyboard patches.
+- `fpga/desktop/` — the desktop core, TinyTang's own HDL; `fpga/hdmi_test/` —
+  the minimal HDMI colour-bar core.
+- `third_party/patches/` — the nestang patch series (NES core), the menu-core
+  patch and the QMK keyboard patches.
 - `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up),
   `boot-cart.tdsh` (core, probe, ROM), `castlevania.tdsh` and `phosphor.tdsh`
   (start one track on the Phosphor core under TinyDesk); plus the two
@@ -435,8 +441,10 @@ STM32's own DFU bootloader.
   - `build_desktop_core_open.sh` and `desktop_open/` — build the desktop core with the open flow.
   - `build_hdmi_test.sh` — build the minimal HDMI colour-bar core in `fpga/hdmi_test/` (720p or 480p,
     open flow or Gowin reference) to isolate the HDMI hardware path.
-  - `build_desktop_core.sh`, `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build
-    a core with Gowin (`build_desktop_core.sh --prepare-only` also feeds the open flow).
+  - `build_desktop_core.sh` — stage `fpga/desktop/` and build it with Gowin as a reference
+    (`--prepare-only` stages it for the open flow).
+  - `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build the NES and menu
+    cores with Gowin.
   - `test_textdisp_wide.sh` — simulates the layer against a free-running
     1650x750 raster and checks every visible pixel (Verilator).
   - `tests/` — host tests for the frame cache, the key translation, the pad,
@@ -542,8 +550,9 @@ selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
   with `find_package(bouffalo_sdk)` support.
 - **RISC-V toolchain** (`riscv64-unknown-elf-*`), default
   `~/.cache/tangcore-dev/toolchain/bin`.
-- **Gowin EDA 1.9.11.03** for the FPGA cores, and a nestang checkout at
-  `../tangcore/nestang` (or `NESTANG_DIR`).
+- For `desktop.bin`: yosys, the nextpnr-himbaechel fork and the apicula fork
+  (see "The FPGA cores"). For the NES and menu cores: **Gowin EDA 1.9.11.03**
+  and a nestang checkout at `../tangcore/nestang` (or `NESTANG_DIR`).
 - **Verilator** for `tools/test_textdisp_wide.sh`, and a C compiler for
   `tools/tests/`.
 - Python with `pyserial` for the tools in `tools/`.
@@ -565,8 +574,9 @@ selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
 - **Phosphor host transport** — Apache-2.0 — the `fpga_*`, `flac_stream_prefix`
   and `ae350_play` files in `ports/bl616/phosphor/` and two host tests, written
   in Tang-Control and keeping its licence here.
-- **nestang** — GPL-3.0 — the FPGA cores, modified by the patches in
-  `third_party/patches/`; the patch files carry GPL-3.0 lines. The BL616 end of
+- **nestang** — GPL-3.0 — the NES and menu cores, modified by the patches in
+  `third_party/patches/`; the patch files carry GPL-3.0 lines. The desktop
+  core in `fpga/desktop/` is GPL-3.0-only, derived in part from nestang. The BL616 end of
   the core's UART protocol was written from nestang's documentation of it, and
   no nestang code is copied into the firmware.
 - **Keychron QMK** — GPL-2.0 overall, with the Keychron board files and the

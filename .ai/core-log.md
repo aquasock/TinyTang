@@ -1256,3 +1256,84 @@ No fuse is added by hand any more, and the build needs the apicula fork at `9376
 - User Test: PASS
 
 ---
+## 40 COMMIT Unreleased 2026-10-11T22:57:05-07:00
+
+#### Coming From:
+
+Unreleased 3f833b6
+
+#### Purpose:
+
+Make the desktop core TinyTang's own design instead of a patched nestang tree, and ship a timing-clean build of it that the board accepts on HDMI and VGA.
+
+#### Outcome:
+
+The desktop core's sources now live in `fpga/desktop/` under the top module `desktop_top`, with the NES machine, its ifdefs and the carried `third_party/patches/desktop/` series gone, and the testbenches renamed to match (`tb_desktop_link.sv`, `test_desktop_link.sh`); every simulation passes. On the cleaned netlist no seed from 1 to 32 closes timing with `pll_nes` at `PLL_R[0]`, so `fpga/desktop/desktop.cst` now places it at `PLL_L[0]` and `tools/build_desktop_core_open.sh` defaults to seed 2, which builds `desktop.89f3ae9350c4.bin` (`desktop.6639878beff9.fs`) with setup and hold met and the main `clk` on fabric to its 1199 sinks. The user confirmed that core shows the desktop on HDMI and VGA, and it is now the card's `/cores/console138k/desktop.bin`, which declared the `tang.ini` sockets (`0xc0 = 0x0230`) when loaded; the previous core `7b21952ec575` is kept as `desktop.bin.pre-cleanup`. Three experiments that put `clk` on the dedicated `TLPLL0CLK0` path were timing-clean and dead on the board: a nextpnr patch letting the router take the `MPLLCLKOUT0` to `TLPLL0CLK0` hop (global resources only), the same with the spine restricted to `SPINE8` (seed 2, partial), and the first with PLL attribute 211 set to 2 as Gowin writes it, which also killed HDMI sync. Decoding Gowin probes showed the chipdb's centre spines are the same nodes as the quadrant-bridge outputs and that Gowin sets bridge pips the chipdb does not model, so the dedicated route is a chipdb fault left for later. Both forks are back at their committed state, the experiment patches are kept outside the repository, `clock_route_inventory.py` keeps its original reading of "global resources only" with a note on the dead route, and TOOL-017 records all of this; the core-syntax audit of the `.ai/` changes passed.
+
+#### Next Steps:
+
+The main clock stays on fabric until the `TLPLL0CLK0` to spine to bridge clock tree is reverse-engineered, most simply from single-quadrant Gowin probes, and the chipdb corrected; only then should the router be allowed the hop again, and PLL attribute 211 must not be written. The dead experiment cores `desktop-clkplane.bin`, `desktop-expD.bin` and `desktop-expS.bin` remain on the card and can be deleted. The Wii Classic Controller PMOD work resumes next.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/README.md
+- fpga/desktop/board.v
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop.cst
+- fpga/desktop/desktop_hdmi.sv
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/font.vh
+- fpga/desktop/hdmi/audio_clock_regeneration_packet.sv
+- fpga/desktop/hdmi/audio_info_frame.sv
+- fpga/desktop/hdmi/audio_sample_packet.sv
+- fpga/desktop/hdmi/auxiliary_video_information_info_frame.sv
+- fpga/desktop/hdmi/hdmi.sv
+- fpga/desktop/hdmi/packet_assembler.sv
+- fpga/desktop/hdmi/packet_picker.sv
+- fpga/desktop/hdmi/serializer.sv
+- fpga/desktop/hdmi/source_product_description_info_frame.sv
+- fpga/desktop/hdmi/tmds_channel.sv
+- fpga/desktop/keylink_rx.sv
+- fpga/desktop/pll/gowin_pll_27.v
+- fpga/desktop/pll/gowin_pll_hdmi.v
+- fpga/desktop/pll/gowin_pll_nes.v
+- fpga/desktop/textdisp_wide.sv
+- fpga/desktop/uart_fixed.v
+- fpga/hdmi_test/hdmi_test.v
+- third_party/patches/README.md
+- third_party/patches/desktop/0001-desktop-host.patch
+- third_party/patches/desktop/0002-clock-monitor.patch
+- third_party/patches/desktop/open/0001-open-toolchain-portability.patch
+- tools/build_desktop_core.sh
+- tools/build_desktop_core_open.sh
+- tools/build_hdmi_test.sh
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_constraints.py
+- tools/desktop_open/clock_profile.json
+- tools/desktop_open/clock_route_inventory.py
+- tools/desktop_open/pnr.sh
+- tools/desktop_open/synth.sh
+- tools/desktop_open/synth.ys
+- tools/test_textdisp_wide.sh
+- tools/tests/sim/dpb_model.sv
+- tools/tests/sim/tb_composite.sv
+- tools/tests/sim/tb_desktop_link.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_desktop_video.sv
+- tools/tests/sim/tb_iosys_desk.sv
+- tools/tests/test_composite.sh
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_link.sh
+- tools/tests/test_desktop_video.sh
+- tools/tests/test_iosys_desk.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

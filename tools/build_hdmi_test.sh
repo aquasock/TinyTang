@@ -10,9 +10,8 @@
 # PLL's 126 MHz output, which separates the serialiser path from the output
 # buffers.
 #
-# The two PLL wrappers are the desktop core's own, copied from the tree that
-# tools/build_desktop_core.sh --prepare-only reconstructs (prepared here when
-# build/desktop/source-path.txt is missing).  480p uses a pll_hdmi variant
+# The two PLL wrappers are the desktop core's own, copied from
+# fpga/desktop/pll/.  480p uses a pll_hdmi variant
 # with MDIV_SEL 42 and ODIV0_SEL 9: 27 MHz x 42 = 1134 MHz VCO (inside the
 # datasheet band of 650-1300 MHz that gowin_pack enforces), /9 = 126 MHz
 # bit clock, /5 = 25.2 MHz pixel clock.
@@ -33,19 +32,13 @@ mode="${2:-}"
 [[ "$flow" == open || "$flow" == gowin ]] && [[ "$mode" == 720p || "$mode" == 480p || "$mode" == 480p-oddr ]] || {
     echo "usage: $0 <open|gowin> <720p|480p|480p-oddr> [out-dir]" >&2; exit 2; }
 out="$(realpath -m "${3:-$root/build/hdmi_test/$flow-$mode}")"
-build="${DESKTOP_BUILD_DIR:-$root/build/desktop}"
-
-if [[ ! -f "$build/source-path.txt" || ! -d "$(cat "$build/source-path.txt")" ]]; then
-    DESKTOP_BUILD_DIR="$build" "$root/tools/build_desktop_core.sh" --prepare-only
-fi
-tree="$(cat "$build/source-path.txt")"
 
 rm -rf "$out"
 mkdir -p "$out/src"
 src="$out/src"
 cp "$root/fpga/hdmi_test/hdmi_test.v" "$root/fpga/hdmi_test/hdmi_test.cst" \
    "$root/fpga/hdmi_test/build.tcl" "$src/"
-cp "$tree/src/pll/gowin_pll_27.v" "$tree/src/pll/gowin_pll_hdmi.v" "$src/"
+cp "$root/fpga/desktop/pll/gowin_pll_27.v" "$root/fpga/desktop/pll/gowin_pll_hdmi.v" "$src/"
 
 oddr=0
 if [[ $mode == 480p-oddr ]]; then

@@ -28,7 +28,7 @@ def main():
     parser.add_argument("sdc", type=Path)
     args = parser.parse_args()
     doc = json.loads(args.netlist.read_text())
-    module = doc["modules"].get("nestang_top") or doc["modules"].get("top")
+    module = doc["modules"].get("desktop_top") or doc["modules"].get("top")
     if module is None:
         parser.error("missing flattened desktop top module")
     # These constraints describe this desktop clock chain. Refuse a changed

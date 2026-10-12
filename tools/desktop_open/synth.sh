@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# Synthesise TinyTang's desktop core (`nestang_top`, the GW5AST-138C design)
+# Synthesise TinyTang's desktop core (`desktop_top`, the GW5AST-138C design)
 # with the open toolchain, up to a nextpnr-ready JSON netlist.
 #
 #   tools/desktop_open/synth.sh <reconstructed-design-tree> [out.json]
@@ -10,11 +10,9 @@
 #
 #   tools/build_desktop_core.sh --prepare-only
 #
-# The SystemVerilog is taken as the vendor wrote it -- this script does not
-# rewrite the design.  It does require the four portability edits from
-# third_party/patches/desktop/open/0001-open-toolchain-portability.patch to be applied; it will tell you
-# if they are not.  It writes the cell-library shim and the netlist *into* the
-# tree (`.open-shim/`, `nestang-top-open.json`), so pass a scratch copy.
+# The SystemVerilog is taken as fpga/desktop has it -- this script does not
+# rewrite the design.  It writes the cell-library shim and the netlist *into*
+# the tree (`.open-shim/`, `desktop-top-open.json`), so pass a scratch copy.
 #
 # Tang-Build's OPEN-FLOW-DESKTOP.md explains what this does and why.
 set -euo pipefail
@@ -25,7 +23,7 @@ export LC_ALL=C
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 tree=${1:-}
-out=${2:-nestang-top-open.json}
+out=${2:-desktop-top-open.json}
 if [[ -z $tree || ! -d $tree ]]; then
     echo "usage: $0 <reconstructed-design-tree> [out.json]" >&2
     echo "  (get one with: tools/build_desktop_core.sh --prepare-only)" >&2
@@ -58,49 +56,6 @@ if [[ -z ${datdir:-} || ! -d $datdir/gowin ]]; then
 fi
 echo "yosys: $(command -v yosys)  ($(yosys --version 2>/dev/null | head -1))"
 echo "gowin cell library: $datdir/gowin"
-
-# ---------------------------------------------------------------- preflight --
-# The four portability edits, each identified by a line that only exists when
-# the patch is applied.
-missing=0
-check () {
-    local file=$1 pattern=$2 what=$3
-    if ! grep -qF -- "$pattern" "$tree/$file"; then
-        echo "  missing: $what  ($file)" >&2
-        missing=1
-    fi
-}
-forbid () {
-    local file=$1 pattern=$2 what=$3
-    if grep -qE -- "$pattern" "$tree/$file"; then
-        echo "  still there: $what  ($file)" >&2
-        missing=1
-    fi
-}
-check src/iosys/iosys_bl616.v    "output reg  [7:0] kbd_data"        "iosys_bl616.v: kbd_data is an output"
-check src/hdmi2/packet_picker.sv "frame_counter <= (frame_counter"   "packet_picker.sv: frame_counter non-blocking"
-check src/nes2hdmi.sv            "audio_divider <= audio_divider + 1" "nes2hdmi.sv: audio_divider non-blocking"
-# hdmi.sv already contains a non-blocking control_data assignment elsewhere, so
-# identify this edit by the blocking one being gone from the reset branch.
-forbid src/hdmi2/hdmi.sv '^[[:space:]]*control_data = 6'\''d0;' \
-       "hdmi.sv: control_data blocking assignment"
-if (( missing )); then
-    echo >&2
-    echo "Apply the design-side portability edits first:" >&2
-    echo "    (cd $tree && patch -p1 < $here/../../third_party/patches/desktop/open/0001-open-toolchain-portability.patch)" >&2
-    exit 1
-fi
-
-# ------------------------------------------------------------------- shims --
-# src/nes2hdmi.sv does $readmemb("background.txt", mem), and slang looks for
-# that next to the file that reads it, not along -I.  The design keeps the data
-# at src/assets/background.txt, so make it reachable from src/.  (slang also
-# accepts it at the tree root; either one is enough -- this is the file-relative
-# location, which is the one that matches the source.)
-if [[ -f $tree/src/assets/background.txt && ! -e $tree/src/background.txt ]]; then
-    ln -s assets/background.txt "$tree/src/background.txt"
-    echo "linked src/background.txt -> assets/background.txt for \$readmemb"
-fi
 
 shim="$tree/.open-shim"
 mkdir -p "$shim"
@@ -185,7 +140,7 @@ pat = re.compile(r"Warning: Wire (\S+?)(?:\s*\[[^\]]*\])?\s+is used but has no d
 bad = []
 for wire in sorted(set(pat.findall(log))):
     lean = wire
-    for pre in ("nestang_top.", "nestang_top\\"):
+    for pre in ("desktop_top.", "desktop_top\\"):
         if lean.startswith(pre):
             lean = lean[len(pre):]
             break
@@ -263,7 +218,7 @@ else:
 PY
 
 # ...and a readable record of the primitives this design is known to need.
-python3 - "$out" nestang_top <<'PY'
+python3 - "$out" desktop_top <<'PY'
 import json, sys
 from collections import Counter
 top = json.load(open(sys.argv[1]))["modules"][sys.argv[2]]

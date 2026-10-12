@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Synthesise TinyTang's desktop core (top module `nestang_top`) for the Tang
+# Synthesise TinyTang's desktop core (top module `desktop_top`) for the Tang
 # Console 138K with yosys, on the way to nextpnr-himbaechel and gowin_pack.
 #
 # Run from a reconstructed design tree -- the working copy that TinyTang's own
@@ -18,7 +18,7 @@
 #
 # Why `-U SYNTHESIS`
 # ------------------
-# src/hdmi2/serializer.sv is written as
+# src/desktop/hdmi/serializer.sv is written as
 #     `ifdef SYNTHESIS  ... OSERDESE2 (Xilinx) ...
 #      `elsif GW_IDE    ... OSER10    (Gowin)  ...
 # so an *undefined* SYNTHESIS is what selects the Gowin path.  The front-end
@@ -45,7 +45,7 @@
 # design.  Deriving it rather than listing it by hand means it cannot go stale,
 # which matters because a missing entry is not an error, it is a silently
 # dropped primitive.  (The derivation is a superset: it also picks up names that
-# are only local signals, such as the 6502 core's `DL`.  Blackboxing a module
+# are only local signals.  Blackboxing a module
 # the design does not instantiate is a no-op.)
 #
 # Why the shim:  cells_sim.v carries 44 `specify` blocks that slang's
@@ -56,45 +56,43 @@
 # On the `-undriven` red herring
 # -----------------------------
 # With the primitives blackboxed, the stock pass chain runs to completion and
-# the design comes out at ~8,585 cells.  Without the blackboxing, the same flow
+# the design comes out at several thousand cells.  Without the blackboxing, the same flow
 # collapses to 36 cells -- an empty shell -- and the discrepancy is entirely
 # explained by the dropped instances, not by any `opt` flag.  See
 # Tang-Build's OPEN-FLOW-DESKTOP.md and evidence/desktop-core-synth.txt.
 
 read_slang --std 1800-2017 -U SYNTHESIS \
-    -D RES_720P -D GW_IDE -D MEGA138K -D PRIMER -D CONSOLE \
-    -D USB1 -D USB2 -D MENU_CORE -D DESKTOP_CORE \
+    -D GW_IDE \
     --blackboxed-modules-INJECTED-BY-SYNTH-DESKTOP-SH \
     --allow-use-before-declare --allow-lib-module-redef \
     -v .open-shim/cells_sim_nospecify.v \
     -v .open-shim/cells_xtra_gw5a.v \
-    -I src/desktop -I src -I src/iosys -I src/hdmi2 -I src/pll -I src/assets \
-    src/desktop/board.v \
-    src/pll/gowin_pll_27.v \
-    src/pll/gowin_pll_hdmi.v \
-    src/pll/gowin_pll_nes.v \
-    src/keylink_rx.sv \
-    src/iosys/iosys_bl616.v \
-    src/iosys/uart_fixed.v \
-    src/iosys/textdisp_wide.sv \
-    src/nes2hdmi.sv \
-    src/nestang_top.sv \
+    -I src/desktop -I src/desktop/hdmi -I src/desktop/pll \
+    src/desktop/pll/gowin_pll_27.v \
+    src/desktop/pll/gowin_pll_hdmi.v \
+    src/desktop/pll/gowin_pll_nes.v \
+    src/desktop/keylink_rx.sv \
+    src/desktop/desktop_link.v \
+    src/desktop/uart_fixed.v \
+    src/desktop/textdisp_wide.sv \
+    src/desktop/desktop_hdmi.sv \
+    src/desktop/desktop_top.sv \
     src/desktop/clock_monitor.sv \
     src/desktop/desktop_regs.sv \
     src/desktop/desktop_pmod.sv \
     src/desktop/desktop_oled.sv \
     src/desktop/oled_panel.sv \
     src/desktop/oled_spi.sv \
-    src/hdmi2/audio_clock_regeneration_packet.sv \
-    src/hdmi2/audio_info_frame.sv \
-    src/hdmi2/audio_sample_packet.sv \
-    src/hdmi2/auxiliary_video_information_info_frame.sv \
-    src/hdmi2/hdmi.sv \
-    src/hdmi2/packet_assembler.sv \
-    src/hdmi2/packet_picker.sv \
-    src/hdmi2/serializer.sv \
-    src/hdmi2/source_product_description_info_frame.sv \
-    src/hdmi2/tmds_channel.sv
+    src/desktop/hdmi/audio_clock_regeneration_packet.sv \
+    src/desktop/hdmi/audio_info_frame.sv \
+    src/desktop/hdmi/audio_sample_packet.sv \
+    src/desktop/hdmi/auxiliary_video_information_info_frame.sv \
+    src/desktop/hdmi/hdmi.sv \
+    src/desktop/hdmi/packet_assembler.sv \
+    src/desktop/hdmi/packet_picker.sv \
+    src/desktop/hdmi/serializer.sv \
+    src/desktop/hdmi/source_product_description_info_frame.sv \
+    src/desktop/hdmi/tmds_channel.sv
 
 # The stock flow, unmodified.  An earlier version of this script hand-rolled
 # synth_gowin's map_ffram pass chain to drop two `-undriven` flags, because with
@@ -103,7 +101,7 @@ read_slang --std 1800-2017 -U SYNTHESIS \
 # outputs had no driver -- because the PLL instances had been dropped by `-v`.
 # With every primitive blackboxed properly, their outputs have a driver, there
 # is nothing for `-undriven` to remove, and the pass chain runs as shipped.
-synth_gowin -top nestang_top -family gw5a
+synth_gowin -top desktop_top -family gw5a
 
-write_json nestang-top-open.json
-stat -top nestang_top
+write_json desktop-top-open.json
+stat -top desktop_top

@@ -6,22 +6,19 @@
 #
 #   tools/build_desktop_core_open.sh [out-dir]
 #
-#   NESTANG_DIR        nestang checkout (default ../tangcore/nestang)
-#   DESKTOP_BUILD_DIR  where the design tree is reconstructed (build/desktop)
-#   NEXTPNR_SEED       placement seed (default 17, the hardware-proven core)
+#   DESKTOP_BUILD_DIR  where fpga/desktop is staged (build/desktop)
+#   NEXTPNR_SEED       placement seed (default 2, the hardware-proven core,
+#                      desktop.89f3ae9350c4.bin; see fpga/desktop/desktop.cst)
 #   NEXTPNR_BUILD, APICULA_FORK, PY, PYDEPS   see tools/desktop_open/build.sh
 #
-# The design tree is the one tools/build_desktop_core.sh --prepare-only
-# reconstructs, plus the four source-portability edits the open front end
-# needs (third_party/patches/desktop/open/).  The output directory receives
+# The design tree is fpga/desktop, staged by tools/build_desktop_core.sh
+# --prepare-only.  The output directory receives
 # desktop.fs, desktop.bin and copies stamped with their own sha256 prefix.
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 build="${DESKTOP_BUILD_DIR:-$root/build/desktop}"
-export NEXTPNR_SEED="${NEXTPNR_SEED:-17}"
+export NEXTPNR_SEED="${NEXTPNR_SEED:-2}"
 DESKTOP_BUILD_DIR="$build" "$root/tools/build_desktop_core.sh" --prepare-only
 tree="$(cat "$build/source-path.txt")"
-git -C "$tree" apply --whitespace=nowarn \
-    "$root/third_party/patches/desktop/open/0001-open-toolchain-portability.patch"
 out="${1:-$build/open-s$NEXTPNR_SEED}"
 exec "$root/tools/desktop_open/build.sh" "$tree" "$out"

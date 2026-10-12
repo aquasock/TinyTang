@@ -16,10 +16,8 @@ module tb_desktop_video;
     wire [23:0] rgb;
     wire ack;
     tri [7:0] p0,p1;
-    nes2hdmi video (
-        .clk(clk), .resetn(resetn), .color(6'd0), .cycle(9'd0),
-        .scanline(9'd0), .sample(16'd0), .aspect_8x7(1'b0),
-        .overlay(1'b1), .overlay_x(), .overlay_y(), .overlay_color(15'd0),
+    desktop_hdmi video (
+        .clk(clk), .resetn(resetn), .overlay(1'b1),
         .wide_we(we), .wide_x(wx), .wide_y(wy), .wide_ch(ch),
         .wide_fg(fg), .wide_bg(bg), .wide_on(1'b1),
         .desktop_cx(cx), .desktop_cy(cy), .desktop_rgb(rgb),

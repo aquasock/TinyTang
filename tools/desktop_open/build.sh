@@ -25,7 +25,7 @@
 #    directory has cost this project a bitstream before.
 #
 # The tree is left as it was apart from the build artefacts the two scripts
-# write into it (`.open-shim/`, `.open-pnr/`, `nestang-top-open.json`).
+# write into it (`.open-shim/`, `.open-pnr/`, `desktop-top-open.json`).
 #
 # Brought over from Tang-Build 737ddb4 (scripts/build-desktop-core.sh with its
 # synth, pnr and gate helpers), which owned this flow until TinyTang's core
@@ -48,13 +48,13 @@ out=${2:-$tree/.open-fs}
 A=${APICULA_FORK:-/run/media/vash/GIT/apicula-mathieufro}
 NPNR=${NEXTPNR_BUILD:-/home/vash/tools/nextpnr-mathieufro}
 # The placement seed.  Placement decides how much clock skew this design's main
-# clock accumulates: `clk` cannot reach the dedicated network from any PLL site,
-# because the HCLK interconnect is not modelled, so it rides general fabric and
-# the skew depends on where its segments land.  With pll_nes pinned to PLL_R[0],
-# seeds 17 and 23 measure violation-free, and seed 17 is the hardware-proven
-# core (90d3fa3a84fa, VGA correct, HDMI dark) -- the gate below refuses to
-# publish a placement that is not violation-free.
-SEED=${NEXTPNR_SEED:-17}
+# clock accumulates: `clk` rides general fabric, because the chipdb's model of
+# the TLPLL0CLK0 spine and bridge path does not match the silicon (cores routed
+# over it meet timing and load dead), so the skew depends on where its segments
+# land.  With pll_nes pinned to PLL_L[0], seed 2 is the hardware-proven core
+# (89f3ae9350c4, HDMI and VGA correct; see fpga/desktop/desktop.cst) -- the gate
+# below refuses to publish a placement that is not violation-free.
+SEED=${NEXTPNR_SEED:-2}
 export NEXTPNR_SEED=$SEED
 PY=${PY:-/home/vash/oss-cad-suite/py3bin/python3}
 PYDEPS=${PYDEPS:-/home/vash/tools/pydeps}
@@ -76,12 +76,12 @@ mkdir -p "$out"
 
 # --------------------------------------------------------------- 1. synthesis
 log "=== 1. synthesis ==="
-bash "$here/synth.sh" "$tree" "$tree/nestang-top-open.json"
-[[ -f $tree/nestang-top-open.json ]] || { log "no netlist produced"; exit 1; }
+bash "$here/synth.sh" "$tree" "$tree/desktop-top-open.json"
+[[ -f $tree/desktop-top-open.json ]] || { log "no netlist produced"; exit 1; }
 
 # ---------------------------------------------------------- 2. place and route
 log "=== 2. place and route ==="
-bash "$here/pnr.sh" "$tree" "$tree/nestang-top-open.json"
+bash "$here/pnr.sh" "$tree" "$tree/desktop-top-open.json"
 [[ -f $tree/.open-pnr/pnr.json ]] || { log "no routed netlist produced"; exit 1; }
 
 # A routed netlist is not a working bitstream.  `pnr-desktop.sh` passes nextpnr
@@ -127,7 +127,7 @@ fi
 # reaches the clock plane through fabric and a logic gate, and nextpnr says so
 # itself: "no clock gate reaches both its source and its loads".  No build on
 # record has every clock dedicated -- the hardware-proven baseline has `clk` on
-# fabric for 943 sinks -- so an all-dedicated gate refuses every build forever,
+# fabric for 1199 sinks -- so an all-dedicated gate refuses every build forever,
 # which is a wall, not a check.  What is checked instead is *regression*: the
 # run is compared with the recorded profile of the hardware-proven build, and
 # it stops only when a clock that was better has become worse.  The full

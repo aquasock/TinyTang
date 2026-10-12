@@ -21,12 +21,10 @@
 #
 #  * nextpnr's SDC reader does not accept `//` comments, and desktop.sdc opens
 #    with one.  Converted to `#`.
-#  * nextpnr requires every IO to have a location.  `reset2` is declared in
-#    nestang_top.sv ("button S1 and pin 48 are both resets") and used nowhere,
-#    and the vendor build has no pin for it either, so it cannot be placed.
-#    It is dropped -- but only after checking it really is unused, because
-#    silently deleting a port that something reads would be worse than the
-#    error it avoids.
+#  * nextpnr requires every IO to have a location.  Any top-level port the
+#    constraint file does not pin is dropped -- but only after checking it
+#    really is unused, because silently deleting a port that something reads
+#    would be worse than the error it avoids.
 #
 # Tang-Build also carries a third transform, forcing the main PLL clock onto the
 # modeled clock network through a static DCS (its tools/desktop-clock-
@@ -44,7 +42,7 @@ if [[ -z $tree || ! -d $tree ]]; then
     exit 2
 fi
 tree=$(cd "$tree" && pwd)
-netlist=${2:-$tree/nestang-top-open.json}
+netlist=${2:-$tree/desktop-top-open.json}
 [[ -f $netlist ]] || { echo "no netlist at $netlist (run synth-desktop.sh first)" >&2; exit 2; }
 
 if [[ -z ${SYNTH_DESKTOP_NO_ENV:-} ]]; then
@@ -119,7 +117,7 @@ import json, re, sys
 netlist, cst_path, work = sys.argv[1], sys.argv[2], sys.argv[3]
 
 doc = json.load(open(netlist))
-top = doc["modules"]["nestang_top"]
+top = doc["modules"]["desktop_top"]
 
 # ports the constraint file gives a location to ("tmds_d_p[0]" -> "tmds_d_p")
 constrained = set()
@@ -181,7 +179,7 @@ if drop_ports:
           % (", ".join(drop_ports),
              "  (+ buffers: %s)" % ", ".join(drop_cells) if drop_cells else ""))
 
-lines = ["read_json %s" % netlist, "select -module nestang_top"]
+lines = ["read_json %s" % netlist, "select -module desktop_top"]
 for n in drop_ports + drop_cells:
     lines.append("delete %s" % n)
 lines += ["select -clear", "opt_clean -purge",

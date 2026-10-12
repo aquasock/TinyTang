@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Reconstruct the desktop core from the pinned nestang and carried patches.
+# Stage the desktop core's sources (all of them in fpga/desktop/) into a build
+# directory, then build it with the Gowin IDE.  The open flow
+# (tools/build_desktop_core_open.sh) stages the same way.
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 prepare=0
@@ -11,26 +13,15 @@ elif [[ -n "${1:-}" ]]; then
     placement="$1"
 fi
 [[ "$placement" =~ ^[0-4]$ ]] || { echo "placement must be 0..4" >&2; exit 1; }
-nestang="${NESTANG_DIR:-$root/../tangcore/nestang}"
 build="${DESKTOP_BUILD_DIR:-$root/build/desktop}"
 mkdir -p "$build"
-source_dir="$(mktemp -d "$build/reconstruct.XXXXXX")"
-git -c advice.detachedHead=false clone --quiet --no-hardlinks "$nestang" "$source_dir"
-git -C "$source_dir" checkout --quiet --detach c2450818e1f0c858e13c5dd16746ee5221a5c760
-for patch in "$root/third_party/patches/"*.patch \
-             "$root/third_party/patches/menu/0001-menu-core.patch" \
-             "$root/third_party/patches/desktop/0001-desktop-host.patch" \
-             "$root/third_party/patches/desktop/0002-clock-monitor.patch"; do
-    git -C "$source_dir" apply --whitespace=nowarn "$patch"
-done
+source_dir="$(mktemp -d "$build/stage.XXXXXX")"
 mkdir -p "$source_dir/src/desktop"
-cp "$root/fpga/desktop/"* "$source_dir/src/desktop/"
+cp -r "$root/fpga/desktop/." "$source_dir/src/desktop/"
 printf '%s\n' "$source_dir" > "$build/source-path.txt"
 (
     cd "$root"
-    sha256sum third_party/patches/*.patch third_party/patches/menu/0001-menu-core.patch \
-        third_party/patches/desktop/0001-desktop-host.patch \
-        third_party/patches/desktop/0002-clock-monitor.patch fpga/desktop/* |
+    find fpga/desktop -type f -print0 | sort -z | xargs -0 sha256sum |
         sha256sum > "$build/source.sha256"
 )
 echo "desktop source: $source_dir"

@@ -1,5 +1,5 @@
 {
-  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=17: desktop.90d3fa3a84fa.bin, the hardware-proven open-flow core (VGA correct, HDMI dark), core-log entry 34",
+  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=2 with pll_nes at PLL_L[0]: desktop.89f3ae9350c4.bin, the TinyTang desktop netlist, HDMI and VGA correct on the board 2026-10-11, core-log entry 40",
   "nets": {
     "keyboard_link.clk": {
       "dedicated": true,

@@ -145,19 +145,34 @@ removes `src/usb_hid_host.v` and its ROM image from the build: the low-speed USB
 hosts they implemented are displaced on both front ports by the keyboard link,
 so the module is no longer instantiated anywhere.
 
-The menu variant is carried in `third_party/patches/menu/`, and the desktop
-host variant in `third_party/patches/desktop/`. These are also modifications
-to GPL-3.0 sources. The open-flow build adds
-`third_party/patches/desktop/open/0001-open-toolchain-portability.patch`, four
-behaviour-preserving edits to GPL-3.0 nestang sources (`iosys_bl616.v`,
-`hdmi.sv`, `packet_picker.sv`, `nes2hdmi.sv`) that the yosys `read_slang`
-front end needs; it is carried from this author's Tang-Build project. The new HDL, board definition and constraints in
-`fpga/desktop/`, and its simulation benches in `tools/tests/sim/tb_desktop_*`,
-are GPL-3.0-only. Except for the OLED panel/SPI modules identified below, they
-are TinyTang's work. Build scripts and timing-validation
-tools retain their explicit MIT notices. The desktop binary links upstream
-nestang and HDMI modules and is governed by GPL-3.0; the BL616 firmware remains
-separate and communicates through the documented UART protocol.
+The menu variant is carried in `third_party/patches/menu/`. It is also a
+modification to GPL-3.0 sources.
+
+## Desktop core (`fpga/desktop/`)
+
+The desktop core is TinyTang's own design and no longer builds from a nestang
+checkout or patch. Its sources are GPL-3.0-only, and the binary is governed by
+GPL-3.0. The BL616 firmware remains separate and communicates through the
+documented UART protocol. Provenance by file:
+
+- `desktop_top.sv`, `desktop_link.v` and `desktop_hdmi.sv` derive from
+  nestang's `nestang_top.sv`, `iosys_bl616.v` and `nes2hdmi.sv`
+  (nand2mario, GPL-3.0, base commit above, with this project's earlier
+  patches folded in). The NES machine, loader, controllers, frame buffer and
+  scaler were removed; each file's header records its origin.
+- `hdmi/` is Sameer Puri's HDMI library
+  (https://github.com/hdl-util/hdmi, `MIT OR Apache-2.0`) as nestang carried it,
+  with the open toolchain's portability edits folded in.
+- `uart_fixed.v` is fpga4fun.com / KNJN LLC's RS-232 module as nestang carried
+  it; its header carries the original notice.
+- `font.vh` is the 8x8 font nestang ships in `src/assets/`.
+- `pll/` holds Gowin IP-generator wrappers.
+- `oled_spi.sv` and `oled_panel.sv` come from Tang-Phosphor (below).
+- The rest (`textdisp_wide.sv`, `keylink_rx.sv`, `desktop_regs.sv`,
+  `desktop_pmod.sv`, `desktop_oled.sv`, `clock_monitor.sv`, constraints and
+  build scripts) is TinyTang's work, as are the simulation benches in
+  `tools/tests/sim/tb_desktop_*`. Build scripts and timing-validation tools
+  retain their explicit MIT notices.
 
 The desktop handshake design uses synchronization and held-data conventions
 reviewed in CERN's colibri library as engineering guidance. No colibri module

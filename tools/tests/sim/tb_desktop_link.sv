@@ -5,7 +5,7 @@
 // This is the link in the chain that was verified only by compiling.  The
 // firmware side is tested on the host (fpga_frames, tang_osd_desk) and the
 // layer module is tested in simulation (textdisp_wide), but between them sits
-// `iosys_bl616` turning bytes off UART1 into writes on the layer's port --
+// `desktop_link` turning bytes off UART1 into writes on the layer's port --
 // three frame types, a five-byte cell, a cursor that advances and wraps.  A
 // mistake there writes the right cells in the wrong places, which on hardware
 // looks like a desktop that is subtly scrambled and gives no clue why.
@@ -13,27 +13,24 @@
 // Frames are driven on uart_rx at 2 Mbaud, the rate the link actually runs, so
 // the UART and the decode are exercised together rather than separately.
 //
-//   tools/tests/test_iosys_desk.sh
+//   tools/tests/test_desktop_link.sh
 //
-module tb_iosys_desk;
+module tb_desktop_link;
 
     reg clk = 0, hclk = 0;
-    always #23.26 clk = ~clk;        // ~21.49 MHz, the rate nestang_top uses
+    always #23.26 clk = ~clk;        // ~21.49 MHz, the rate desktop_top uses
     always #6.73  hclk = ~hclk;      // ~74.25 MHz pixel clock
 
     reg resetn = 0;
 
-    // iosys inputs this test does not drive.
+    // link inputs this test does not drive.
     reg  [11:0] joy1 = 0, joy2 = 0;
     reg  [15:0] mgmt_readdata = 0;
     reg  [1:0]  fdd_request = 0;
     reg  [7:0]  kbd_data = 0;
-    wire [7:0]  overlay_x = 0;
-    wire [7:0]  overlay_y = 0;
     reg         uart_rx = 1;
 
     wire        overlay;
-    wire [14:0] overlay_color;
     wire [6:0]  wide_x;
     wire [5:0]  wide_y;
     wire [6:0]  wide_ch;
@@ -52,13 +49,12 @@ module tb_iosys_desk;
     wire [31:0] core_config;
     wire        uart_tx;
 
-    iosys_bl616 #(
+    desktop_link #(
         .FREQ(21_492_000),
         .CORE_ID(16'h0050)
     ) dut (
         .clk(clk), .hclk(hclk), .resetn(resetn),
-        .overlay(overlay), .overlay_x(overlay_x), .overlay_y(overlay_y),
-        .overlay_color(overlay_color),
+        .overlay(overlay),
         .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
         .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
         .joy1(joy1), .joy2(joy2), .hid1(), .hid2(),
@@ -216,9 +212,9 @@ module tb_iosys_desk;
         end
 
         if (fails == 0) begin
-            $display("iosys desk decode: PASS (%0d checks)", checks);
+            $display("desktop link decode: PASS (%0d checks)", checks);
         end else begin
-            $display("iosys desk decode: FAIL (%0d of %0d checks wrong)", fails, checks);
+            $display("desktop link decode: FAIL (%0d of %0d checks wrong)", fails, checks);
         end
         $finish;
     end

@@ -10,28 +10,11 @@
 # instead, pixel by pixel, before anything is wired into the core.
 #
 #   tools/test_textdisp_wide.sh
-#
-# The module under test lives in the nestang checkout because it ships as part
-# of that core's patch; this testbench is this project's, and belongs here.
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-nestang="${NESTANG_DIR:-}"
-if [[ -z "$nestang" ]]; then
-    for candidate in "$root/../tangcore/nestang" "/run/media/vash/GIT/tangcore/nestang"; do
-        if [[ -d "$candidate" ]]; then
-            nestang="$(cd -- "$candidate" && pwd)"
-            break
-        fi
-    done
-fi
-
-src="$nestang/src/iosys/textdisp_wide.sv"
-if [[ ! -f "$src" ]]; then
-    echo "test_textdisp_wide: $src not found; is the patch applied?" >&2
-    exit 1
-fi
+src="$root/fpga/desktop/textdisp_wide.sv"
 
 if ! command -v verilator >/dev/null 2>&1; then
     echo "test_textdisp_wide: verilator not found" >&2
@@ -45,7 +28,7 @@ verilator --binary --timing -j 0 \
     -Wall -Wno-fatal -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-VARHIDDEN \
     -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-BLKSEQ \
     --top-module tb_textdisp_wide \
-    -I"$nestang/src/assets" \
+    -I"$root/fpga/desktop" \
     --Mdir "$work" \
     -o tb \
     "$root/tools/tb_textdisp_wide.sv" "$src"
