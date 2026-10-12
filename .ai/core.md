@@ -4,7 +4,7 @@
 
 ## Purpose
 
-TinyTang is firmware for the Sipeed Tang Console 138K that runs TinyDesk's shell and desktop on the board's BL616 over USB. It loads FPGA cores and cartridges from the SD card — including cores that carry their own AE350 RISC-V software — and receives files and new firmware over that same USB-C connection
+TinyTang is firmware for the Sipeed Tang Console 138K that runs TinyDesk's shell and desktop on the board's BL616 over USB. It loads FPGA cores and cartridges from the SD card — including cores that carry their own AE350 RISC-V software — and receives files and new firmware over that same USB-C connection.
 
 ---
 
@@ -36,6 +36,8 @@ Read this core.md file first. Treat core.md is the primary project-level source 
 
 - The GitHub repository for this project is: https://github.com/aquasock/TinyTang.git
 
+- Open-flow.
+
 - The user's local GitHub repositories must always stay up to date with their online repositories.
 
 - The tar.gz archives stored in the "archived_logs" folder are not to be referenced unless approval from the user is given first.
@@ -43,8 +45,6 @@ Read this core.md file first. Treat core.md is the primary project-level source 
 - Do not create branches if possible. Always work off of main unless otherwise instructed.
 
 - FPGA
-Gowin EDA 1.9.11.03
-GowinSynthesis
 SystemVerilog 2017
 Target: GW5AST-LV138PG484AC1/I0
 Device revision C
