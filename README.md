@@ -332,13 +332,12 @@ isolated build directory with `tools/build_desktop_core.sh --prepare-only`
 `fpga/desktop/`), applies `third_party/patches/desktop/open/`, and runs
 `tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
 clock-topology gate against the recorded profile, and the apicula fork's
-`gowin_pack`, packed through `tools/gowin_pack_transplant.py` with four interim
-fuses. It needs the apicula fork (`aquasock/apicula`, branch `epic/gw5ast138c`)
-at `1c2b6cb` or later, whose packer encodes the HDMI serialisers as the vendor
-does; at the default seed 17 it builds `desktop.67583d390cdc.bin`, which drives
-HDMI and VGA together. It targets revision C. The interim fuses stand in for a
-wrong cell-to-clock-block entry in the fork's chip database
-(`.ai/core-reference.md` TOOL-017). The firmware applies
+`gowin_pack`. It needs the apicula fork (`aquasock/apicula`, branch
+`epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
+serialisers as the vendor does and whose chip database serves each IOLOGIC from
+the vendor's HCLK block, with nextpnr rebuilt against that database; at the
+default seed 17 it builds `desktop.7b21952ec575.bin`, which drives HDMI and VGA
+together. It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
 VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.

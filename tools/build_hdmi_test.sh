@@ -61,7 +61,12 @@ if [[ ${HDMI_TEST_SE:-0} == 1 ]]; then
         { echo "OUT_SE substitution did not apply" >&2; exit 1; }
     if [[ -n ${HDMI_TEST_RED_BALL:-} ]]; then
         # Reference only: move red's serialiser to another ball (e.g. AA9, the
-        # bottom-edge cell the apicula fork's io_ser shape measured).
+        # bottom-edge cell the apicula fork's io_ser shape measured).  A PMOD
+        # pin on that ball, or on any ball in HDMI_TEST_FREE_BALLS (its pair's
+        # B pad, which the OSER10 owns), is left for the tool to place.
+        for ball in $HDMI_TEST_RED_BALL ${HDMI_TEST_FREE_BALLS:-}; do
+            sed -i "/^IO_LOC \"pmod[01]_io\[[0-7]\]\" $ball;/d" "$src/hdmi_test.cst"
+        done
         sed -i "s/^IO_LOC \"tmds_d_p\[2\]\" K17;/IO_LOC \"tmds_d_p[2]\" $HDMI_TEST_RED_BALL;/" "$src/hdmi_test.cst"
         grep -q "tmds_d_p\[2\]\" $HDMI_TEST_RED_BALL;" "$src/hdmi_test.cst" ||
             { echo "red ball substitution did not apply" >&2; exit 1; }

@@ -1224,3 +1224,35 @@ For the next agent, the state is this. The board boots TinyTang on Bouffalo SDK 
 - User Test: PASS
 
 ---
+
+## 39 COMMIT Unreleased 2026-10-11T21:16:01-07:00
+
+#### Coming From:
+
+Unreleased d302cd1
+
+#### Purpose:
+
+Correct the apicula fork's cell-to-HCLK-block map from a vendor measurement so that the open-flow desktop core drives HDMI without the four interim lane fuses.
+
+#### Outcome:
+
+The open-flow desktop core now drives HDMI and VGA with no hand-added fuses, and the card's `/cores/console138k/desktop.bin` is that core, `desktop.7b21952ec575.bin` (`desktop.67e1b165f9f9.fs`), built by `tools/build_desktop_core_open.sh` at seed 17. The interim-fuse core `67583d390cdc` is kept beside it as `desktop.bin.pre-io2hclk`. The fault was where the fork's `gw5_hclk_arcs` split each long side between its two HCLK blocks. It split them at the row-63 inter-HCLK bridge, which put rows 55 to 61 in blocks 0 and 1. A sweep measured the vendor's split instead. Gowin EDA 1.9.11.03 builds of the single-ended 480p test core were decoded with `gowin_unpack` and never loaded, with red's `OSER10` moved by `HDMI_TEST_RED_BALL`. The PMOD constraints on its balls were dropped by the new `HDMI_TEST_FREE_BALLS` option of `tools/build_hdmi_test.sh`, which also now frees red's own ball. On the right edge, rows 41, 43, 46, 48, 50 and 52 were served by block 1, which carries block 3's lane 0 over inter-HCLK wire 207. Rows 55, 57, 59, 61 and 64 were served by block 3 alone. On the left edge, rows 46 to 52 were served by block 0 and rows 55 to 61 by block 2. The bridge cell carried no fuses in any build. Rows 53 and 54 could not be measured, because row 53 has no bonded IOLOGIC and ball F21 refuses an `OSER10`. The split is therefore the block midpoint, row 54, and not the bridge. The fork's existing test placing (50,181) in block 1 is right under both rules, so entry 38's guess that it showed the same fault was wrong. Fork commit `93761f4` on `aquasock/apicula` `epic/gw5ast138c`, pushed, makes the midpoint the split and adds a test for it. Its regenerated chipdb differs from the old one only in rows 55, 57, 59 and 61 on both edges, which moved to blocks 2 and 3, and in the pips that follow from that move. The fork's IOLOGIC tests pass apart from the older `test_io2hclk_places_the_vendor_oser4_cell_in_block_one` failure that entry 38 left alone. nextpnr was rebuilt against the new chipdb with `~/tools/rebuild-nextpnr.sh`. The desktop core then passed both gates with no clock-topology regression. nextpnr placed all three TMDS serialisers on block 3 lane 2 (`HCLK_OUT2`). This is not the vendor's lane 0, but the block is the vendor's, and lane 2 correctly carries no lane-0 bits. After a Gowin control (`hdmi-vga-gowin-480p.bin`) that the user confirmed showed bars on both monitors, this core was loaded with `tangload`, and the user saw the desktop on HDMI and VGA. `tools/desktop_open/build.sh` now packs with the plain `gowin_pack` and has no `DESKTOP_INTERIM_FUSES` option. Rebuilt with that script, the core came out byte-identical. TOOL-017 and the README now describe this state. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md` and inspected the complete `.ai/` diff. It confirmed that `.ai/core.md` is unchanged, that no settled entry was rewritten and that the reference's YAML blocks parse. It validated this entry as number 39, with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+No fuse is added by hand any more, and the build needs the apicula fork at `93761f4` or later with nextpnr rebuilt against its chipdb. The bottom side's split between blocks 4 and 5, at the midpoint between columns 90 and 91, is unmeasured and should be swept the same way before a design relies on serialisers near it. The vendor puts these serialisers on lane 0 where this build uses lane 2. That works on the board, but lanes 1 and 3 and the block-1 path over wire 207 are not modelled. The older fork test that expects block 1 to offer lanes 0 to 3 to an IOLOGIC should be brought in line with the lanes-0-and-2 rule. `OSER8` and `OVIDEO` still follow `84dddea`'s unmeasured empty-aux rule. Tang-Build's TOOL-031 and README still say open-flow HDMI is impossible, and correcting them is the user's call. The records owed since entry 33 are still owed: TOOL-003 (which still describes SDK 2.0.0 and no FPGA build here, and should pin the fork commits), TOOL-005, BL6-003, BL6-008 and BL6-009. During board tests the user paces every board action and wants a Gowin control loaded before each test.
+
+#### Files Modified:
+
+- README.md
+- tools/build_hdmi_test.sh
+- tools/desktop_open/build.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
