@@ -1123,3 +1123,37 @@ The next step is to compare the two 480p test bitstreams block by block, which t
 - User Test: FAIL
 
 ---
+
+## 36 COMMIT Unreleased 2026-10-11T18:20:30-07:00
+
+#### Coming From:
+
+Unreleased 382ad33
+
+#### Purpose:
+
+Compare the open-flow and Gowin 480p HDMI test bitstreams tile by tile and test the decoded differences on the board, to find what the open flow configures differently in the HDMI path.
+
+#### Outcome:
+
+The comparison located several real differences between the open and Gowin builds of the 480p test core. Three of them, moved into the open build, were each refuted on the board, so this cycle ends with the fault narrowed but not found. Both bitstreams were decoded with the apicula fork's `gowin_unpack`, and the new `tools/bitstream_tile_diff.py` compares them tile by tile. It lists every tile whose fuses differ, groups chip-wide default patterns, and decodes chosen tiles on both sides with `parse_tile_()`. The serialisers sit in the same tiles in both builds with identical settings, and the TMDS clock lane's I/O tile R105C182 is bit-identical. The differences are four. First, Gowin placed `pll_27` at `PLL_B[2]`, beside the board clock pin V22, and `pll_hdmi` at `PLL_R[2]`, beside the HDMI bank. The desktop core's open-flow pins put both on the opposite edge at `PLL_L[1]` and `PLL_L[3]`, contrary to the claim in `fpga/desktop/desktop.cst` that they are the vendor's sites, which also explains entry 30's dark HDMI from Gowin with those pins. Second, Gowin feeds every serialiser from the X181Y81 HCLK block through `HCLK_MUX_GAMMA30 <- HCLK_UNK581`. The open route leaves the PLL on fabric and enters two blocks through `L2HCLK`: X181Y81 for the divider and the serialisers at rows 100 and 102, and X181Y27 for the serialiser at row 57. Third, Gowin sets PLL attribute 211 = 2 on both PLLs. That id is unnamed in `apycula/attrids.py`, so the fork's packer never writes it. Every other PLL attribute, including the pump settings, matches, apart from `A_ODIV1_SEL`/`A_ODIV2_SEL` on unused outputs. Fourth, Gowin sets two to eight fuses in each of about forty clock spine and tap tiles on rows 73, 82, 91 and 100, which the decoder cannot name at all. Three tests followed, each loaded with `tangload`. The first moved the PLLs to Gowin's sites (`HDMI_TEST_PLL27_SITE`/`HDMI_TEST_PLLHDMI_SITE` in `tools/build_hdmi_test.sh`, `hdmi_test.23c4fb533762.bin`). The second also hand-routed the X181Y81 block to Gowin's `GAMMA30` entry with the new `tools/hdmi_test_route_gamma.py` and dropped the X181Y27 branch, and the decoder confirmed the block now matches Gowin's (`deef749af07d`). The third also added attribute 211 = 2 to both PLLs through the new `tools/gowin_pack_pll_attr.py`, a wrapper that adds raw attributes before the fork's `gowin_pack` looks up fuses (`76feb5b76bed`). All three gave no signal. The user confirmed the Gowin 480p control showing bars immediately before the second and third tests. The first test's result is uncertain, because the user later said the monitor might have been off, so the first and a fourth variant (the router's own route with attribute 211, `f967bb87b663`) are unconfirmed. Two findings about writing bitstreams by hand are recorded for the next cycle. Frame CRCs on this device are CRC-16/ARC over the frame, seeded with six `0xFF` bytes, and reproduce for all 21,872 frames. But the footer checksum could not be reproduced by any formula tried, and apicula's `write_bitstream` does not round-trip a 138C `.fs`, so fuse changes must go through `gowin_pack` rather than into the file. TOOL-017 records the decoded differences and the three refuted tests. The board is on the Gowin 480p control. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 36 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+Stop testing decoded differences one at a time and bisect by transplant, as the user approved. Extend the pack wrapper to copy the Gowin bitstream's exact fuse contents for a chosen set of tiles into the open build's tilemap before `gowin_pack` writes it, so that the packer still computes every checksum. The starting set is both PLL sites, the X181Y81 HCLK block, the spine and tap tiles that differ, and the column-182 I/O tiles. If HDMI comes up, halve the set until the deciding tiles and then the deciding fuses are named; if it does not, the cause lies outside that set, in bank or global configuration. Run a Gowin control before each test whose result is in doubt.
+
+#### Files Modified:
+
+- fpga/hdmi_test/hdmi_test_open.cst.in
+- tools/bitstream_tile_diff.py
+- tools/build_hdmi_test.sh
+- tools/gowin_pack_pll_attr.py
+- tools/hdmi_test_route_gamma.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

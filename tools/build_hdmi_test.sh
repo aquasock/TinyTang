@@ -15,7 +15,9 @@
 # Open flow: yosys synth_gowin, the nextpnr-himbaechel fork, the apicula fork's
 # gowin_pack, then tools/desktop_open/fs_to_bin.py.  The same environment
 # overrides as tools/desktop_open/build.sh apply (NEXTPNR_BUILD, APICULA_FORK,
-# PY, PYDEPS, NEXTPNR_SEED).  The output directory receives hdmi_test.bin and
+# PY, PYDEPS, NEXTPNR_SEED), and HDMI_TEST_PLL27_SITE / HDMI_TEST_PLLHDMI_SITE
+# choose the open build's PLL sites (default PLL_L[1] / PLL_L[3], the desktop
+# core's; the Gowin build of this core chose PLL_B[2] / PLL_R[2]).  The output directory receives hdmi_test.bin and
 # a copy stamped with its sha256 prefix, plus the logs.
 set -euo pipefail
 export LC_ALL=C
@@ -24,7 +26,7 @@ flow="${1:-}"
 mode="${2:-}"
 [[ "$flow" == open || "$flow" == gowin ]] && [[ "$mode" == 720p || "$mode" == 480p ]] || {
     echo "usage: $0 <open|gowin> <720p|480p> [out-dir]" >&2; exit 2; }
-out="${3:-$root/build/hdmi_test/$flow-$mode}"
+out="$(realpath -m "${3:-$root/build/hdmi_test/$flow-$mode}")"
 build="${DESKTOP_BUILD_DIR:-$root/build/desktop}"
 
 if [[ ! -f "$build/source-path.txt" || ! -d "$(cat "$build/source-path.txt")" ]]; then
@@ -82,7 +84,11 @@ else
     # gowin_pack both need it (tools/desktop_open/pnr.sh).
     export PYTHONHOME="$suite"
     export PYTHONPATH="$A:$PYDEPS:${PYTHONPATH:-}"
-    cat "$root/fpga/hdmi_test/hdmi_test_open.cst.in" >> "$src/hdmi_test.cst"
+    pll27_site="${HDMI_TEST_PLL27_SITE:-PLL_L[1]}"
+    pllhdmi_site="${HDMI_TEST_PLLHDMI_SITE:-PLL_L[3]}"
+    sed -e "s/@PLL27_SITE@/$pll27_site/" -e "s/@PLLHDMI_SITE@/$pllhdmi_site/" \
+        "$root/fpga/hdmi_test/hdmi_test_open.cst.in" >> "$src/hdmi_test.cst"
+    echo "PLL sites: pll_27 $pll27_site, pll_hdmi $pllhdmi_site"
     # Synthesis renames the pixel net (it surfaces as an encoder's clk), so the
     # open flow constrains the divider's output pin, as clock_constraints.py
     # does for the desktop core, instead of the net by name.
