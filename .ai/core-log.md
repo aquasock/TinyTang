@@ -1368,3 +1368,37 @@ BL6-002, BL6-004 and BLE-014 still describe the fork's `mem.h` and `g_kmemheap` 
 - User Test: N/A
 
 ---
+
+## 42 COMMIT Unreleased 2026-10-12T06:15:30-07:00
+
+#### Coming From:
+
+Unreleased dfc13d1
+
+#### Purpose:
+
+Restore the Phosphor launcher, whose oscilloscope visualizer stopped loading after the move to SDK 2.3.36 because the script's line table could not grow within its own heap.
+
+#### Outcome:
+
+`scripts/phosphor.tdsh` printed nothing and left the desktop core loaded on firmware `6715393-dirty.a597e26`, and `crash` showed a refused 1,056 B allocation for task `tdsh_script`: the 94-line script's line table growing to 128 entries. SDK 2.3.36 has an OCRAM heap and a 32 KB WRAM heap, its `krealloc` stays in the block's own heap and its `pvPortMalloc` takes task stacks only from OCRAM, which the new record BL6-010 sets out. With user approval, the `krealloc` wrap in `ports/bl616/tang_heap.c` now retries a refused request in any heap and moves the block, and `ports/bl616/tang_ble_trace.c` takes its 16 KB HCI trace buffer from the heap only between `bletrace clear` and the new `bletrace free`, which raised the reported heap from 121,720 B to 138,104 B; the command's usage in `tang_ble.c` and the converter's docstring now name `bletrace free`. The build `dfc13d1-dirty.ea4fc91`, 607328 bytes, MD5 `1d4eb7a45559d3684259b155f3aa9c2d`, compiled with no new warnings, was installed with `tools/tinytang_flash.py` and confirmed by `platform` after a power cycle. Over USB the launcher loaded the Phosphor core (ABI `0x0001000a`, scope control `0xb`) with no refused allocation, `bletrace clear` and `bletrace free` took and returned the 16 KB, and Fleetwood Mac's Landslide from `/musichhh` played with no underruns while the user saw the oscilloscope and reported it working, F12 switching to TinyDesk and back. Launching the script from the desktop's menu still fails with `tdsh: failed to start script worker (-1)`: its 16,384 B worker stack is refused in OCRAM while the 29,504 B largest free block is the idle WRAM heap. BL6-009 and TOOL-006 were revised to match, every YAML block in the reference parses, and the core-syntax audit of the `.ai/` changes passed.
+
+#### Next Steps:
+
+Make a script launched from the desktop's menu start by letting FreeRTOS task stacks fall back to the WRAM heap, proposed as a wrap of `pvPortMalloc` with `MM_FLAG_HEAP_ANY`, then rebuild, flash, and have the user launch `phosphor.tdsh` from the menu. Raising the silent script-load failure with the TinyDesk Shell author remains optional. BL6-002, BL6-004 and BLE-014 still describe the fork's heap, and the Wii Classic Controller PMOD work waits for its scope.
+
+#### Files Modified:
+
+- ports/bl616/tang_heap.c
+- ports/bl616/tang_heap.h
+- ports/bl616/tang_ble_trace.c
+- ports/bl616/tang_ble.c
+- tools/ble_trace_to_btsnoop.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

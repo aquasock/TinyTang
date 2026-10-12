@@ -39,7 +39,8 @@ static void note_failure(size_t size, void *caller)
 /* The SDK's allocator (components/mm) already returns NULL when it cannot
  * satisfy a request -- it does not spin with interrupts off the way the old
  * SDK's bflb_malloc did (BL6-008) -- so nothing needs replacing.  The linker
- * wraps kmalloc and krealloc only to record the request that was refused; the
+ * wraps kmalloc and krealloc to record the request that was refused, and
+ * krealloc also to move a block to another heap when its own is full; the
  * allocation, its locking and the heap accounting all stay in the SDK. */
 
 void *__real_kmalloc(size_t size, uint32_t flags);
@@ -71,9 +72,20 @@ void *__wrap_krealloc(void *ptr, size_t size)
     }
     void *ret = __real_krealloc(ptr, size);
     if (!ret && size != 0) {
-        const uintptr_t irq = bflb_irq_save();
-        note_failure(size, __builtin_return_address(0));
-        bflb_irq_restore(irq);
+        /* The SDK's krealloc grows a block only inside the heap that holds it
+         * (OCRAM or WRAM), so it fails while the other heap has room; the old
+         * SDK had one heap and never did.  Move the block instead, the way
+         * realloc is allowed to (BL6-010). */
+        const size_t old_size = kmalloc_size(ptr);
+        ret = old_size ? __real_kmalloc(size, MM_FLAG_HEAP_ANY) : NULL;
+        if (ret) {
+            memcpy(ret, ptr, old_size < size ? old_size : size);
+            kfree(ptr);
+        } else {
+            const uintptr_t irq = bflb_irq_save();
+            note_failure(size, __builtin_return_address(0));
+            bflb_irq_restore(irq);
+        }
     }
     return ret;
 }

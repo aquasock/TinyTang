@@ -13,7 +13,10 @@
 //
 // The capture is linear, not a ring: `bletrace clear` before a test, and it
 // keeps everything from then on until it is full, so a session is recorded
-// from its first packet.  LE advertising reports are counted, not stored,
+// from its first packet.  The 16 KB buffer is taken from the heap by
+// `bletrace clear` and returned by `bletrace free`; until then nothing is
+// recorded, because a static buffer cost the heap the room a script launched
+// from the desktop needs (BL6-010).  LE advertising reports are counted, not stored,
 // because a scan would fill it in seconds.  `bletrace dump` prints the packets
 // as text, and tools/ble_trace_to_btsnoop.py turns that into a btsnoop file
 // that `btmon -r` decodes like a capture taken on a PC.
@@ -42,7 +45,7 @@ int tdsh_printf(const char *fmt, ...);
 #define MON_COMMAND_PKT 2
 #define MON_EVENT_PKT   3
 
-static uint8_t s_trace[TRACE_BYTES];
+static uint8_t *s_trace;
 static size_t s_used;
 static uint32_t s_records;
 static uint32_t s_dropped;
@@ -63,7 +66,9 @@ void __wrap_bt_monitor_send(uint16_t opcode, const void *data, size_t len)
     const size_t keep = len < TRACE_CAP_MAX ? len : TRACE_CAP_MAX;
 
     uintptr_t flags = bflb_irq_save();
-    if (is_adv_report(opcode, p, len)) {
+    if (!s_trace) {
+        /* Not capturing. */
+    } else if (is_adv_report(opcode, p, len)) {
         s_adv_skipped++;
     } else if (s_used + TRACE_HDR + keep > TRACE_BYTES) {
         s_dropped++;
@@ -86,6 +91,10 @@ void __wrap_bt_monitor_send(uint16_t opcode, const void *data, size_t len)
 
 static void trace_status(void)
 {
+    if (!s_trace) {
+        tdsh_printf("bletrace: off; `bletrace clear` starts a capture\r\n");
+        return;
+    }
     tdsh_printf("bletrace: %lu packet(s), %lu of %u bytes, %lu advertising report(s) "
                 "skipped, %lu packet(s) dropped when full\r\n",
                 (unsigned long)s_records, (unsigned long)s_used, (unsigned)TRACE_BYTES,
@@ -104,6 +113,9 @@ static void trace_dump(uint32_t from, uint32_t count)
     uint32_t n = 0;
 
     trace_status();
+    if (!s_trace) {
+        return;
+    }
     for (size_t at = 0; at < s_used; n++) {
         const uint8_t *r = &s_trace[at];
         const uint32_t t = (uint32_t)r[0] | (uint32_t)r[1] << 8 |
@@ -130,13 +142,29 @@ int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
     if (argc >= 2 && strcmp(argv[1], "clear") == 0) {
+        uint8_t *buf = s_trace ? s_trace : malloc(TRACE_BYTES);
+        if (!buf) {
+            tdsh_printf("bletrace: no room for the %u-byte buffer\r\n", (unsigned)TRACE_BYTES);
+            return 1;
+        }
         uintptr_t flags = bflb_irq_save();
+        s_trace = buf;
         s_used = 0;
         s_records = 0;
         s_dropped = 0;
         s_adv_skipped = 0;
         bflb_irq_restore(flags);
         tdsh_printf("bletrace: cleared\r\n");
+        return 0;
+    }
+    if (argc >= 2 && strcmp(argv[1], "free") == 0) {
+        uintptr_t flags = bflb_irq_save();
+        uint8_t *buf = s_trace;
+        s_trace = NULL;
+        s_used = 0;
+        bflb_irq_restore(flags);
+        free(buf);
+        tdsh_printf("bletrace: off, buffer freed\r\n");
         return 0;
     }
     if (argc >= 2 && strcmp(argv[1], "dump") == 0) {
@@ -146,7 +174,7 @@ int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv)
         return 0;
     }
     if (argc >= 2) {
-        tdsh_printf("usage: bletrace [clear | dump [from [count]]]\r\n");
+        tdsh_printf("usage: bletrace [clear | free | dump [from [count]]]\r\n");
         return 1;
     }
     trace_status();

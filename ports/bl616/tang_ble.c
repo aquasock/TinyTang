@@ -2604,7 +2604,7 @@ static const tdsh_command_t s_ble_commands[] = {
     { "blemouse", "blemouse pair [name] | <addr> | watch | off | on | forget",
       "Pair a Bluetooth LE mouse as the desktop's pointer; it reconnects by itself after that",
       cmd_blemouse, 0 },
-    { "bletrace", "bletrace [clear | dump [from [count]]]",
+    { "bletrace", "bletrace [clear | free | dump [from [count]]]",
       "Diagnostic HCI trace of the Bluetooth stack (tools/ble_trace_to_btsnoop.py reads a dump)",
       tang_ble_trace_cmd, 0 },
 };

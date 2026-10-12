@@ -2,9 +2,10 @@
 //
 // SDK 2.3.36's allocator returns NULL on allocation failure, so the old SDK's
 // TLSF replacements -- which existed only to prevent a silent spin (BL6-008) --
-// are gone.  The linker now wraps kmalloc and krealloc only to record the
-// refused request, task and caller; allocation, locking and heap accounting
-// stay in the SDK.
+// are gone.  The linker now wraps kmalloc and krealloc to record the refused
+// request, task and caller, and krealloc also to move a block to the other
+// heap when its own heap cannot grow it (BL6-010); allocation, locking and
+// heap accounting stay in the SDK.
 //
 // SPDX-License-Identifier: MIT
 

@@ -9,7 +9,9 @@ The board records every HCI packet its Bluetooth host sends and receives
 where <type> is the Linux monitor protocol's packet type (2 command, 3 event,
 4 ACL out, 5 ACL in).  That is also btsnoop's "monitor" datalink (2001), so
 the conversion is direct, and `btmon -r` then decodes the board's traffic the
-same way it decodes a capture taken on a PC:
+same way it decodes a capture taken on a PC.  `bletrace clear` starts a
+capture (it allocates the 16 KB buffer) and `bletrace free` gives the memory
+back afterwards:
 
     tools/tinytang_run.py "bletrace dump" --seconds 5 > trace.txt
     tools/ble_trace_to_btsnoop.py trace.txt board.snoop
