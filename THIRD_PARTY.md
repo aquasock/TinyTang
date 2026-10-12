@@ -147,7 +147,11 @@ so the module is no longer instantiated anywhere.
 
 The menu variant is carried in `third_party/patches/menu/`, and the desktop
 host variant in `third_party/patches/desktop/`. These are also modifications
-to GPL-3.0 sources. The new HDL, board definition and constraints in
+to GPL-3.0 sources. The open-flow build adds
+`third_party/patches/desktop/open/0001-open-toolchain-portability.patch`, four
+behaviour-preserving edits to GPL-3.0 nestang sources (`iosys_bl616.v`,
+`hdmi.sv`, `packet_picker.sv`, `nes2hdmi.sv`) that the yosys `read_slang`
+front end needs; it is carried from this author's Tang-Build project. The new HDL, board definition and constraints in
 `fpga/desktop/`, and its simulation benches in `tools/tests/sim/tb_desktop_*`,
 are GPL-3.0-only. Except for the OLED panel/SPI modules identified below, they
 are TinyTang's work. Build scripts and timing-validation

@@ -1046,3 +1046,45 @@ The next work is HDMI alongside VGA on the open flow, and it starts from Tang-Bu
 - User Test: PASS
 
 ---
+
+## 34 COMMIT Unreleased 2026-10-11T17:30:37-07:00
+
+#### Coming From:
+
+Unreleased 9d0699a
+
+#### Purpose:
+
+Bring the open-flow desktop core build into this repository from Tang-Build, at the user's direction, so that this project builds its own core with the flow `.ai/core.md` names.
+
+#### Outcome:
+
+The open flow now builds the desktop core from this repository and reproduces the hardware-proven core byte for byte. The new entry point is `tools/build_desktop_core_open.sh`. It reconstructs the design tree with `tools/build_desktop_core.sh --prepare-only` and applies `third_party/patches/desktop/open/0001-open-toolchain-portability.patch`, four behaviour-preserving edits to nestang sources that yosys's `read_slang` front end needs. It then runs `tools/desktop_open/build.sh`. That script performs synthesis (`synth.sh` and `synth.ys`), place and route with the nextpnr-himbaechel fork (`pnr.sh` and `clock_constraints.py`), the setup/hold gate (`pnr_timing.py`), the clock-topology regression gate against `clock_profile.json` (`clock_route_inventory.py`), packing with the apicula fork's `gowin_pack`, `.fs` to `.bin` conversion (`fs_to_bin.py`) and a content-hash stamp. All of these were carried from Tang-Build `737ddb4`, where the flow was developed, with three adaptations. Internal paths were rewritten to this layout. The default seed is now 17, the hardware-proven placement, where Tang-Build defaulted to 23. Tang-Build's static-DCS experiment branch was left out, because its bitstream did not boot on 2026-10-09. SPDX MIT headers were added where the originals lacked them, and `THIRD_PARTY.md` names the new patch as a modification of GPL-3.0 nestang sources. The flow still depends on tools outside the repository: oss-cad-suite at `~/oss-cad-suite`, the nextpnr fork built at `~/tools/nextpnr-mathieufro` against the regenerated GW5AST-138C database, the apicula fork at `/run/media/vash/GIT/apicula-mathieufro` (`4281068`) and `~/tools/pydeps`. Each can be overridden in the environment. The first build ran with `ALLOW_UNVERIFIED_CLOCK=1`, because the clock-topology profile carried over from Tang-Build predates the clock monitor, which adds 256 `clk`-domain flops (943 against 1199 fabric fallbacks). It produced `desktop.90d3fa3a84fa.bin` with sha256 `90d3fa3a84fa8cf80ca2d7d107fde9e00ac15b4362f34bba0d8ddeef53155718`, identical to the core on the card, with setup 0 and hold 0. The profile was then regenerated from that build's log. A second build from the committed scripts, with both gates enforced and no override, produced the same sha256 and reported no clock-topology regression. The board was not touched, because the built core is the one it already runs, which is why Deployment and User Test do not apply. The same build confirms what TOOL-017 says about HDMI: `hclk5` falls back to fabric at all four of its sinks, `clk` at 1199 and `clk27` at 1, and the pixel clock routes on global resources only. Reading Tang-Build entries 36 to 77 for this cycle also corrected one premise that the HDMI work had carried. Entry 36's report of a receiver locking for 0.6 s was withdrawn by Tang-Build entry 68 as the capture card's own idle field. So no measurement shows the open-flow core emitting any TMDS signal at all, and the claim that fabric-clock jitter breaks the link was never established. TOOL-017 now names the build of record, and the README describes the open flow and keeps the Gowin script as an HDMI reference only. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 34 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The next work is to find out what the open-flow core's HDMI pins actually do, before any further work on the clock model. No working open-flow HDMI design exists on this die to compare against: apicula's DVI example covers only the GW1N and GW2A boards, and its GW5AST-138C OSER10 examples are fuzzer shapes fed from a pin. The serialiser, divider and differential-output support of the apicula fork has therefore never been proven on hardware for this device. The proposed bisection is a minimal open-flow test core: one PLL, one `CLKDIV` and four `OSER10`s into the same TMDS pins, sending a fixed colour. Build it first at 720p and then at 640x480, where the bit clock is 125.875 MHz rather than 371.25 MHz. If 640x480 locks, timing on a fabric-routed clock is the fault. If neither locks, the fault is in configuration (the PLL, divider, IOLOGIC or output-buffer fuses), which a small design makes decodable tile by tile. A scope on the TMDS clock pair would answer the first question directly, if one is available. Several records are still owed a revision: TOOL-003, TOOL-005, and BL6-003, BL6-008 and BL6-009, as entry 33 named. Whether `tools/build_desktop_core.sh` and the other Gowin scripts should be retired is the user's decision.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- third_party/patches/desktop/open/0001-open-toolchain-portability.patch
+- tools/build_desktop_core_open.sh
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_constraints.py
+- tools/desktop_open/clock_profile.json
+- tools/desktop_open/clock_route_inventory.py
+- tools/desktop_open/fs_to_bin.py
+- tools/desktop_open/pnr.sh
+- tools/desktop_open/pnr_timing.py
+- tools/desktop_open/synth.sh
+- tools/desktop_open/synth.ys
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

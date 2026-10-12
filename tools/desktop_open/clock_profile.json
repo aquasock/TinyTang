@@ -1,0 +1,35 @@
+{
+  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=17: desktop.90d3fa3a84fa.bin, the hardware-proven open-flow core (VGA correct, HDMI dark), core-log entry 34",
+  "nets": {
+    "keyboard_link.clk": {
+      "dedicated": true,
+      "fallbacks": 0,
+      "global_only": false,
+      "partial": false
+    },
+    "desktop_sockets.pixel_clk": {
+      "dedicated": false,
+      "fallbacks": 0,
+      "global_only": true,
+      "partial": false
+    },
+    "clk": {
+      "dedicated": false,
+      "fallbacks": 1199,
+      "global_only": false,
+      "partial": false
+    },
+    "clk27": {
+      "dedicated": false,
+      "fallbacks": 1,
+      "global_only": false,
+      "partial": false
+    },
+    "hclk5": {
+      "dedicated": false,
+      "fallbacks": 4,
+      "global_only": false,
+      "partial": false
+    }
+  }
+}

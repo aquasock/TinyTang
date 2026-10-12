@@ -242,12 +242,13 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 # Build the FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
 # at ../tangcore/nestang, or NESTANG_DIR)
 tools/build_nestang_core.sh     # the NES core, with the desktop layer
-tools/build_desktop_core.sh     # desktop.bin: TinyDesk host with HDMI/VGA
+tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, gowin_pack): VGA; HDMI dark (TOOL-017)
+# tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /cores/console138k/nestang-desk.bin
-tools/tinytang_put.py build/desktop/place2/desktop.bin                 /cores/console138k/desktop.bin
+tools/tinytang_put.py build/desktop/open-s17/desktop.bin               /cores/console138k/desktop.bin
 tools/tinytang_put.py scripts/boot.tdsh      /scripts/boot.tdsh
 tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
 
@@ -324,11 +325,17 @@ than as a fork. The checkout stays pristine at commit `c2450818`, and
 menu core: the NES machine, its loader and SDRAM are not instantiated, and the
 legacy text page is removed. It remains the legacy HDMI-only rollback host.
 
-The default host is `desktop.bin`. `tools/build_desktop_core.sh` reconstructs
-the pinned source in an isolated build directory, applies the common, menu and
-`third_party/patches/desktop/` patches, then adds `fpga/desktop/`. It targets
-revision C and rejects setup or hold violations before publishing its binary.
-HDMI and VGA share the 720p raster and desktop compositor. The firmware applies
+The default host is `desktop.bin`, built with the open flow by
+`tools/build_desktop_core_open.sh`. It reconstructs the pinned source in an
+isolated build directory with `tools/build_desktop_core.sh --prepare-only`
+(the common, menu and `third_party/patches/desktop/` patches, then
+`fpga/desktop/`), applies `third_party/patches/desktop/open/`, and runs
+`tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
+clock-topology gate against the recorded profile, and the apicula fork's
+`gowin_pack`. At the default seed 17 it reproduces the hardware-proven core
+`90d3fa3a84fa` byte for byte. It targets revision C. HDMI and VGA share the
+720p raster and desktop compositor, but an open-flow build drives VGA only:
+HDMI stays dark (`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
 VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.
@@ -423,8 +430,9 @@ STM32's own DFU bootloader.
   - `tinytang_put.py`, `tinytang_run.py`, `tinytang_flash.py` — put a file on
     the card, run a command, reflash the BL616. `tinytang_put.py` refuses to
     send unless the console is at a shell prompt (fact 15).
+  - `build_desktop_core_open.sh` and `desktop_open/` — build the desktop core with the open flow.
   - `build_desktop_core.sh`, `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build
-    a core with Gowin.
+    a core with Gowin (`build_desktop_core.sh --prepare-only` also feeds the open flow).
   - `test_textdisp_wide.sh` — simulates the layer against a free-running
     1650x750 raster and checks every visible pixel (Verilator).
   - `tests/` — host tests for the frame cache, the key translation, the pad,

@@ -1,0 +1,53 @@
+--- a/src/iosys/iosys_bl616.v
++++ b/src/iosys/iosys_bl616.v
+@@ -71,7 +71,7 @@
+     input      [1:0]  fdd_request,      // [1]: write, [0]: read
+ 
+     // Keyboard interface
+-    input reg  [7:0] kbd_data,
++    output reg  [7:0] kbd_data,
+     output reg       kbd_data_valid,
+     
+     output reg [31:0] core_config,
+--- a/src/hdmi2/hdmi.sv
++++ b/src/hdmi2/hdmi.sv
+@@ -324,7 +324,7 @@
+             begin
+                 mode <= 3'd2;
+                 video_data <= 24'd0;
+-                control_data = 6'd0;
++                control_data <= 6'd0;
+                 data_island_data <= 12'd0;
+             end
+             else
+--- a/src/hdmi2/packet_picker.sv
++++ b/src/hdmi2/packet_picker.sv
+@@ -127,9 +127,12 @@
+     end
+     else if (packet_pixel_counter == 5'd31 && packet_type == 8'h02) // Keep track of current IEC 60958 frame
+     begin
+-        frame_counter = frame_counter + 8'd4;
+-        if (frame_counter >= 8'd192)
+-            frame_counter = frame_counter - 8'd192;
++        // Open-toolchain portability: the two assignments below were blocking
++        // while this block is otherwise non-blocking.  Written as one
++        // non-blocking expression it is exactly equivalent -- the comparison
++        // tests the value before the increment in both forms, and an 8-bit
++        // add wraps the same way.
++        frame_counter <= (frame_counter + 8'd4 >= 8'd192) ? (frame_counter + 8'd4 - 8'd192) : (frame_counter + 8'd4);
+     end
+ end
+ audio_sample_packet #(.SAMPLING_FREQUENCY(SAMPLING_FREQUENCY), .WORD_LENGTH({{WORD_LENGTH[0], WORD_LENGTH[1], WORD_LENGTH[2]}, WORD_LENGTH_LIMIT})) audio_sample_packet (.frame_counter(frame_counter), .valid_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .user_data_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .audio_sample_word(audio_sample_word_packet), .audio_sample_word_present(audio_sample_word_present_packet), .header(headers[2]), .sub(subs[2]));
+--- a/src/nes2hdmi.sv
++++ b/src/nes2hdmi.sv
+@@ -140,8 +140,8 @@
+ 
+ always_ff@(posedge clk_pixel) 
+ begin
+-    if (audio_divider != AUDIO_CLK_DELAY - 1) 
+-        audio_divider++;
++    if (audio_divider != AUDIO_CLK_DELAY - 1)
++        audio_divider <= audio_divider + 1;   // open-toolchain portability: was blocking
+     else begin 
+         clk_audio <= ~clk_audio; 
+         audio_divider <= 0; 
