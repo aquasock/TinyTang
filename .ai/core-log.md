@@ -1016,3 +1016,33 @@ No engineering work is pending in this repository. The board runs upstream Bouff
 - User Test: PASS
 
 ---
+
+## 33 COMMIT Unreleased 2026-10-11T17:20:17-07:00
+
+#### Coming From:
+
+Unreleased 378866b
+
+#### Purpose:
+
+Revert the desktop core to its open-flow build from before entry 30's HDMI fix, keeping entry 32's firmware cleanup, because entry 30 got HDMI working by building with Gowin and this project builds with the open flow, as `.ai/core.md` now states.
+
+#### Outcome:
+
+Entry 30 is superseded: its HDMI result came from changing the build to Gowin EDA, and removing the three `INS_LOC` PLL pins fixed only that Gowin build. The user's `378866b` changed `.ai/core.md` to "Open-flow." and dropped Gowin EDA from the FPGA toolchain. `fpga/desktop/desktop.cst` was restored byte for byte to its `6edf305` contents, so `pll_27` is at `PLL_L[1]`, `pll_hdmi` at `PLL_L[3]` and `pll_nes` at `PLL_R[0]` again with the original comment explaining why the open flow needs them. That also discarded an uncommitted edit to the same file, made after entry 32 and before this session, which re-added the pins but cited a `tools/build_desktop_core_open.sh` that does not exist. Nothing else in the tree changed, so entry 32's firmware cleanup, the BRD-009 wording in `tools/tinytang_flash.py` and the board's firmware `6715393-dirty.a597e26` all stand. No build ran this cycle. The open-flow core of record is Tang-Build's seed-17 build, which Tang-Build entry 77 reproduced byte for byte with its `scripts/build-desktop-core.sh` at `NEXTPNR_SEED=17`: `build/clock-monitor/desktop.90d3fa3a84fa.bin` in that repository, sha256 `90d3fa3a84fa8cf80ca2d7d107fde9e00ac15b4362f34bba0d8ddeef53155718`, 4,463,286 bytes. On the card, the Gowin core was renamed from `/cores/console138k/desktop.bin` to `desktop-gowin-hdmi.bin` and kept as an HDMI reference. The seed-17 file was uploaded as the new `desktop.bin` with `tools/tinytang_put.py`, which wrote all 4,463,286 bytes; the same-sized `desktop.bin.pre-hdmi-fix` was not used, because the board has no hash command to identify it. `tangload` loaded the new core, `fpga` reported core 84, and `tangini` read back `core 0x54 (ABI 1.1) has 0xc0 = 0x0230, as declared`, so `boot.tdsh` now loads the open-flow core at every boot. The user reported VGA on and HDMI off, which is the expected pre-fix state and is accepted as this cycle's result. TOOL-017 in `.ai/core-reference.md` was revised in place. It had turned the Gowin result into a rule against the pins, and now states that the project builds with the open flow, that the pins are what that flow needs, that the open-flow core has no clock route from the PLL into the HCLK block so HDMI stays dark, and that the Gowin build is a reference only; its index line and routing row were updated to match. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed in this cycle (its last change is the user's own `378866b`) and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 33 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The next work is HDMI alongside VGA on the open flow, and it starts from Tang-Build's record rather than from a fresh theory. Tang-Build entries 73 to 77 found that the open device data has no clock route from the PLL into the HCLK block, so `hclk5` reaches the HDMI serializer only over fabric. They also refuted two modelled pips from the PLL outputs into the HCLK muxes, because the generator re-types a pip source to HCLK and that destroys the PLL, and the forced-DCS bitstream of 2026-10-09 did not boot. A plan should therefore be agreed with the user before any build, and it should first settle where the open-flow build script lives. `tools/build_desktop_core.sh` here still drives Gowin and is not the build of record, while the working open-flow script, its portability patch and the nextpnr fork at `~/tools/nextpnr-mathieufro` all live outside this repository. Several reference records still describe the pre-migration tree and are owed revision. TOOL-003 still names SDK 2.0.0. TOOL-005 still lists `TINYTANG_NO_FS` and `TINYTANG_NO_SHELL`, which entry 32 removed. BL6-003, BL6-008 and BL6-009 still describe the fork's TLSF heap and `bflb_malloc` wraps, which entry 24 replaced with `components/mm` and `kmalloc`/`krealloc` wraps.
+
+#### Files Modified:
+
+- fpga/desktop/desktop.cst
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---

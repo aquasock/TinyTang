@@ -244,7 +244,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which host tools exist, and what do they need? | TOOL | TOOL-006 |
 | What code is vendored into this project, and under what licence? | TOOL | TOOL-007 |
 | Which SDK components does this firmware link, and under what licences? | TOOL | TOOL-016 |
-| Why is the core's HDMI output dark? | TOOL | TOOL-017 |
+| Why is the core's HDMI output dark, and which flow builds the desktop core? | TOOL | TOOL-017 |
 | Is it safe to send a file to the board, or is the desktop holding the console? | TOOL | TOOL-011 |
 | How is the board debugged one-wire, and what of TinyTang and TinyDesk is reachable then? | TOOL | TOOL-012 |
 | How is a core deployed, debugged and exercised entirely over one-wire? | TOOL | TOOL-013 |
@@ -406,7 +406,7 @@ TOOL-013: "A core can be developed entirely over one-wire: SRAM-load its .fs ove
 TOOL-014: "A third debug path: a Raspberry Pi Pico 2 CMSIS-DAP probe (2e8a:000c) on the module's U1201 header is its own USB device on the host, set up and validated by the user; Tang-Phosphor's scripts/flash-pico.sh drives it with openFPGALoader -c cmsisdap at 2 MHz or less (a full .fs takes 10-20 min), its real use is GAO and independent JTAG checks, and it must be idle during a tangload"
 TOOL-015: "With FF_FS_REENTRANT 1 the SDK's FatFS R0.15 takes a FreeRTOS mutex (xSemaphoreTake with FF_FS_TIMEOUT ticks) on entry to every file call and gives it on exit, and FreeRTOS forbids API calls inside taskENTER_CRITICAL, so no f_* call may run inside a critical section; the JTAG programmer's did and failed tangload under TinyDesk"
 TOOL-016: "Linked out of the SDK under their own licences: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com), CherryUSB (Apache-2.0), FatFs R0.15 w/patch3 (ChaN), and the Bluetooth stack: the Zephyr-derived host (Apache-2.0; Intel, Nordic, Wind River, Oticon, Chettimada), TinyCrypt (BSD-3-Clause, Intel 2017), micro-ecc (BSD-2-Clause, Kenneth MacKay 2014) and ctr_prng (BSD-2-Clause, Chris Morrison 2016), whose binary-form notices are reproduced in LICENSES/, plus the binary-only RivieraWaves-based controller and PHY libraries under the SDK's Apache-2.0 alone; LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked"
-TOOL-017: "A Gowin build (gowinsynthesis) of the desktop core must let the vendor's place-and-route choose the PLL sites: the open-flow INS_LOC pins stop hclk5 reaching the HDMI serializer's FCLK and leave HDMI dark while every other clock and the VGA path work"
+TOOL-017: "The desktop core is built with the open flow, whose desktop.cst pins pll_27 PLL_L[1], pll_hdmi PLL_L[3] and pll_nes PLL_R[0]; the seed-17 core (90d3fa3a...) drives VGA and leaves HDMI dark because hclk5 reaches the serializer's FCLK only over fabric; only a Gowin build with no PLL pins has driven HDMI, and Gowin is not this project's flow"
 ```
 
 ---
@@ -2247,16 +2247,18 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - record_id: TOOL-017
   kind: TOOLCHAIN
   topic_id: TOOL
-  title: "The desktop core needs the vendor's own PLL placement; open-flow INS_LOC pins leave HDMI dark"
+  title: "The desktop core is built with the open flow, which needs three PLL pins and carries no HDMI; only a Gowin build has driven HDMI"
   status: VERIFIED
   verified_date: 2026-10-11
-  statement: "GW5AST-LV138PG484AC1/I0 revision C, Gowin EDA 1.9.11.03.  The desktop core builds with gowinsynthesis (fpga/desktop/build.tcl; board.v carries `define GW_IDE) and compiles the HDMI PLL and the whole TMDS chain (gowin_pll_hdmi, hdmi.sv, serializer.sv, tmds_channel.sv), with the tmds pins constrained in fpga/desktop/desktop.cst.  With no PLL placement constraints, Gowin's place-and-route routes the 5x pixel clock hclk5 (371.25 MHz) to the HDMI serializer's FCLK and the core drives HDMI: a build measures setup +1.957 ns and hold +0.166 ns with zero violations.  Pinning pll_27, pll_hdmi and pll_nes with INS_LOC -- the lines carried over from the open flow, named with nextpnr's flattened cell names -- stops that routing and the HDMI output is dark while every other clock and the VGA path keep working.  nestang's own console.cst pins no PLL at all."
-  consequence: "fpga/desktop/desktop.cst carries no PLL placement constraints, and a build must not re-add them: under Gowin they are the fault, and under the open flow their object names do not resolve.  The reference for a working core on this board is nestang's own console138k build loaded as-is, which needs no patches to drive HDMI."
+  statement: "GW5AST-LV138PG484AC1/I0 revision C.  Under the open flow (yosys, the nextpnr-himbaechel fork with its regenerated apicula, gowin_pack), fpga/desktop/desktop.cst pins pll_27 at PLL_L[1], pll_hdmi at PLL_L[3] and pll_nes at PLL_R[0] with INS_LOC, named with nextpnr's flattened cell names; without the pll_nes pin nextpnr has no violation-free placement, and with it seeds 17 and 19 meet setup and hold.  Tang-Build's scripts/build-desktop-core.sh at NEXTPNR_SEED=17 reproduces the deployed open-flow core byte for byte (sha256 90d3fa3a84fa8cf80ca2d7d107fde9e00ac15b4362f34bba0d8ddeef53155718, 4,463,286 B); it drives VGA correctly and HDMI stays dark, because the open database has no clock route from the PLL into the HCLK block, so hclk5 reaches the HDMI serializer's FCLK only over fabric.  The same RTL built with Gowin EDA 1.9.11.03 (tools/build_desktop_core.sh) behaves the other way round: with the three pins Gowin also leaves hclk5 off the FCLK and HDMI dark, and with no PLL pins, as in nestang's own console.cst, it drives HDMI (setup +1.957 ns, hold +0.166 ns, sha256 95e9b3e1cb884d99e4b6073651c2ba167798a6b92c8869eb499a392ca29549e3)."
+  consequence: "This project builds with the open flow (.ai/core.md), so desktop.cst keeps the three INS_LOC pins and HDMI on the open flow is an open problem, not a solved one; removing the pins fixes only a Gowin build, which is not this project's flow.  The Gowin-built core is kept on the card as /cores/console138k/desktop-gowin-hdmi.bin, and stock nestang as nestang-stock.bin, as HDMI references for the monitor, cable and port only.  tools/build_desktop_core.sh still drives Gowin and is not the build of record; the open-flow build is Tang-Build's scripts/build-desktop-core.sh.  Tang-Build's log (entries 73 to 77) holds the clock-model work: modelled pips from the PLL outputs into the HCLK muxes were tried and refuted, because the generator's re-typing of a pip source destroys the PLL."
   sources:
-    - "This project's fpga/desktop/build.tcl, board.v and desktop.cst"
-    - "nestang c2450818e1f0c858e13c5dd16746ee5221a5c760: build.tcl, src/boards/console.cst, src/nestang_top.sv"
-    - "This build's Gowin timing report, impl/pnr/desktop_tr_content.html"
-  verification: "On this board on 2026-10-11: the stock nestang console138k core, built from the pinned commit with nestang's own build.tcl and loaded with tangload, drove the user's primary monitor; the desktop core with the INS_LOC pins did not, and with them removed it did.  fmon read the pixel clock at 74,249,611 Hz throughout, so the clock itself was never at fault (core-log entry 30)."
+    - "This project's fpga/desktop/desktop.cst (the PLL placement block and its comment), fpga/desktop/build.tcl and tools/build_desktop_core.sh"
+    - "Tang-Build scripts/build-desktop-core.sh and patches/0001-open-toolchain-portability.patch; Tang-Build .ai/core-log.md entries 73 to 77"
+    - "nestang c2450818e1f0c858e13c5dd16746ee5221a5c760: build.tcl, src/boards/console.cst"
+    - "Gowin timing report of the Gowin build, impl/pnr/desktop_tr_content.html"
+  verification: "On this board on 2026-10-11: the stock nestang console138k core and the pin-free Gowin build of the desktop core drove the user's primary monitor over HDMI, the Gowin build with the pins did not, and fmon read the pixel clock at 74,249,611 Hz throughout (core-log entry 30); the seed-17 open-flow core was then put back as /cores/console138k/desktop.bin, loaded with tangload, answered core 0x54 with its sockets declared, and the user reported VGA on and HDMI off (core-log entry 33).  The byte-identical seed-17 reproduction is Tang-Build entry 77's.  Revised 2026-10-11 (core-log entry 33): the record had made the Gowin result a rule against the pins; the project builds with the open flow, which needs them, so the record now states both flows and leaves open-flow HDMI open."
+
 ```
 
 ---
