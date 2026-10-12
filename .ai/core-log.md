@@ -1434,3 +1434,34 @@ Raising the silent script-load failure with the TinyDesk Shell author remains op
 - User Test: PASS
 
 ---
+
+## 44 COMMIT Unreleased 2026-10-12T11:03:48-07:00
+
+#### Coming From:
+
+Unreleased 2ca5490
+
+#### Purpose:
+
+Open the README with a collage of TinyDesk running on the Tang Console so a reader sees what the project is before the text.
+
+#### Outcome:
+
+The user took six 1280x720 screenshots of the board's HDMI output and chose, from three layouts, the one with the About box over the desktop at full size and the Phosphor player, its visualizer, the Bluetooth window pairing a keyboard, the System Monitor with the Task Manager and the editor at half size around it, in a 1944x1104 image with 6-pixel dark gaps. Reduced to a 256-colour PNG without dithering, it fell from 1.5 MB to 413 KB with a mean channel difference under 1 and no visible change to the text, and it was added as `docs/images/tinytang-desktop.png` with SHA-256 `f2eeb4c2bbcc5abcadc79469421ded2d0930fb593a1d231a2c422562497e9c73`, shown under the README's title with alt text naming each window. The screenshots show the Bluetooth addresses of nearby devices and a file name whose accented letters the desktop draws as question marks. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+TinyNES cycle 7 resumes with its sweep entry and board test, and the desktop's drawing of accented file names can be looked at when the font is next worked on.
+
+#### Files Modified:
+
+- README.md
+- docs/images/tinytang-desktop.png
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

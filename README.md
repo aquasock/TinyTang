@@ -1,5 +1,7 @@
 # TinyTang
 
+![TinyDesk on the Tang Console: the About box over the desktop, the Phosphor player and its visualizer, Bluetooth pairing, the System Monitor and Task Manager, and the editor](docs/images/tinytang-desktop.png)
+
 A Tang Console 138K with a real desktop on it: **TinyDesk Shell** and the
 **TinyDesk** desktop running on the board's BL616, shown on the board's own
 HDMI output, typed at from a keyboard plugged into the board, with the SD card
