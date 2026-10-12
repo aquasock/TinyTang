@@ -1337,3 +1337,34 @@ The main clock stays on fabric until the `TLPLL0CLK0` to spine to bridge clock t
 - User Test: PASS
 
 ---
+## 41 COMMIT Unreleased 2026-10-11T23:15:40-07:00
+
+#### Coming From:
+
+Unreleased a84aedd
+
+#### Purpose:
+
+Write the reference records owed since entry 33 for the move to SDK 2.3.36 and the open FPGA flow, and make the build's default SDK the one actually in use.
+
+#### Outcome:
+
+TOOL-003, TOOL-005, BL6-003, BL6-008 and BL6-009 in `.ai/core-reference.md` were revised in place against SDK 2.3.36, with their index lines and BL6-008's routing question updated. TOOL-003 now records upstream SDK 2.3.36 at `8a3df34c` with the fork `7f44f9e` kept for rollback, the toolchain as Xuantie-900 V2.6.1 (GCC 10.2.0), that `sdk_version.h` no longer names the SDK, and the open flow's pins: Yosys 0.69+260 from oss-cad-suite 20261008, the nextpnr fork at `7ed099ec` and the apicula fork at `93761f4`, with Gowin EDA 1.9.11.03 left building the NES and menu cores. TOOL-005 drops the removed `TINYTANG_NO_FS` and `TINYTANG_NO_SHELL` and notes that its three config files reproduce the bisection only on the fork, since 2.3.36 configures from `defconfig`. BL6-003 describes `mm.h` with its OCRAM and WRAM heaps and the SDK's own low-water mark. BL6-008 gives 2.3.36's fatal paths: the hooks now abort, allocation failure returns NULL, the FreeRTOS trap handler passes the masked `mcause`, and an unknown device name asserts, which settles the porting-hazard note entry 26 owed. BL6-009 describes the `kmalloc` and `krealloc` recording wraps. The user approved the related fixes: the `Makefile` and `tools/tests/test_fat_names.sh` now default `BL_SDK_BASE` to `sdk-2.3.36`, and the README's requirements and Diagnostics text no longer names the old SDK or the removed guards. A build with no `BL_SDK_BASE` override compiled against 2.3.36 only, as `a84aedd-dirty.3209260`, 607312 bytes, MD5 `e41249bc0cb4173ed1fb9346821530df`, and `test_fat_names.sh` passed against 2.3.36. Nothing was installed on the board. Every YAML block in the reference still parses, and the core-syntax audit of the `.ai/` changes passed.
+
+#### Next Steps:
+
+BL6-002, BL6-004 and BLE-014 still describe the fork's `mem.h` and `g_kmemheap` and should be revised the same way when the heap is next worked on. The Wii Classic Controller PMOD work resumes next, once its scope is set.
+
+#### Files Modified:
+
+- Makefile
+- README.md
+- tools/tests/test_fat_names.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

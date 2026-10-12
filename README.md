@@ -541,15 +541,19 @@ session. `.ai/core-reference.md` holds the full records and their sources.
 configurations used to isolate fact 1 and fact 2 above; `ref/` holds the SDK's
 own device example, built inside this project with a chosen config. They are
 selected by environment variable (`TINYTANG_MIN`, `TINYTANG_NONEWLIB`,
-`TINYTANG_RTOS`, `TINYTANG_REF`, `TINYTANG_USB_ONLY`, `TINYTANG_NO_FS`,
-`TINYTANG_NO_SHELL`) and are kept as the record of that bisection.
+`TINYTANG_RTOS`, `TINYTANG_REF`, `TINYTANG_USB_ONLY`) and are kept as the
+record of that bisection. The bisection was made on the older SDK fork: under
+SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
+`proj.*.conf` files reproduce it only against that fork. `ref/` and
+`TINYTANG_USB_ONLY` work on either.
 
 ## Building requirements
 
-- **Bouffalo SDK** at `BL_SDK_BASE` (defaults to `~/.cache/tangcore-dev/sdk`),
-  with `find_package(bouffalo_sdk)` support.
-- **RISC-V toolchain** (`riscv64-unknown-elf-*`), default
-  `~/.cache/tangcore-dev/toolchain/bin`.
+- **Bouffalo SDK 2.3.36** (upstream) at `BL_SDK_BASE`, defaulting to
+  `~/.cache/tangcore-dev/sdk-2.3.36`. The older fork at
+  `~/.cache/tangcore-dev/sdk` is kept for rollback only.
+- **RISC-V toolchain** (`riscv64-unknown-elf-*`, Xuantie-900 V2.6.1, GCC
+  10.2.0), default `~/.cache/tangcore-dev/toolchain/bin`.
 - For `desktop.bin`: yosys, the nextpnr-himbaechel fork and the apicula fork
   (see "The FPGA cores"). For the NES and menu cores: **Gowin EDA 1.9.11.03**
   and a nestang checkout at `../tangcore/nestang` (or `NESTANG_DIR`).

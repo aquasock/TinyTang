@@ -8,7 +8,7 @@
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-sdk="${BL_SDK_BASE:-$HOME/.cache/tangcore-dev/sdk}"
+sdk="${BL_SDK_BASE:-$HOME/.cache/tangcore-dev/sdk-2.3.36}"
 fatfs="$sdk/components/fs/fatfs"
 [[ -f "$fatfs/ff.c" ]] || { echo "test_fat_names: no FatFs at $fatfs" >&2; exit 1; }
 export PATH="$PATH:/usr/sbin:/sbin"
