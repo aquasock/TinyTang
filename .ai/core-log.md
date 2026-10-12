@@ -1088,3 +1088,38 @@ The next work is to find out what the open-flow core's HDMI pins actually do, be
 - User Test: N/A
 
 ---
+
+## 35 COMMIT Unreleased 2026-10-11T17:47:15-07:00
+
+#### Coming From:
+
+Unreleased d68bc18
+
+#### Purpose:
+
+Isolate the open flow's HDMI failure in a minimal test core built with both flows at two bit-clock rates, to settle whether it is a timing fault at speed or a configuration fault.
+
+#### Outcome:
+
+The open flow's HDMI failure is a configuration fault and not a timing fault at speed. `fpga/hdmi_test/hdmi_test.v` is a minimal DVI core that sends eight colour bars and carries only the desktop core's HDMI hardware path. Its two PLL wrappers, `gowin_pll_27.v` and `gowin_pll_hdmi.v`, are copied at build time from the reconstructed nestang tree. It uses `CLKDIV` /5, three `OSER10`s wired as in nestang's `serializer.sv` and four `ELVDS_OBUF`s on the desktop core's TMDS pins, with the clock lane driven by the divider's output, as in `nes2hdmi.sv`. A DVI 1.0 TMDS encoder replaces nestang's HDMI packet logic. `tools/build_hdmi_test.sh` builds it with the open flow or, as a reference only, with Gowin EDA, at 1280x720 or at 640x480. The open builds carry the desktop core's `pll_27` and `pll_hdmi` pins, and the Gowin builds leave placement to the vendor. At 640x480 the pixel clock is 25.2 MHz and the bit clock 126 MHz, from an in-band VCO of 1134 MHz (27 MHz x 42 / 9). The first choice, 1512 MHz, was refused by the fork's `gowin_pack`, which enforces the datasheet's 650-1300 MHz band. That refusal also showed that the desktop core's own `pll_hdmi` runs its VCO at 1485 MHz, above the band, which the packer admits only as a point measured from a vendor bitstream. All four builds passed their timing gates. The open 720p build reproduces the desktop core's open-flow clock topology exactly: `hclk5` on fabric at 4 sinks, `clk27` at 1, and the pixel clock on global resources only. The open 480p build has the same topology. The four builds were `hdmi_test.caa6a014bbf2.bin` (Gowin 720p), `hdmi_test.35672830f76c.bin` (open 720p), `hdmi_test.c56c910850de.bin` (Gowin 480p) and `hdmi_test.3b1ae8b25756.bin` (open 480p). Each was uploaded to `/cores/console138k/` as `hdmi-test-<flow>-<mode>.bin` and loaded with `tangload` on the same board, cable and monitor. The user reported perfect colour bars at 1280x720 60 Hz from Gowin 720p and at 640x480 from Gowin 480p, and no signal with the monitor going to sleep from both open builds. Because the controls pass, the design, the pins, the PLL recipes, the board, the cable and the monitor are all good. Because the open flow fails at a third of the bit-clock rate, and with an in-band VCO, neither the 371.25 MHz bit clock on fabric nor the out-of-band VCO explains the failure. The remaining difference lies in how the open flow configures the path: the PLLs, the divider, the clock lanes into the I/O logic, the serialisers or the differential output buffers. The monitor sleeping suggests it sees no TMDS clock at all. That clock lane is the divider's output, but this is an inference, since no scope is available. The board was returned to the desktop core, which answered core 84 with its sockets declared. TOOL-017 was revised with the result, and the README lists the new build script. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 35 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+The next step is to compare the two 480p test bitstreams block by block, which this small design now makes tractable. Decode `hdmi_test.3b1ae8b25756.bin` and `hdmi_test.c56c910850de.bin` with the apicula fork's unpacker, then compare the fuses of the two PLLs (including the sites Gowin chose), the `CLKDIV`, the HCLK blocks and clock lanes, the three `OSER10` I/O-logic tiles, and the four `ELVDS_OBUF` I/O blocks and their bank settings. A difference that can be moved into the open build, by constraint or by a packer fix, is then tested on the board through the same 480p core, where the user's monitor gives a pass or fail. Two cheaper probes can run alongside the comparison if needed. One open build drives the clock lane from `clk27` instead of the divider, which separates a dead divider from a dead output buffer. The other pins `pll_hdmi` to the site Gowin chose once the decode names it. The records owed since entry 33 (TOOL-003, TOOL-005, and BL6-003, BL6-008 and BL6-009) are still owed.
+
+#### Files Modified:
+
+- README.md
+- fpga/hdmi_test/build.tcl
+- fpga/hdmi_test/hdmi_test.cst
+- fpga/hdmi_test/hdmi_test.v
+- fpga/hdmi_test/hdmi_test_open.cst.in
+- tools/build_hdmi_test.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

@@ -431,6 +431,8 @@ STM32's own DFU bootloader.
     the card, run a command, reflash the BL616. `tinytang_put.py` refuses to
     send unless the console is at a shell prompt (fact 15).
   - `build_desktop_core_open.sh` and `desktop_open/` — build the desktop core with the open flow.
+  - `build_hdmi_test.sh` — build the minimal HDMI colour-bar core in `fpga/hdmi_test/` (720p or 480p,
+    open flow or Gowin reference) to isolate the HDMI hardware path.
   - `build_desktop_core.sh`, `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build
     a core with Gowin (`build_desktop_core.sh --prepare-only` also feeds the open flow).
   - `test_textdisp_wide.sh` — simulates the layer against a free-running

@@ -1,0 +1,6 @@
+// Open flow only: the desktop core's PLL pins for these two PLLs
+// (fpga/desktop/desktop.cst), so the open test core places its HDMI clock
+// chain where the desktop core does.  The Gowin build of this core leaves
+// placement to the vendor, as the HDMI-working Gowin desktop build did.
+INS_LOC "pll_27.PLL_inst"   PLL_L[1];
+INS_LOC "pll_hdmi.PLL_inst" PLL_L[3];
