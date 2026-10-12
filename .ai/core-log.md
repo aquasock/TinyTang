@@ -1465,3 +1465,33 @@ TinyNES cycle 7 resumes with its sweep entry and board test, and the desktop's d
 - User Test: N/A
 
 ---
+
+## 45 COMMIT Unreleased 2026-10-12T11:16:17-07:00
+
+#### Coming From:
+
+Unreleased 8c64456
+
+#### Purpose:
+
+Make the README present the Bluetooth keyboard and mouse as the board's input and the wired Keychron keyboard as only a debug backup.
+
+#### Outcome:
+
+At the user's request the README's Keyboard section, which described the Keychron K2 HE's QMK build, its wire framing and how to restore it for a PC, was removed; that detail remains in `third_party/patches/qmk/README.md`. The opening paragraph now says the desktop is driven by a Bluetooth keyboard and mouse, the *A keyboard* item keeps the terminal translation and the untranslated function keys that the removed section described and points to the QMK patch notes for the wired debug link, the `blekbd pair` item no longer describes the Bluetooth keyboard by comparison with the wired one, pitfall 12 says the keyboard and mouse reach the board over Bluetooth, and the requirements mark Keychron's QMK fork as needed only for the wired debug keyboard. The keyboard-link registers, the source descriptions and the Keychron QMK licence notice still describe code that is in the tree and were kept. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+TinyNES cycle 7 resumes with its sweep entry and board test.
+
+#### Files Modified:
+
+- README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

@@ -4,7 +4,7 @@
 
 A Tang Console 138K with a real desktop on it: **TinyDesk Shell** and the
 **TinyDesk** desktop running on the board's BL616, shown on the board's own
-HDMI output, typed at from a keyboard plugged into the board, with the SD card
+HDMI output, driven by a Bluetooth keyboard and mouse, with the SD card
 as the filesystem and the FPGA booting cores on command. F12 switches the
 screen between TinyDesk and whatever core is running, the way MiSTer's menu
 key does.
@@ -82,11 +82,13 @@ Building and flashing are under *Quick start* and *Building requirements*.
   the core's side is an empty frame; on the NES core it is the game.
 - **A keyboard.** A Bluetooth LE keyboard connected with `blekbd` types at
   the console and in the desktop; the BL616 receives it directly, so it works
-  on any core that carries the desktop layer. A Keychron K2 HE running this
-  project's QMK patches (`third_party/patches/qmk/`) also plugs into either
-  front USB-A port and does the same. It is not USB: the keyboard drives its
-  own D+ line as a UART and the core receives it (see *Keyboard* below). Both
-  can be used at once.
+  on any core that carries the desktop layer. The BL616 turns its reports into
+  the bytes an ANSI terminal sends, with auto-repeat generated on the board.
+  Function keys are not translated yet, so the desktop's F10 (start menu), F6
+  (switch windows) and F11 (full screen) work from a computer's terminal but
+  not from the keyboard; F12 is reserved for switching the screen and is never
+  typed. A wired keyboard link on the front USB-A ports remains as a debug
+  backup; see `third_party/patches/qmk/README.md`.
 - **A pointer in the desktop.** A Bluetooth LE mouse connected with
   `blemouse`, the D-pad on controller 1, or the arrows with left-alt held,
   moves it; the mouse's buttons, A or Enter are the left button, B or Esc the
@@ -184,9 +186,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`blekbd pair [name]`** pairs a Bluetooth LE keyboard (HID over GATT) as an
   input: it listens for 8 s, picks the strongest device advertising as a
   keyboard (or whose name contains `name`), pairs with Just Works and switches
-  it to boot protocol -- the same 8-byte report the wired keyboard link
-  carries. The keyboard types at the console and in the desktop exactly as the
-  wired one does, with F12 and left-alt pointer mode (see *A keyboard* above).
+  it to boot protocol, the 8-byte HID boot report. The keyboard types at the
+  console and in the desktop, with F12 and left-alt pointer mode (see *A
+  keyboard* above).
   **The pairing is saved to the card** (`/sd/ble/bonds.bin`), so after a
   reset, or when the keyboard wanders out of range and back, it reconnects by
   itself as soon as it is woken; pairing mode is needed only the first time.
@@ -351,28 +353,6 @@ Encoder and I2S remain features of Phosphor. The old menu image and build tool
 remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
 for the register interface and regression commands.
 
-## Keyboard
-
-The keyboard is a Keychron K2 HE built from Keychron's QMK fork with
-`third_party/patches/qmk/` applied by `scripts/apply-qmk-tang-patches.sh`:
-
-```
-make keychron/k2_he/ansi:tang
-```
-
-That firmware is **not a USB keyboard**. It bit-bangs `A5 LEN payload SUM`
-frames carrying the 8-byte HID boot report on PA12 (D+) at 281250 baud, which
-the core's `keylink_rx` receives on either front port. The core relays the
-report to the BL616, which turns it into the byte stream an ANSI terminal
-sends: letters and punctuation as themselves, Shift applied, Ctrl as
-`0x01`-`0x1A`, and the navigation keys as CSI sequences, with auto-repeat
-generated on the board. Function keys are not translated yet, so the
-desktop's F10 (start menu), F6 (switch windows) and F11 (full screen) work from
-a computer's terminal but not from the board's keyboard. F12 is reserved for
-switching the screen and is never typed. To use the keyboard on a PC again,
-flash the stock firmware back, or hold the BOOTMAGIC key at plug-in for the
-STM32's own DFU bootloader.
-
 ## How it is put together
 
 - `main.cpp` — board bring-up, then the shell task.
@@ -505,7 +485,7 @@ session. `.ai/core-reference.md` holds the full records and their sources.
     host-present signal, exposed as `tdsh_bl616_console_connected()`.
 12. **The OTG connector cannot host: it does not source VBUS**, in either
     `DRVBUS_POL` polarity. The connector is device-only, which is why the
-    keyboard reaches the board through the FPGA rather than over USB.
+    keyboard and mouse reach the board over Bluetooth rather than USB.
 13. **Ctrl+S from a computer's terminal looks like a hang.** With software flow
     control on, the terminal swallows it as XOFF and stops the display; Ctrl+Q
     brings it back. Turn flow control off (PuTTY: Serial, Flow control = None).
@@ -562,7 +542,7 @@ SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
 - **Verilator** for `tools/test_textdisp_wide.sh`, and a C compiler for
   `tools/tests/`.
 - Python with `pyserial` for the tools in `tools/`.
-- For the keyboard, Keychron's QMK fork and its toolchain; see
+- For the wired debug keyboard only, Keychron's QMK fork and its toolchain; see
   `third_party/patches/qmk/README.md`.
 
 ## Third-party
