@@ -164,8 +164,24 @@ fi
 
 # ----------------------------------------------------------------- 3. packing
 # No *_as_gpio options: see the note at the top of this script.
-log "=== 3. pack (gowin_pack, the fork's apycula) ==="
-"$PY" -m apycula.gowin_pack -d "$DEVICE_FAMILY" \
+#
+# The pack goes through tools/gowin_pack_transplant.py so that four interim
+# fuses can be added: the lane-0 fast-clock selects (FCLKSEL0=HCLK0,
+# FCLKSEL3=HCLK0_) of the red TMDS serialiser's two halves, R58C182 and
+# R59C182.  The fork's packer (>= c881724) writes these itself for a gearbox
+# nextpnr places on lane 0, but its chipdb serves row 57 from HCLK block 1, so
+# nextpnr routes that serialiser's FCLK through block 1 lane 2 and the packer
+# correctly leaves the lane-0 bits off -- while the vendor serves row 57 from
+# block 3 lane 0, and on the board HDMI is blank without these four bits and
+# shows the desktop with them (core-log entry 38).  They go once the fork's
+# io2hclk map is corrected; DESKTOP_INTERIM_FUSES=0 builds without them.
+interim=()
+if [[ ${DESKTOP_INTERIM_FUSES:-1} == 1 ]]; then
+    interim=(--fuse 'R58C182:7,132' --fuse 'R58C182:8,121'
+             --fuse 'R59C182:5,134' --fuse 'R59C182:6,122')
+fi
+log "=== 3. pack (gowin_pack, the fork's apycula; ${#interim[@]} interim fuse arguments) ==="
+"$PY" "$root/tools/gowin_pack_transplant.py" "${interim[@]}" -- -d "$DEVICE_FAMILY" \
     -o "$out/desktop.fs" "$tree/.open-pnr/pnr.json" 2>&1 \
     | grep -vE "warnings.warn|UserWarning|DeprecationWarning" | sed 's/^/   /' || true
 

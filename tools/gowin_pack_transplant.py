@@ -131,7 +131,8 @@ def select(db, cand, spec):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--donor", required=True)
+    ap.add_argument("--donor", default=None,
+                    help="donor bitstream; not needed for --fuse/--clear-fuse/--pip/--pll-attr alone")
     ap.add_argument("--select", default="all")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--pll-attr", default="")
@@ -147,9 +148,11 @@ def main():
 
     with importlib.resources.path("apycula", f"{DEVICE}.msgpack.xz") as path:
         db = chipdb.load_chipdb(path)
-    donor_bm = chipdb.tile_bitmap(db, read_bitstream(args.donor)[0])
+    if args.donor is None and (args.list or args.copy_empty or args.copy_superset):
+        raise SystemExit("--list, --copy-empty and --copy-superset need --donor")
+    donor_bm = chipdb.tile_bitmap(db, read_bitstream(args.donor)[0]) if args.donor else {}
     cand = unmodelled(db, donor_bm)
-    chosen = select(db, cand, args.select)
+    chosen = select(db, cand, args.select) if args.donor else set()
     total = sum(len(cand[k]) for k in chosen)
     print(f"transplant: {len(chosen)} tiles, {total} unmodelled donor fuses "
           f"(of {len(cand)} tiles, {sum(len(v) for v in cand.values())} fuses)", file=sys.stderr)

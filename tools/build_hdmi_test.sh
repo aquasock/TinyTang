@@ -21,7 +21,8 @@
 # gowin_pack, then tools/desktop_open/fs_to_bin.py.  The same environment
 # overrides as tools/desktop_open/build.sh apply (NEXTPNR_BUILD, APICULA_FORK,
 # PY, PYDEPS, NEXTPNR_SEED), and HDMI_TEST_PLL27_SITE / HDMI_TEST_PLLHDMI_SITE
-# choose the open build's PLL sites (default PLL_L[1] / PLL_L[3], the desktop
+# choose the open build's PLL sites, and HDMI_TEST_SE=1 builds the core's OUT_SE
+# single-ended reference (LVCMOS33 TMDS pins, N pins held low) (default PLL_L[1] / PLL_L[3], the desktop
 # core's; the Gowin build of this core chose PLL_B[2] / PLL_R[2]).  The output directory receives hdmi_test.bin and
 # a copy stamped with its sha256 prefix, plus the logs.
 set -euo pipefail
@@ -52,6 +53,28 @@ if [[ $mode == 480p-oddr ]]; then
     sed -i 's/^parameter SER_ODDR = 0;/parameter SER_ODDR = 1;/' "$src/hdmi_test.v"
     grep -q '^parameter SER_ODDR = 1;' "$src/hdmi_test.v" ||
         { echo "SER_ODDR substitution did not apply" >&2; exit 1; }
+fi
+if [[ ${HDMI_TEST_SE:-0} == 1 ]]; then
+    sed -i 's/^parameter OUT_SE = 0;/parameter OUT_SE = 1;/' "$src/hdmi_test.v"
+    sed -i '/tmds/s/IO_TYPE=LVCMOS33D/IO_TYPE=LVCMOS33/' "$src/hdmi_test.cst"
+    grep -q '^parameter OUT_SE = 1;' "$src/hdmi_test.v" && ! grep -q 'LVCMOS33D' "$src/hdmi_test.cst" ||
+        { echo "OUT_SE substitution did not apply" >&2; exit 1; }
+    if [[ -n ${HDMI_TEST_RED_BALL:-} ]]; then
+        # Reference only: move red's serialiser to another ball (e.g. AA9, the
+        # bottom-edge cell the apicula fork's io_ser shape measured).
+        sed -i "s/^IO_LOC \"tmds_d_p\[2\]\" K17;/IO_LOC \"tmds_d_p[2]\" $HDMI_TEST_RED_BALL;/" "$src/hdmi_test.cst"
+        grep -q "tmds_d_p\[2\]\" $HDMI_TEST_RED_BALL;" "$src/hdmi_test.cst" ||
+            { echo "red ball substitution did not apply" >&2; exit 1; }
+    fi
+    if [[ $mode != *oddr ]]; then
+        # An OSER10 owns its pair's B pad: no N pins in this reference.
+        sed -i '1i `define HDMI_TEST_NO_N' "$src/hdmi_test.v"
+        sed -i '/tmds_[a-z_]*n[\[ "]/d' "$src/hdmi_test.cst"
+    fi
+fi
+if [[ -n ${HDMI_TEST_CLKDIV_LOC:-} ]]; then
+    # Reference only: pin the divider to an HCLK lane, e.g. RIGHTSIDE[2].
+    echo "INS_LOC \"div.div5\" $HDMI_TEST_CLKDIV_LOC;" >> "$src/hdmi_test.cst"
 fi
 if [[ $mode == 480p* ]]; then
     sed -i 's/^parameter MODE_480P = 0;/parameter MODE_480P = 1;/' "$src/hdmi_test.v"

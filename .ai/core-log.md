@@ -1190,3 +1190,37 @@ Make the fix part of the build and then of the packer. The first step is to have
 - User Test: PASS
 
 ---
+
+## 38 COMMIT Unreleased 2026-10-11T19:37:07-07:00
+
+#### Coming From:
+
+Unreleased 2fecd95
+
+#### Purpose:
+
+Move the HDMI fix into the apicula fork's packer and the open-flow build, install the resulting HDMI-capable desktop core on the card, and hand the project to the next agent.
+
+#### Outcome:
+
+The card's `/cores/console138k/desktop.bin` is now an open-flow build that drives HDMI and VGA together: `desktop.67583d390cdc.bin`, built by `tools/build_desktop_core_open.sh` at seed 17. Both of its gates pass, and it is byte-identical to the core the user saw mirror the console on both monitors in entry 37. It loaded as core 84 with its sockets declared. The previous seed-17 core without HDMI is kept beside it as `desktop.bin.pre-open-hdmi`. The Gowin-only reference builds that settled the packer rules were all decoded with `gowin_unpack` and never loaded. They used new `tools/build_hdmi_test.sh` options for the test core: `HDMI_TEST_SE=1`, the core's `OUT_SE` (single-ended outputs, with no N pins for an `OSER10`, because the vendor refuses a cell on an `OSER10`'s B pad); `HDMI_TEST_RED_BALL`, which moves red's serialiser to another ball such as AA9 at tile type 247; and `HDMI_TEST_CLKDIV_LOC`, which pins the divider. They showed the following. An `OSER10` configures its aux IOLOGICB fully, with `CLKOMUX`, `LSRIMUX_0`, `OCLKCE=CE`, `WRFCLKSEL=UNK102` and the main half's `FCLKSEL` values, at both edges and for single-ended and differential outputs alike. That also holds in the fork's own `io_ser` `oser10-default` shape rebuilt with Gowin 1.9.11.03, which contradicts the fork's commit `84dddea`. The main half adds `HWL=TRUE` and carries no `LSROMUX_0`. A gearbox whose `FCLK` is on HCLK lane 0 also carries `FCLKSEL0=HCLK0` and `FCLKSEL3=HCLK0_`, which have no lane-2 rows; moving the divider changed nothing about this. The vendor's `ODDR` carries `LSROMUX_0` at both edges, and at AA9 its fuses are exactly the fork's test fixture. The fork's packer had emitted that value as an int with no row, so the negative-key fuse was written instead, and the fork's test helper, which converts values through their names, hid it. These rules went into the fork as commit `1c2b6cb` on `aquasock/apicula` `epic/gw5ast138c`, pushed, with six tests. Its full suite fails the same 60 environmental tests (missing timing-data files, no `numpy`) before and after the change. One older failure, `test_io2hclk_places_the_vendor_oser4_cell_in_block_one`, predates this work and was left alone. With the fixed packer alone, the open 480p and 720p `OSER10` test cores came out byte-identical to entry 37's board-proven builds, and the open `ODDR` core (`0863cccdfdcc`) showed bars on HDMI and VGA after a Gowin control. The desktop core from the fixed packer alone (`3a9decc7a3ba`) showed VGA with HDMI blank. It differed from the proven core only by the lane-0 bits at the red serialiser, R58C182 and R59C182. The cause is the fork's chipdb: `io2hclk` serves cell (57,181) from HCLK block 1, so nextpnr routes that serialiser's `FCLK` through block 1 lane 2 (`IOLOGIC_FCLK=HCLK_OUT2`) and the packer correctly writes no lane-0 bits, while the vendor serves that cell from block 3 lane 0. As the user's chosen interim, `tools/desktop_open/build.sh` now packs through `tools/gowin_pack_transplant.py` (whose donor is now optional) with the four fuses `R58C182:7,132`, `R58C182:8,121`, `R59C182:5,134` and `R59C182:6,122`. `DESKTOP_INTERIM_FUSES=0` leaves them out. The fork's `fclk_lane_attrs` docstring names the wrong map entry. TOOL-017 and the README now describe this state. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` is unchanged and that no settled entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry as number 38 with six canonical sections, prose in Outcome and Next Steps, an allowed Status set and a count within the 100-entry limit.
+
+#### Next Steps:
+
+For the next agent, the state is this. The board boots TinyTang on Bouffalo SDK 2.3.36 (firmware `6715393-dirty.a597e26`), and `boot.tdsh` loads the open-flow desktop core with HDMI and VGA. The build needs oss-cad-suite, the nextpnr fork at `~/tools/nextpnr-mathieufro` and the apicula fork at `/run/media/vash/GIT/apicula-mathieufro` on `1c2b6cb`. The open work is to remove the interim fuses by correcting the fork's `io2hclk` cell-to-block map, starting at (57,181). Decode-only Gowin builds with an `OSER10` on rows either side of the boundary (around rows 45 to 65 of column 182; `HDMI_TEST_RED_BALL` can place red's serialiser on any ball) will show which HCLK block and lane the vendor uses for each row. Then correct `gw5_make_hclk_pips`/`io2hclk` in the fork's `apycula/chipdb.py`, regenerate the chipdb, rebuild nextpnr with the fork's `rebuild-nextpnr.sh` recipe, and rebuild the desktop core with `DESKTOP_INTERIM_FUSES=0`. Acceptance is that core alone showing HDMI on the board after a Gowin control, and the four fuses can then be dropped from `tools/desktop_open/build.sh`. The fork's stale test about cell (50,181) and block one is likely the same fault seen from the other side. Smaller items: `OSER8` and `OVIDEO` still follow `84dddea`'s empty-aux rule unmeasured. Tang-Build's TOOL-031 and README still say open-flow HDMI is impossible, and correcting that repository is the user's call. `fpga/desktop/desktop.cst`'s comment calls its PLL sites the vendor's, which is wrong but harmless. The records owed since entry 33 (TOOL-003, TOOL-005, and BL6-003, BL6-008 and BL6-009) are still owed, and TOOL-003 should also pin the fork commits the build needs. During board tests the user paces every board action and wants a Gowin control loaded before each test.
+
+#### Files Modified:
+
+- README.md
+- fpga/hdmi_test/hdmi_test.v
+- tools/build_hdmi_test.sh
+- tools/desktop_open/build.sh
+- tools/gowin_pack_transplant.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

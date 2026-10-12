@@ -27,9 +27,11 @@
 module hdmi_test (
     input        sys_clk,
     output       tmds_clk_p,
+`ifndef HDMI_TEST_NO_N
     output       tmds_clk_n,
-    output [2:0] tmds_d_p,
     output [2:0] tmds_d_n,
+`endif
+    output [2:0] tmds_d_p,
     output [7:0] pmod0_io,      // PmodVGA J2: green, HSYNC, VSYNC
     output [7:0] pmod1_io       // PmodVGA J1: red, blue
 );
@@ -40,6 +42,11 @@ parameter MODE_480P = 0;
 // fabric shift register into an ODDR, two bits per 126 MHz cycle.  It splits
 // the serialiser path (OSER10, FCLK lanes, CLKDIV) from the output buffers.
 parameter SER_ODDR = 0;
+// OUT_SE drives each TMDS P pin single-ended (OBUF) and holds each N pin low,
+// so a pair's B-side IOLOGIC has nothing to serialise.  Reference builds only:
+// it is how the vendor configures the gearbox's second half for a
+// single-ended output, set against a differential one (core-log entry 38).
+parameter OUT_SE = 0;
 
 localparam H_ACTIVE = MODE_480P ? 640  : 1280;
 localparam H_FP     = MODE_480P ? 16   : 110;
@@ -199,11 +206,25 @@ generate
     end
 endgenerate
 
-ELVDS_OBUF tmds_bufds [3:0] (
-    .I(tmds),
-    .O({tmds_clk_p, tmds_d_p}),
-    .OB({tmds_clk_n, tmds_d_n})
-);
+generate
+    if (OUT_SE) begin : single_ended
+        OBUF tmds_obuf [3:0] (.I(tmds), .O({tmds_clk_p, tmds_d_p}));
+`ifndef HDMI_TEST_NO_N
+        // An OSER10 takes its pair's B pad as well, so the vendor refuses an
+        // N buffer beside it; the OSER10 reference is built with
+        // HDMI_TEST_NO_N defined and no N pins at all.
+        OBUF tmds_nbuf [3:0] (.I(4'b0000), .O({tmds_clk_n, tmds_d_n}));
+`endif
+    end else begin : differential
+`ifndef HDMI_TEST_NO_N
+        ELVDS_OBUF tmds_bufds [3:0] (
+            .I(tmds),
+            .O({tmds_clk_p, tmds_d_p}),
+            .OB({tmds_clk_n, tmds_d_n})
+        );
+`endif
+    end
+endgenerate
 
 endmodule
 

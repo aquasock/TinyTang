@@ -242,13 +242,13 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 # Build the FPGA cores (needs Gowin EDA 1.9.11.03 and a nestang checkout
 # at ../tangcore/nestang, or NESTANG_DIR)
 tools/build_nestang_core.sh     # the NES core, with the desktop layer
-tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, gowin_pack): VGA; HDMI dark (TOOL-017)
+tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, apicula fork >= 1c2b6cb): HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /cores/console138k/nestang-desk.bin
-tools/tinytang_put.py build/desktop/open-s17/desktop.bin               /cores/console138k/desktop.bin
+tools/tinytang_put.py build/desktop/open-s17/desktop.bin               /cores/console138k/desktop.bin   # 67583d390cdc
 tools/tinytang_put.py scripts/boot.tdsh      /scripts/boot.tdsh
 tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
 
@@ -332,10 +332,13 @@ isolated build directory with `tools/build_desktop_core.sh --prepare-only`
 `fpga/desktop/`), applies `third_party/patches/desktop/open/`, and runs
 `tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
 clock-topology gate against the recorded profile, and the apicula fork's
-`gowin_pack`. At the default seed 17 it reproduces the hardware-proven core
-`90d3fa3a84fa` byte for byte. It targets revision C. HDMI and VGA share the
-720p raster and desktop compositor, but an open-flow build drives VGA only:
-HDMI stays dark (`.ai/core-reference.md` TOOL-017). The firmware applies
+`gowin_pack`, packed through `tools/gowin_pack_transplant.py` with four interim
+fuses. It needs the apicula fork (`aquasock/apicula`, branch `epic/gw5ast138c`)
+at `1c2b6cb` or later, whose packer encodes the HDMI serialisers as the vendor
+does; at the default seed 17 it builds `desktop.67583d390cdc.bin`, which drives
+HDMI and VGA together. It targets revision C. The interim fuses stand in for a
+wrong cell-to-clock-block entry in the fork's chip database
+(`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
 VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.
