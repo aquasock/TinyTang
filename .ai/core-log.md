@@ -1774,3 +1774,34 @@ The plan is recorded and should not be built unless the user asks. The card's sp
 - User Test: PASS
 
 ---
+
+## 54 COMMIT Unreleased 2026-10-13T16:56:35-07:00
+
+#### Coming From:
+
+Unreleased 4e75d45
+
+#### Purpose:
+
+Start the first release by making this tree's whole dependency set explicit and pinned, so that "can this be rebuilt?" has an answer before anything is tagged.
+
+#### Outcome:
+
+TinyTang is the root of a release -- it carries the BL616 firmware a user flashes first, the desktop core, the host tools that load everything else and the patch appliers for the third-party trees, and TinyNES is the application that runs on it -- so the manifest lives here and the release tag will be cut on this repository, with TinyNES pinned inside the manifest at one commit for the bundle. `deps.conf` records every input in one reviewable place: a kind, a name, a full 40-character commit SHA or a SHA-256, a URL and a destination. Eight sources are pinned and seven of them are simply absent from an empty tree (TinyNES, apicula, nextpnr, bouffalo_sdk, tinydesk, tinydesk-shell, fceumm, font8x8); the two submodule pins are this repository's own gitlinks, so they cannot disagree with the superproject; fceumm and font8x8 repeat the pins already held by TinyNES's fetch scripts. `tools/fetch-deps.sh` materialises the pinned set, checks out each at its SHA, verifies it, and refuses to report success while any entry is unpinned or unresolvable, `--check` reporting without changing anything and `ALLOW_UNPINNED=1` the explicit override. Running it against the release root for the first time found six unpinned gaps: nestang, which has no commit recorded anywhere; oss-cad-suite, the xPack AE350 compiler and the Xuantie-900 BL616 compiler, none of which carries a checksum; the apycula-generated GW5AST-138C device database, which is the entry that cost the desktop core its rebuildability on 2026-10-13; and Gowin EDA, which cannot be redistributed at all. The Xuantie compiler is the worst of them, because not even its download source was written down. Tang-Build is recorded as a reference rather than a build input: nothing links against it, and its `TOOLCHAIN.md` is the document this manifest replaces -- it named a branch and therefore drifted. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Step 2 is to run `tools/fetch-deps.sh` for real and materialise the seven absent sources, then confirm TinyTang's own build with them; step 3 is a `BUILDING.md` tying the manifest to each artifact's build and its expected hashes; step 4 publishes the artifacts with their digests; step 5 is the fresh-clone gate, which is the one that says whether this is a release. Tang-Build's README still claims the open flow carries no HDMI, which later work overtook, and that claim has to go before anything is tagged.
+
+#### Files Modified:
+
+- deps.conf
+- tools/fetch-deps.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
