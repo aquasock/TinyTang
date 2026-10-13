@@ -49,6 +49,10 @@
 //
 //     loading = 1;  stream the file in 1024-byte frames;  loading = 0
 //
+// `ae350run` loads a program into a TinyNES core's AE350 from the card itself
+// (ae350_load.c has the protocol), sends it a file when it asks, and follows
+// its output until it exits.
+//
 // `fpgapipe` hands the link to the host instead: the console's bytes go to
 // the core's UART and the core's bytes come back, untouched, until the host
 // closes the port.  It is how a core that speaks its own protocol on these
@@ -68,6 +72,7 @@
 #include "fpga_frames.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -83,6 +88,7 @@
 #include "ff.h"
 
 #include "tdsh.h"
+#include "ae350_load.h"
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
 
@@ -775,6 +781,279 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
     return rc;
 }
 
+/* ------------------------------------------------------------- ae350run */
+
+/* The link while ae350run holds it: bytes from the ring, sent in pieces
+ * with a yield between, so USB and the console keep running through an
+ * 8 KiB block. */
+#define AE350_LINE_MAX 160
+#define AE350_SILENT_S 300
+
+typedef struct {
+    FIL *elf_file;
+    const ae350_elf_t *elf;
+    FIL *data_file;
+    uint32_t data_length;
+    char line[AE350_LINE_MAX];
+    size_t line_len;
+    bool line_ready;
+} ae350_run_t;
+
+static int ae350_write(void *ctx, const uint8_t *data, size_t length)
+{
+    (void)ctx;
+    while (length != 0) {
+        const size_t n = length > 512 ? 512 : length;
+        if (uart_write(data, n) != 0) {
+            return -1;
+        }
+        data += n;
+        length -= n;
+        taskYIELD();
+    }
+    return 0;
+}
+
+static int ae350_read_byte(void *ctx, uint32_t timeout_ms)
+{
+    (void)ctx;
+    const uint64_t start = bflb_mtimer_get_time_ms();
+    for (;;) {
+        uint8_t byte;
+        if (rx_pop(&byte)) {
+            return byte;
+        }
+        if (bflb_mtimer_get_time_ms() - start >= timeout_ms) {
+            return -1;
+        }
+        vTaskDelay(1);
+    }
+}
+
+/* The board's text, a line at a time; a finished line is printed and kept
+ * for the caller to look at. */
+static void ae350_text(void *ctx, uint8_t byte)
+{
+    ae350_run_t *run = ctx;
+    if (byte == '\r') {
+        return;
+    }
+    if (byte == '\n') {
+        run->line[run->line_len] = 0;
+        tdsh_printf("%s\r\n", run->line);
+        run->line_ready = true;
+        run->line_len = 0;
+        return;
+    }
+    if (run->line_len < AE350_LINE_MAX - 1) {
+        run->line[run->line_len++] = (char)byte;
+    }
+}
+
+static int ae350_file_read(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    FIL *file = ctx;
+    UINT got = 0;
+    if (f_lseek(file, offset) != FR_OK || f_read(file, dst, length, &got) != FR_OK ||
+        got != length) {
+        return -1;
+    }
+    return 0;
+}
+
+static int ae350_program_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    return ae350_elf_image(run->elf, ae350_file_read, run->elf_file, offset, dst, length);
+}
+
+/* "TNR1", the length, then the file. */
+static int ae350_payload_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    uint8_t header[AE350_FILE_HEADER] = {
+        'T', 'N', 'R', '1',
+        (uint8_t)run->data_length, (uint8_t)(run->data_length >> 8),
+        (uint8_t)(run->data_length >> 16), (uint8_t)(run->data_length >> 24),
+    };
+    while (length != 0 && offset < AE350_FILE_HEADER) {
+        *dst++ = header[offset++];
+        length--;
+    }
+    if (length == 0) {
+        return 0;
+    }
+    return ae350_file_read(run->data_file, offset - AE350_FILE_HEADER, dst, length);
+}
+
+/* The next whole line from the board, or false after timeout_ms. */
+static bool ae350_next_line(ae350_run_t *run, uint32_t timeout_ms)
+{
+    const uint64_t start = bflb_mtimer_get_time_ms();
+    run->line_ready = false;
+    while (!run->line_ready) {
+        const uint64_t spent = bflb_mtimer_get_time_ms() - start;
+        if (spent >= timeout_ms) {
+            return false;
+        }
+        const int byte = ae350_read_byte(run, (uint32_t)(timeout_ms - spent));
+        if (byte >= 0) {
+            ae350_text(run, (uint8_t)byte);
+        }
+    }
+    return true;
+}
+
+static bool starts_with(const char *s, const char *prefix)
+{
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static const char *ae350_error(int rc)
+{
+    switch (rc) {
+    case AE350_ERR_TIMEOUT: return "no reply";
+    case AE350_ERR_NAK:     return "refused";
+    case AE350_ERR_WRITE:   return "UART1 stopped taking bytes";
+    case AE350_ERR_IMAGE:   return "cannot read the file";
+    case AE350_ERR_RANGE:   return "not inside the AE350's SDRAM";
+    default:                return "failed";
+    }
+}
+
+static uint8_t s_ae350_block[AE350_LOAD_BLOCK];
+static FIL s_ae350_elf_file;
+static FIL s_ae350_data_file;
+
+/* Load <program.elf> into a TinyNES core's AE350 and run it, sending <file>
+ * when it asks; follow its output until it exits and return its code. */
+static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: ae350run <program.elf> [<file>]\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real)) ||
+        f_open(&s_ae350_elf_file, real, FA_READ) != FR_OK) {
+        tdsh_printf("ae350run: cannot open %s\r\n", argv[1]);
+        return 1;
+    }
+    ae350_run_t run = { .elf_file = &s_ae350_elf_file };
+    if (argc > 2) {
+        if (!resolve_path(session, argv[2], real, sizeof(real)) ||
+            f_open(&s_ae350_data_file, real, FA_READ) != FR_OK) {
+            f_close(&s_ae350_elf_file);
+            tdsh_printf("ae350run: cannot open %s\r\n", argv[2]);
+            return 1;
+        }
+        run.data_file = &s_ae350_data_file;
+        run.data_length = (uint32_t)f_size(&s_ae350_data_file);
+    }
+    static ae350_elf_t elf;
+    int rc = ae350_elf_parse(&elf, ae350_file_read, &s_ae350_elf_file);
+    if (rc != AE350_OK) {
+        tdsh_printf("ae350run: %s: %s\r\n", argv[1], ae350_error(rc));
+        goto close_files;
+    }
+    run.elf = &elf;
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("ae350run: cannot bring up UART1\r\n");
+        rc = -1;
+        goto close_files;
+    }
+
+    tang_fpga_lock();
+    taskENTER_CRITICAL();
+    s_pipe = true;
+    taskEXIT_CRITICAL();
+    tang_fpga_drain();
+
+    /* The boot ROM says it is waiting about once a second. */
+    bool waiting = false;
+    for (int i = 0; i < 5 && !waiting; i++) {
+        waiting = ae350_next_line(&run, 1500) && starts_with(run.line, "TinyNES LOAD");
+    }
+    int code = 1;
+    const ae350_link_t link = {
+        .ctx = &run, .write = ae350_write, .read_byte = ae350_read_byte,
+        .text = ae350_text, .image = ae350_program_bytes,
+    };
+    char reason = 0;
+    if (!waiting) {
+        tdsh_printf("ae350run: no TinyNES boot ROM waiting on UART1 (is tinynes.bin loaded?)\r\n");
+        goto release;
+    }
+    tdsh_printf("ae350run: %s, %lu bytes at 0x%08lx\r\n", argv[1],
+                (unsigned long)(elf.end - elf.base), (unsigned long)elf.base);
+    rc = ae350_send_image(&link, elf.base, elf.end - elf.base, elf.entry, 5,
+                          s_ae350_block, &reason);
+    if (rc != AE350_OK) {
+        tdsh_printf("ae350run: loading %s: %s%s%c\r\n", argv[1], ae350_error(rc),
+                    reason ? ", reason " : "", reason ? reason : ' ');
+        goto release;
+    }
+
+    /* Follow the program: send the file when asked, stop at its exit, or
+     * give up on one silent for AE350_SILENT_S, which has hung. */
+    for (unsigned silent = 0;;) {
+        if (!ae350_next_line(&run, 1000)) {
+            if (++silent >= AE350_SILENT_S) {
+                tdsh_printf("ae350run: nothing from the program for %u s; leaving it\r\n",
+                            (unsigned)AE350_SILENT_S);
+                break;
+            }
+            continue;
+        }
+        silent = 0;
+        if (starts_with(run.line, "TinyNES WANT ")) {
+            unsigned long address = 0, room = 0;
+            if (run.data_file == NULL ||
+                sscanf(run.line + 13, "%lx %lx", &address, &room) != 2 ||
+                run.data_length + AE350_FILE_HEADER > room) {
+                tdsh_printf("ae350run: the program wants a file it cannot have\r\n");
+                continue;
+            }
+            ae350_link_t file_link = link;
+            file_link.image = ae350_payload_bytes;
+            rc = ae350_send_image(&file_link, (uint32_t)address,
+                                  run.data_length + AE350_FILE_HEADER,
+                                  (uint32_t)address, 5, s_ae350_block, &reason);
+            if (rc != AE350_OK) {
+                tdsh_printf("ae350run: sending %s: %s\r\n", argv[2], ae350_error(rc));
+            }
+            continue;
+        }
+        if (starts_with(run.line, "TinyNES EXIT ")) {
+            code = atoi(run.line + 13);
+            break;
+        }
+        if (starts_with(run.line, "TinyNES LOAD")) {
+            tdsh_printf("ae350run: the program stopped without exiting\r\n");
+            break;
+        }
+    }
+
+release:
+    tang_fpga_drain();
+    taskENTER_CRITICAL();
+    s_pipe = false;
+    taskEXIT_CRITICAL();
+    tang_fpga_unlock();
+    f_close(&s_ae350_elf_file);
+    if (run.data_file) {
+        f_close(&s_ae350_data_file);
+    }
+    return code;
+
+close_files:
+    f_close(&s_ae350_elf_file);
+    if (run.data_file) {
+        f_close(&s_ae350_data_file);
+    }
+    return 1;
+}
+
 /* ------------------------------------------------------------ registration */
 
 static const tdsh_command_t s_fpga_commands[] = {
@@ -788,6 +1067,9 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_fpgar, 0 },
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",
       cmd_fpgapipe, 0 },
+    { "ae350run", "ae350run <program.elf> [<file>]",
+      "Load a program into a TinyNES core's AE350, send it a file, follow it to its exit",
+      cmd_ae350run, 0 },
 };
 
 int tdsh_bl616_fpga_register(void)

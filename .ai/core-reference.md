@@ -194,6 +194,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why can a ROM load end in a black screen with no error? | PROT | PROT-007 |
 | What shows on screen between a core loading and the desktop painting? | PROT | PROT-008 |
 | Why are there marks down the left edge of the desktop layer? | PROT | PROT-009 |
+| How does ae350run load a program and a file into a TinyNES core's AE350? | PROT | PROT-010 |
 | Why can't a modern keyboard work on the USB-A ports? | NEST | NEST-001, NEST-002 |
 | How does Tang-Control draw and navigate its OSD? | TCTL | TCTL-001 |
 | How does Tang-Control configure the OTG connector? | TCTL | TCTL-002 |
@@ -320,6 +321,7 @@ PROT-006: "The core sends its joypad state as response 0x03 every 20 ms when it 
 PROT-007: "A ROM stream into a core that is not running is discarded with no error on either side and surfaces as a black screen; the fpga ID probe between the loads is the only detection"
 PROT-008: "A loaded core comes out of reset with the overlay asserted, and while the desktop's wide layer is still disabled the compositor shows the core's legacy 32x28 text page instead - whose store, gowin_dpb_menu.v, is never initialised, so its power-on contents are what appears; the font is initialised, which is why the garbage reads as glyphs; osd clear blanks the page (28 rows of 32 spaces) and is issued after the fpga probe in boot.tdsh and boot-cart.tdsh"
 PROT-009: "hdmi.sv's cx/cy name the pixel sent on the next clock and the stock rgb path is one register deep to match; the wide layer's deeper pipeline must address the store that many pixels ahead, wrapping at frame_width, or pixels 0-2 of each line show the previous line's blanking, which reads cell 0, and cell (0,0)'s glyph column is painted down the left edge"
+PROT-010: "A TinyNES core's AE350 boot ROM takes a program over UART1 at 2 Mbaud: header TNL1, address, length, entry, image CRC-32 and header CRC-32, then 8 KiB blocks each with a CRC-32, each answered ACK 0x06 or NAK 0x15 and a reason; a program asks for a file with TinyNES WANT <addr> <bytes> and takes TNR1, the length and the file the same way; ae350run sends both"
 NEST-001: "nestang's FPGA USB host is low-speed only, 1.5 Mbps, on two GPIO wires with external 15K pull-downs and a 12 MHz clock; its signalling engine is a 1072-byte ROM program"
 NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard outputs key_modifiers and key1..key4 are unconnected, so a keyboard enumerates and is discarded"
 TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
@@ -1071,6 +1073,19 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "third_party/patches/0002-desktop-text-layer.patch: the original three-stage textdisp_wide addressed by cx"
     - "third_party/patches/0007-wide-layer-alignment.patch: the look-ahead and registered address"
   verification: "Seen on this board on 2026-10-04: dashes at the left edge in the top-left cell's colour, green with 'r' at cell (0,0), absent once help scrolled a line starting with a space into row 0, and white after a reboot with 'b' of 'boot:' there, matching that glyph's column-0 rows 0 and 6 in a photograph. The streamed testbench failed 445264 of 922881 visible pixels on the old module and passes all of them on the fixed one, and fails again with the look-ahead off by one. With 0007 deployed the user reports the left edge clean with 'r' at cell (0,0) and again after a reboot."
+
+- record_id: PROT-010
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The TinyNES AE350 boot ROM's load protocol, and the file a program can ask for"
+  status: VERIFIED
+  verified_date: 2026-10-13
+  statement: "A TinyNES ae350_soc core (TinyNES firmware/include/tinynes.h and firmware/boot/load.c) does not speak the 0xAA frames: its A25 boot ROM prints TinyNES LOAD about once a second on UART1 at 2,000,000 baud and hunts for the magic TNL1 (0x314c4e54). The header is that magic, the load address, the length, the entry, the image's CRC-32 and the header's CRC-32 over the first 20 bytes, all little-endian, CRC-32 being zlib's. The image follows in 8 KiB blocks (the last shorter), each followed by its CRC-32. The ROM answers the header and each block with ACK 0x06, or NAK 0x15 and a letter (T timeout, H header CRC, A address, C block CRC, O overrun, I image CRC); a NAKed block is sent again, a NAKed header or image ends the load. After the last block it reads the image back from the SDRAM (0x40000000 to 0x41ffffff), answers once more, prints TinyNES RUN <entry> and jumps. A program built on TinyNES's runtime ends with TinyNES EXIT <code> and the ROM waits again. A program that wants a file prints TinyNES WANT <address> <bytes> and takes one more image the same way at that address, entry equal to the address, holding TNR1 (0x31524e54), the file's length and the file."
+  consequence: "ports/bl616/ae350_load.c implements the sender and an ELF loader (PT_LOAD segments by physical address, gaps zero-filled, as TinyNES's tools/load_ae350.py), tested on the host by tools/tests/test_ae350_load.sh against a model of the receiver; ae350run in ports/bl616/tang_fpga_uart.c holds the UART lock, keeps the desk layer's readers off the receive ring, waits for TinyNES LOAD, sends the ELF and, on a WANT line, the file, prints the program's lines and returns its exit code at TinyNES EXIT, giving up after 300 s of silence. The tangload core-ID request a TinyNES core receives is ignored by the ROM's magic hunt."
+  sources:
+    - "TinyNES 710d52e: firmware/include/tinynes.h (TN_LOAD_*), firmware/boot/load.c, tools/load_ae350.py"
+    - "This project's ports/bl616/ae350_load.c, ae350_load.h, tang_fpga_uart.c (cmd_ae350run) and tools/tests/tb_ae350_load.c"
+  verification: "On this board on 2026-10-13 (core-log entry 48): ae350run loaded TinyNES's 625,292-byte player from the card and the player asked for and received Castlevania (USA) (Rev 1) from /root/data/nes, CRC 12a6cb14, and ran to TinyNES EXIT 0; the user then double-clicked .nes files on the desktop, played and returned. The BL616's ELF loader built an image identical to load_ae350.py's from the same file (CRC 4ad53a69)."
 
 - record_id: NEST-001
   kind: EXTERNAL

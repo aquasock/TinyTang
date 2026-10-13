@@ -1583,3 +1583,40 @@ None for TinyTang; Tang-Phosphor's documents and tools still use the old card pa
 - User Test: PASS
 
 ---
+
+## 48 COMMIT Unreleased 2026-10-13T02:05:43-07:00
+
+#### Coming From:
+
+Unreleased f590643
+
+#### Purpose:
+
+Let a `.nes` file opened on the desktop play on TinyNES with no PC attached, as the user approved, by loading AE350 programs and files from the card and giving TinyDesk a generic open-with-script rule.
+
+#### Outcome:
+
+`ports/bl616/ae350_load.c` and `ae350_load.h` are a hardware-free sender for the TinyNES AE350 boot ROM's load protocol, header, 8 KiB blocks with CRC-32s, resends on NAK, and an ELF loader that assembles PT_LOAD segments with zero-filled gaps; `tools/tests/test_ae350_load.sh` runs it against a model of the receiver with corrupted blocks, exhausted retries, a silent receiver, interleaved text, range checks and a synthetic two-segment ELF, 26 checks passing, and three planted sender faults each failed it. On the PC the loader built the same image as TinyNES's `load_ae350.py` from the stripped player, CRC `4ad53a69`. `ports/bl616/tang_fpga_uart.c` gained `ae350run <program.elf> [<file>]`, which holds the UART lock and keeps the desk layer's readers off the ring as `fpgapipe` does, waits for `TinyNES LOAD`, sends the program, sends the file as `TNR1`, length and data when the program prints `TinyNES WANT`, prints the program's lines and returns its code at `TinyNES EXIT`, giving up after 300 s of silence. `third_party/patches/tinydesk/0002-open-with-handler-script.patch` adds `td_open_with_handler()`: opening `x.<ext>` in the Files app or on the desktop runs `<home>/scripts/open/<ext>.tdsh` in the Terminal with `FILE` set, if it exists, and opens the Editor otherwise, `.tdsh` keeping its behaviour; both patches applied in order to a clean copy of TinyDesk at `feaf841` and reproduced the working tree. The firmware, SHA-256 `8f993550c9645291688af45fdbca0d61f77e7cfa05ebbd9364720873eb1c3a50`, was installed with `tools/tinytang_flash.py` and after the power cycle `platform` reported `f590643-dirty.8f5a2b8`. With TinyNES's player and launcher on the card (TinyNES entry 19), a shell-started launch loaded the core, `ae350run` sent the 625,292-byte player and Castlevania (USA) (Rev 1) from `/root/data/nes`, the game exited 0 and the desktop core came back; that test came back without the desk layer only because TinyNES's deploy script had turned it off. The user then double-clicked a `.nes` file on the desktop, played, returned to the desktop and passed the cycle. The README describes `ae350run`, the open rule and the handler folder, `THIRD_PARTY.md` the second TinyDesk patch, and PROT-010 the protocol. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+None required for TinyTang; handler scripts for other extensions need no firmware change, and the desktop could later mark files that have a handler.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- ports/bl616/ae350_load.c
+- ports/bl616/ae350_load.h
+- ports/bl616/tang_fpga_uart.c
+- third_party/patches/tinydesk/0002-open-with-handler-script.patch
+- tools/tests/tb_ae350_load.c
+- tools/tests/test_ae350_load.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

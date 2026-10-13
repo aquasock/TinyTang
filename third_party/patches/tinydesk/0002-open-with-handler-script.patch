@@ -1,0 +1,91 @@
+diff --git a/apps/desktop.c b/apps/desktop.c
+index be6de71..276505b 100644
+--- a/apps/desktop.c
++++ b/apps/desktop.c
+@@ -187,7 +187,7 @@ static void open_item(int i)
+     item_path(path, s_items[i].name);
+     if (s_items[i].is_dir)
+         td_files_open(path);
+-    else
++    else if (!td_open_with_handler(path))
+         td_editor_open(path);
+ }
+ 
+diff --git a/apps/files.c b/apps/files.c
+index 60c2230..b9a0b48 100644
+--- a/apps/files.c
++++ b/apps/files.c
+@@ -221,7 +221,7 @@ static void open_selected(void)
+         snprintf(s_cwd, sizeof(s_cwd), "%s", path);
+         reload();
+     }
+-    else
++    else if (!td_open_with_handler(path))
+     {
+         td_editor_open(path);
+     }
+diff --git a/apps/td_apps.h b/apps/td_apps.h
+index 967d303..1ada283 100644
+--- a/apps/td_apps.h
++++ b/apps/td_apps.h
+@@ -186,6 +186,13 @@ bool td_is_script(const char *name);
+  * use) in the Terminal: `tdsh run "<shell path>"`. */
+ bool td_script_run(const char *path);
+ 
++/* Files with a handler: opening "name.ext" (double-click or Enter in the
++ * Files app or on the desktop) runs the script <home>/scripts/open/ext.tdsh,
++ * extension in lower case, in the Terminal with FILE set to the file's shell
++ * path, when that script exists. Returns false, doing nothing, when there is
++ * no such script, so the caller opens the file as it otherwise would. */
++bool td_open_with_handler(const char *path);
++
+ /* A colour for script names and icons that reads well on background `bg`
+  * (a 256-colour palette index): green, bright on dark backgrounds. */
+ uint8_t td_script_colour(uint8_t bg);
+diff --git a/apps/terminal.c b/apps/terminal.c
+index 1c36f18..de94964 100644
+--- a/apps/terminal.c
++++ b/apps/terminal.c
+@@ -467,6 +467,42 @@ bool td_script_run(const char *path)
+     return td_terminal_run(cmd);
+ }
+ 
++bool td_open_with_handler(const char *path)
++{
++    const char *name = strrchr(path, '/');
++    name = name ? name + 1 : path;
++    const char *dot = strrchr(name, '.');
++    if (!dot || dot == name || !dot[1] || strlen(dot + 1) > 15)
++        return false;
++    char ext[16];
++    size_t n = 0;
++    for (const char *c = dot + 1; *c; c++)
++        ext[n++] = (*c >= 'A' && *c <= 'Z') ? (char)(*c - 'A' + 'a') : *c;
++    ext[n] = '\0';
++    if (strcmp(ext, TD_SCRIPT_EXT + 1) == 0)
++        return false;           /* scripts open in the Editor and Run from the menu */
++
++    char handler[TD_PATH_MAX];
++    if (snprintf(handler, sizeof(handler), "%s/scripts/open/%s%s", td_home_dir(), ext,
++                 TD_SCRIPT_EXT) >= (int)sizeof(handler))
++        return false;
++    const td_fs_ops_t *fs = td_sysinfo()->fs;
++    if (!fs->exists || !fs->exists(handler))
++        return false;
++
++    const char *file = td_shell_path(path);
++    char cmd[2 * TD_PATH_MAX + 32];
++    if (strchr(file, '"') ||
++        snprintf(cmd, sizeof(cmd), "FILE=\"%s\"; tdsh run \"%s\"", file,
++                 td_shell_path(handler)) >= (int)sizeof(cmd))
++    {
++        td_msgbox("Open", "This file name cannot be passed to the shell.", "OK", NULL, NULL);
++        return true;
++    }
++    td_terminal_run(cmd);
++    return true;
++}
++
+ /* Rough brightness (0..255) of a 256-colour palette entry. */
+ static int palette_brightness(uint8_t c)
+ {

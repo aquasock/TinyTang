@@ -61,7 +61,10 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor and About. Quitting returns to
-  the prompt. The network apps (Network, MQTT, Modbus, OTA) are left out because
+  the prompt. Opening a file (double-click or Enter) whose extension has a
+  handler script, `/root/scripts/open/<ext>.tdsh`, runs that script in the
+  Terminal with `FILE` set to the file's path; other files open in the Editor,
+  and `.tdsh` scripts still open in the Editor and run from their menu. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS. In their place, Settings'
   **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
   and the keyboard and mouse slots with their connection state and latest
@@ -112,6 +115,13 @@ Building and flashing are under *Quick start* and *Building requirements*.
   drops). It is how a core that speaks its own protocol on the link is driven
   from the host in two-wire mode: TinyNES's `tools/load_ae350.py --tinytang`
   loads AE350 programs through it at the link's 2 Mbaud line rate.
+- **`ae350run <program.elf> [<file>]`** loads a program from the card into a
+  TinyNES core's AE350, through its boot ROM's load protocol (8 KiB blocks
+  with CRC-32s, resent when refused), sends `<file>` when the program asks
+  with a `TinyNES WANT` line, prints the program's output and returns its exit
+  code at `TinyNES EXIT`. TinyNES's `.nes` launcher uses it to play a
+  cartridge from the card with no PC attached. The protocol code,
+  `ae350_load.c`, has a host test, `tools/tests/test_ae350_load.sh`.
 - **`peek` / `poke`** read and write the memory the port lists, root only: the
   BL616's RAM read/write, and the XIP flash, system control and trustzone
   registers read-only. `peek -l` prints the regions and
@@ -286,6 +296,7 @@ firmware's own files stay at the top of the card.
 | `/root/ble/bonds.bin` | Bluetooth pairings |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
+| `/root/scripts/open/` | `<ext>.tdsh` handlers: opening a file `x.<ext>` on the desktop or in Files runs one with `FILE` set |
 | `/tang.ini`, `/crash.log`, `/tinydesk_tz` | PMOD declarations, the crash record and the time zone |
 | `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
 
@@ -394,7 +405,8 @@ for the register interface and regression commands.
   - `tdsh_tang_flash.c` — `tangput`, `tangflash` and `tangload`.
   - `tang_fpga_link.h`, `tang_fpga_uart.c`, `fpga_frames.c` — the UART link to
     the core: the frame transport, the cache of unprompted frames (joypad,
-    keyboard), and `fpga`, `nesload` and `fpgapipe` over it.
+    keyboard), and `fpga`, `nesload`, `fpgapipe` and `ae350run` over it;
+    `ae350_load.c` the AE350 boot ROM's load protocol for `ae350run`.
   - `tang_osd_desk.c` — the desktop layer: a terminal emulator fed by the
     console tap, a shadow of what the core holds, the diff that sends cells,
     the pointer, and the F12 / L switch.

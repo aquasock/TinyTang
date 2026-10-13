@@ -102,13 +102,16 @@ The desktop environment, consumed as `third_party/tinydesk`:
 - Commit: `feaf84130f03594845e5e9284817dca785b4d878` (v0.1.5)
 - License: MIT
 
-TinyTang carries `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`
-against that commit, applied idempotently by `scripts/apply-tinydesk-patches.sh`
-during CMake configuration. It changes Settings' Network button, whose app this
+TinyTang carries two patches in `third_party/patches/tinydesk/` against that
+commit, applied in order and idempotently by `scripts/apply-tinydesk-patches.sh`
+during CMake configuration. `0001-settings-bluetooth-button.patch` changes Settings' Network button, whose app this
 port leaves out, into a Bluetooth button that launches TinyTang's own Bluetooth
 window (`ports/bl616/td_bluetooth_app.c`), and moves the Date & time button
-two columns right to make room. The patch is MIT, as is the upstream code it
-modifies.
+two columns right to make room. `0002-open-with-handler-script.patch` adds
+`td_open_with_handler()`: opening a file `x.<ext>` in the Files app or on the
+desktop runs `<home>/scripts/open/<ext>.tdsh` in the Terminal with `FILE` set
+to its path when that script exists, and opens the Editor otherwise. Both
+patches are MIT, as is the upstream code they modify.
 
 ## nestang core UART protocol (read as a specification, no code copied)
 
