@@ -49,6 +49,12 @@
 //
 //     loading = 1;  stream the file in 1024-byte frames;  loading = 0
 //
+// `fpgapipe` hands the link to the host instead: the console's bytes go to
+// the core's UART and the core's bytes come back, untouched, until the host
+// closes the port.  It is how a core that speaks its own protocol on these
+// pins (TinyNES's AE350 boot ROM and its program loader) is driven from the
+// host in two-wire mode.
+//
 // Two things are done deliberately.  The frame is written with the SDK's
 // polling putchar and its return value is checked: putchar gives up after
 // 100 ms with -ETIMEDOUT, and a dropped byte in the middle of a ROM would
@@ -105,6 +111,10 @@ static volatile uint32_t s_rx_tail;
 
 static uint8_t s_rom_chunk[FPGA_ROM_CHUNK];
 
+/* Set while fpgapipe owns the RX ring, so the desk layer's joypad and keyboard
+ * polls, which decode without the lock, leave the core's bytes to it. */
+static volatile bool s_pipe;
+
 /* ------------------------------------------------------------- RX from core */
 
 static void fpga_uart_rx_isr(int irq, void *arg)
@@ -153,7 +163,7 @@ static void rx_decode(void)
 {
     taskENTER_CRITICAL();
     uint8_t byte;
-    while (rx_pop(&byte)) {
+    while (!s_pipe && rx_pop(&byte)) {
         fpga_frames_push(byte);
     }
     taskEXIT_CRITICAL();
@@ -701,6 +711,70 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
+/* ------------------------------------------------------------- fpgapipe */
+
+/* Pass the console straight through to UART1 and back until the host closes
+ * the port (DTR drops).  Nothing is framed, so a core with its own protocol
+ * on the link -- TinyNES's AE350 loader -- is driven by the host's own tool.
+ * The TX lock is held throughout, so the desk layer and the other commands
+ * wait rather than interleave their frames with the host's stream, and the
+ * probe is passed through as data because the stream is binary. */
+static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session; (void)argc; (void)argv;
+
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("fpgapipe: cannot bring up UART1\r\n");
+        return 1;
+    }
+
+    tang_fpga_lock();
+    taskENTER_CRITICAL();
+    s_pipe = true;
+    taskEXIT_CRITICAL();
+    tang_fpga_drain();           /* whatever the core said before the host asked */
+    tdsh_printf("fpgapipe: open at %u baud; close the port to end\r\n",
+                (unsigned)s_baud);
+    tdsh_bl616_console_set_raw(true);
+
+    static uint8_t up[512];
+    static uint8_t down[512];
+    int rc = 0;
+    while (tdsh_bl616_console_connected()) {
+        size_t n = 0;
+        int c;
+        while (n < sizeof(up) && (c = tdsh_bl616_console_read_byte()) >= 0) {
+            up[n++] = (uint8_t)c;
+        }
+        const bool sent = n != 0;
+        if (sent && uart_write(up, n) != 0) {
+            rc = 1;              /* UART1's FIFO stayed full for 100 ms */
+            break;
+        }
+        n = 0;
+        while (n < sizeof(down) && rx_pop(&down[n])) {
+            n++;
+        }
+        if (n != 0 && !tdsh_bl616_console_write_raw(down, n)) {
+            break;               /* the host closed the port */
+        }
+        if (!sent && n == 0) {
+            vTaskDelay(1);       /* idle: let lower-priority tasks run */
+        }
+    }
+
+    tdsh_bl616_console_set_raw(false);
+    tang_fpga_drain();
+    taskENTER_CRITICAL();
+    s_pipe = false;
+    taskEXIT_CRITICAL();
+    tang_fpga_unlock();
+    if (rc != 0) {
+        tdsh_printf("fpgapipe: UART1 stopped taking bytes\r\n");
+    }
+    return rc;
+}
+
 /* ------------------------------------------------------------ registration */
 
 static const tdsh_command_t s_fpga_commands[] = {
@@ -712,6 +786,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_fmon, 0 },
     { "fpgar", "fpgar <hex-addr>", "Read one desktop register over UART1",
       cmd_fpgar, 0 },
+    { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",
+      cmd_fpgapipe, 0 },
 };
 
 int tdsh_bl616_fpga_register(void)

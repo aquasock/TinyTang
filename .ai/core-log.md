@@ -1495,3 +1495,36 @@ TinyNES cycle 7 resumes with its sweep entry and board test.
 - User Test: N/A
 
 ---
+
+## 46 COMMIT Unreleased 2026-10-13T00:36:15-07:00
+
+#### Coming From:
+
+Unreleased c25dfad
+
+#### Purpose:
+
+Give the host a transparent path through the BL616 to the FPGA UART so that TinyNES can load and run AE350 programs in two-wire mode instead of over the one-wire FT2232 debugger.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_uart.c` gained the shell command `fpgapipe`, which takes the UART1 transmit lock for its whole run, sets a flag that makes `rx_decode` leave the receive ring alone so the desk layer's unlocked joypad and keyboard polls cannot take the core's bytes, drains the ring, prints `fpgapipe: open at 2000000 baud; close the port to end`, puts the console in raw mode so the status probe passes as data, and then copies console bytes to UART1 with `uart_write` and ring bytes back to the host until the host drops DTR, after which it drains the ring and releases the flag and the lock. `ports/bl616/usb_cdc_bl616.c` gained `tdsh_bl616_console_write_raw`, declared in `tdsh_bl616.h`, which sends bytes with no newline translation and no desk mirror and waits for the host to take each packet instead of dropping it while the port is open. The desk layer's sender runs in its own `osddesk` task and only writes a terminal emulator from the print path, so holding the lock while printing cannot deadlock. The firmware built with no warnings in the changed files and was installed with `tools/tinytang_flash.py` as `build/build_out/tinytang_bl616.bin`, SHA-256 `06c3c3c75ca7a599e5ebb28bce08f8999281b65204429ae24bd69c830590ff5e`, replacing `b405c3a-dirty.547ec23`; after the power cycle `platform` reported `c25dfad-dirty.712f8cf`, the dirty part being this change and the carried TinyDesk patch. With TinyNES's AE350 image placed by `tinytang_put.py` and loaded by `tangload` from the card, TinyNES's `load_ae350.py --tinytang` loaded `rt_test` through `fpgapipe` at 185.9 KB/s and passed, the shell answered at its prompt after the tool closed the port, and three runs of TinyNES's playable FCEUmm build loaded at 186.5 KB/s and each exited 0; the user played them on HDMI with a Wii Classic Controller and accepted the result. TinyNES core-log entry 17 records its side. The README lists the command and its source file. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+None for TinyTang; TinyNES continues with sound output, and `fpgapipe` stays at the link's 2 Mbaud unless a later cycle raises the rate on both ends.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tdsh_bl616.h
+- ports/bl616/usb_cdc_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

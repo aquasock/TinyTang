@@ -169,6 +169,29 @@ static void console_flush(const uint8_t *buf, size_t len)
     }
 }
 
+/* console_flush for a binary stream.  Waiting is right here where it is wrong
+ * for the console: the program at the other end is reading this stream, so a
+ * packet it has not taken yet is waited for, not dropped, for as long as it
+ * holds the port open. */
+bool tdsh_bl616_console_write_raw(const void *data, size_t length)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    while (length != 0) {
+        while (s_tx_busy) {
+            if (!s_configured || !s_dtr) return false;
+            taskYIELD();
+        }
+        if (!s_configured || !s_dtr) return false;
+        const size_t chunk = length > CDC_MAX_MPS ? CDC_MAX_MPS : length;
+        memcpy(s_in_buf, p, chunk);
+        s_tx_busy = true;
+        usbd_ep_start_write(CDC_BUSID, CDC_IN_EP, s_in_buf, chunk);
+        p += chunk;
+        length -= chunk;
+    }
+    return true;
+}
+
 static void cdc_event_handler(uint8_t busid, uint8_t event)
 {
     (void)busid;

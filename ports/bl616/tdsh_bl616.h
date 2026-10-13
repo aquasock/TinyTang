@@ -26,6 +26,10 @@ int  tdsh_bl616_console_read_byte(void);
 int  tdsh_bl616_console_write(const void *data, size_t length);
 /* The same, to the USB console only, leaving the layer's mirror alone. */
 int  tdsh_bl616_console_write_usb(const void *data, size_t length);
+/* Bytes exactly as given, for a command carrying a binary stream (fpgapipe):
+ * no newline translation, no mirror, and nothing dropped while a program holds
+ * the port open.  False once the port is closed. */
+bool tdsh_bl616_console_write_raw(const void *data, size_t length);
 /* Where the shell's command output goes -- printf, puts, putchar, stdout and
  * stderr.  At the console that is tdsh_bl616_console_write.  While the shell
  * runs in TinyDesk's Terminal window it is the window, and the USB console,

@@ -107,6 +107,11 @@ Building and flashing are under *Quick start* and *Building requirements*.
   link's liveness proof. This project's cores answer 1; the core the FPGA comes
   up with on its own answers 0.
 - **`nesload <path>`** streams an iNES ROM into the NES core and starts it.
+- **`fpgapipe`** passes the console straight through to the core's UART and
+  back, unframed and untranslated, until the host closes the port (DTR
+  drops). It is how a core that speaks its own protocol on the link is driven
+  from the host in two-wire mode: TinyNES's `tools/load_ae350.py --tinytang`
+  loads AE350 programs through it at the link's 2 Mbaud line rate.
 - **`peek` / `poke`** read and write the memory the port lists, root only: the
   BL616's RAM read/write, and the XIP flash, system control and trustzone
   registers read-only. `peek -l` prints the regions and
@@ -371,7 +376,7 @@ for the register interface and regression commands.
   - `tdsh_tang_flash.c` — `tangput`, `tangflash` and `tangload`.
   - `tang_fpga_link.h`, `tang_fpga_uart.c`, `fpga_frames.c` — the UART link to
     the core: the frame transport, the cache of unprompted frames (joypad,
-    keyboard), and `fpga` and `nesload` over it.
+    keyboard), and `fpga`, `nesload` and `fpgapipe` over it.
   - `tang_osd_desk.c` — the desktop layer: a terminal emulator fed by the
     console tap, a shadow of what the core holds, the diff that sends cells,
     the pointer, and the F12 / L switch.
