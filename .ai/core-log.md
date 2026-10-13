@@ -1714,3 +1714,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 52 COMMIT Unreleased 2026-10-13T15:52:21-07:00
+
+#### Coming From:
+
+Unreleased a6db9eb
+
+#### Purpose:
+
+Cure the desktop core's temperature-dependent HDMI picture fault that entry 50 recorded as an unbuilt candidate, and settle why its build had stopped reproducing the card's image.
+
+#### Outcome:
+
+The user's card image, the seed-2 build of 2026-10-11, came up distorted on a hot boot at about 55 C, so the fault entry 50 saw on a warm board is reproducible at boot. `fpga/desktop/desktop.cst` moves `pll_nes` from `PLL_L[0]` to `PLL_R[0]`, the site the file's own comment says the design wants and whose clock wire `TRPLL0CLK0` is the one this project has measured good (TinyNES core-reference DEV-009); `PLL_L[0]`'s wire is `TLPLL0CLK0`, which the same comment records as giving a timing-clean core that is dead on the board, and what had kept the core working was the stock router refusing that hop -- a refusal the fork no longer makes, so the old site now routes `clk` on global resources only. The timing failure that had held `PLL_R[0]` back is gone with the HDMI PLL move of entry 50: seeds 1 to 4 pass setup and hold. The seed-1 image was packed with `ALLOW_UNVERIFIED_CLOCK=1`, because the topology gate's regression is measured against a baseline that cannot be reproduced, and put on the card as `/root/cores/console138k/desktop-rpll-s1.bin` (`desktop.b9af4f06221e.bin`, `.fs` sha256 7453ad6c9400); loaded with `tangload`, the desktop came up and ran, and the user held it clean to 60.4 C where the old image was distorted by 55 C, then exercised the desktop and reported no issues. The card's `desktop.bin` was not replaced. The run's instrument was the user's eyes, there being no diagnostic build for the desktop core, and the two runs were matched at temperature but not in method, the old image failing on a hot boot and the new one loaded hot and left running. The investigation also established that entry 50's build-of-record recipe does not reproduce the card's image: apycula's chipdb is an untracked build product, every copy on this machine regenerates to a database that differs from the 2026-10-11 one, and rebuilding it with the fork at 93761f4 and that era's own nextpnr gives a different timing model -- `keyboard_link.clk` at 119.29 MHz against the recorded 145.69 -- and routes `clk` on global resources. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Promote the tested image to the card's `/root/cores/console138k/desktop.bin` at the user's word, having the user confirm the boot from it, and prune the extra images the last two cycles left on the card. The reproducibility finding is the larger open item: the desktop core's build of record cannot be rebuilt today because the chipdb it depends on is generated, untracked and unpinned, and nothing on this machine reproduces the 2026-10-11 database, so a future cycle should pin or vendor it and record the digest a build of record was made from.
+
+#### Files Modified:
+
+- fpga/desktop/desktop.cst
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

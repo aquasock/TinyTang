@@ -92,22 +92,28 @@ IO_PORT "pmod1_io[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 // nearest the logic, seeds 17 and 19 measured setup 0 / hold 0 on the nestang
 // netlist; on the cleaned TinyTang netlist seeds 1-32 at PLL_R[0] all failed.
 //
-// pll_nes is at PLL_L[0] for now: seed 2 passes setup and hold and the core
-// works on HDMI and VGA (2026-10-11), with `clk` still on fabric.  PLL_L[0] is
-// also the one site whose CLKOUT0 has a modelled clock wire (`TLPLL0CLK0`), but
-// routing `clk` onto it gives a timing-clean core that is dead on the board --
-// the chipdb's TLPLL0CLK0 -> spine -> bridge path is wrong somewhere -- so the
-// stock router's refusal of that hop is what keeps this core working.
+// pll_nes is at PLL_R[0].  It sat at PLL_L[0] from 2026-10-11 because seeds
+// 1-32 there failed setup or hold on the cleaned TinyTang netlist, and seed 2
+// at PLL_L[0] passed; PLL_L[0] is also the one site whose CLKOUT0 has a
+// modelled clock wire (`TLPLL0CLK0`), and routing `clk` onto it gives a
+// timing-clean core that is dead on the board -- the chipdb's TLPLL0CLK0 ->
+// spine -> bridge path is wrong somewhere.  What kept this core working was
+// the stock router refusing that hop; the fork no longer refuses it, so the
+// PLL_L[0] build now comes out with `clk` on global resources only.  Moving
+// the HDMI PLLs beside the right-side serialisers removed the timing failure
+// that held PLL_R[0] back (seeds 1-4 pass setup and hold), and PLL_R[0]'s own
+// wire `TRPLL0CLK0` is the one this project has measured good (TinyNES
+// core-reference DEV-009).  See core-log entry 52.
 //
 // Put the HDMI PLLs beside the right-side TMDS serializers.  With pll_hdmi at
 // PLL_L[3], its 371.25 MHz output crossed the die on general routing and the
 // desktop picture failed when the FPGA was hot.  TinyNES's PLL_R[3] route
 // shortened that path; its 27 MHz reference PLL is on the same side.
-// pll_nes stays at PLL_L[0] because its clock routing is a separate issue.
+// pll_nes moves with them, to PLL_R[0], for the clock-wire reason above.
 //
 // Instance names are the flattened cell names nextpnr reports.
 INS_LOC "pll_27.PLL_inst"   PLL_R[1];
 INS_LOC "pll_hdmi.PLL_inst" PLL_R[3];
-INS_LOC "pll_nes.PLL_inst"  PLL_L[0];
+INS_LOC "pll_nes.PLL_inst"  PLL_R[0];
 // The divider must use the HCLK block that serves the HDMI OSER10s.
 INS_LOC "div5" RIGHTSIDE[4];
