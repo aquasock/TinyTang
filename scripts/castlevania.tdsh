@@ -4,7 +4,7 @@
 # Run it from the desktop -- right-click its icon and choose Run -- or from
 # the Terminal:
 #
-#   tdsh run /scripts/castlevania.tdsh
+#   tdsh run /root/scripts/castlevania.tdsh
 #
 # The cycle is the same three steps boot-cart.tdsh uses: program the core,
 # prove it answers on the UART, then stream the ROM. F12 switches between the
@@ -13,10 +13,10 @@
 # not listening vanishes with no error anywhere.
 
 if "$CORE" == ""
-    CORE=/cores/console138k/nestang-desk.bin
+    CORE=/root/cores/console138k/nestang-desk.bin
 endif
 if "$ROM" == ""
-    ROM=/roms/castlevania.nes
+    ROM=/root/data/nes/castlevania.nes
 endif
 
 # The desk layer stays up across the load so that F12 works in the game; see

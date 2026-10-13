@@ -9,7 +9,7 @@ bytes left in it are flushed through the console's route and show up here.
 
     tools/check_stdout_isolation.py [--rounds 40]
 
-Needs /demos/fire.tdsh and its frames on the card (tools/make_oled_demo.py),
+Needs /root/demos/fire.tdsh and its frames on the card (tools/make_oled_demo.py),
 the desktop core loaded, and the console at a shell prompt; every command is
 sent only after the board says so, with any half-typed line cleared first.
 The OLED panel itself need not be attached.  Exit status 0 means no leak.
@@ -55,7 +55,7 @@ def main():
     args = ap.parse_args()
     port = serial.Serial(args.port, 115200, timeout=0.1)
     try:
-        send(port, 'oledterm run "tdsh run /demos/fire.tdsh"')
+        send(port, 'oledterm run "tdsh run /root/demos/fire.tdsh"')
         time.sleep(1.0)
         leaked = 0
         for _ in range(args.rounds):

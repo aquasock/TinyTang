@@ -5,7 +5,7 @@
 // The register sequence is Tang-Control's with one addition, the settle delay
 // after a restart (below).  The player's path also changes: Tang-Control mounts
 // the card as "sd:", this firmware mounts it at "/sd" (tdsh_fs_bl616.c), so the
-// FatFS path is "/sd/ae350/resident.tpi".
+// FatFS path is "/sd/root/ae350/resident.tpi".
 
 #include "ae350_play.h"
 
@@ -22,7 +22,7 @@ extern "C" {
 
 namespace {
 
-constexpr char PLAYER_TPI[] = "/sd/ae350/resident.tpi";
+constexpr char PLAYER_TPI[] = "/sd/root/ae350/resident.tpi";
 
 // Tang-Phosphor register ABI 1.8 moved cpu_mode from bit 0 of 0xc0, which it
 // shared with the PMOD socket declaration, to a word of its own.  An older core

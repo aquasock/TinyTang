@@ -380,7 +380,7 @@ static void on_draw(td_window_t *win, int w, int h)
         row(1, w, "Radio", line, t->win_fg);
         break;
     }
-    snprintf(line, sizeof(line), "%s (/ble/bonds.bin)", s_info.pairings);
+    snprintf(line, sizeof(line), "%s (/root/ble/bonds.bin)", s_info.pairings);
     row(2, w, "Pairings", line, t->win_fg);
     snprintf(line, sizeof(line), "%lu bytes free, largest block %lu",
              (unsigned long)s_heap.free, (unsigned long)s_heap.largest);

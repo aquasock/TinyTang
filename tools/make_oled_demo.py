@@ -10,10 +10,10 @@ frame, which `cat` writes into the OLED session:
 
     tools/make_oled_demo.py build/oled-demo
     # then copy build/oled-demo/<demo>/fN.ans, restore.ans and the players to
-    # /demos/ and run one from the OLED Terminal, or from the USB console with
-    # `oledterm run "tdsh run /demos/fire10.tdsh"`
+    # /root/demos/ and run one from the OLED Terminal, or from the USB console with
+    # `oledterm run "tdsh run /root/demos/fire10.tdsh"`
     # boot-fire.tdsh is scripts/boot.tdsh plus a line that starts fire10 at
-    # power-up; copy it to /scripts/boot.tdsh for a plug-in-and-film board.
+    # power-up; copy it to /root/scripts/boot.tdsh for a plug-in-and-film board.
 
 A board script gets a 16 KB stack: `cat` alone uses about 9.6 KB, each loop or
 `if` around it about 1.4 KB more and a function call about 5 KB, so players
@@ -165,14 +165,14 @@ for DEMO in plasma fire
     while $L < $LOOPS
         I=0
         while $I < {FRAMES}
-            cat /demos/$DEMO/f$I.ans
+            cat /root/demos/$DEMO/f$I.ans
             sleep 0.04
             I=$((I + 1))
         endwhile
         L=$((L + 1))
     endwhile
 endfor
-cat /demos/restore.ans
+cat /root/demos/restore.ans
 '''
 
 
@@ -183,20 +183,20 @@ L=0
 while $L < {loops}
     I=0
     while $I < {FRAMES}
-        cat /demos/fire/f$I.ans
+        cat /root/demos/fire/f$I.ans
         sleep 0.04
         I=$((I + 1))
     endwhile
     L=$((L + 1))
 endwhile
-cat /demos/restore.ans
+cat /root/demos/restore.ans
 '''
 
 
 BOOT_FIRE = '''
 # Filming demo: play the fire on the OLED for about 10 minutes.
-# Restore with: cp /scripts/diagnostics/boot-before-fire.tdsh /scripts/boot.tdsh
-oledterm run "tdsh run /demos/fire10.tdsh"
+# Restore with: cp /root/scripts/diagnostics/boot-before-fire.tdsh /root/scripts/boot.tdsh
+oledterm run "tdsh run /root/demos/fire10.tdsh"
 '''
 
 if __name__ == '__main__':

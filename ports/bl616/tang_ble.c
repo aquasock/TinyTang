@@ -679,7 +679,7 @@ static hid_dev_t s_hid[HID_SLOTS] = {
                     .appearance = BLE_APPEARANCE_MOUSE },
 };
 
-/* The pairings, one per slot, as kept in /sd/ble/bonds.bin.  Written by the
+/* The pairings, one per slot, as kept in /sd/root/ble/bonds.bin.  Written by the
  * pairing callback (keys) and the commands (forget), saved by the task. */
 static tang_bond_t s_bonds[TANG_BOND_SLOTS];
 
@@ -1635,8 +1635,8 @@ static void hid_register_callbacks(void)
 
 /* ---- pairings on the card, and reconnecting --------------------------- */
 
-#define BLE_BONDS_DIR  "/sd/ble"
-#define BLE_BONDS_PATH "/sd/ble/bonds.bin"
+#define BLE_BONDS_DIR  "/sd/root/ble"
+#define BLE_BONDS_PATH "/sd/root/ble/bonds.bin"
 
 static const char *volatile s_bonds_state = "not read";
 

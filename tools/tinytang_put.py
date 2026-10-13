@@ -3,9 +3,9 @@
 
 Uses the shell's `tangput <size> <path>` command, which reads raw bytes from
 the console and writes them to the card.  The path is the shell's, so it is
-relative to the shell's root (the card), e.g. /roms/castlevania.nes.
+relative to the shell's root (the card), e.g. /root/data/nes/castlevania.nes.
 
-    tools/tinytang_put.py "/home/vash/Desktop/Castlevania (USA) (Rev A).nes" /roms/castlevania.nes
+    tools/tinytang_put.py "/home/vash/Desktop/Castlevania (USA) (Rev A).nes" /root/data/nes/castlevania.nes
 
 The board must be in two-wire mode and running a TinyTang firmware that has
 the tangput command, and the console must be at a **shell prompt** -- not
@@ -52,7 +52,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("local", help="file to send")
-    ap.add_argument("remote", help="path on the card, e.g. /roms/game.nes")
+    ap.add_argument("remote", help="path on the card, e.g. /root/data/nes/game.nes")
     ap.add_argument("--port", default="/dev/ttyACM0")
     ap.add_argument("--baud", type=int, default=115200)
     args = ap.parse_args()

@@ -3,7 +3,7 @@
 #
 # Build the nestang console138k core image, deterministically.
 #
-# The image on the card at /cores/console138k/nestang.bin is reproduced
+# The image on the card at /root/cores/console138k/nestang.bin is reproduced
 # byte-for-byte by this script from an unpatched nestang checkout: 4,593,044
 # bytes, MD5 808b1f14b19d2d2db670ba95b8fa9ebf (`.ai/core-reference.md`,
 # DEV-002).  That baseline is what makes a later diff meaningful: when the

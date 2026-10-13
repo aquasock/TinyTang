@@ -4,7 +4,7 @@
 
 Run from the repository root:
     python3 tools/make_script_heap_probe.py /tmp/castlevania-heap.tdsh
-    python3 tools/tinytang_put.py /tmp/castlevania-heap.tdsh /scripts/castlevania-heap.tdsh
+    python3 tools/tinytang_put.py /tmp/castlevania-heap.tdsh /root/scripts/castlevania-heap.tdsh
 
 With music playing and the Phosphor window open, run the generated launcher
 from TinyDesk's Terminal. Its ble readouts include the live session copy,

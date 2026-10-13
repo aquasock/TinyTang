@@ -14,12 +14,12 @@ the order.
 
 STANDARDS.md §9 lists a system-wide boot script as not standardised yet. Here is what TinyTang does, as a real case.
 
-**What it does.** At power-up, after the banner and before the first prompt, TinyTang runs `/scripts/boot.tdsh` from the SD card once, as root, through the shell's own `tdsh run`. If the file is missing, the board comes up at a plain prompt. Nothing else is special about it: it is an ordinary script with the same commands and paths as anything typed at the console, and if it fails the prompt is still there to say why.
+**What it does.** At power-up, after the banner and before the first prompt, TinyTang runs `/root/scripts/boot.tdsh` from the SD card once, as root, through the shell's own `tdsh run`. If the file is missing, the board comes up at a plain prompt. Nothing else is special about it: it is an ordinary script with the same commands and paths as anything typed at the console, and if it fails the prompt is still there to say why.
 
 **Why it exists.** It decides what the board *is* at power-up, without reflashing: TinyTang's loads an FPGA core, probes it and turns on the desktop layer on HDMI; pointing it at another core makes the board boot into a game instead. This is different from `~/.tdshrc.tdsh`, which belongs to one user's session; the boot script configures the machine, once, before any session.
 
 **Questions a rule would need to answer:**
-- Path: TinyTang uses `/scripts/boot.tdsh`, which isn't in the §6 layout. Would `/etc/boot.tdsh` (or `/etc/rc.tdsh`) be the right home?
+- Path: TinyTang uses `/root/scripts/boot.tdsh`, which isn't in the §6 layout. Would `/etc/boot.tdsh` (or `/etc/rc.tdsh`) be the right home?
 - Does it always run as root?
 - Does it run before or after the console user's `~/.tdshrc.tdsh`?
 - Is there a standard way to skip it at power-up (a held key, a flag file), for when it leaves the board in a bad state?
@@ -57,10 +57,10 @@ STANDARDS.md §9 lists audio and media playback commands as not standardised yet
 
 Playback runs on a background task, so the shell stays free; loading a different core stops it.
 
-**The app.** A TinyDesk window listing `/music`, with title, status line, progress bar, Prev / Play / Pause / Stop / Next and auto-advance, using the same background task rather than the command line.
+**The app.** A TinyDesk window listing `/root/music`, with title, status line, progress bar, Prev / Play / Pause / Stop / Next and auto-advance, using the same background task rather than the command line.
 
 **Questions a rule would need to answer:**
 - A common command name (`play`, `media`, `audio`) with the backend chosen by the port, or port-named commands like this one?
 - Standard verbs (`play`, `stop`, `pause`, `resume`, `status`) and a standard status format, so scripts work across ports?
-- A standard folder for music (`~/Music`, `/music`)?
+- A standard folder for music (`~/Music`, `/root/music`)?
 - Should Files open audio files in the player, the way it runs `.tdsh` scripts in the Terminal?

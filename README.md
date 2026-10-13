@@ -54,7 +54,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
 
 ## What it does
 
-- **Boots to a console on HDMI and configured VGA.** `/scripts/boot.tdsh` loads
+- **Boots to a console on HDMI and configured VGA.** `/root/scripts/boot.tdsh` loads
   `desktop.bin`, turns the desktop layer on, and stops at the shell prompt
   (`root@tinytang:~#`) drawn on the screen. The board has the shell's built-in
   commands, redirection and scripts, plus the Tang commands below.
@@ -74,7 +74,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
 - **The Terminal window runs the shell.** It is the same session as the
   console, reached through a bridge over two ring buffers, so
-  `tdsh run /scripts/boot-cart.tdsh` typed into a desktop window boots a core
+  `tdsh run /root/scripts/boot-cart.tdsh` typed into a desktop window boots a core
   and starts a cartridge without leaving the desktop. One user and one session
   by design.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
@@ -125,7 +125,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
   plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
   Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
-  resident Rockbox player `/ae350/resident.tpi` onto the core's AE350 and
+  resident Rockbox player `/root/ae350/resident.tpi` onto the core's AE350 and
   serving the file to it on demand, as the player asks for each part, so a
   track starts as soon as the player is sent. A playback task owns the
   track, so the shell is
@@ -141,7 +141,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   program and serves the byte ranges of `file` that it requests through its
   result-word mailbox (Tang-Phosphor `ae350_request.h`), printing each request
   with its CRC and then the program's result words. The core,
-  `/cores/console138k/phosphortang.bin`, carries the desktop layer, the
+  `/root/cores/console138k/phosphortang.bin`, carries the desktop layer, the
   keyboard link and F12 the way the NES core does, so it runs under TinyDesk
   with the layer left on. The merged core has no WAV or FLAC decoder in the
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
@@ -155,10 +155,10 @@ Building and flashing are under *Quick start* and *Building requirements*.
   This is the single Phosphor launcher: the canonical `phosphortang.bin` is
   the qualified ABI 1.10 merged image with audio and the oscilloscope. The
   earlier `oscope.tdsh`, `i2s2-play.tdsh` and `i2s2-tone.tdsh` scripts are
-  retained under `/scripts/diagnostics/` on the card for earlier bring-up work
+  retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tang.ini`.
-- **The Phosphor app** in the desktop's start menu is a player for `/music`:
+- **The Phosphor app** in the desktop's start menu is a player for `/root/music`:
   a sorted list of the playable files, the title and status of the current
   track, a progress bar (WAV and FLAC, whose length is read from the file's
   header; the others show elapsed time only), Prev, Play, Pause/Resume, Stop
@@ -196,7 +196,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   it to boot protocol, the 8-byte HID boot report. The keyboard types at the
   console and in the desktop, with F12 and left-alt pointer mode (see *A
   keyboard* above).
-  **The pairing is saved to the card** (`/sd/ble/bonds.bin`), so after a
+  **The pairing is saved to the card** (`/sd/root/ble/bonds.bin`), so after a
   reset, or when the keyboard wanders out of range and back, it reconnects by
   itself as soon as it is woken; pairing mode is needed only the first time.
   `blekbd off` and `blekbd on` stop and resume reconnecting, `blekbd forget`
@@ -259,10 +259,10 @@ tools/build_nestang_core.sh     # the NES core, with the desktop layer
 # tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
-tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /cores/console138k/nestang-desk.bin
-tools/tinytang_put.py build/desktop/open-s2/desktop.bin                /cores/console138k/desktop.bin   # 89f3ae9350c4
-tools/tinytang_put.py scripts/boot.tdsh      /scripts/boot.tdsh
-tools/tinytang_put.py scripts/boot-cart.tdsh /scripts/boot-cart.tdsh
+tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /root/cores/console138k/nestang-desk.bin
+tools/tinytang_put.py build/desktop/open-s2/desktop.bin                /root/cores/console138k/desktop.bin   # 89f3ae9350c4
+tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
+tools/tinytang_put.py scripts/boot-cart.tdsh /root/scripts/boot-cart.tdsh
 
 # Talk to it from a computer as well
 screen /dev/ttyACM0 115200
@@ -271,29 +271,47 @@ screen /dev/ttyACM0 115200
 Power-cycle the board and it comes up at the console on HDMI and configured VGA. Type
 `desktop` for TinyDesk.
 
+### The card
+
+Everything the board uses lives under the shell's home, `/root`; only the
+firmware's own files stay at the top of the card.
+
+| Path | Holds |
+|---|---|
+| `/root/scripts/` | `boot.tdsh`, run at power-up, and the other scripts; bring-up scripts in `diagnostics/` |
+| `/root/cores/console138k/` | FPGA core images for `tangload` |
+| `/root/data/nes/` | NES cartridge images for `nesload` |
+| `/root/music/` | tracks for `phosphor play` and the Phosphor app |
+| `/root/ae350/` | AE350 programs, `resident.tpi` among them |
+| `/root/ble/bonds.bin` | Bluetooth pairings |
+| `/root/demos/` | the OLED demos |
+| `/root/Desktop/` | the desktop's icons |
+| `/tang.ini`, `/crash.log`, `/tinydesk_tz` | PMOD declarations, the crash record and the time zone |
+| `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
+
 ### Cartridges
 
 Booting a cartridge is three commands, in this order:
 
 ```
-tangload /cores/console138k/nestang-desk.bin  # put the NES core in
+tangload /root/cores/console138k/nestang-desk.bin  # put the NES core in
 fpga                                          # confirm it answers (expect: core 1)
-nesload /roms/castlevania.nes                 # stream the ROM; the core starts
+nesload /root/data/nes/castlevania.nes                 # stream the ROM; the core starts
 ```
 
 `scripts/boot-cart.tdsh` runs all three with a check between each, from the
 console or from the desktop's Terminal:
 
 ```
-tdsh run /scripts/boot-cart.tdsh
+tdsh run /root/scripts/boot-cart.tdsh
 ```
 
-It defaults to the NES core and `/roms/castlevania.nes`. Set `CORE` or `ROM` in
+It defaults to the NES core and `/root/data/nes/castlevania.nes`. Set `CORE` or `ROM` in
 the session first to use another pair; `tdsh run` passes no arguments, but the
 script inherits the session's variables:
 
 ```
-ROM=/roms/other.nes; tdsh run /scripts/boot-cart.tdsh
+ROM=/root/data/nes/other.nes; tdsh run /root/scripts/boot-cart.tdsh
 ```
 
 The check that matters is the probe between the two loads. A ROM streamed into
@@ -309,7 +327,7 @@ it loaded the keyboard and TinyDesk are gone until the next boot.
 
 ### What the board boots
 
-`/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
+`/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
 line -- `desktop.bin` -- probes it, applies `/tang.ini`, enables the desktop
 layer and stops at the prompt. Pointing `CORE` at `nestang-desk.bin` boots the
 NES core instead. Removing or renaming the file boots to a plain prompt with no

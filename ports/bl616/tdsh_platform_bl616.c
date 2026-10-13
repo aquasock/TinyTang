@@ -597,13 +597,13 @@ static void run_boot_script(void)
     }
     done = true;
 
-    FILE *probe = fopen("/sd/scripts/boot.tdsh", "r");
+    FILE *probe = fopen("/sd/root/scripts/boot.tdsh", "r");
     if (probe == NULL) {
         return;
     }
     fclose(probe);
 
-    (void)tdsh_execute_line(&s_session, "tdsh run /scripts/boot.tdsh");
+    (void)tdsh_execute_line(&s_session, "tdsh run /root/scripts/boot.tdsh");
 }
 
 int tdsh_bl616_run_until(volatile const bool *stop)

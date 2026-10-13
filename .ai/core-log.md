@@ -1528,3 +1528,58 @@ None for TinyTang; TinyNES continues with sound output, and `fpgapipe` stays at 
 - User Test: PASS
 
 ---
+
+## 47 COMMIT Unreleased 2026-10-13T01:40:48-07:00
+
+#### Coming From:
+
+Unreleased 9061ead
+
+#### Purpose:
+
+Make the firmware, scripts and tools follow the SD card layout the user reorganised on the PC, in which everything the board uses moved under the shell's home, `/root`.
+
+#### Outcome:
+
+The user moved `/cores`, `/scripts`, `/music`, `/ae350`, `/ble` and `/demos` under `/root`, put the diagnostic scripts in `/root/scripts/diagnostics/`, made `/root/data/nes` the cartridge folder and filled it, and left `/tang.ini`, `/crash.log`, `/tinydesk_tz` and `/tinytang-upload.bin` at the top. The firmware now runs `/root/scripts/boot.tdsh` at power-up, keeps pairings in `/sd/root/ble/bonds.bin`, loads the resident player from `/sd/root/ae350/resident.tpi` and lists `/sd/root/music` in the Phosphor app, whose messages and the Bluetooth window's path line follow. The four repository scripts, the host tools that name card paths, `tools/tests/phosphor_catalog_test.cpp` and `tools/tests/tb_tang_flash.c`, the README, which gained a table of the card's layout, and three documents use the new paths; the Phosphor catalogue, tangload, Bluetooth window and bond-store host tests passed. With the card mounted on the PC, the four repository scripts were copied over their card copies and the eleven other scripts under `/root` had their paths changed in place; the scripts still name core images and ROMs the user removed, such as `nestang-desk.bin`, which stay missing. The firmware, `build/build_out/tinytang_bl616.bin` with SHA-256 `47af62f2a610f150d2289815b913d0efaeba1735603272974d513a8bb60c4ec7`, was installed with `tools/tinytang_flash.py`, the first attempt being refused because a long `ls` of the new ROM folder was still printing; after the power cycle `platform` reported `9061ead-dirty.54d2284`, the boot script loaded the desktop core, which answered as core 84, the user saw the console on HDMI, and `ble` reported the pairings loaded from `/sd/root/ble/bonds.bin` with the K950 and M750 set to reconnect. TinyNES then deployed its image to `/root/cores/console138k/tinynes.bin` with `tangload` (TinyNES entry 18). Reference records BLE-012, DEV-006, TCTL-006, TDESK-011 and TOOL-017 were revised to the new paths. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+None for TinyTang; Tang-Phosphor's documents and tools still use the old card paths and need the same change if that project is used again.
+
+#### Files Modified:
+
+- README.md
+- docs/phosphor-memory-budget.md
+- docs/upstream/issue-drafts.md
+- fpga/desktop/README.md
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_ble_bonds.h
+- ports/bl616/td_bluetooth_app.c
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/boot-cart.tdsh
+- scripts/boot.tdsh
+- scripts/castlevania.tdsh
+- scripts/phosphor.tdsh
+- tools/build_nestang_core.sh
+- tools/check_stdout_isolation.py
+- tools/make_oled_demo.py
+- tools/make_script_heap_probe.py
+- tools/phosphor_format_sweep.py
+- tools/tests/phosphor_catalog_test.cpp
+- tools/tests/tb_tang_flash.c
+- tools/tinytang_desk_deploy.sh
+- tools/tinytang_put.py
+- tools/tinytang_run.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

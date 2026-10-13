@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Play every format in the Phosphor corpus on the board and check each one.
 
-The corpus is tools/make_codec_corpus.sh's twelve files in /music on the card,
+The corpus is tools/make_codec_corpus.sh's twelve files in /root/music on the card,
 the same set Tang-Phosphor qualified in its entry 43.  With the Phosphor core
 loaded and the desk layer off, each file is played through the resident AE350
 Rockbox player with `phosphor play`, and a file passes when the player reports
@@ -81,7 +81,7 @@ def main():
         if not only:
             plan.append(("wav", 441000, 44100, "  after Opus: 48 -> 44.1 kHz"))
         for ext, expected, expected_rate, label in plan:
-            path = f"/music/test.{ext}"
+            path = f"/root/music/test.{ext}"
             out = run(port, f"phosphor play {path}", args.timeout)
             m = DONE.search(out.encode())
             if not m:

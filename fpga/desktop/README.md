@@ -67,7 +67,7 @@ on either socket, including two panels sharing the same terminal. Encoder
 and I2S remain Phosphor features. The OLED build is deployed and was
 accepted by the user on hardware (core-log entry 65).
 
-The boot script loads `/cores/console138k/desktop.bin`. Preserve the old
+The boot script loads `/root/cores/console138k/desktop.bin`. Preserve the old
 `nestang-menu.bin` and boot script on the card for rollback. Firmware must
 include the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 

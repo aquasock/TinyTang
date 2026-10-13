@@ -5,7 +5,7 @@ The board's shell is the interface: this just opens the console, sends one
 line, and streams whatever comes back for a fixed window.  Useful for driving
 commands that take a while and print progress, such as `nesload`.
 
-    tools/tinytang_run.py "nesload /roms/castlevania.nes" --seconds 30
+    tools/tinytang_run.py "nesload /root/data/nes/castlevania.nes" --seconds 30
 
 The board must be in two-wire mode and running a TinyTang firmware, and the
 console must be at a shell prompt: each line is sent only after the board says

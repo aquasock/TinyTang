@@ -24,8 +24,8 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 core="${CORE:-$root/../tangcore/nestang/impl/pnr/nestang_console138k_ds2.bin}"
 port="${PORT:-/dev/ttyACM0}"
-rom="${1:-/roms/castlevania.nes}"
-remote="${REMOTE:-/cores/console138k/nestang-desk.bin}"
+rom="${1:-/root/data/nes/castlevania.nes}"
+remote="${REMOTE:-/root/cores/console138k/nestang-desk.bin}"
 
 if [[ ! -f "$core" ]]; then
     echo "no core image at $core" >&2

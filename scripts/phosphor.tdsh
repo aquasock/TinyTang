@@ -4,13 +4,13 @@
 # Run it from the console prompt, or from the desktop -- right-click its icon
 # and choose Run -- or from the Terminal:
 #
-#   tdsh run /scripts/phosphor.tdsh
+#   tdsh run /root/scripts/phosphor.tdsh
 #
 # Choose a track in the desktop's Phosphor app after launching. To start a
 # track automatically, set FILE in the session first; tdsh run passes no
 # arguments, but the script inherits the session's variables:
 #
-#   FILE="/music/Fleetwood Mac - Landslide.mp3"; tdsh run /scripts/phosphor.tdsh
+#   FILE="/root/music/Fleetwood Mac - Landslide.mp3"; tdsh run /root/scripts/phosphor.tdsh
 #
 # The core carries the TinyDesk layer, so this works the way castlevania.tdsh
 # does: the desktop stays up across the load, the screen is handed to the
@@ -19,8 +19,8 @@
 # loaded after the track ends -- loading another core is what replaces it.
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
 # PMOD selection comes only from /tang.ini, applied automatically by tangload.
-CORE=/cores/console138k/phosphortang.bin
-PLAYER=/ae350/resident.tpi
+CORE=/root/cores/console138k/phosphortang.bin
+PLAYER=/root/ae350/resident.tpi
 
 echo "phosphor: core  $CORE"
 

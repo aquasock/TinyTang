@@ -32,7 +32,7 @@ bool tang_ble_keyboard(uint8_t out[8]);
  * zero, so a button held when the link dropped is released. */
 bool tang_ble_mouse(tang_mouse_t *out);
 
-/* Reconnect the devices paired before the reset: reads /sd/ble/bonds.bin,
+/* Reconnect the devices paired before the reset: reads /sd/root/ble/bonds.bin,
  * and if anything is paired, starts the radio, restores the keys and lets the
  * host reconnect each device when it next advertises.  Returns at once; the
  * work runs on a background task.  Called once, after the boot script. */

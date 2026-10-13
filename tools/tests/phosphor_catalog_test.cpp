@@ -50,7 +50,7 @@ static void catalog_free(void *ptr)
 
 extern "C" FRESULT f_opendir(DIR *dir, const char *path)
 {
-    assert(std::strcmp(path, "/sd/music") == 0);
+    assert(std::strcmp(path, "/sd/root/music") == 0);
     if (fail_open)
         return FR_NO_PATH;
     *dir = {};
@@ -150,7 +150,7 @@ int main(void)
     reset();
     scan();
     assert(s_count == 0 && allocation == nullptr && requested == 0);
-    assert(std::strcmp(folder_widget.text, "/music: 0 tracks") == 0);
+    assert(std::strcmp(folder_widget.text, "/root/music: 0 tracks") == 0);
 
     reset();
     first_pass.push_back(file(std::string(91, 'a') + ".mp3"));

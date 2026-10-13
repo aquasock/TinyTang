@@ -60,11 +60,11 @@ script probe while the USB console is at its prompt:
 
 ```sh
 python3 tools/make_script_heap_probe.py /tmp/castlevania-heap.tdsh
-python3 tools/tinytang_put.py /tmp/castlevania-heap.tdsh /scripts/castlevania-heap.tdsh
+python3 tools/tinytang_put.py /tmp/castlevania-heap.tdsh /root/scripts/castlevania-heap.tdsh
 ```
 
 In TinyDesk, load Phosphor, play a song and keep the Phosphor window open.
-Run `tdsh run /scripts/castlevania-heap.tdsh` in its Terminal. The readouts
+Run `tdsh run /root/scripts/castlevania-heap.tdsh` in its Terminal. The readouts
 include the active script's session copy, stack and interpreter before the
 core load, before the ROM load and after it. Check free bytes, largest free
 block and refused allocations, then read `crash` after returning to the

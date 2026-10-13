@@ -4,7 +4,7 @@
 // (CONFIG_BT_SETTINGS), which needs a key-value partition this board's flash
 // layout does not have (FLS-002).  So the keys are kept here instead: after a
 // pairing, tang_ble.c copies the host's key entry for that device into a
-// record, the records are written to /sd/ble/bonds.bin, and at boot they are
+// record, the records are written to /sd/root/ble/bonds.bin, and at boot they are
 // read back and put into the host's key table before the devices reconnect.
 //
 // This file is only the format -- encode and decode, with nothing from the

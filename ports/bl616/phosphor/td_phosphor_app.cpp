@@ -1,4 +1,4 @@
-// TinyTang: the Phosphor app, a TinyDesk window that plays /music through the
+// TinyTang: the Phosphor app, a TinyDesk window that plays /root/music through the
 // Phosphor core.
 //
 // It is a view onto the playback task (phosphor_player): the list plays a file
@@ -30,8 +30,8 @@ void td_phosphor_register(void);
 
 namespace {
 
-constexpr char MUSIC_REAL[] = "/sd/music";
-constexpr char MUSIC_SHOWN[] = "/music";
+constexpr char MUSIC_REAL[] = "/sd/root/music";
+constexpr char MUSIC_SHOWN[] = "/root/music";
 constexpr int MAX_TRACKS = 256;
 constexpr int NAME_BYTES = 96;
 constexpr uint32_t TICK_MS = 500;
@@ -58,7 +58,7 @@ uint32_t s_ticks;
 
 // The track the status was last read for, and what was worked out from it.
 uint32_t s_seen_track;
-int s_current = -1;            // its index in the list, -1 if not in /music
+int s_current = -1;            // its index in the list, -1 if not in /root/music
 uint32_t s_duration_ms;        // 0: not known
 // The newest track this window started, the one it may advance from.
 uint32_t s_own_track;
@@ -99,7 +99,7 @@ void load_folder(void)
     DIR dir;
     FILINFO info;
     if (f_opendir(&dir, MUSIC_REAL) != FR_OK) {
-        set_text(s_folder, "No /music folder on the card");
+        set_text(s_folder, "No /root/music folder on the card");
         return;
     }
 
@@ -118,14 +118,14 @@ void load_folder(void)
     }
     if (result != FR_OK || f_rewinddir(&dir) != FR_OK) {
         (void)f_closedir(&dir);
-        set_text(s_folder, "Could not read /music folder");
+        set_text(s_folder, "Could not read /root/music folder");
         return;
     }
     if (capacity != 0) {
         s_entries = static_cast<entry *>(malloc(sizeof(entry) * capacity));
         if (s_entries == nullptr) {
             (void)f_closedir(&dir);
-            set_text(s_folder, "Not enough memory for /music list");
+            set_text(s_folder, "Not enough memory for /root/music list");
             return;
         }
     }
@@ -145,7 +145,7 @@ void load_folder(void)
         free(s_entries);
         s_entries = nullptr;
         s_count = 0;
-        set_text(s_folder, "Could not read /music folder");
+        set_text(s_folder, "Could not read /root/music folder");
         return;
     }
     if (s_count > 1) {
@@ -158,7 +158,7 @@ void load_folder(void)
     td_list_set_count(s_list, s_count);
 }
 
-// The list index of a status path such as "/music/song.flac", or -1.
+// The list index of a status path such as "/root/music/song.flac", or -1.
 int index_of(const char *path)
 {
     const size_t prefix = strlen(MUSIC_SHOWN);
@@ -217,7 +217,7 @@ bool need_core(void)
         show_core();
     }
     if (!s_core) {
-        say("No Phosphor core: tangload /cores/console138k/phosphortang.bin");
+        say("No Phosphor core: tangload /root/cores/console138k/phosphortang.bin");
     }
     return s_core;
 }

@@ -1,7 +1,7 @@
 #!/bin/tdsh
 # boot.tdsh — what the board does when it powers up.
 #
-# Copy this to /scripts/boot.tdsh on the card to have the Tang come up as
+# Copy this to /root/scripts/boot.tdsh on the card to have the Tang come up as
 # TinyDesk rather than as a prompt.  The firmware runs that one path at
 # startup, through the same shell, so everything here is ordinary shell and the
 # paths are the shell's.
@@ -10,7 +10,7 @@
 # the file and it goes back to a plain prompt.  If a step here fails the prompt
 # still comes up afterwards, which is where the reason will be printed.
 #
-#     tools/tinytang_put.py scripts/boot.tdsh /scripts/boot.tdsh
+#     tools/tinytang_put.py scripts/boot.tdsh /root/scripts/boot.tdsh
 #
 # The cycle this sets up, mirrored on HDMI and configured VGA:
 #
@@ -29,7 +29,7 @@
 # none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
 # Build it with tools/build_desktop_core.sh. Keep nestang-menu.bin and the old
 # boot script available for rollback. Cartridge launching uses boot-cart.tdsh.
-CORE=/cores/console138k/desktop.bin
+CORE=/root/cores/console138k/desktop.bin
 
 # Drop the layer before touching the core.
 #
