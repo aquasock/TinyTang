@@ -1744,3 +1744,33 @@ Promote the tested image to the card's `/root/cores/console138k/desktop.bin` at 
 - User Test: PASS
 
 ---
+
+## 53 COMMIT Unreleased 2026-10-13T16:03:52-07:00
+
+#### Coming From:
+
+Unreleased 9f3ddfb
+
+#### Purpose:
+
+Promote entry 52's validated image to the card's `desktop.bin`, confirm it on the hot boot the old image failed, and record the plan for a video-path monitor that would localise a future HDMI fault rather than only show it.
+
+#### Outcome:
+
+`/root/cores/console138k/desktop.bin` now holds the entry-52 seed-1 image (`desktop.b9af4f06221e.bin`, 4,492,268 bytes, `.fs` sha256 7453ad6c9400), put there with `tools/tinytang_put.py`; the unreproducible 2026-10-11 image is kept as `desktop.bin.pre-thermal-fix` and `desktop.bin.pre-cleanup`. Because `scripts/boot.tdsh` loads `desktop.bin`, a power cycle is the fault's own test, and the user power-cycled with the package at 59.7 C: the desktop came up clean on HDMI, `fpga` answered `core 84` (0x54) on UART1 at 2000000 baud, and `desktop.bin` read back at 4,492,268 bytes. That is the second independent pass and the first matched in method to the failure, which was the old image distorted on a hot boot at about 55 C. The same session measured the core's existing instrument on the card: `fmon` returned `clk` 21,503,075 and 21,505,365 Hz against a 21.492 MHz design and `pix` 74,249,911 and 74,250,208 Hz against 74.25 MHz, two probes agreeing to 0.01 percent, and `fpgar 0x134` returned the stamp `0x4d4f4e31`, so the register-readout path a diagnostic would need already exists with the desk layer up. `docs/desktop-video-monitor-plan.md` records what such a monitor should watch and why a clock counter cannot see this fault; the user asked for it to be logged rather than built, is satisfied the desktop image is stable enough to continue TinyNES work, and does not want the card image changed for a diagnostic run. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The plan is recorded and should not be built unless the user asks. The card's spare images are still to be pruned, and the reproducibility finding of entry 52 remains open: the chipdb the desktop core's build of record depends on is generated, untracked and unpinned. Work continues on TinyNES.
+
+#### Files Modified:
+
+- docs/desktop-video-monitor-plan.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
