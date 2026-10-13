@@ -51,7 +51,10 @@
 //
 // `ae350run` loads a program into a TinyNES core's AE350 from the card itself
 // (ae350_load.c has the protocol), sends it a file when it asks, and follows
-// its output until it exits.
+// its output until it exits.  A program that prints "TinyNES LINK" has turned
+// the core's UART to TinyTang's frames: the link is handed back to the desk
+// layer, which can then draw TinyDesk over the game, and the program's text is
+// followed in FPGA_RESP_AE350_TEXT frames instead.
 //
 // `fpgapipe` hands the link to the host instead: the console's bytes go to
 // the core's UART and the core's bytes come back, untouched, until the host
@@ -91,6 +94,7 @@
 #include "ae350_load.h"
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
+#include "tang_osd_desk.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -921,6 +925,70 @@ static const char *ae350_error(int rc)
     }
 }
 
+/* What the program's last line means for ae350run: keep following it, or
+ * stop with the code in *code. */
+static bool ae350_line_ends(const ae350_run_t *run, int *code)
+{
+    if (starts_with(run->line, "TinyNES EXIT ")) {
+        *code = atoi(run->line + 13);
+        return true;
+    }
+    if (starts_with(run->line, "BAD ")) {
+        *code = 1;
+        return true;
+    }
+    return false;
+}
+
+/* After "TinyNES LINK": the core answers in frames now, so the link goes back
+ * to everyone (the desk layer draws, its task reads the joypad report) and the
+ * program's text is read out of FPGA_RESP_AE350_TEXT frames.  The caller holds
+ * the lock and the pipe flag on entry and gets them back on return.  The game
+ * starts on screen; the overlay is put back as it was afterwards, so the
+ * desktop core comes back the way it was left. */
+static int ae350_follow_link(ae350_run_t *run)
+{
+    taskENTER_CRITICAL();
+    s_pipe = false;
+    taskEXIT_CRITICAL();
+    tang_fpga_unlock();
+
+    const bool was_shown = tang_osd_shown();
+    (void)tang_osd_set(false);
+    tang_osd_desk_core_reloaded();     /* the layer's enable, and a repaint */
+
+    static uint8_t text[FPGA_FRAMES_PAYLOAD_MAX];
+    int code = 1;
+    for (unsigned silent = 0;;) {
+        const int n = tang_fpga_wait(FPGA_RESP_AE350_TEXT, text, sizeof(text), 1000);
+        if (n < 0) {
+            if (++silent >= AE350_SILENT_S) {
+                tdsh_printf("ae350run: nothing from the program for %u s; leaving it\r\n",
+                            (unsigned)AE350_SILENT_S);
+                break;
+            }
+            continue;
+        }
+        silent = 0;
+        bool done = false;
+        for (int i = 0; i < n && !done; i++) {
+            run->line_ready = false;
+            ae350_text(run, text[i]);
+            done = run->line_ready && ae350_line_ends(run, &code);
+        }
+        if (done) {
+            break;
+        }
+    }
+
+    (void)tang_osd_set(was_shown);
+    tang_fpga_lock();
+    taskENTER_CRITICAL();
+    s_pipe = true;
+    taskEXIT_CRITICAL();
+    return code;
+}
+
 static uint8_t s_ae350_block[AE350_LOAD_BLOCK];
 static FIL s_ae350_elf_file;
 static FIL s_ae350_data_file;
@@ -1023,6 +1091,10 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
                 tdsh_printf("ae350run: sending %s: %s\r\n", argv[2], ae350_error(rc));
             }
             continue;
+        }
+        if (starts_with(run.line, "TinyNES LINK")) {
+            code = ae350_follow_link(&run);
+            break;
         }
         if (starts_with(run.line, "TinyNES EXIT ")) {
             code = atoi(run.line + 13);

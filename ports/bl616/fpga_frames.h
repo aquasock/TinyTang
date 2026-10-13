@@ -42,6 +42,9 @@
  * and for the same reason it sends the pad -- the report is state, and the
  * desktop wants the newest state rather than a queue of transitions. */
 #define FPGA_RESP_KEYBOARD 0x08u
+/* A TinyNES core's AE350 text in link mode: the program's output, a line or
+ * up to 128 bytes at a time (TinyNES fpga/ae350_soc/desk_link.sv). */
+#define FPGA_RESP_AE350_TEXT 0x20u
 
 /* How many frames and how much of each are kept.  A waiter's own reply plus a
  * few unprompted joypad reports is the realistic worst case. */

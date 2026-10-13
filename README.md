@@ -119,8 +119,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   TinyNES core's AE350, through its boot ROM's load protocol (8 KiB blocks
   with CRC-32s, resent when refused), sends `<file>` when the program asks
   with a `TinyNES WANT` line, prints the program's output and returns its exit
-  code at `TinyNES EXIT`. TinyNES's `.nes` launcher uses it to play a
-  cartridge from the card with no PC attached. The protocol code,
+  code at `TinyNES EXIT`. A program that prints `TinyNES LINK` has turned the
+  core's UART to the frame protocol: `ae350run` then gives the link back to
+  the desk layer, so HOME on the controller or F12 shows TinyDesk over the
+  running game, and reads the program's text from `0x20` frames. TinyNES's
+  `.nes` launcher uses it to play a cartridge from the card with no PC
+  attached. The protocol code,
   `ae350_load.c`, has a host test, `tools/tests/test_ae350_load.sh`.
 - **`peek` / `poke`** read and write the memory the port lists, root only: the
   BL616's RAM read/write, and the XIP flash, system control and trustzone

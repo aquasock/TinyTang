@@ -1620,3 +1620,35 @@ None required for TinyTang; handler scripts for other extensions need no firmwar
 - User Test: PASS
 
 ---
+
+## 49 COMMIT Unreleased 2026-10-13T08:47:12-07:00
+
+#### Coming From:
+
+Unreleased 121d334
+
+#### Purpose:
+
+Let TinyDesk be shown over a game running on a TinyNES core, as the user approved in TinyNES's desk-layer plan, by having `ae350run` hand the UART back to the desk layer once the AE350 program turns the core's link to TinyTang's frames.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_uart.c` gained `ae350_follow_link`: when the program prints `TinyNES LINK` (TinyNES core-log entry 21), `ae350run` releases the UART lock and the pipe flag so the desk task draws and reads the core's joypad report again, clears the overlay so the game is on screen, re-arms the layer with `tang_osd_desk_core_reloaded`, follows the program's text in frames of the new type `FPGA_RESP_AE350_TEXT` (0x20, in `ports/bl616/fpga_frames.h`) through `tang_fpga_wait` until `TinyNES EXIT` or a `BAD` line, and then restores the overlay as it was before, so the desktop core comes back the way it was left. Nothing else changed: F12 and the pad's LB already flip the overlay, and the D-pad and A and B already drive the pointer, from the core's `0x03` report, which the TinyNES core now sends. The firmware built with no new warnings, SHA-256 `0b24a863a37908bdd8155ee61958aff8cfba42a80d617d95a124f5d5460ea917`, `tools/tests/test_ae350_load.sh` passed its 26 checks, and the image was installed with `tools/tinytang_flash.py`; after the user's power cycle `platform` reported `121d334-dirty.d89eaad`. With TinyNES's seed-5 core and player on the card, the user double-clicked a `.nes` file, tapped HOME to bring TinyDesk over the running game and back, used the pointer, quit with HOME and `-`, and reported that all tests passed. PROT-010 now records link mode and, as a lead, that a core-ID probe during a linked game drains the receive ring and could lose the exit line. README.md describes the hand-over. The core-syntax audit of the `.ai/` change passed.
+
+#### Next Steps:
+
+None required for TinyTang; if a linked game ever leaves `ae350run` waiting after its exit, the drain in `tang_fpga_core_id` recorded in PROT-010 is the first thing to check.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/fpga_frames.h
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
