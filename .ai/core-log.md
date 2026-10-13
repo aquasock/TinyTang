@@ -1684,3 +1684,33 @@ Resume only when the user requests it. Find a desktop route with `clk` remaining
 - User Test: NOT RUN
 
 ---
+
+## 51 COMMIT Unreleased 2026-10-13T11:53:22-07:00
+
+#### Coming From:
+
+Unreleased a6db9eb
+
+#### Purpose:
+
+Record in the reference file that the card's desktop core shows the temperature-dependent HDMI glitch TinyNES records as DEV-018, and that this project's HDMI clock-network change is an unproven candidate.
+
+#### Outcome:
+
+`TOOL-017` recorded that the open-flow desktop core drives HDMI and VGA and that the packer's IOLOGIC encoding and the cell-to-HCLK-block map were that fault, never the clock network. Two facts were missing. The card's `/root/cores/console138k/desktop.bin` shows the same temperature-dependent HDMI glitch that TinyNES's DEV-018 records: the user saw the desktop image glitch while the Tang was hot and recover on cooling, which is why entry 50 changed the desktop source at all. And this project's share of that fix is an unproven candidate: `fpga/desktop/desktop.cst` at `a6db9eb` moves `pll_27` and `pll_hdmi` to PLL_R[1] and PLL_R[3], pins `div5` to RIGHTSIDE[4] and sends the TMDS clock lane through a fourth OSER10, yet no acceptable packed image was produced and the card's desktop image is unchanged. Both were folded into the record: its consequence now says the dark-HDMI fault needed no clock-network change while the later thermal fault did, names the candidate fix, and its verification carries the two revisions. No other record was affected, since this project's reference file carries no DEV-018 of its own and no other record states the desktop core's HDMI behaviour. No build, deployment or hardware test applies to this cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The desktop core's thermal fix stays an unproven candidate until a route is found that keeps its main `clk` on fabric with the pixel and serial clocks on valid HCLK resources, packs cleanly and passes setup and hold; its clock topology should be inspected before the card's `desktop.bin` is replaced, and the change then deployed for the user's hot-board test. Nothing else in the reference file needed a correction for this finding.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
