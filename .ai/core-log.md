@@ -1652,3 +1652,35 @@ None required for TinyTang; if a linked game ever leaves `ae350run` waiting afte
 - User Test: PASS
 
 ---
+
+## 50 COMMIT Unreleased 2026-10-13T11:35:16-07:00
+
+#### Coming From:
+
+Unreleased ccbf8a7
+
+#### Purpose:
+
+Apply TinyNES's temperature-sensitive HDMI routing fix to the desktop core after the user observed the same hot-board glitch in `desktop.bin` and requested an agent handoff.
+
+#### Outcome:
+
+The user reported that the existing desktop image glitched while the Tang was hot and became stable again after cooling. The source change moves `pll_27` and `pll_hdmi` to `PLL_R[1]` and `PLL_R[3]`, pins `div5` to `RIGHTSIDE[4]`, and sends the TMDS clock through a fourth OSER10 and ELVDS output like the three data lanes; `pll_nes` stays at `PLL_L[0]`. `tools/tests/test_desktop_core.sh` and `git diff --check` passed, and synthesis showed four OSER10s with the clock serializer driving the clock output. No acceptable packed image was produced: the current nextpnr fork at `7d1b131c` routed the main `clk` entirely over global resources for seeds 1 through 16, a topology recorded in TOOL-017 as dead on this board; the older router at `7ed099ec` kept that clock on fabric but its old chip database led to a packer `FCLKA` key error; a local rebuild of that router against the current Apicula chip database packed successfully on seed 15 but failed hold timing and gave the pixel clock fabric fallbacks. With that rebuilt router, the reviewed seeds 1 through 24 failed hold timing or had pixel-clock fabric fallbacks, including seed 23, which passed timing but had 14 such fallbacks; the subsequent sweep was stopped at the user's request. The card's `/root/cores/console138k/desktop.bin` was backed up as `/root/cores/console138k/desktop.bin.pre-thermal-fix` and was not replaced or loaded, so no hardware test of this source change occurred. The rebuilt router and source worktree remain at `/home/vash/tools/nextpnr-desktop-7ed` and `/home/vash/tools/nextpnr-source-7ed`; the preexisting dirty `third_party/tinydesk` submodule was left untouched. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` and settled entries were unchanged, and validated this entry's six sections, sequential number, prose, allowed status values and 100-entry limit.
+
+#### Next Steps:
+
+Resume only when the user requests it. Find a desktop route with `clk` remaining on fabric, the pixel and serial clocks on valid HCLK resources, clean setup and hold timing, and a successful pack; inspect the resulting clock topology before replacing the card image, then deploy and request the user's hot-board test. The committed source is an unproven candidate, and the card still holds the previous desktop image.
+
+#### Files Modified:
+
+- fpga/desktop/desktop.cst
+- fpga/desktop/desktop_hdmi.sv
+- fpga/desktop/hdmi/serializer.sv
+
+#### Status:
+
+- Build: FAIL
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---

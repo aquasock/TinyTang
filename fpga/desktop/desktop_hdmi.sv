@@ -108,6 +108,7 @@ end
 
 // HDMI output.
 logic[2:0] tmds;
+wire tmdsClk;
 
 hdmi #( .VIDEO_ID_CODE(VIDEOID), 
         .DVI_OUTPUT(0), 
@@ -133,7 +134,7 @@ hdmi( .clk_pixel_x5(clk_5x_pixel),
 
 // Gowin LVDS output buffer
 ELVDS_OBUF tmds_bufds [3:0] (
-    .I({clk_pixel, tmds}),
+    .I({tmdsClk, tmds}),
     .O({tmds_clk_p, tmds_d_p}),
     .OB({tmds_clk_n, tmds_d_n})
 );

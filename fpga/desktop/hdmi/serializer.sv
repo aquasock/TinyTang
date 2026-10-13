@@ -160,7 +160,24 @@ module serializer
           .FCLK( clk_pixel_x5 ),
           .RESET( reset ) );
           
-        assign tmds_clock = clk_pixel;
+        // Send the clock lane through the same output register and clocks as
+        // the three data lanes: five serial bits high, then five low.
+        wire [9:0] clock_bits = 10'b0000011111;
+        OSER10 gwSerClock(
+            .Q( tmds_clock ),
+            .D0( clock_bits[0] ),
+            .D1( clock_bits[1] ),
+            .D2( clock_bits[2] ),
+            .D3( clock_bits[3] ),
+            .D4( clock_bits[4] ),
+            .D5( clock_bits[5] ),
+            .D6( clock_bits[6] ),
+            .D7( clock_bits[7] ),
+            .D8( clock_bits[8] ),
+            .D9( clock_bits[9] ),
+            .PCLK( clk_pixel ),
+            .FCLK( clk_pixel_x5 ),
+            .RESET( reset ) );
   
     `else
         logic [9:0] tmds_reversed [NUM_CHANNELS-1:0];

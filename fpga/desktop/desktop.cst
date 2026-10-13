@@ -99,14 +99,15 @@ IO_PORT "pmod1_io[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 // the chipdb's TLPLL0CLK0 -> spine -> bridge path is wrong somewhere -- so the
 // stock router's refusal of that hop is what keeps this core working.
 //
-// pll_27 and pll_hdmi are pinned to the sites the vendor's own place-and-route
-// used; pll_nes differs from the vendor's PLL_B[1] deliberately, because that
-// site is inside a clock gap the open database does not model.  These are the
-// pins the working baseline (`build/vga-diagnostic/baseline`, 7b95d942...) was
-// built with, which until now lived only in build artefacts and not here --
-// which is why the flow could not rebuild its own working core.
+// Put the HDMI PLLs beside the right-side TMDS serializers.  With pll_hdmi at
+// PLL_L[3], its 371.25 MHz output crossed the die on general routing and the
+// desktop picture failed when the FPGA was hot.  TinyNES's PLL_R[3] route
+// shortened that path; its 27 MHz reference PLL is on the same side.
+// pll_nes stays at PLL_L[0] because its clock routing is a separate issue.
 //
 // Instance names are the flattened cell names nextpnr reports.
-INS_LOC "pll_27.PLL_inst"   PLL_L[1];
-INS_LOC "pll_hdmi.PLL_inst" PLL_L[3];
+INS_LOC "pll_27.PLL_inst"   PLL_R[1];
+INS_LOC "pll_hdmi.PLL_inst" PLL_R[3];
 INS_LOC "pll_nes.PLL_inst"  PLL_L[0];
+// The divider must use the HCLK block that serves the HDMI OSER10s.
+INS_LOC "div5" RIGHTSIDE[4];
