@@ -2333,3 +2333,32 @@ The separate graphics app that will own the OLED's 4x4 set is still to be design
 - User Test: PASS
 
 ---
+## 71 COMMIT Unreleased 2026-10-14T11:23:08-07:00
+
+#### Coming From:
+
+Unreleased 4e6bfbe
+
+#### Purpose:
+
+Record the OLED as qualified on the desktop core's card image `desktop.bin` and close the separate graphics app that entries 66, 67, 69 and 70 carried as outstanding, since the 4x4 set and its mixing tiles are reachable through `oledterm` and the shipped demos.
+
+#### Outcome:
+
+The user declared the OLED qualified on the desktop core's card image `desktop.bin`, the seed-26 build of record, which formalises what entry 67 accepted as HDMI, VGA and all three font sets; on the board the running firmware's independent OLED shell answered `oledterm status` with `OLED terminal: stopped, standard 12x8, input only in focused window` and `oledterm font` with `standard`, so the terminal and its font command are present on the image. The 4x4 Graphics set that entry 66 earmarked for a separate app needs no app: it is selected at runtime by `oledterm font graphics`, and the special tiles the demos lean on are ordinary glyphs of that font. `tools/make_oled_demo.py` uses `' '`, `'.'`, `':'`, `'+'` and `'#'` as mixers, whose 4x4 patterns cover 0, 0.0625, 0.125, 0.3125 and 0.75 of their sixteen pixels; because every cell carries both a foreground and a background colour -- the firmware packing `bg<<12 | fg<<8 | ch` into its 16-bit cell word -- a dense glyph in one colour over the other mixes the two in proportion to its lit pixels, and the five coverages taken in both orders are how the demos show more tones than the sixteen-entry palette holds. Those tiles cost one glyph and two colour codes on the wire like any other cell, so they buy depth and not speed; the demo players, which are what actually exercises the 4x4 set, were measured at about 17 frames a second through the same ANSI session. The graphics app is therefore satisfied by the command path and is closed rather than carried, and a live drawing app, which would paint cells as the user moves rather than play pre-rendered frames, is an unrequested extra and not outstanding work. Nothing was built, deployed or flashed: the core and firmware on the board are those of entries 67 and 70. The card's `/tang.ini` still declares `pmod0 = none` and `pmod1 = i2s2`, so no OLED is on the panel until it says `pmod0 = oledrgb` (entry 66); the qualification stands on the core and the firmware, not on that declaration. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The separate graphics app is no longer an open item; interactive drawing on the panel would be a new request rather than a debt. The card's `/tang.ini` must say `pmod0 = oledrgb` (and `pmod1 = none`) to light the OLED, and `pmod1 = i2s2` belongs there only when TinyNES is played. The longer-standing items are unchanged: the TinyDesk patches that keep the firmware identity `-dirty`, a read-only check of the README's `BLFlashCommand` line in the ROM bootloader, the Releasing section of `.ai/core.md` if the user wants it written, mirroring the toolchain archives under aquasock, whether `v0.1.0` stays a pre-release, and the stale heap records BL6-002, BL6-004 and BLE-014.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
