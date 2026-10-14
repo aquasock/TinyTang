@@ -1838,3 +1838,35 @@ The release steps still open are `BUILDING.md`, the chipdb decision, Tang-Build'
 - User Test: PASS
 
 ---
+
+## 56 COMMIT Unreleased 2026-10-13T18:29:00-07:00
+
+#### Coming From:
+
+Unreleased a1e6275
+
+#### Purpose:
+
+Close the release's device-database hole as far as it can be closed now, by pinning the generated database's digest so that its drift fails loudly, and write the `BUILDING.md` that ties the manifest to each artifact and its expected hashes.
+
+#### Outcome:
+
+The chipdb entry in `deps.conf` carried no pin, which is what cost the desktop core its rebuildability on 2026-10-13. It now carries a SHA-256, `446b89c0e96e`, taken from a generation by apicula `cd3893f` under Gowin EDA 1.9.11.03 and then checked by regenerating from the same commit in a clean worktree and comparing: it reproduces byte for byte, so the digest is a real pin for anyone with that Gowin version and turns a silent drift into a loud failure. `tools/fetch-deps.sh` gained a `generated` case that verifies such an entry where a builder has one, reports `ABSENT` with the generation recipe where they do not, and fails with both digests when the database is not the pinned one; both paths were exercised, the matching one against the real apicula checkout and the mismatching one against an altered copy. The manifest's own comment now states what this does and does not buy: a builder who cannot install Gowin cannot generate the file at all, and one whose Gowin differs fails the check, so a school with no vendor software on the machine still cannot build from scratch, and shipping the database is the next release's question and a licensing decision before an engineering one. `BUILDING.md` is new and is the document a builder follows: what the release root is, the four dependencies they must supply by hand, the five steps, the device database's recipe, the expected hashes for the desktop core and the TinyNES core, and a section that names what is not reproducible yet rather than implying otherwise. The BL616 firmware was built for the first time this session to fill that table: it compiles in seconds given `BL_SDK_BASE` and the Xuantie toolchain, and its identity came out as `a1e6275-dirty.240903a` because the tree held uncommitted changes, so `BUILDING.md` records that a release digest must come from a clean tree and does not yet exist rather than inventing one. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The release still wants its three toolchain gaps closed, meaning a URL and a digest each and a source for the Xuantie compiler that nobody has written down, and it should decide whether to ship the device database rather than regenerate it, once the apicula maintainers' practice is known. Tang-Build's README, its status list and `TOOL-031` were corrected and it now carries a licence (Tang-Build core-log entry 78); its `THIRD_PARTY.md` still does not mention its `patches/` directory.
+
+#### Files Modified:
+
+- BUILDING.md
+- deps.conf
+- tools/fetch-deps.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

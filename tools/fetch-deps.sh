@@ -91,8 +91,28 @@ while read -r kind name pin url dest _; do
                 failed=$((failed+1))
             fi
             ;;
-        binary|generated|vendor)
-            # A pinned binary would carry a SHA-256 in the pin field; none do yet.
+        generated)
+            # The pin is a SHA-256, and the location field names the file as
+            # <repo>:<path inside it>.  Check it where a builder has one.
+            pinned=$((pinned+1))
+            target="$root/${url%%:*}/${url#*:}"
+            if [[ ! -f $target ]]; then
+                printf 'ABSENT    %-10s %-30s %s\n' "$kind" "$name" "$target"
+                printf '          generate it: GOWINHOME=<install> PYTHONPATH=<apicula>:<pydeps> python3 -m apycula.chipdb_builder GW5AST-138C\n'
+                failed=$((failed+1)); continue
+            fi
+            have=$(sha256sum "$target" | cut -d' ' -f1)
+            if [[ $have == "$pin" ]]; then
+                printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
+                ok=$((ok+1))
+            else
+                printf 'MISMATCH  %-10s %-30s have %s want %s\n' "$kind" "$name" "${have:0:12}" "${pin:0:12}"
+                printf '          the device database is not the pinned one; a build from it is not a release\n'
+                failed=$((failed+1))
+            fi
+            ;;
+        binary|vendor)
+            # Cannot be fetched or verified: no URL and no digest recorded.
             pinned=$((pinned+1))
             printf 'unfetch.. %-10s %-30s %s\n' "$kind" "$name" "${pin:0:16}"
             failed=$((failed+1))
