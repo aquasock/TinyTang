@@ -10,21 +10,30 @@ An entry that is `UNPINNED` there is a known gap, and this document says which
 ones a builder has to close by hand.  Run `tools/fetch-deps.sh --check` first:
 it prints exactly where a tree stands, and it does not change anything.
 
+## Toolchains
+
+The three prebuilt toolchains are pinned as their release archives, each by the
+SHA-256 its publisher shows for it.  `fetch-deps.sh` downloads each one into
+`.downloads/` under the release root, refuses it if the digest differs, and
+unpacks it into a sibling directory named for the entry.  All three are Linux
+x86-64 archives.
+
+- **oss-cad-suite 20261008** -- yosys, iverilog, openFPGALoader, apycula.
+  YosysHQ's prebuilt bundle, unpacked to `oss-cad-suite/`.
+- **xPack GNU RISC-V Embedded GCC 15.2.0-1** -- builds the AE350 firmware that
+  goes inside the TinyNES core.  Unpacked to `xpack-riscv-none-elf-gcc/`.
+- **Xuantie-900 RISC-V toolchain V2.6.1** (GCC 10.2.0) -- builds the BL616
+  firmware.  Bouffalo's own archive, unpacked to `xuantie-900-gcc/`.  Bouffalo
+  used to publish this as the git repository `toolchain_gcc_t-head_linux`; on
+  2026-10-12 it replaced that history with a pointer to the release archive.
+  The archive is file-for-file the checkout every build here was made with.
+
 ## What you must supply yourself
 
-These are in the manifest but cannot be fetched or verified by it.  No checksum
-is recorded for any of them, and one of them has no recorded source at all.
-
-- **oss-cad-suite** -- yosys, iverilog, openFPGALoader.  YosysHQ's prebuilt
-  bundle.  In use: release `20261008`.
-- **xPack GNU RISC-V Embedded GCC 15.2.0-1** -- builds the AE350 firmware that
-  goes inside the TinyNES core.
-- **Xuantie-900 RISC-V toolchain V2.6.1** (GCC 10.2.0) -- builds the BL616
-  firmware.  **Where this came from is not written down anywhere.**  That is the
-  worst gap in the release and the first thing to fix.
 - **Gowin EDA 1.9.11.03** -- needed only to *generate* the device database, and
   only if you do not already have the pinned one.  It cannot be redistributed, so
-  a release can only name the version it was checked against.
+  a release can only name the version it was checked against.  It is the one
+  `UNPINNED` entry left in the manifest.
 
 ## Steps
 
@@ -37,10 +46,10 @@ git submodule update --init --recursive
 # 2. everything else, at pinned commits, verified
 tools/fetch-deps.sh              # --check first to see where you stand
 
-# 3. point the builds at the toolchains you supplied
-export BL_SDK_BASE=<apicula-sibling>/bouffalo_sdk        # or your own checkout
-export PATH=<xuantie>/bin:<xpack>/bin:$PATH
-source <oss-cad-suite>/environment
+# 3. point the builds at the sources and toolchains step 2 unpacked
+export BL_SDK_BASE=$PWD/../bouffalo_sdk                   # or your own checkout
+export PATH=$PWD/../xuantie-900-gcc/bin:$PWD/../xpack-riscv-none-elf-gcc/bin:$PATH
+source ../oss-cad-suite/environment
 
 # 4. the three artifacts
 make CHIP=bl616 BOARD=bl616dk                            # the BL616 firmware
@@ -107,17 +116,22 @@ not.
 Stated plainly, because a release that hides these is worse than one that names
 them.
 
-- **The three toolchains.**  No URL and no digest for any of them, and for the
-  Xuantie compiler not even a source.  A builder has to supply the same versions
-  by hand.
+- **The toolchain archives' hosting.**  Each is pinned by digest, so a changed
+  archive fails loudly, but none is hosted by this project.  The Xuantie archive
+  sits under Bouffalo's release tag `default`, which is not immutable -- an
+  asset under it was replaced a day after it was published -- so it may vanish
+  or change, and the git commit it replaced (`c4afe91` in
+  `bouffalolab/toolchain_gcc_t-head_linux`) is on no branch any more.  If either
+  happens, the digest still says what the right archive is, but not where to
+  get it.
 - **The device database.**  Hash-pinned, which detects drift, but it still has to
   be *generated* from a Gowin install.  A machine with no vendor software cannot
   build this from scratch, so the classroom goal is not met yet.  Shipping the
   database is the next release's question, and it is a licensing decision before
   it is an engineering one.
-- **The NES and menu cores.**  Not covered here at all: they come from nestang and
-  need Gowin EDA to build.  Only the desktop core and the TinyNES core are
-  open-flow.
+- **The NES and menu cores.**  Not covered here: they come from nestang, which
+  the manifest pins at `c2450818`, and need Gowin EDA to build.  Only the desktop
+  core and the TinyNES core are open-flow.
 
 ## Licences
 

@@ -11,17 +11,25 @@
 #                    in -- TinyTang and its dependencies as siblings)
 #   ALLOW_UNPINNED=1 report the UNPINNED entries and still exit 0
 #
-# Every `source` entry is checked out at its full commit SHA and verified, so a
-# release either reproduces exactly or fails loudly.  Entries this script cannot
-# fetch -- binaries with no recorded checksum, the generated chipdb, the vendor
-# tools -- are reported as gaps rather than skipped silently: that list is the
-# honest answer to whether the tree can build a release.
+# Every `source` entry is checked out at its full commit SHA and verified, and
+# every `binary` entry is downloaded, checked against its SHA-256 and unpacked,
+# so a release either reproduces exactly or fails loudly.  Entries this script
+# cannot fetch -- the generated chipdb, the vendor tools -- are reported as gaps
+# rather than skipped silently: that list is the honest answer to whether the
+# tree can build a release.
+#
+# A binary lands in $RELEASE_ROOT/<name> with the archive's single top-level
+# directory stripped, and a stamp file there records the digest it came from.
+# Its archive is kept in $RELEASE_ROOT/.downloads, where a copy already present
+# with the right digest is used instead of downloading again.  A destination
+# that exists without a matching stamp is reported and never overwritten.
 #
 # Submodule destinations (third_party/*) are materialised into their real paths
 # so the superproject's gitlinks are satisfied.  Everything else lands in a
 # sibling directory named for the entry and is pointed at by the build's own
-# environment variables -- BL_SDK_BASE, NEXTPNR_BUILD, APICULA_FORK, TINYNES_DIR
-# -- rather than by a path this script guesses at.  See BUILDING.md.
+# environment variables -- BL_SDK_BASE, NEXTPNR_BUILD, APICULA_FORK, TINYNES_DIR,
+# PATH for the toolchains -- rather than by a path this script guesses at.  See
+# BUILDING.md.
 
 set -uo pipefail
 
@@ -63,7 +71,8 @@ while read -r kind name pin url dest _; do
         source)
             pinned=$((pinned+1))
             target="$root/${dest:-$name}"
-            if [[ -d $target/.git ]]; then
+            # a submodule's .git is a file pointing into the superproject
+            if [[ -e $target/.git ]]; then
                 have=$(git -C "$target" rev-parse -q --verify HEAD || true)
                 if [[ $have == "$pin" ]]; then
                     printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
@@ -111,7 +120,50 @@ while read -r kind name pin url dest _; do
                 failed=$((failed+1))
             fi
             ;;
-        binary|vendor)
+        binary)
+            # The pin is the archive's SHA-256 and the location its URL.
+            pinned=$((pinned+1))
+            target="$root/${dest:-$name}"
+            stamp="$target/.fetch-deps.sha256"
+            if [[ -f $stamp && $(<"$stamp") == "$pin" ]]; then
+                printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
+                ok=$((ok+1)); continue
+            fi
+            if [[ -e $target ]]; then
+                printf 'UNVERIFIED %-9s %-30s %s exists but was not unpacked from the pinned archive; move it aside\n' "$kind" "$name" "$target"
+                failed=$((failed+1)); continue
+            fi
+            (( check )) && { printf 'MISSING   %-10s %-30s %s\n' "$kind" "$name" "$target"; failed=$((failed+1)); continue; }
+            archive="$root/.downloads/${url##*/}"
+            mkdir -p "$root/.downloads"
+            if [[ ! -f $archive ]] || [[ $(sha256sum "$archive" | cut -d' ' -f1) != "$pin" ]]; then
+                curl -fsSL -o "$archive.part" "$url" && mv "$archive.part" "$archive" \
+                    || { rm -f "$archive.part"; printf 'FETCHFAIL %-10s %-30s %s\n' "$kind" "$name" "$url"; failed=$((failed+1)); continue; }
+            fi
+            have=$(sha256sum "$archive" | cut -d' ' -f1)
+            if [[ $have != "$pin" ]]; then
+                printf 'MISMATCH  %-10s %-30s have %s want %s\n' "$kind" "$name" "${have:0:12}" "${pin:0:12}"
+                printf '          %s is not the pinned archive; nothing was unpacked\n' "$archive"
+                failed=$((failed+1)); continue
+            fi
+            unpack="$target.unpack.$$"
+            rm -rf "$unpack"; mkdir -p "$unpack"
+            if ! tar -xf "$archive" -C "$unpack"; then
+                rm -rf "$unpack"
+                printf 'FAILED    %-10s %-30s could not unpack %s\n' "$kind" "$name" "$archive"
+                failed=$((failed+1)); continue
+            fi
+            tops=("$unpack"/*)
+            if (( ${#tops[@]} == 1 )) && [[ -d ${tops[0]} ]]; then
+                mv "${tops[0]}" "$target"; rmdir "$unpack"
+            else
+                mv "$unpack" "$target"
+            fi
+            printf '%s\n' "$pin" > "$stamp"
+            printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
+            ok=$((ok+1)); fetched=$((fetched+1))
+            ;;
+        vendor)
             # Cannot be fetched or verified: no URL and no digest recorded.
             pinned=$((pinned+1))
             printf 'unfetch.. %-10s %-30s %s\n' "$kind" "$name" "${pin:0:16}"

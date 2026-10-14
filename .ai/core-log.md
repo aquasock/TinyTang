@@ -1935,3 +1935,37 @@ The release still owes its card-side work, which is the user's: strip the sixtee
 - User Test: N/A
 
 ---
+
+## 59 COMMIT Unreleased 2026-10-14T00:50:55-07:00
+
+#### Coming From:
+
+Unreleased 26e2b97
+
+#### Purpose:
+
+Pin the release's prebuilt toolchains and nestang in `deps.conf` so that `tools/fetch-deps.sh` can fetch and verify them, and drop the stale `nestang-menu.bin` rollback note from `scripts/boot.tdsh`, as the user approved.
+
+#### Outcome:
+
+`deps.conf` now pins oss-cad-suite 20261008, xPack riscv-none-elf-gcc 15.2.0-1 and the Xuantie-900 V2.6.1 compiler as their release archives, each by the SHA-256 its publisher shows (`8fa59d93d6ca`, `aaaa8060c914` and `83817bd7cab6`), and nestang at `c2450818e1f0c858e13c5dd16746ee5221a5c760`, which entry 54 had called unrecorded although `third_party/patches/README.md` and tangcore's gitlink both name it and it is on nestang's `master`. The Xuantie compiler's source, which entry 54 called the worst gap, was found to be a git checkout of `bouffalolab/toolchain_gcc_t-head_linux` at `c4afe91`. On 2026-10-12 Bouffalo replaced that repository's history with a single README pointing at the `default` release of `bouffalolab/toolchain`, so `c4afe91` is on no branch, though GitHub still served it by SHA when tested. The release tag is mutable, since one of its assets was replaced a day after publication, which is why the archive is pinned by digest rather than by tag. All three archives were downloaded and matched their published digests, and each was unpacked and compared with `diff -r` against the tree every build has used: the Xuantie and xPack trees are identical file for file and oss-cad-suite differs only in 373 Python bytecode caches. `tools/fetch-deps.sh` gained a `binary` case that downloads an archive into `.downloads/` under the release root, reusing a copy that already has the right digest, refuses a mismatch without unpacking, unpacks into a sibling named for the entry with its single top-level directory stripped, and stamps the digest there. It reports a destination it did not unpack as `UNVERIFIED` and never overwrites one. The script's source check also tested `-d .git`, which a submodule's `.git` file fails, so the two submodules had always read `MISSING`; it now tests `-e`. In a scratch release root the check, fetch, stamped rerun, foreign-directory and wrong-digest paths all behaved as intended, the Xuantie archive was fetched over the network, and the unpacked compilers report their versions. Against the real release root the manifest's unpinned gaps fell from five to one, Gowin EDA, which cannot be redistributed, and both submodules now verify. `BUILDING.md` describes the archives in place of "supply these yourself", points step 3 at the unpacked siblings and states that the archives are not hosted by this project. `scripts/boot.tdsh`'s header comment and `fpga/desktop/README.md` no longer keep `nestang-menu.bin` for a rollback the release does not ship, and the comment names `tools/build_desktop_core_open.sh` in place of the Gowin script; behaviour is unchanged and the card's copy was not touched. TOOL-003 in `.ai/core-reference.md` was revised in place with each toolchain's origin and digest, the fork pins `7d1b131c` and `cd3893f` that replaced the record's stale `7ed099ec` and `93761f4`, and nestang's pin. Checking it showed that `tools/build_desktop_core_open.sh` still defaults to seed 2 and its comment still places `pll_nes` at `PLL_L[0]`, while the card's core and `BUILDING.md`'s expected hashes are the seed-1 build with `pll_nes` at `PLL_R[0]`. That is recorded and not fixed. Nothing was built or deployed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Make the desktop core's default build the build of record: `tools/build_desktop_core_open.sh` and `tools/desktop_open/build.sh` should default to seed 1 and describe `pll_nes` at `PLL_R[0]`, or `BUILDING.md` should pass `NEXTPNR_SEED=1`, because a builder following it today gets a seed-2 core whose hashes match nothing recorded. Whether to mirror the three toolchain archives under aquasock, which would leave the release with no third-party hosting to lose, is the user's call. TinyNES's working copy is at `c28b0cc` while `deps.conf` pins `fa557f4`, so its pin needs a decision before tagging. The card-side release work, the release notes and the `v0.1.0` `VERSION` entry from entry 58 still stand, and the TinyDesk patches still keep the firmware identity `-dirty`.
+
+#### Files Modified:
+
+- BUILDING.md
+- deps.conf
+- fpga/desktop/README.md
+- scripts/boot.tdsh
+- tools/fetch-deps.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
