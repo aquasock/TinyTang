@@ -85,7 +85,10 @@ not.
     are met, and the clock topology matches
     `tools/desktop_open/clock_profile.json`, which is recorded from this core.
     A build that needs `ALLOW_UNVERIFIED_CLOCK=1` is not this one.  The
-    suspect-hop check (step 2d) reports no `clk` pip through `SPINE17`.
+    suspect-hop check (step 2d) reports no `clk` pip through `SPINE17`, and
+    now refuses a placement that routes one there, because both timing-clean
+    cores on record with such a route loaded with `clk` dead (core-log entry
+    70); `ALLOW_SPINE17_CLOCK=1` overrides that refusal.
   - The seed is not a property of the design.  Any change to the core's
     netlist re-rolls the placement, and a timing-clean placement can still
     load with a dead main clock, so a changed core needs a seed sweep and a

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Warn when a clock's route uses a hop suspected of not existing in silicon.
+"""Refuse a clock route that uses a hop suspected of not existing in silicon.
 
     tools/desktop_open/clock_route_hops.py <pnr.json>
 
@@ -20,12 +20,14 @@ The one suspect so far is SPINE17 on `clk`.  Desktop ABI 1.2's seed 6 met
 setup and hold and loaded with HDMI synced and black and the UART silent; its
 `clk` route differed from the two working cores' only in SPINE17 <-
 CBRIDGEOUT_TOP2 at X94Y81 and six GT00 <- SPINE17 taps (core-log entry 67).
-That is one dead core against two working ones, a lead and not a finding, so
-this check warns and never stops the build.  A route it flags should be taken
-to the board knowing it is the shape of the one dead core on record.
+Seed 16, chosen for that same hop, was tested on the board on 2026-10-14 and
+failed the same way -- HDMI synced at 720p and black with the UART silent --
+while seed 26 answered (core-log entry 70).  Two dead cores, both of them
+through SPINE17, against two working ones that avoid it, so a route through
+SPINE17 is refused rather than reported.
 
-Exit status is 0 whether or not a suspect hop is found; 2 means the file
-could not be read.
+Exit status is 0 when no suspect hop is found, 1 when one is (the build gate),
+and 2 when the file could not be read.
 """
 import json
 import sys
@@ -60,13 +62,14 @@ def main(argv):
             continue
         found += len(hits)
         print(f'  WARNING {net}: {len(hits)} of {len(pips)} pips go through '
-              f'{", ".join(wires)}, the hop of the one dead core on record:')
+              f'{", ".join(wires)}, the hop of the timing-clean cores that loaded dead:')
         for p in hits:
             print(f'    {p}')
     if found:
-        print('  This placement is the shape of desktop ABI 1.2 seed 6, which met timing and')
-        print('  loaded with clk dead (core-log entry 67, TOOL-017).  It is a lead, not a rule:')
-        print('  packing anyway; check that the core answers `fpga` before trusting it.')
+        print('  This placement routes a watched clock through a suspect hop.  Cores of this')
+        print('  shape met timing and loaded with that clock dead: desktop ABI 1.2 seeds 6')
+        print('  and 16, whose clk took SPINE17 (core-log entries 67 and 70, TOOL-017).')
+        return 1
     return 0
 
 

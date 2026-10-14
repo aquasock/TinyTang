@@ -2301,3 +2301,35 @@ None.
 - User Test: N/A
 
 ---
+## 70 COMMIT Unreleased 2026-10-14T11:14:33-07:00
+
+#### Coming From:
+
+Unreleased 51d2237
+
+#### Purpose:
+
+Hardware-test desktop core seed 16, the timing-clean placement whose `clk` routes through `SPINE17`, and turn the step-2d suspect-hop check into a refusal now that a second such core has loaded dead, as entry 68 recorded.
+
+#### Outcome:
+
+The desktop core was rebuilt at seed 16 with `tools/build_desktop_core_open.sh`, the placement entry 68 predicted routes `clk` through `SPINE17`, and packed as `desktop.ed93285f0e65.bin` (`.fs` `4b4eafb7a455`, 4,428,780 bytes) in `build/desktop-s16/`; no override was needed, because the clock profile re-recorded from seed 26 in entry 67 no longer flags the 7 pixel-clock fabric sinks this netlist places, and packing entry 67's own sweep `pnr.json` reproduced that `.fs` bit for bit, so the artefact is provably that placement. Step 2d named it: 3 of 989 `clk` pips through `SPINE17`, the `X94Y81/SPINE17/CBRIDGEOUT_TOP2` hop and two `GT00` taps. The image went to the card as `/root/cores/console138k/desktop-s16.bin` with `tools/tinytang_put.py` and was loaded with `tangload` while the card's `desktop.bin` (seed 26) was left in place; each load reported `core loaded` and then the core answered nothing -- `fpga` returned no answer on UART1 and `fmon` no reply -- and the user reported the screen synced and black, then had three consecutive loads run so the monitor's readout could be watched, each showing the same 45.0 kHz and 74.3 MHz, five loads in all. Reloading `desktop.bin` brought seed 26 back, answering `core 84` with `fmon` measuring `pix` 74,249,993 Hz and `clk` 21,503,091 Hz. The monitor reads 74.3 for both cores because the pixel clock is a build-enforced constant -- `pll_hdmi` at MDIV 55/ODIV0 4 off 27 MHz into `div5` DIV_MODE 5, which `tools/desktop-clock-constraints.py` refuses to change -- so the 74.4 first reported for the good core was a misread and the pixel clock is not the difference; the dead core still drives a valid, locked 720p raster, since the timing generator runs on `clk_pixel` and not on `clk`, and only its `clk` domain is dead, which is what a `SPINE17` route on `clk` alone would produce. That is the second timing-clean `SPINE17` core to load dead against two working cores that avoid the hop, the bar entry 68 set, so `tools/desktop_open/clock_route_hops.py` now exits 1 when it finds a suspect hop, and step 2d of `tools/desktop_open/build.sh` refuses to pack unless `ALLOW_SPINE17_CLOCK` is set, mirroring 2c's override and its experimental-bitstream wording; the README's build-step list, `BUILDING.md`'s gate note and TOOL-017 were revised from warning to refusal. Both were verified: a default build with nothing overridden ran the new step 2d clean and reproduced the build of record, `16c6c5998c9a` and `be6f111c0b53`, bit for bit, and a seed-16 build stopped at step 2d with the refusal. The board was left on the card's `desktop.bin` (seed 26) with `osd desk on` and answering, and the seed-16 test image was removed from the card, restoring it to what it held before. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The separate graphics app that will own the OLED's 4x4 set is still to be designed. The card's `/tang.ini` still declares `pmod1 = i2s2`, which the desktop core refuses and which must be `none` for the OLED or `i2s2` only when TinyNES is played. Whether a decoded Gowin probe of the `SPINE17` bridge should turn the lead into a hardware fact, and with it whether the refusal stays overridable, is open. Carried from earlier cycles: the TinyDesk patches that keep the firmware identity `-dirty`, a read-only check of the README's `BLFlashCommand` line in the ROM bootloader, the Releasing section of `.ai/core.md` if the user wants it written, mirroring the toolchain archives under aquasock, whether `v0.1.0` stays a pre-release, and the stale heap records BL6-002, BL6-004 and BLE-014.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_route_hops.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

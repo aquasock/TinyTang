@@ -175,15 +175,43 @@ fi
 # 2d. suspect clock hops.
 #
 # The checks above trust the device database's model of every connection.
-# This one reads the route itself and warns when `clk` goes through SPINE17,
-# the only difference between the one timing-clean core on record that loaded
-# with `clk` dead and the working cores (core-log entry 67, TOOL-017).  It is a
-# lead, so it warns and never stops the build; the report is kept beside the
-# topology one.
+# This one reads the route itself and refuses a build whose `clk` goes through
+# SPINE17, the hop shared by both timing-clean cores on record that loaded with
+# `clk` dead -- desktop ABI 1.2 seeds 6 and 16 -- against the working cores,
+# which avoid it (core-log entries 67 and 70, TOOL-017).  The report is kept
+# beside the topology one.
+#
+# The override exists for the same reason 2c's does: a router or chipdb fix
+# could make this hop real, and an experimental bitstream still has to be built
+# to be tested.  A build made with it is not a core.
 log "=== 2d. suspect clock hops ==="
 hops=$tree/.open-pnr/clock-hops.txt
-"$PY" "$here/clock_route_hops.py" "$tree/.open-pnr/pnr.json" > "$hops" 2>&1 || true
+# Wrapped in `if`, as 2c is, so `set -e` cannot abort before the exit code is
+# read -- the override below would otherwise be unreachable.
+if "$PY" "$here/clock_route_hops.py" "$tree/.open-pnr/pnr.json" > "$hops" 2>&1; then
+    rc_hops=0
+else
+    rc_hops=$?
+fi
 sed 's/^/   /' "$hops"
+# The checker returns 2 when it cannot read the file and 1 when it finds a hop.
+if (( rc_hops == 2 )); then
+    log ''
+    log "REFUSING TO PACK: the clock-hop check could not read $tree/.open-pnr/pnr.json"
+    exit 1
+fi
+if (( rc_hops != 0 )); then
+    log ''
+    if [[ -z ${ALLOW_SPINE17_CLOCK:-} ]]; then
+        log 'REFUSING TO PACK: this placement routes `clk` through SPINE17, the hop'
+        log 'shared by both timing-clean cores that loaded with `clk` dead (seeds 6'
+        log 'and 16, core-log entries 67 and 70).  Set ALLOW_SPINE17_CLOCK=1 to'
+        log 'pack anyway; the result is an experimental bitstream, not a core.'
+        exit 1
+    fi
+    log 'ALLOW_SPINE17_CLOCK is set: packing a SPINE17-routed build.'
+    log 'Label it experimental.  It is not a good core until the board says so.'
+fi
 
 # ----------------------------------------------------------------- 3. packing
 # No *_as_gpio options: see the note at the top of this script.
