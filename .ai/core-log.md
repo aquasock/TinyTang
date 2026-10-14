@@ -2238,3 +2238,36 @@ Whether the topology gate should refuse a `clk` route through `SPINE17` is the u
 - User Test: PASS
 
 ---
+
+## 68 COMMIT Unreleased 2026-10-14T04:08:48-07:00
+
+#### Coming From:
+
+v0.1.0 88321c8
+
+#### Purpose:
+
+Add a build check, at the user's direction, that warns when the desktop core's `clk` is routed through `SPINE17`, the hop entry 67 found only in the core that loaded dead, and replace the card's `desktop.fs.gz` with seed 26's.
+
+#### Outcome:
+
+The new `tools/desktop_open/clock_route_hops.py` reads each watched net's route from nextpnr's `pnr.json`, the `ROUTING` attribute's wire, pip and strength triples, and lists every pip on `clk` that touches `SPINE17`; `tools/desktop_open/build.sh` runs it as step 2d, after the clock-topology check and before packing, keeps its report beside the topology report, and never stops the build on it, because the rule rests on one dead core against two working ones; the user was told it warns rather than refuses and that a refusal is a one-line change once a second `SPINE17` seed has been tested. Run on entry 67's builds it warns for the dead seed 6 and for seed 16, and reports no such pip for seeds 26 and 10, and a default build from a cleared directory ran it, reported `clk: 1090 pips, none through SPINE17`, passed both gates and again produced `16c6c5998c9a` and `be6f111c0b53`, so the check reads the route without changing the core. The README's list of build steps, `BUILDING.md`'s expected-artifact note and TOOL-017 name the warning. The card, mounted on the PC as `/run/media/vash/TINYTANG`, was checked by hash to hold seed 26 as `desktop.bin` and the v0.1.0 core as `desktop.bin.v0.1.0`, and its `desktop.fs.gz`, still v0.1.0's, was replaced with seed 26's `.fs` compressed by `gzip -9 -n`, 384,226 bytes, which decompresses to `be6f111c0b53`. The 37 sweep builds under `build/desktop-sweep/` are kept at the user's direction. Nothing was deployed to the board. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Hardware-test seed 16, which is timing clean and routes `clk` through `SPINE17`, when board time allows: if it loads dead the warning should become a refusal, and if it runs the lead is wrong or incomplete and the check should be reconsidered. The separate graphics app for the 4x4 set is still to be designed.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_route_hops.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

@@ -171,6 +171,20 @@ if (( rc_topo != 0 )); then
     log "Label it experimental.  It is not a good core until the board says so."
 fi
 
+# --------------------------------------------------------------------------
+# 2d. suspect clock hops.
+#
+# The checks above trust the device database's model of every connection.
+# This one reads the route itself and warns when `clk` goes through SPINE17,
+# the only difference between the one timing-clean core on record that loaded
+# with `clk` dead and the working cores (core-log entry 67, TOOL-017).  It is a
+# lead, so it warns and never stops the build; the report is kept beside the
+# topology one.
+log "=== 2d. suspect clock hops ==="
+hops=$tree/.open-pnr/clock-hops.txt
+"$PY" "$here/clock_route_hops.py" "$tree/.open-pnr/pnr.json" > "$hops" 2>&1 || true
+sed 's/^/   /' "$hops"
+
 # ----------------------------------------------------------------- 3. packing
 # No *_as_gpio options: see the note at the top of this script.
 #

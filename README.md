@@ -380,7 +380,9 @@ the top, the UART link and the HDMI compositor began as nestang's, with the
 NES machine, loader, controllers, frame buffer and scaler removed, and no
 nestang checkout or patch is involved. The script stages them with
 `tools/build_desktop_core.sh --prepare-only` and runs `tools/desktop_open/`: yosys, the nextpnr-himbaechel fork, a setup/hold gate, a
-clock-topology gate against the recorded profile, and the apicula fork's
+clock-topology gate against the recorded profile, a warning when `clk` is
+routed through a hop suspected of not existing in silicon
+(`tools/desktop_open/clock_route_hops.py`), and the apicula fork's
 `gowin_pack`. It needs the apicula fork (`aquasock/apicula`, branch
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
