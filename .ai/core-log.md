@@ -2154,3 +2154,34 @@ None.
 - User Test: N/A
 
 ---
+
+## 66 COMMIT Unreleased 2026-10-14T02:31:45-07:00
+
+#### Coming From:
+
+v0.1.0 8ce6641
+
+#### Purpose:
+
+Record the user's hardware qualification of the PmodOLEDrgb on the desktop core, and document the desktop core's socket rule that left the panel dark at first.
+
+#### Outcome:
+
+The user booted the board on the released firmware `dba104c-dirty.17f81b2`, declared an OLED in `/tang.ini` and opened the desktop's OLED Terminal app, and the panel stayed dark. Reading the code located the cause without a board command: `ports/bl616/phosphor/pmod_sockets.cpp` sends the desktop core (ID `0x54`) the `tang.ini` word unfiltered, and `fpga/desktop/desktop_regs.sv`'s `supported_word` accepts only none or OLEDrgb in each socket, or the VGA pair, refusing any other word whole with status 6 and leaving the sockets released, so a declaration that still named the release card's `pmod1 = i2s2`, or the repository example's encoder, lights nothing on that core; the firmware prints `tang.ini: the core did not take the socket declaration` when that happens. The earlier file was not read back, so that is the consistent explanation rather than an observed one. With `pmod0 = oledrgb`, `pmod0_flip = no` and `pmod1 = none`, the declaration word `0x0010`, the user reported the OLED Terminal working perfectly on the panel, OLED seated normally on PMOD0, which qualifies the OLED on the desktop core; no script is needed, since the app sends the cells itself once the core holds an OLED declaration. PMOD-006 in `.ai/core-reference.md` was revised in place: it now names core `0x54` alongside `0x50`, the desktop core's accepted words and whole-word refusal, and the qualified `0x0010` layout, and its index line says the same. The README's `/tang.ini` paragraph now names the desktop core and its rule, and `docs/tang.ini` explains that its encoder line must be none for the desktop core to light the OLED, that Phosphor takes all six modules and that TinyNES wants the I2S2 on PMOD1; `tools/tests/test_ini.sh` still parses that file to `0x2410` and passes. The tagged release notes' line calling the OLED unqualified and the card's `tang.ini` label were left as released. Nothing was built or deployed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The next build cycle gives the OLED three font sets the user chose, 8x8 Standard as the OLED Terminal's default, 8x6 Compact and the existing 4x4 Graphics, which a separate app will keep using; it touches the desktop core's OLED renderer and register ABI and the OLED Terminal app, and its plan is to be agreed before work begins. Put `pmod1 = i2s2` back before TinyNES is next played.
+
+#### Files Modified:
+
+- README.md
+- docs/tang.ini
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

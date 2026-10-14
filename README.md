@@ -181,8 +181,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   window leaves the track playing and reopening it picks the track back up.
   Without the Phosphor core loaded it says so and its buttons are disabled.
 - **`/tang.ini` declares the PMOD sockets.** PMOD modules cannot be detected,
-  so a core with the sockets (the Phosphor core, at register ABI 1.8 or later)
-  drives only what the file says is seated. `tangload` sends it after every
+  so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
+  and the desktop core) drives only what the file says is seated.  The desktop
+  core takes only `none` or `oledrgb` in each socket, or the PmodVGA pair; any
+  other module in either socket makes it refuse the whole declaration, leaving
+  both sockets released, and `tangload` then prints `the core did not take the
+  socket declaration`. `tangload` sends it after every
   core load, whichever way the core arrives, and leaves cores without sockets
   alone. Under `[tang]`, `pmod0` and `pmod1` take `none`, `oledrgb`,
   `encoder`, `i2s2`, `vga_j1` or `vga_j2`, and `pmod0_flip`/`pmod1_flip` take
