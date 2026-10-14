@@ -2003,3 +2003,33 @@ The release still needs a decision on TinyNES's pin, since its working copy is a
 - User Test: N/A
 
 ---
+
+## 61 COMMIT Unreleased 2026-10-14T01:10:57-07:00
+
+#### Coming From:
+
+Unreleased faef39b
+
+#### Purpose:
+
+Bring the release card's `README.md` in line with the card the user declared ready, at `/run/media/vash/TINYTANG`, including the AE350 player paragraph that entries 57 and 58 parked.
+
+#### Outcome:
+
+The card's contents were inventoried and hashed before the README was rewritten, and they had moved on from the README in several places. The firmware is the release build, `238cee62`, identity `dba104c-dirty.17f81b2`, where the README still named `a1e6275-dirty.240903a`. `root/ae350/resident.tpi` is 865,816 bytes with CRC-32 `c7a89035`, the `bench_stream=2` player TinyNES entry 29 qualified at 441,000 samples and zero underruns, while the README called the 863,764-byte `ef1502ed` player qualified and the card's own player the one that hangs; the paragraph now says which player plays under this firmware and why `ef1502ed`, a `bench_stream=1` build, stalls. The card gained `desktop.fs.gz` and `tinynes.fs.gz`, which decompress to `7453ad6c9400` and `6b0c433a5c7e`, the `.fs` pairs `BUILDING.md` records; two free cartridges in `root/data/nes/`, `AccuracyCoin.nes`, byte-identical to upstream `100thCoin/AccuracyCoin` `main`, whose ROM last changed in `2ea9156`, and MIT, and `nova.nes`, byte-identical to Nova the Squirrel's v1.0.6a release and GPL-3.0; a `music/` folder of generated test signals, the `tools/make_codec_corpus.sh` corpus, confirmed by `ffprobe` as 10-second stereo files in twelve formats, and Tang-Phosphor's `make_scope_fixtures.py` patterns; and `Desktop/` and `Documents/` sample content. The README's layout block, which had a broken code fence and a stale second tree, now lists every file; the PMOD section states the arrangement TinyNES entry 29 settled, the I2S2 on PMOD1 as the shipped `tang.ini` declares, with the Wii Classic Controllers on PMOD0 from fixed pins; the cartridge and music exclusions now except the free files; the licences name both cartridges, with AccuracyCoin's MIT notice reproduced in full and Nova's source tag; and the hash block was regenerated for all 36 files other than the README, which `sha256sum -c` run from the card root verifies, every one. Three card scripts differ from the repositories only in comments: `phosphor.tdsh` and `open/nes.tdsh` name `test.mp3` and `nova.nes` in their examples where the repositories name a personal song and a commercial cartridge, and the card's `boot.tdsh` is the copy from before entry 59's comment fix. The card also holds 663 MB in `.Trash-1000`, a hundred deleted files that are the user's personal music and a `bl616-firmware_BACKUP.bin`; it is not in the README or its hash block and was not touched. The previous README was kept outside the card for comparison. Nothing was built, deployed or tested on the board. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Empty `.Trash-1000` on the card before it is zipped, since an archive of the card would otherwise carry 663 MB of personal music. Decide whether the card's comment-only script edits go back into the repositories, so that `scripts/phosphor.tdsh` and TinyNES's `scripts/open/nes.tdsh` stop naming a personal song and a commercial cartridge, and whether the card takes the repository's corrected `boot.tdsh`, which would need the README's hash line for it refreshed. TinyNES's pin, the release notes and the `v0.1.0` `VERSION` entry remain.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
