@@ -24,7 +24,7 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 core="${CORE:-$root/../tangcore/nestang/impl/pnr/nestang_console138k_ds2.bin}"
 port="${PORT:-/dev/ttyACM0}"
-rom="${1:-/root/data/nes/castlevania.nes}"
+rom="${1:-/root/media/nes/castlevania.nes}"
 remote="${REMOTE:-/root/cores/console138k/nestang-desk.bin}"
 
 if [[ ! -f "$core" ]]; then

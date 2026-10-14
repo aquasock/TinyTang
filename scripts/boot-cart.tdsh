@@ -11,7 +11,7 @@
 # variable in the session first -- `tdsh run` passes no arguments to a script,
 # but the script inherits the session's variables:
 #
-#     ROM=/root/data/nes/other.nes; tdsh run /root/scripts/boot-cart.tdsh
+#     ROM=/root/media/nes/other.nes; tdsh run /root/scripts/boot-cart.tdsh
 #
 # The core default is the patched image rather than the stock one, because on
 # this board the patched image is the NES core: it carries the keyboard link
@@ -27,7 +27,7 @@ if "$CORE" == ""
     CORE=/root/cores/console138k/nestang-desk.bin
 endif
 if "$ROM" == ""
-    ROM=/root/data/nes/castlevania.nes
+    ROM=/root/media/nes/castlevania.nes
 endif
 
 # The desk layer stays up across the load, so that F12 -- the key reserved

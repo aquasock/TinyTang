@@ -107,8 +107,10 @@ int tdsh_printf(const char *fmt, ...);
 #define FPGA_ROM_CHUNK     1024u
 
 /* Single-producer (ISR) / single-consumer (shell task) ring.  head is written
- * only by the ISR and tail only by the reader, so no lock is needed. */
-#define FPGA_RX_RING_SIZE  2048u
+ * only by the ISR and tail only by the reader, so no lock is needed.  It is
+ * sized for a burst: the AE350's save comes back as a run of 65-byte text
+ * frames and the decoder drains the ring a frame at a time. */
+#define FPGA_RX_RING_SIZE  4096u
 
 static struct bflb_device_s *s_uart;
 static bool                 s_uart_ready;
@@ -118,6 +120,9 @@ static SemaphoreHandle_t    s_tx_lock;
 static uint8_t           s_rx_ring[FPGA_RX_RING_SIZE];
 static volatile uint32_t s_rx_head;
 static volatile uint32_t s_rx_tail;
+/* Bytes the ring had no room for.  Kept because a save that comes back short
+ * has to say which buffer lost them: this one, or the frame queue. */
+static volatile uint32_t s_rx_drops;
 
 static uint8_t s_rom_chunk[FPGA_ROM_CHUNK];
 
@@ -140,6 +145,8 @@ static void fpga_uart_rx_isr(int irq, void *arg)
             if (next != s_rx_tail) {          /* drop only if the ring is full */
                 s_rx_ring[s_rx_head] = ch;
                 s_rx_head = next;
+            } else {
+                s_rx_drops++;
             }
         }
         if (status & UART_INTSTS_RTO) {
@@ -173,7 +180,11 @@ static void rx_decode(void)
 {
     taskENTER_CRITICAL();
     uint8_t byte;
-    while (!s_pipe && rx_pop(&byte)) {
+    /* Stop at a full queue instead of overfilling it: the bytes stay in the
+     * ring until a waiter takes a frame, so a burst delays frames rather than
+     * losing the oldest of them.  A frame left half-decoded across the stop is
+     * resumed exactly where it was, because that state lives in fpga_frames. */
+    while (!s_pipe && fpga_frames_space() && rx_pop(&byte)) {
         fpga_frames_push(byte);
     }
     taskEXIT_CRITICAL();
@@ -792,12 +803,20 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
  * 8 KiB block. */
 #define AE350_LINE_MAX 160
 #define AE350_SILENT_S 300
+/* A battery save rides the link as hex text: in link mode the FPGA frames the
+ * AE350's bytes as TinyTang's text frames, and that receiver drops CR and ends
+ * a line on LF, so raw binary would not survive.  8 KiB is an NES battery RAM,
+ * and a larger one is refused rather than truncated. */
+#define AE350_SAVE_MAX 8192
+#define AE350_SAVE_DIR "/sd/root/saves/nes"
 
 typedef struct {
     FIL *elf_file;
     const ae350_elf_t *elf;
     FIL *data_file;
     uint32_t data_length;
+    FIL *save_file;                     /* the cartridge's .sav, while sent */
+    uint32_t save_length;
     char line[AE350_LINE_MAX];
     size_t line_len;
     bool line_ready;
@@ -871,14 +890,14 @@ static int ae350_program_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_
     return ae350_elf_image(run->elf, ae350_file_read, run->elf_file, offset, dst, length);
 }
 
-/* "TNR1", the length, then the file. */
-static int ae350_payload_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+/* "TNR1", the length, then the file's bytes from offset. */
+static int ae350_tnr1_bytes(FIL *file, uint32_t file_length, uint32_t offset,
+                            uint8_t *dst, uint32_t length)
 {
-    ae350_run_t *run = ctx;
     uint8_t header[AE350_FILE_HEADER] = {
         'T', 'N', 'R', '1',
-        (uint8_t)run->data_length, (uint8_t)(run->data_length >> 8),
-        (uint8_t)(run->data_length >> 16), (uint8_t)(run->data_length >> 24),
+        (uint8_t)file_length, (uint8_t)(file_length >> 8),
+        (uint8_t)(file_length >> 16), (uint8_t)(file_length >> 24),
     };
     while (length != 0 && offset < AE350_FILE_HEADER) {
         *dst++ = header[offset++];
@@ -887,7 +906,25 @@ static int ae350_payload_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_
     if (length == 0) {
         return 0;
     }
-    return ae350_file_read(run->data_file, offset - AE350_FILE_HEADER, dst, length);
+    return ae350_file_read(file, offset - AE350_FILE_HEADER, dst, length);
+}
+
+/* The file the program asked for, "TNR1" and its length first. */
+static int ae350_payload_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    return ae350_tnr1_bytes(run->data_file, run->data_length, offset, dst, length);
+}
+
+/* The cartridge's battery save, sent as the file itself and not with the
+ * "TNR1" header the cartridge payload carries: the AE350 receives this one
+ * straight into the core's save buffer, so a header would land inside the save
+ * and shift every byte by eight.  That is what a save arrived as on
+ * 2026-10-14 -- the first eight bytes of the buffer read "TNR1" and 8192. */
+static int ae350_save_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    return ae350_file_read(run->save_file, offset, dst, length);
 }
 
 /* The next whole line from the board, or false after timeout_ms. */
@@ -940,6 +977,193 @@ static bool ae350_line_ends(const ae350_run_t *run, int *code)
     return false;
 }
 
+/* ------------------------------------------------------------ the save --
+ *
+ * Battery saves are named after the cartridge: its basename under
+ * AE350_SAVE_DIR, with the extension replaced by ".sav". */
+static char s_ae350_save_path[TDSH_MAX_REAL_PATH];
+
+static bool ae350_save_path(const char *cart_real, char *out, size_t size)
+{
+    const char *base = strrchr(cart_real, '/');
+    const char *dot;
+    size_t stem;
+    int n;
+
+    out[0] = '\0';                      /* a caller that finds "" has no save */
+    base = base ? base + 1 : cart_real;
+    dot = strrchr(base, '.');
+    stem = dot && dot != base ? (size_t)(dot - base) : strlen(base);
+    if (stem == 0) {
+        return false;
+    }
+    n = snprintf(out, size, AE350_SAVE_DIR "/%.*s.sav", (int)stem, base);
+    return n > 0 && (size_t)n < size;
+}
+
+/* The save coming back: hex lines between "TinyNES NVRAM SAVE", which
+ * carries its length and CRC-32, and "TinyNES NVRAM DONE".  The AE350 prints
+ * 32 bytes a line.  Kept in statics: 8 KiB does not belong on a shell task's
+ * stack. */
+static char s_ae350_save_line[AE350_LINE_MAX];
+static size_t s_ae350_save_line_len;
+static uint32_t s_ae350_save_expect, s_ae350_save_crc, s_ae350_save_got;
+static uint32_t s_ae350_save_running;    /* CRC-32 of what has been written */
+static bool s_ae350_save_active, s_ae350_save_failed, s_ae350_save_open;
+static FIL s_ae350_save_file;
+
+static int ae350_hex_digit(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    return -1;
+}
+
+/* Append to the save file, counting and checksumming as it goes.  The CRC is
+ * the incremental use of ae350_crc32: feeding it its own result composes, so
+ * a save can be checked without ever holding all of it. */
+static int ae350_save_write(const uint8_t *bytes, unsigned n)
+{
+    UINT wrote = 0;
+
+    if (f_write(&s_ae350_save_file, bytes, n, &wrote) != FR_OK || wrote != n) {
+        s_ae350_save_failed = true;
+        return -1;
+    }
+    s_ae350_save_running = ae350_crc32(s_ae350_save_running, bytes, n);
+    s_ae350_save_got += n;
+    return 0;
+}
+
+/* One line of hex, written out as it arrives.  A save is 8 KiB and that much
+ * contiguous heap is not there while the desktop is resident -- malloc asked
+ * for it and was refused on 2026-10-14 -- so nothing is buffered but the line. */
+static void ae350_save_hex(const char *line)
+{
+    uint8_t bytes[64];
+    unsigned n = 0;
+
+    for (; *line != '\0'; line += 2) {
+        const int high = ae350_hex_digit(line[0]);
+        const int low = line[1] != '\0' ? ae350_hex_digit(line[1]) : -1;
+        if (high < 0 || low < 0 || !s_ae350_save_open ||
+            s_ae350_save_got + n >= s_ae350_save_expect) {
+            s_ae350_save_failed = true;
+            return;
+        }
+        bytes[n++] = (uint8_t)(high << 4 | low);
+        if (n == sizeof bytes) {
+            if (ae350_save_write(bytes, n) != 0) {
+                return;
+            }
+            n = 0;
+        }
+    }
+    if (n != 0) {
+        (void)ae350_save_write(bytes, n);
+    }
+}
+
+/* The save arrived: check it twice over and write it, or say why not. */
+static void ae350_save_finish(void)
+{
+    const bool whole = !s_ae350_save_failed && s_ae350_save_open &&
+                       s_ae350_save_got == s_ae350_save_expect &&
+                       s_ae350_save_running == s_ae350_save_crc;
+    FRESULT closed = FR_OK;
+
+    if (s_ae350_save_open) {
+        /* Sync, then close, and believe the answer: a close that fails leaves
+         * the directory entry uncommitted, which is a file of the right size
+         * that cannot be opened again -- the state this was in on 2026-10-14. */
+        if (whole) {
+            (void)f_sync(&s_ae350_save_file);
+        }
+        closed = f_close(&s_ae350_save_file);
+        s_ae350_save_open = false;
+    }
+    if (!whole || closed != FR_OK) {
+        tdsh_printf("ae350run: the save did not arrive whole: %lu of %lu bytes, "
+                    "%lu dropped in the link ring, close %d\r\n",
+                    (unsigned long)s_ae350_save_got,
+                    (unsigned long)s_ae350_save_expect,
+                    (unsigned long)s_rx_drops, (int)closed);
+        /* Half a save on the card would be loaded as one next time. */
+        if (s_ae350_save_path[0] != '\0') {
+            (void)f_unlink(s_ae350_save_path);
+        }
+        return;
+    }
+    tdsh_printf("ae350run: saved %lu bytes to %s\r\n",
+                (unsigned long)s_ae350_save_got, s_ae350_save_path);
+}
+
+/* The line that opens a save; its hex follows.  Everything from here to the
+ * DONE line is consumed in this file so hex never reaches the console. */
+static void ae350_save_begin(const char *line)
+{
+    unsigned long expect = 0, crc = 0;
+
+    s_ae350_save_got = 0;
+    s_ae350_save_running = 0;
+    s_ae350_save_line_len = 0;
+    s_ae350_save_failed = false;
+    s_ae350_save_open = false;
+    s_ae350_save_active = true;
+    if (sscanf(line + 19, "%lu %lx", &expect, &crc) != 2 || expect == 0 ||
+        expect > AE350_SAVE_MAX) {
+        s_ae350_save_expect = 0;
+        s_ae350_save_crc = 0;
+        s_ae350_save_failed = true;
+        return;
+    }
+    s_ae350_save_expect = (uint32_t)expect;
+    s_ae350_save_crc = (uint32_t)crc;
+    if (s_ae350_save_path[0] == '\0') {
+        s_ae350_save_failed = true;
+        return;
+    }
+    /* A card that has never saved has neither folder; the file is opened here
+     * because the hex that follows is written straight into it. */
+    (void)f_mkdir("/sd/root/saves");
+    (void)f_mkdir(AE350_SAVE_DIR);
+    if (f_open(&s_ae350_save_file, s_ae350_save_path,
+               FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+        tdsh_printf("ae350run: cannot write %s\r\n", s_ae350_save_path);
+        s_ae350_save_failed = true;
+        return;
+    }
+    s_ae350_save_open = true;
+}
+
+/* One byte of a save's hex, or of its DONE line. */
+static void ae350_save_byte(uint8_t byte)
+{
+    if (byte == '\r') {
+        return;
+    }
+    if (byte != '\n') {
+        if (s_ae350_save_line_len < sizeof(s_ae350_save_line) - 1) {
+            s_ae350_save_line[s_ae350_save_line_len++] = (char)byte;
+        } else {
+            s_ae350_save_failed = true;
+        }
+        return;
+    }
+    s_ae350_save_line[s_ae350_save_line_len] = '\0';
+    if (starts_with(s_ae350_save_line, "TinyNES NVRAM DONE")) {
+        ae350_save_finish();
+        s_ae350_save_active = false;
+    } else {
+        ae350_save_hex(s_ae350_save_line);
+    }
+    s_ae350_save_line_len = 0;
+}
+
 /* After "TinyNES LINK": the core answers in frames now, so the link goes back
  * to everyone (the desk layer draws, its task reads the joypad report) and the
  * program's text is read out of FPGA_RESP_AE350_TEXT frames.  The caller holds
@@ -972,9 +1196,20 @@ static int ae350_follow_link(ae350_run_t *run)
         silent = 0;
         bool done = false;
         for (int i = 0; i < n && !done; i++) {
+            if (s_ae350_save_active) {
+                ae350_save_byte(text[i]);
+                continue;
+            }
             run->line_ready = false;
             ae350_text(run, text[i]);
-            done = run->line_ready && ae350_line_ends(run, &code);
+            if (!run->line_ready) {
+                continue;
+            }
+            if (starts_with(run->line, "TinyNES NVRAM SAVE ")) {
+                ae350_save_begin(run->line);
+                continue;
+            }
+            done = ae350_line_ends(run, &code);
         }
         if (done) {
             break;
@@ -1008,6 +1243,9 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
     ae350_run_t run = { .elf_file = &s_ae350_elf_file };
+    /* No cartridge last time does not mean one now: the path must not
+     * survive from a previous run. */
+    s_ae350_save_path[0] = '\0';
     if (argc > 2) {
         if (!resolve_path(session, argv[2], real, sizeof(real)) ||
             f_open(&s_ae350_data_file, real, FA_READ) != FR_OK) {
@@ -1017,6 +1255,7 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         }
         run.data_file = &s_ae350_data_file;
         run.data_length = (uint32_t)f_size(&s_ae350_data_file);
+        (void)ae350_save_path(real, s_ae350_save_path, sizeof(s_ae350_save_path));
     }
     static ae350_elf_t elf;
     int rc = ae350_elf_parse(&elf, ae350_file_read, &s_ae350_elf_file);
@@ -1090,6 +1329,37 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending %s: %s\r\n", argv[2], ae350_error(rc));
             }
+            continue;
+        }
+        if (starts_with(run.line, "TinyNES NVRAM WANT ")) {
+            unsigned long address = 0, room = 0;
+            if (s_ae350_save_path[0] == '\0' ||
+                sscanf(run.line + 19, "%lx %lx", &address, &room) != 2 ||
+                f_open(&s_ae350_save_file, s_ae350_save_path, FA_READ) != FR_OK) {
+                tdsh_printf("ae350run: no save to send yet\r\n");
+                continue;
+            }
+            run.save_file = &s_ae350_save_file;
+            run.save_length = (uint32_t)f_size(&s_ae350_save_file);
+            if (run.save_length == 0 || run.save_length > (uint32_t)room) {
+                tdsh_printf("ae350run: %s is empty or larger than the battery\r\n",
+                            s_ae350_save_path);
+            } else {
+                ae350_link_t save_link = link;
+                save_link.image = ae350_save_bytes;
+                rc = ae350_send_image(&save_link, (uint32_t)address,
+                                      run.save_length,
+                                      (uint32_t)address, 5, s_ae350_block, &reason);
+                if (rc != AE350_OK) {
+                    tdsh_printf("ae350run: sending %s: %s\r\n", s_ae350_save_path,
+                                ae350_error(rc));
+                } else {
+                    tdsh_printf("ae350run: sent %s, %lu bytes\r\n", s_ae350_save_path,
+                                (unsigned long)run.save_length);
+                }
+            }
+            f_close(&s_ae350_save_file);
+            run.save_file = NULL;
             continue;
         }
         if (starts_with(run.line, "TinyNES LINK")) {

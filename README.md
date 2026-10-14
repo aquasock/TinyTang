@@ -172,7 +172,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tang.ini`.
-- **The Phosphor app** in the desktop's start menu is a player for `/root/music`:
+- **The Phosphor app** in the desktop's start menu is a player for `/root/media/music`:
   a sorted list of the playable files, the title and status of the current
   track, a progress bar (WAV and FLAC, whose length is read from the file's
   header; the others show elapsed time only), Prev, Play, Pause/Resume, Stop
@@ -308,10 +308,11 @@ firmware's own files stay at the top of the card.
 |---|---|
 | `/root/scripts/` | `boot.tdsh`, run at power-up, and the other scripts; bring-up scripts in `diagnostics/` |
 | `/root/cores/console138k/` | FPGA core images for `tangload` |
-| `/root/data/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
-| `/root/music/` | tracks for `phosphor play` and the Phosphor app |
+| `/root/media/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
+| `/root/media/music/` | tracks for `phosphor play` and the Phosphor app |
 | `/root/ae350/` | AE350 programs, `resident.tpi` among them |
 | `/root/ble/bonds.bin` | Bluetooth pairings |
+| `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
 | `/root/scripts/open/` | `<ext>.tdsh` handlers: opening a file `x.<ext>` on the desktop or in Files runs one with `FILE` set |
@@ -320,7 +321,7 @@ firmware's own files stay at the top of the card.
 
 ### Cartridges
 
-Cartridges play on the TinyNES core.  Put `.nes` files under `/root/data/nes/`,
+Cartridges play on the TinyNES core.  Put `.nes` files under `/root/media/nes/`,
 or anywhere on the card, and open one: double-click it on the desktop or in
 Files.  TinyDesk runs `/root/scripts/open/nes.tdsh` with `FILE` set to it,
 which loads `tinynes.bin`, has `ae350run` send the player
@@ -330,13 +331,21 @@ controllers are Wii Classic Controllers on PMOD0, and sound needs a Pmod I2S2
 on PMOD1, declared in `/tang.ini`.  From the console or the Terminal:
 
 ```
-FILE="/root/data/nes/nova.nes"; tdsh run /root/scripts/open/nes.tdsh
+FILE="/root/media/nes/nova.nes"; tdsh run /root/scripts/open/nes.tdsh
 ```
 
 While a game runs, a tap of HOME on the controller, or F12, swaps between the
 game and TinyDesk; HOME and `-` held together end it.  The core, the player and
 the handler come from the TinyNES repository, whose `tools/deploy_tinytang.sh`
 puts them on the card.
+
+A cartridge with a battery saves under `/root/saves/nes/`, named after the
+cartridge: `Zelda II - The Adventure of Link (USA).nes` saves to the same name
+with a `.sav` extension.  `ae350run` sends that file to the player when it
+takes the cartridge, and writes it back when the game ends, so progress
+survives a power cycle.  The save crosses the link as hex text, because in link
+mode the FPGA turns the AE350's bytes into TinyDesk's text frames and a
+receiver that drops CR and ends lines on LF cannot carry binary.
 
 Earlier builds played cartridges on nand2mario's nestang through
 `scripts/boot-cart.tdsh` and `nesload`.  Those scripts stay in the repository,

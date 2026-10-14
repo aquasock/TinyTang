@@ -16,7 +16,7 @@ if "$CORE" == ""
     CORE=/root/cores/console138k/nestang-desk.bin
 endif
 if "$ROM" == ""
-    ROM=/root/data/nes/castlevania.nes
+    ROM=/root/media/nes/castlevania.nes
 endif
 
 # The desk layer stays up across the load so that F12 works in the game; see

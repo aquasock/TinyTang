@@ -10,7 +10,7 @@
 # track automatically, set FILE in the session first; tdsh run passes no
 # arguments, but the script inherits the session's variables:
 #
-#   FILE="/root/music/test.mp3"; tdsh run /root/scripts/phosphor.tdsh
+#   FILE="/root/media/music/test.mp3"; tdsh run /root/scripts/phosphor.tdsh
 #
 # The core carries the TinyDesk layer, so this works the way castlevania.tdsh
 # does: the desktop stays up across the load, the screen is handed to the

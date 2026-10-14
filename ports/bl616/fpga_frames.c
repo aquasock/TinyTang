@@ -45,7 +45,9 @@ void fpga_frames_reset(void)
 static void push_frame(uint8_t type, const uint8_t *payload, unsigned len)
 {
     if (s_q_count >= FPGA_FRAMES_MAX) {
-        /* Full: lose the oldest, so a burst cannot hide the newest reply. */
+        /* Should not happen now that rx_decode stops at a full queue; kept so
+         * a full queue cannot corrupt the array if it ever is reached.  Losing
+         * the oldest keeps a burst from hiding the newest reply. */
         memmove(&s_q[0], &s_q[1], sizeof(s_q[0]) * (FPGA_FRAMES_MAX - 1));
         s_q_count--;
     }
@@ -57,6 +59,11 @@ static void push_frame(uint8_t type, const uint8_t *payload, unsigned len)
         memcpy(f->payload, payload, keep);
     }
     s_q_count++;
+}
+
+bool fpga_frames_space(void)
+{
+    return s_q_count < FPGA_FRAMES_MAX;
 }
 
 void fpga_frames_push(uint8_t byte)

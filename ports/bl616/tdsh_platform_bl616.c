@@ -8,6 +8,8 @@
 #include "tdsh_bl616.h"
 #include "tang_ble.h"
 #include "tang_crash.h"
+#include "tang_heap.h"
+#include "tang_nes_ini.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -403,6 +405,40 @@ static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
     probe_root("sd:");
     probe_root("sd:/");
     probe_root("/");
+    /* What is left to allocate, and the largest piece of it.  A path that
+     * starts a shell task or a window fails for want of either, and until
+     * now the console could not say which. */
+    tang_heap_print("tang");
+    /* The settings file, read exactly the way a launch reads it, so the
+     * file can be proved without the app that will write it. */
+    {
+        static tang_nes_settings_t nes;
+        const bool ok = tang_nes_load(&nes, TANG_NES_INI_REAL);
+
+        tdsh_printf("tang: %s %s", TANG_NES_INI_SHOWN,
+                    ok ? "read," : "absent,");
+        if (ok) {
+            tdsh_printf(" %u key(s) understood", (unsigned)nes.keys);
+        }
+        tdsh_printf("\r\n");
+        if (ok) {
+            for (int player = 0; player < 2; player++) {
+                tdsh_printf("  input p%d:", player + 1);
+                for (int i = 0; i < TANG_NES_BUTTONS; i++) {
+                    tdsh_printf(" %s=%s", tang_nes_button_name(i),
+                                tang_nes_pad_name(player ? nes.p2[i] : nes.p1[i]));
+                }
+                tdsh_printf("\r\n");
+            }
+            tdsh_printf("  video aspect=%s scale=%u scanlines=%s overscan=%s\r\n",
+                        tang_nes_aspect_name(nes.aspect), (unsigned)nes.scale,
+                        nes.scanlines ? "on" : "off",
+                        nes.overscan ? "hide" : "show");
+            tdsh_printf("  audio volume=%u mute=%s channels=%s\r\n",
+                        (unsigned)nes.volume, nes.mute ? "yes" : "no",
+                        nes.channels == TANG_CHANNELS_MONO ? "mono" : "stereo");
+        }
+    }
     return 0;
 }
 

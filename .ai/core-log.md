@@ -2362,3 +2362,48 @@ None.
 - User Test: PASS
 
 ---
+
+## 72 COMMIT Unreleased 2026-10-14T13:59:07-07:00
+
+#### Coming From:
+
+Unreleased e354d2f
+
+#### Purpose:
+
+Carry a TinyNES cartridge's battery save between the card and the AE350, restore the desktop's open handler, and add the reader for a TinyNES settings file at the card root.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_uart.c` now answers `TinyNES NVRAM WANT` by sending the cartridge's save file into the AE350's save buffer, and collects the save the AE350 sends back at exit as hex lines between `TinyNES NVRAM SAVE` and `TinyNES NVRAM DONE`, checking the byte count and an incremental CRC-32 before the file is kept; the save is written out as it arrives rather than buffered, so no 8 KiB has to be found contiguous, and a close that fails is reported and the file removed rather than called a success. The save is sent **without** the `TNR1` header the cartridge payload carries: it lands directly in the core's save buffer, where a header occupies the first eight bytes and shifts every other byte by eight, and because that shifted data was written back and shifted again on the next load every round trip made it worse, which is why the game showed an empty slot even after a fresh save; the user then loaded their save and played it. The receive ring grew from 2048 to 4096 bytes with a counter for what it could not take, `ports/bl616/fpga_frames.c` now holds 16 frames instead of 8 and exports `fpga_frames_space`, and `rx_decode` stops at a full queue instead of discarding the oldest frame, so a burst of 256 text frames delays frames rather than losing them. The desktop's open handler was a separate fault and was not the script or its quoting: the script never ran, which a new line in `/root/nes-open.log` proved, and `ports/bl616/tdsh_platform_bl616.c` then reported one allocation refused since boot, 53 bytes for task `tdsh_script`, so that path had run out of heap; the same command now also prints free heap, the largest free block and the refused count, which is what found it. `tools/tinytang_put.py` quotes the remote path, which had been splitting a name with spaces down to its first word and wrote a cartridge as a file called `Legend`. The new `ports/bl616/tang_nes_ini.c` reads `/nes.ini` at the card root, the same shape as `/tang.ini`, with an absent file or absent key meaning the current behaviour and unknown keys ignored, and the `tang` command prints what it parsed so the file can be proved before any app writes it; a default file is on the card and nothing reads its values into hardware yet. The Phosphor app reads `/root/media/music` after the user moved the card's content under `media/`, with the host tests and scripts following. The user chose to keep the save written at exit only, because it spares the card, so a power-off mid-game losing it is intended and not a defect to fix. Open and new: the board resets on an `ebreak` assert in the Bluetooth controller task, crash record `mcause 0x30000003` with `btbleco` in its trail, the class BLE-018 records, which also explains the USB dropouts seen this session and earlier taken for cabling. The core-syntax audit passed.
+
+#### Next Steps:
+
+The Bluetooth assert comes first, since a reset during a save or a core load spoils any hardware test. Then the TinyNES Controls app: `ports/bl616/tinynes_app.cpp`, registered as `{"TinyNES", launch, "NES"}`, a window whose four tab headers are buttons and whose pages are shown and hidden with `td_widget_set_visible`, reading the parsed settings and displaying them before any of them is wired to hardware; button remapping is the first setting to reach the AE350, as a headerless blob the player asks for the way it asks for a save. The save-state tab stays greyed until save states exist. The ring and queue sizes are still below what the old firmware had in reach of the heap, and the stale records BL6-002, BL6-004 and BLE-014 remain.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/fpga_frames.c
+- ports/bl616/fpga_frames.h
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/boot-cart.tdsh
+- scripts/castlevania.tdsh
+- scripts/phosphor.tdsh
+- tools/phosphor_format_sweep.py
+- tools/tests/phosphor_catalog_test.cpp
+- tools/tinytang_desk_deploy.sh
+- tools/tinytang_put.py
+- tools/tinytang_run.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

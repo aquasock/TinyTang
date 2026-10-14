@@ -47,8 +47,13 @@
 #define FPGA_RESP_AE350_TEXT 0x20u
 
 /* How many frames and how much of each are kept.  A waiter's own reply plus a
- * few unprompted joypad reports is the realistic worst case. */
-#define FPGA_FRAMES_MAX   8u
+ * few unprompted joypad reports is the realistic worst case, except for link
+ * mode's AE350 text: a battery save comes back as a run of 65-byte frames.
+ * When this fills, rx_decode stops feeding it rather than evicting the oldest
+ * frame, so the receive ring behind it holds the rest and a burst delays
+ * frames instead of losing them.  On 2026-10-14 a burst over an eight-frame
+ * queue cost a save its last 82 bytes. */
+#define FPGA_FRAMES_MAX   16u
 #define FPGA_FRAMES_PAYLOAD_MAX    256u
 
 /* fpga_frames_take() results that are not a length. */
@@ -62,6 +67,11 @@ void fpga_frames_reset(void);
 
 /* Offer one byte from the stream. */
 void fpga_frames_push(uint8_t byte);
+
+/* True while the queue can take another frame.  The link's decoder stops when
+ * this is false, leaving the bytes it has not read in the receive ring, so a
+ * full queue delays frames instead of discarding the oldest of them. */
+bool fpga_frames_space(void);
 
 /* Take the oldest frame of the given type.
  *
