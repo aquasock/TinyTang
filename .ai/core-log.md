@@ -2271,3 +2271,33 @@ Hardware-test seed 16, which is timing clean and routes `clk` through `SPINE17`,
 - User Test: N/A
 
 ---
+
+## 69 COMMIT Unreleased 2026-10-14T04:11:30-07:00
+
+#### Coming From:
+
+v0.1.0 96c5a30
+
+#### Purpose:
+
+Hand the project to the next agent at the user's request, with the state of the repositories, the board and the card, and the work that remains.
+
+#### Outcome:
+
+TinyTang `v0.1.0` is released: the tag is on `2c2a69c` (entry 64), the GitHub release is marked pre-release with one asset, `TinyTang.v0.1.0.tar.gz`, SHA-256 `f69bd833ec784bea249e9f77cdfc215dba2e1e36730bf3f53d867875850726d3`, and its published description differs from the tagged `docs/releases/v0.1.0.md` in three corrected passages (entry 65). Since the tag, work has gone onto `main` at `96c5a30`, pushed, clean apart from the expected `third_party/tinydesk` patch dirt: the README's install now writes only `0x40000` through the ROM bootloader (entry 63); the PmodOLEDrgb is qualified on the desktop core at `0x0010`, and that core refuses any socket word naming a module other than none, oledrgb or the VGA pair (entry 66); desktop ABI 1.2 gives the OLED three font sets through register `0x118`, Standard 8x8 at 12x8 by default, Compact 6x8 at 16x8 and Graphics 4x4 at 24x16, switched by `oledterm font` (entry 67); the desktop core's build of record is seed 26, `desktop.bin` `16c6c5998c9a` and `.fs` `be6f111c0b53`, which passed HDMI, VGA, all three fonts and a boot at 67.3 C, with the clock profile recorded from it; and the build warns, without refusing, when `clk` is routed through `SPINE17`, the only difference between the dead seed-6 core and the working ones (entry 68). `deps.conf` pins TinyNES at `9e1c027`, its head, and the three toolchains by archive digest (entries 59 and 64). The board last ran firmware `bf4da16-dirty.c7fcd91`, a development build carrying the font-set firmware, flashed in entry 67, with seed 26 booted as `desktop.bin` and `tangini` reading `pmod0 oledrgb, pmod1 none`, `0x0010`; it is now off USB. The card, last seen mounted on the PC, holds seed 26 as `/root/cores/console138k/desktop.bin` with its `desktop.fs.gz`, and the v0.1.0 core as `desktop.bin.v0.1.0` for rollback; it has since been removed from the PC. The release card's `.Trash-1000` held 663 MB of the user's personal music, which the user's archive was checked not to contain (entry 65). Build products kept on this machine are the 37 seed builds under `build/desktop-sweep/`, about 1.9 GB, kept at the user's direction as evidence for the `SPINE17` question, and `build/desktop-s6` and `build/desktop-s26`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The open questions, each the user's to schedule: hardware-test seed 16, timing clean with `clk` through `SPINE17`, to decide whether the step-2d warning becomes a refusal, and keep in mind that any change to the desktop core's netlist re-rolls its placement and needs a seed sweep and a board test, not only the gates; design the separate graphics app that will own the OLED's 4x4 set; set `pmod1 = i2s2` in the card's `/tang.ini` before TinyNES is played, since the OLED test left `pmod1 = none`, and remember that the desktop core refuses a declaration naming the I2S2; and the longer-standing items, which are the TinyDesk patches that keep the firmware identity `-dirty`, a read-only check of the README's `BLFlashCommand` line in the ROM bootloader, the Releasing section of `.ai/core.md` if the user wants it written, mirroring the toolchain archives under aquasock, whether `v0.1.0` stays a pre-release, and the stale heap records BL6-002, BL6-004 and BLE-014. Board access in a test round waits for the user's go, one board step per call, and every console send goes through `tools/tinytang_console.py`'s guard.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
