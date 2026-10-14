@@ -81,9 +81,26 @@ not.
 - **BL616 firmware**, `make CHIP=bl616 BOARD=bl616dk`
   - `build/build_out/tinytang_bl616.bin`, build identity from
     `build/tinytang/tinytang_build_id.h`, which the board prints as `platform`.
-  - No release hash is recorded yet: the build on 2026-10-13 was from a tree with
-    uncommitted changes and reported `a1e6275-dirty.240903a`.  Record the identity
-    and the digest from a **clean** tree before publishing.
+  - No release hash was recorded for the first build: it was made from a tree
+    with uncommitted changes and reported `a1e6275-dirty.240903a`.  The build
+    from entry 57's commit reported `dba104c-dirty.17f81b2`, 611520 bytes,
+    sha256 `238cee62ce93fbf70d5332e03ea10e61776f1330afa059d99c0f60df1dc90c59`,
+    and that is the digest the release card carries.
+  - The identity keeps its `-dirty` suffix by design, and a bare one is not
+    reachable without moving a pin.  `third_party/tinydesk` is pinned at
+    upstream v0.1.5 and the build applies two carried patches to it on every
+    configure (`scripts/apply-tinydesk-patches.sh`, run from `CMakeLists.txt`),
+    so that submodule's working tree always differs from its pin.  Identify the
+    patches by their own digests, not by the identity, because `git diff`
+    renders a dirty submodule only as `<sha>-dirty` and the identity's hash is
+    the same whatever patches are applied:
+    `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`
+    `070b58c505e5c600187b96456f3a7904ac74f2cfe29746d2759512de347f77a3` and
+    `third_party/patches/tinydesk/0002-open-with-handler-script.patch`
+    `601ef5c77c26fabe2a1e3466920692798bdf8a2129593bf7f58c856d8977cc6a`.
+    `third_party/tinydesk-shell` shows how it ends: its patch went upstream, the
+    pin now names an `origin/main` commit, and `scripts/apply-tdsh-patches.sh`
+    recognises that and applies nothing.
 
 ## What is not reproducible yet
 

@@ -1905,3 +1905,33 @@ The identity will keep its `-dirty` suffix until `third_party/tinydesk` goes thr
 - User Test: PASS
 
 ---
+
+## 58 COMMIT Unreleased 2026-10-13T22:59:58-07:00
+
+#### Coming From:
+
+Unreleased dba104c
+
+#### Purpose:
+
+Record the release firmware's identity and digest in `BUILDING.md`, where entry 56 left a placeholder instead of a value, and name the two carried TinyDesk patches beside it.
+
+#### Outcome:
+
+`BUILDING.md`'s artifact table carried no firmware value, and its note said only that a digest must be recorded from a clean tree before publishing. It now records what entry 57's commit produced: 611520 bytes, sha256 `238cee62ce93fbf70d5332e03ea10e61776f1330afa059d99c0f60df1dc90c59`, build identity `dba104c-dirty.17f81b2`, which is the image the release card carries and the user flashed and confirmed. The same bullet now explains why the identity keeps its `-dirty` suffix and why a bare one is not reachable without moving a pin: `third_party/tinydesk` is pinned at upstream v0.1.5 and `CMakeLists.txt` runs `scripts/apply-tinydesk-patches.sh` on every configure, so that submodule's working tree always differs from its pin. Because `git diff` renders a dirty submodule only as `<sha>-dirty`, the identity's hash is the same whatever patches are applied, so the bullet names the two patches by their own digests -- `070b58c505e5c600187b96456f3a7904ac74f2cfe29746d2759512de347f77a3` for `0001-settings-bluetooth-button.patch` and `601ef5c77c26fabe2a1e3466920692798bdf8a2129593bf7f58c856d8977cc6a` for `0002-open-with-handler-script.patch` -- and points at `third_party/tinydesk-shell` as the shape the pair can end in, since its patch went upstream, its pin now names an `origin/main` commit and `scripts/apply-tdsh-patches.sh` recognises that and applies nothing. A documentation review was performed instead of a build: the two digests were recomputed from `build/build_out/tinytang_bl616.bin` and the identity read back from `build/tinytang/tinytang_build_id.h`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The release still owes its card-side work, which is the user's: strip the sixteen commercial ROMs from `root/data/nes/`, replace the card's edited `tang.ini` so it declares the socket the I2S2 is seated in, regenerate the card's README hash block from the finished tree and re-zip. The release then needs its `v0.1.0` tag on TinyTang, which per the syntax is a `VERSION` entry rather than a `COMMIT` one, and `.ai/core.md`'s Releasing section is still empty, so the release notes are a decision before they are a task. The README's paragraph describing the AE350 player as qualified was found to state the opposite of what the hardware showed and is deferred to a later cycle by the user's instruction.
+
+#### Files Modified:
+
+- BUILDING.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
