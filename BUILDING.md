@@ -77,13 +77,14 @@ and that cost the desktop core its rebuildability on 2026-10-13.
 Recorded from builds on 2026-10-13; a release should reproduce these or say why
 not.
 
-- **desktop core**, seed 1, `tools/build_desktop_core_open.sh`
+- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 1,
+  written to `build/desktop/open-s1/`
   - `desktop.fs` sha256 `7453ad6c940062882f80416b334bf516b0382ee0092f60bb52b547d703103989`
   - `desktop.bin` sha256 `b9af4f06221e5c11750f3575f3b6d6e344a2671a4ca0d98f738d8d2ec0eb96de`
-  - The build's own clock-topology gate reports a regression against
-    `tools/desktop_open/clock_profile.json` and needs `ALLOW_UNVERIFIED_CLOCK=1`.
-    That is expected and explained in core-log entries 52 and 53; the build is
-    still the one the board runs.
+  - Both of the build's gates pass with nothing overridden: setup and hold
+    are met, and the clock topology matches
+    `tools/desktop_open/clock_profile.json`, which is recorded from this core.
+    A build that needs `ALLOW_UNVERIFIED_CLOCK=1` is not this one.
 - **TinyNES core**, `tools/build_ae350_soc.sh`
   - `ae350_soc.bin` sha256 `bafc2cf2ea79fc9e36a948b948afda62df07b9c5698da738d46eaaeb516ddfcf`
   - `ae350_soc.fs` sha256 `6b0c433a5c7e0783d6a06e557f9878ffb9cfac4d432072f2acf8b5dbb62640a8`

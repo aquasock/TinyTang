@@ -274,7 +274,7 @@ tools/build_nestang_core.sh     # the NES core, with the desktop layer
 
 # Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /root/cores/console138k/nestang-desk.bin
-tools/tinytang_put.py build/desktop/open-s2/desktop.bin                /root/cores/console138k/desktop.bin   # 89f3ae9350c4
+tools/tinytang_put.py build/desktop/open-s1/desktop.bin                /root/cores/console138k/desktop.bin   # b9af4f06221e
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
 tools/tinytang_put.py scripts/boot-cart.tdsh /root/scripts/boot-cart.tdsh
 
@@ -383,9 +383,9 @@ clock-topology gate against the recorded profile, and the apicula fork's
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
 the vendor's HCLK block, with nextpnr rebuilt against that database; at the
-default seed 2 it builds `desktop.89f3ae9350c4.bin`, which drives HDMI and VGA
-together (`pll_nes` at `PLL_L[0]`, the main clock still on fabric; see
-`fpga/desktop/desktop.cst`). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
+default seed 1 it builds `desktop.b9af4f06221e.bin`, which drives HDMI and VGA
+together and stays clean when the board is hot (`pll_nes` at `PLL_R[0]`; see
+`fpga/desktop/desktop.cst` and [BUILDING.md](BUILDING.md)). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
 terminal using an original 4×4 font alongside released sockets and the complete
 VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.

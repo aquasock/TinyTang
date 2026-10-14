@@ -1969,3 +1969,37 @@ Make the desktop core's default build the build of record: `tools/build_desktop_
 - User Test: N/A
 
 ---
+
+## 60 COMMIT Unreleased 2026-10-14T00:58:35-07:00
+
+#### Coming From:
+
+Unreleased 7f4689d
+
+#### Purpose:
+
+Make the desktop core's default open-flow build the build of record, so that a builder following `BUILDING.md` gets the seed-1 core the card runs rather than a seed-2 core that matches nothing recorded, as the user approved.
+
+#### Outcome:
+
+`tools/build_desktop_core_open.sh` and `tools/desktop_open/build.sh` now default `NEXTPNR_SEED` to 1, and their comments name the seed-1 core `b9af4f06221e` with `pll_nes` at `PLL_R[0]` in place of the seed-2 `89f3ae9350c4` at `PLL_L[0]` that entry 52 superseded; `fpga/desktop/desktop.cst` already described `PLL_R[0]` and is unchanged. The first build at the new default, run with `ALLOW_UNVERIFIED_CLOCK=1` as `BUILDING.md` then required and against the chipdb whose digest matched the `446b89c0e96e` pin, passed the setup and hold gate with no violation and reproduced the card's `desktop.bin` and `desktop.fs` bit for bit, `b9af4f06221e` and `7453ad6c9400`. Its topology gate reported a regression against `tools/desktop_open/clock_profile.json`, which was recorded from the seed-2 `PLL_L[0]` core, because the seed-1 core has `clk` on global resources only, the pixel clock on fabric at one sink and `hclk5` at five. The user was asked whether to re-record that baseline and directed that it be re-recorded if the new build passes timing, which it did, so the profile was regenerated from that build's log with `clock_route_inventory.py --write-profile` and its source line names the core and entries 52, 53 and 60. That trades away one check: the gate can no longer flag `clk` on global resources only, which TOOL-017 records as the dead `TLPLL0CLK0` route when `pll_nes` sits at `PLL_L[0]`, while through `TRPLL0CLK0` at `PLL_R[0]` it is the working core, so the gate's comment in `tools/desktop_open/build.sh` now says that `pll_nes` must stay at `PLL_R[0]`. A second build from a cleared `build/desktop` with no environment override at all passed both gates, reported no clock-topology regression and again produced `b9af4f06221e` and `7453ad6c9400`. `BUILDING.md` now says the default build passes both gates with nothing overridden and that a build needing the override is not this one, and the README's description of the open flow and its card-deployment line name `open-s1` and `b9af4f06221e`. TOOL-003 and TOOL-017 in `.ai/core-reference.md` were revised in place: the seed discrepancy is gone, the seed-2 `PLL_L[0]` core is described as the past build it is, and TOOL-017 says the current image is rebuilt bit for bit from the pinned chipdb while the 2026-10-11 image still cannot be. Nothing was deployed, since the built core is the one the card already runs, so Deployment and User Test do not apply. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The release still needs a decision on TinyNES's pin, since its working copy is at `c28b0cc` while `deps.conf` pins `fa557f4`, and the user's call on mirroring the three toolchain archives under aquasock. The card-side release work, the release notes and the `v0.1.0` `VERSION` entry from entry 58 still stand, and the TinyDesk patches still keep the firmware identity `-dirty`.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- tools/build_desktop_core_open.sh
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_profile.json
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

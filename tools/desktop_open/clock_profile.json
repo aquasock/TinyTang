@@ -1,5 +1,5 @@
 {
-  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=2 with pll_nes at PLL_L[0]: desktop.89f3ae9350c4.bin, the TinyTang desktop netlist, HDMI and VGA correct on the board 2026-10-11, core-log entry 40",
+  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=1 with pll_nes at PLL_R[0]: desktop.b9af4f06221e.bin (desktop.7453ad6c9400.fs), the card's desktop.bin, HDMI and VGA correct and clean on a hot board 2026-10-13, core-log entries 52 and 53; re-recorded in core-log entry 60",
   "nets": {
     "keyboard_link.clk": {
       "dedicated": true,
@@ -9,14 +9,14 @@
     },
     "desktop_sockets.pixel_clk": {
       "dedicated": false,
-      "fallbacks": 0,
-      "global_only": true,
+      "fallbacks": 1,
+      "global_only": false,
       "partial": false
     },
     "clk": {
       "dedicated": false,
-      "fallbacks": 1199,
-      "global_only": false,
+      "fallbacks": 0,
+      "global_only": true,
       "partial": false
     },
     "clk27": {
@@ -27,7 +27,7 @@
     },
     "hclk5": {
       "dedicated": false,
-      "fallbacks": 4,
+      "fallbacks": 5,
       "global_only": false,
       "partial": false
     }
