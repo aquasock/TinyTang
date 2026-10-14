@@ -2093,3 +2093,34 @@ The release notes, TinyNES's re-pin in `deps.conf` and the `v0.1.0` `VERSION` en
 - User Test: N/A
 
 ---
+
+## 64 VERSION v0.1.0 2026-10-14T01:24:07-07:00
+
+#### Coming From:
+
+Unreleased 8f8dc51
+
+#### Purpose:
+
+Mark the `v0.1.0` release boundary, the project's first release, with its release notes and with TinyNES pinned at the commit the release card's TinyNES files correspond to.
+
+#### Outcome:
+
+`docs/releases/v0.1.0.md` holds the release notes the GitHub release is made from: what the release contains, the hardware it needs, including the 2.4 GHz antenna the board ships without (BLE-001) and the power-input start that selects TinyTang (BRD-006), the install steps with the first install written only at `0x40000` and `make flash` warned against, the SHA-256 of the firmware and of every core and player on the card, and the known limitations. The release firmware is `bl616-firmware.bin`, 611,520 bytes, SHA-256 `238cee62ce93fbf70d5332e03ea10e61776f1330afa059d99c0f60df1dc90c59`, identity `dba104c-dirty.17f81b2`, the image entry 57 built and the user flashed and accepted, and the same file is on the release card and in `build/build_out`; no firmware source has changed between `dba104c` and this commit, which the notes state together with the consequence that a rebuild at the tag reports a different identity. The desktop core `b9af4f06221e` and its `.fs` `7453ad6c9400` were rebuilt bit for bit at the default seed in entry 60, and the TinyNES core, player and `.fs` are the files TinyNES entry 29 recorded and the user validated on the card. `deps.conf` now pins TinyNES at `9e1c027a81390b5d616e03055a41ea655ac68920`, its entry 30, two commits past the previous pin `fa557f4`, both of them a log entry or a comment, so no TinyNES build input moved, and `tools/fetch-deps.sh --check` verifies it. The user assembled the release card and made its archive after entry 61; the archive was not located on this machine and its contents have not been checked here. `.ai/core.md`'s Releasing section is still empty, and this entry does not fill it, since that file changes only on the user's explicit request. Nothing was built, deployed or tested in this cycle; the hardware acceptance behind the release is that of entries 53, 57 and TinyNES entry 29. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, its `VERSION` type with the `v0.1.0` tag in the version field, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The user creates the `v0.1.0` tag and GitHub release on the commit that carries this entry, with `docs/releases/v0.1.0.md` as the release text and the card archive and `bl616-firmware.bin` as its assets. After that, later `COMMIT` entries keep `Unreleased` in their header and name `v0.1.0` with the tagged commit in Coming From until the next release. Open items carried past the release are the TinyDesk patches that keep the firmware identity `-dirty`, a check of the README's BLFlashCommand line the next time the board is in its ROM bootloader, the Releasing section of `.ai/core.md` if the user wants the release procedure written down, and mirroring the toolchain archives if the user wants them hosted under aquasock.
+
+#### Files Modified:
+
+- deps.conf
+- docs/releases/v0.1.0.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
