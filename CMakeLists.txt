@@ -127,6 +127,8 @@ else()
         COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/ports/bl616/tdsh_stdio_redirect.h")
 
     target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TINYTANG_PHOSPHOR_SOURCES}
+                               # TinyNES Controls, the settings app.
+                               ports/bl616/tinynes_app.cpp
                                ${TDSH_CORE_SOURCES}
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
                                third_party/tinydesk/ports/common/td_fs_stdio.c)

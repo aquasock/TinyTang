@@ -22,10 +22,7 @@
 #define SECTION_MAX 24
 
 static const char *const s_pad_names[NES_CTL_COUNT] = {
-    "a", "b", "x", "y",
-    "l", "r", "zl", "zr",
-    "lstick", "rstick", "plus", "minus",
-    "up", "down", "left", "right",
+    "b", "y", "up", "down", "left", "right", "select", "start",
 };
 
 static const char *const s_nes_names[TANG_NES_BUTTONS] = {
@@ -60,7 +57,7 @@ const char *tang_nes_aspect_name(int aspect)
 void tang_nes_defaults(tang_nes_settings_t *s)
 {
     static const uint8_t pad[TANG_NES_BUTTONS] = {
-        NES_CTL_B, NES_CTL_Y, NES_CTL_MINUS, NES_CTL_PLUS,
+        NES_CTL_B, NES_CTL_Y, NES_CTL_SELECT, NES_CTL_START,
         NES_CTL_UP, NES_CTL_DOWN, NES_CTL_LEFT, NES_CTL_RIGHT,
     };
 
@@ -192,7 +189,10 @@ static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
     return false;
 }
 
-/* One line of the file, under the section it was found in. */
+/* One line: one or more `key = value` pairs, because /nes.ini is laid out
+ * with several to a line.  A value ends at the first whitespace, which is
+ * what lets the next key follow on the same line; a value with a space in it
+ * would need its own line and a different rule, and none has one. */
 static void handle_line(tang_nes_settings_t *s, char *section, char *line)
 {
     char *text = trim(line);
@@ -209,21 +209,40 @@ static void handle_line(tang_nes_settings_t *s, char *section, char *line)
         snprintf(section, SECTION_MAX, "%s", trim(text + 1));
         return;
     }
-    char *equals = strchr(text, '=');
-    if (equals == NULL) {
-        return;
-    }
-    *equals = '\0';
-    char *key = trim(text);
-    char *value = trim(equals + 1);
-    /* A comment to the end of a value line, as in /tang.ini. */
-    char *comment = strchr(value, '#');
-    if (comment != NULL) {
-        *comment = '\0';
-        value = trim(value);
-    }
-    if (*key != '\0' && apply(s, section, key, value)) {
-        s->keys++;
+
+    while (*text != '\0') {
+        char *equals = strchr(text, '=');
+        if (equals == NULL) {
+            return;
+        }
+        char *key = text;
+        char *key_end = equals;
+        while (key_end > key && (key_end[-1] == ' ' || key_end[-1] == '\t')) {
+            key_end--;
+        }
+        *key_end = '\0';
+
+        char *value = trim(equals + 1);
+        char *value_end = value;
+        while (*value_end != '\0' && *value_end != ' ' && *value_end != '\t') {
+            value_end++;
+        }
+        const char after = *value_end;
+        *value_end = '\0';
+        if (*key != '\0' && apply(s, section, key, value)) {
+            s->keys++;
+        }
+        if (after == '\0') {
+            return;
+        }
+        /* Past the whitespace, and stop at a comment to the end of the line. */
+        text = value_end + 1;
+        while (*text == ' ' || *text == '\t') {
+            text++;
+        }
+        if (*text == '#' || *text == ';') {
+            return;
+        }
     }
 }
 

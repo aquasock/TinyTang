@@ -24,13 +24,15 @@ enum {
     TANG_NES_UP, TANG_NES_DOWN, TANG_NES_LEFT, TANG_NES_RIGHT,
 };
 
-/* Controller buttons a NES button may answer to, by index.  HOME is
- * deliberately absent: it swaps between the game and TinyDesk. */
+/* Controller buttons a NES button may answer to, by index.  This is the order
+ * the AE350 player indexes them in, and it is deliberately only the buttons
+ * whose bit in the Classic's word has been identified on this board (TinyNES
+ * core-log entry 16): the word carries sixteen and the player knows nine, so
+ * offering the others would be offering a mapping nothing can honour.  HOME is
+ * absent on purpose: it swaps between the game and TinyDesk. */
 enum {
-    NES_CTL_A, NES_CTL_B, NES_CTL_X, NES_CTL_Y,
-    NES_CTL_L, NES_CTL_R, NES_CTL_ZL, NES_CTL_ZR,
-    NES_CTL_LSTICK, NES_CTL_RSTICK, NES_CTL_PLUS, NES_CTL_MINUS,
-    NES_CTL_UP, NES_CTL_DOWN, NES_CTL_LEFT, NES_CTL_RIGHT,
+    NES_CTL_B, NES_CTL_Y, NES_CTL_UP, NES_CTL_DOWN,
+    NES_CTL_LEFT, NES_CTL_RIGHT, NES_CTL_SELECT, NES_CTL_START,
     NES_CTL_COUNT,
 };
 

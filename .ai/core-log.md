@@ -2407,3 +2407,38 @@ The Bluetooth assert comes first, since a reset during a save or a core load spo
 - User Test: PASS
 
 ---
+
+## 73 COMMIT Unreleased 2026-10-14T16:00:57-07:00
+
+#### Coming From:
+
+Unreleased 0971395
+
+#### Purpose:
+
+Add TinyNES Controls, the desktop app that reads -- and will edit -- a TinyNES settings file, and carry the AE350's button mapping into the core from `/nes.ini`.
+
+#### Outcome:
+
+`ports/bl616/tinynes_app.cpp` registers "TinyNES Controls" with an NES icon and builds the approved four-tab layout out of the widgets that exist: `td_button` for the headers, `td_widget_set_visible` for the pages, `td_list` for the Input rows, since TinyDesk has no tab widget and no slider, so tabs are a composition and numeric options will step with buttons. It reads `/nes.ini` through `ports/bl616/tang_nes_ini.c`, a new reader for the card root in the shape of `/tang.ini`: sections, `key = value`, `#` comments, several keys to a line, an absent file or key meaning the current behaviour, and unknown keys ignored rather than refused so a newer file on older firmware still starts. That last point was learned the hard way: the reader took one key per line while the file shipped with four, so all sixteen `[input]` keys were dropped and the count read nine, and the `tang` command's report -- the parsed settings, beside the free heap and refused-allocation count added last cycle -- is what found it. `ae350run` answers `TinyNES SETTINGS WANT` with a sixteen-byte blob built from the parsed file and prints the mapping it sent, so a launch says what the game will do; the mapping is deliberately limited to the eight controller buttons whose bit in the Classic's word has been identified on this board, since offering the other eight would be offering nothing. The user's five UI tests passed -- the tabs, the file loop, the app over a running game with F12, the window lifecycle, and the save regression -- and a `p1_a = y` written into the file reached the core and changed the game's A button while player 2 was untouched. The AE350 half of that is TinyNES entry 32. The core-syntax audit passed.
+
+#### Next Steps:
+
+Wire the Input tab: Remap and Restore defaults are inert, and Player 1/2 changes state with nothing visible because the toggle sets the list's text, which a list does not draw; the app should also re-read the file when it opens rather than once per boot, so an edit shows without a power cycle. A host test for `tang_nes_ini.c` belongs in `tools/tests/` beside `test_ini.sh` and the Phosphor catalogue test, which is what would have caught the one-key-per-line fault before a flash. Then the Video and Audio tabs, whose values still reach nothing, and the Bluetooth assert, which resets the board and can spoil a hardware test.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

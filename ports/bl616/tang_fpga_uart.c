@@ -79,6 +79,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "tang_nes_ini.h"
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -817,6 +819,8 @@ typedef struct {
     uint32_t data_length;
     FIL *save_file;                     /* the cartridge's .sav, while sent */
     uint32_t save_length;
+    const uint8_t *blob;                /* memory a request is answered from */
+    uint32_t blob_length;
     char line[AE350_LINE_MAX];
     size_t line_len;
     bool line_ready;
@@ -925,6 +929,18 @@ static int ae350_save_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t l
 {
     ae350_run_t *run = ctx;
     return ae350_file_read(run->save_file, offset, dst, length);
+}
+
+/* The settings blob, which is memory rather than a file: the AE350's button
+ * mapping, received headerless into its own array the way a save is. */
+static int ae350_blob_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    if (run->blob == NULL || offset + length > run->blob_length) {
+        return -1;
+    }
+    memcpy(dst, run->blob + offset, length);
+    return 0;
 }
 
 /* The next whole line from the board, or false after timeout_ms. */
@@ -1243,6 +1259,10 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
     ae350_run_t run = { .elf_file = &s_ae350_elf_file };
+    /* The settings this launch will use, read once.  /nes.ini and the AE350's
+     * mapping are the same choice seen from two sides. */
+    static tang_nes_settings_t nes;
+    (void)tang_nes_load(&nes, TANG_NES_INI_REAL);
     /* No cartridge last time does not mean one now: the path must not
      * survive from a previous run. */
     s_ae350_save_path[0] = '\0';
@@ -1360,6 +1380,34 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
             }
             f_close(&s_ae350_save_file);
             run.save_file = NULL;
+            continue;
+        }
+        if (starts_with(run.line, "TinyNES SETTINGS WANT ")) {
+            static uint8_t blob[2 * TANG_NES_BUTTONS];
+            unsigned long address = 0, room = 0;
+            if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 ||
+                room < sizeof blob) {
+                tdsh_printf("ae350run: the settings request is malformed\r\n");
+                continue;
+            }
+            memcpy(blob, nes.p1, TANG_NES_BUTTONS);
+            memcpy(blob + TANG_NES_BUTTONS, nes.p2, TANG_NES_BUTTONS);
+            run.blob = blob;
+            run.blob_length = sizeof blob;
+            ae350_link_t set_link = link;
+            set_link.image = ae350_blob_bytes;
+            rc = ae350_send_image(&set_link, (uint32_t)address, sizeof blob,
+                                  (uint32_t)address, 5, s_ae350_block, &reason);
+            tdsh_printf("ae350run: settings %s, p1:",
+                        nes.found ? TANG_NES_INI_SHOWN : "(defaults)");
+            for (int i = 0; i < TANG_NES_BUTTONS; i++) {
+                tdsh_printf(" %s=%s", tang_nes_button_name(i),
+                            tang_nes_pad_name(nes.p1[i]));
+            }
+            tdsh_printf("\r\n");
+            if (rc != AE350_OK) {
+                tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
+            }
             continue;
         }
         if (starts_with(run.line, "TinyNES LINK")) {
