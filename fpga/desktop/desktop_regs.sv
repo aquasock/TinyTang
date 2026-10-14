@@ -24,6 +24,7 @@ module desktop_regs (
     output logic [8:0] oled_cell_index,
     output logic [15:0] oled_cell_word,
     output logic [16:0] oled_cursor,
+    output logic [1:0] oled_font,
     input logic [31:0] oled_frames, oled_signature
 );
     function automatic [15:0] crc_byte(input [15:0] old,input [7:0] data);
@@ -84,13 +85,17 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010001; // desktop ABI 1.1
+                32'h04:read_data=32'h00010002; // desktop ABI 1.2: OLED font modes
                 32'h08:read_data=32'h0000000f; // none, OLED, VGA J1/J2
                 32'hc0:read_data={16'b0,socket_word};
-                32'h100:read_data=32'h00180010; // fixed 24 columns, 16 rows
+                // The active font's grid: Graphics 24x16, Standard 12x8,
+                // Compact 16x8.  Cells keep a stride of 24 in every mode.
+                32'h100:read_data=oled_font==2'd1 ? 32'h000c0008:
+                                  oled_font==2'd2 ? 32'h00100008:32'h00180010;
                 32'h108:read_data=oled_frames;
                 32'h10c:read_data=oled_signature;
                 32'h114:read_data={15'b0,oled_cursor};
+                32'h118:read_data={30'b0,oled_font};
                 32'h120:read_data=mon_clk_a;  // `clk` cycles, probe A
                 32'h124:read_data=mon_clk_b;  // `clk` cycles, probe B
                 32'h128:read_data=mon_pix_a;  // `hclk` cycles, probe A
@@ -105,6 +110,9 @@ module desktop_regs (
             end else if(address==32'h114) begin
                 if(write_data[31:17]!=0 || write_data[7:0]>=24 || write_data[15:8]>=16)status=6;
                 else read_data=write_data;
+            end else if(address==32'h118) begin
+                // 0 Graphics, 1 Standard, 2 Compact.
+                if(write_data>2)status=6;else read_data=write_data;
             end else if(cell_address) begin
                 if(write_data[31:16]!=0)status=6;else read_data=write_data;
             end else status=4;
@@ -117,7 +125,7 @@ module desktop_regs (
             seal_index<=0;response<=0;response_ready<=0;
             socket_word<=0;socket_request<=0;is_block<=0;invalid_word<=0;
             assembly<=0;apply_index<=0;oled_cell_we<=0;
-            oled_cell_index<=0;oled_cell_word<=0;oled_cursor<=0;
+            oled_cell_index<=0;oled_cell_word<=0;oled_cursor<=0;oled_font<=0;
         end else begin
             oled_cell_we<=0;
             if(start && state==IDLE) begin
@@ -147,9 +155,10 @@ module desktop_regs (
                     response_ready<=0;reply_crc<=crc_byte(16'hffff,8'h10);seal_index<=0;
                     if(status==0 && is_block) begin apply_index<=0;state<=APPLY;end
                     else if(status==0 && opcode==2) begin
-                        if(address==32'hc0 || address==32'h114) begin
+                        if(address==32'hc0 || address==32'h114 || address==32'h118) begin
                             if(address==32'hc0)socket_word<=write_data[15:0];
-                            else oled_cursor<=write_data[16:0];
+                            else if(address==32'h114)oled_cursor<=write_data[16:0];
+                            else oled_font<=write_data[1:0];
                             socket_request<=~socket_request;state<=WAIT_ACK;
                         end else begin
                             oled_cell_we<=1;oled_cell_index<=(address-32'h200)>>2;

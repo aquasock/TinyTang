@@ -18,8 +18,14 @@ extern "C" {
 // sent extended frames.  Any other core gets nothing more until the next load,
 // so a game core is never sent frames it does not speak and osddesk, which
 // also watches for F12, never waits out a timeout on it.
+//
+// The terminal's font set goes to register 0x118 on a desktop core at ABI 1.2
+// or later, before the cells, whenever it changes or the panel is repainted.
+// An older desktop core shows only the 4x4 Graphics set, so the terminal is
+// sized for that instead.
 namespace {
 constexpr uint8_t DESKTOP_ID=0x54;
+constexpr uint32_t FONT_ABI=0x00010002;   // desktop ABI with register 0x118
 constexpr unsigned RECHECK_POLLS=25;    // ~1 s at osddesk's 40 ms
 constexpr unsigned ID_ATTEMPTS=3;
 constexpr uint32_t ID_TIMEOUT_MS=100;
@@ -35,6 +41,8 @@ struct link_buffers {
 };
 static link_buffers *bufs;
 static uint32_t last_cursor=0xffffffff;
+static uint32_t core_abi;
+static int font_sent=-1;
 static bool read(uint32_t address,uint32_t &value)
 {
     fpga_debug_result r={};
@@ -60,6 +68,7 @@ static bool acquire()
 static void forget_core()
 {
     kind=UNKNOWN;id_attempts=0;probe_tick=0;available=false;full=true;last_cursor=0xffffffff;
+    core_abi=0;font_sent=-1;
 }
 extern "C" void tang_oled_core_replacing(void)
 {
@@ -90,6 +99,7 @@ static bool probe()
     probe_tick=0;
     uint32_t id=0,abi=0,sockets=0;
     bool ok=read(0,id) && id==0x00544453 && read(4,abi) && abi>=0x00010001 && read(0xc0,sockets);
+    if(ok) core_abi=abi;
     bool selected=ok && (((sockets>>4)&15)==1 || ((sockets>>8)&15)==1);
     if(selected && !available) full=true;
     return selected;
@@ -108,7 +118,17 @@ extern "C" void tang_oled_poll(void)
     if(paused) {xSemaphoreGive(lock);return;}
     available=probe();
     if(available) {
-        for(unsigned first=0;first<384;first+=64) {
+        const bool fonts=core_abi>=FONT_ABI;
+        const int font=fonts ? tang_oled_font_requested():TANG_OLED_GRAPHICS;
+        // A new grid redraws every cell; this poll's snapshot is the old one,
+        // so the next poll sends the new text.
+        if(tang_oled_font_effective(font)) full=true;
+        if(fonts && (full || font!=font_sent)) {
+            fpga_debug_result result={};
+            if(fpga_debug_request(FPGA_EXT_WRITE32,0x118,(uint32_t)font,&result) && !result.status) font_sent=font;
+            else available=false;
+        }
+        for(unsigned first=0;available && first<384;first+=64) {
             unsigned count=384-first<64 ? 384-first:64;
             bool dirty=full;
             for(unsigned i=0;i<count;i++) {
@@ -128,7 +148,7 @@ extern "C" void tang_oled_poll(void)
         }
         if(available) full=false;
         // A refused write: repaint everything once the next check selects it.
-        else {full=true;last_cursor=0xffffffff;probe_tick=0;}
+        else {full=true;last_cursor=0xffffffff;font_sent=-1;probe_tick=0;}
     }
     xSemaphoreGive(lock);
 }

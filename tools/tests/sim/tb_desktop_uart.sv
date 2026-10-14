@@ -9,6 +9,7 @@ module tb_desktop_uart;
     always #10 ref_clk=~ref_clk;
     wire uart_tx;
     wire [15:0] socket_word;
+    wire [1:0] oled_font;
     wire socket_request;
     logic socket_ack=0;
     // Endpoint tests use a delayed acknowledgement, not a combinational echo.
@@ -48,7 +49,7 @@ module tb_desktop_uart;
         .desktop_socket_word(socket_word), .desktop_socket_request(socket_request),
         .desktop_socket_ack(socket_ack),
         .desktop_oled_cell_we(cell_we),.desktop_oled_cell_index(cell_index),
-        .desktop_oled_cell_word(cell_word),
+        .desktop_oled_cell_word(cell_word),.desktop_oled_font(oled_font),
         .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0)
     );
     function automatic [15:0] crc_byte(input [15:0] old, input [7:0] b);
@@ -236,7 +237,7 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        request(1,4,0,0,0,32'h00010001);
+        request(1,4,0,0,0,32'h00010002);
         request(1,8,0,0,0,15);
         request(1,32'hc0,0,0,0,0);
         request(2,32'hc0,32'h0230,0,0,32'h0230);
@@ -263,6 +264,22 @@ module tb_desktop_uart;
         request(1,32'h114,0,0,0,32'h010f17);
         request(2,32'h114,32'h010f18,0,6,0);
         request(2,32'h114,32'h011017,0,6,0);
+        // Font mode 0x118: Graphics at reset; Standard and Compact change the
+        // reported grid; an undefined mode is refused and changes nothing.
+        request(1,32'h118,0,0,0,0);
+        if(oled_font!==2'd0)$fatal(1,"font mode is not Graphics at reset");
+        request(2,32'h118,1,0,0,1);
+        if(oled_font!==2'd1)$fatal(1,"Standard font mode not applied");
+        request(1,32'h118,0,0,0,1);
+        request(1,32'h100,0,0,0,32'h000c0008);
+        request(2,32'h118,2,0,0,2);
+        if(oled_font!==2'd2)$fatal(1,"Compact font mode not applied");
+        request(1,32'h100,0,0,0,32'h00100008);
+        request(2,32'h118,3,0,6,0);
+        if(oled_font!==2'd2)$fatal(1,"refused font mode changed the mode");
+        request(1,32'h118,0,0,0,2);
+        request(2,32'h118,0,0,0,0);
+        request(1,32'h100,0,0,0,32'h00180010);
         request(2,32'h200,32'h0f41,0,0,32'h0f41);
         if(writes!=1 || cells[0]!=16'h0f41)$fatal(1,"single cell write failed");
         request(2,32'h200,32'h010f41,0,6,0);

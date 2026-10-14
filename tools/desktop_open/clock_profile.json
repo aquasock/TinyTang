@@ -1,5 +1,5 @@
 {
-  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=1 with pll_nes at PLL_R[0]: desktop.b9af4f06221e.bin (desktop.7453ad6c9400.fs), the card's desktop.bin, HDMI and VGA correct and clean on a hot board 2026-10-13, core-log entries 52 and 53; re-recorded in core-log entry 60",
+  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=26 with pll_nes at PLL_R[0]: desktop.16c6c5998c9a.bin (desktop.be6f111c0b53.fs), desktop ABI 1.2 with the OLED's three font sets, HDMI, VGA and the OLED correct and clean on a board booted at 67.3 C, 2026-10-14; re-recorded in core-log entry 67",
   "nets": {
     "keyboard_link.clk": {
       "dedicated": true,
@@ -9,7 +9,7 @@
     },
     "desktop_sockets.pixel_clk": {
       "dedicated": false,
-      "fallbacks": 1,
+      "fallbacks": 21,
       "global_only": false,
       "partial": false
     },

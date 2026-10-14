@@ -11,6 +11,7 @@ module desktop_pmod (
     input logic [8:0] oled_cell_index,
     input logic [15:0] oled_cell_word,
     input logic [16:0] oled_cursor,
+    input logic [1:0] oled_font,
     output logic [31:0] oled_frames, oled_signature,
     output logic socket_ack,
     inout wire [7:0] pmod0_io, pmod1_io
@@ -18,6 +19,7 @@ module desktop_pmod (
     (* ASYNC_REG = "TRUE" *) logic request_meta, request_sync;
     logic [15:0] active_word;
     logic [16:0] active_cursor;
+    logic [1:0] active_font;
     always_ff @(posedge pixel_clk) begin
         if (!resetn) begin
             request_meta <= 0;
@@ -25,6 +27,7 @@ module desktop_pmod (
             socket_ack <= 0;
             active_word <= 0;
             active_cursor <= 0;
+            active_font <= 0;
         end else begin
             request_meta <= socket_request;
             request_sync <= request_meta;
@@ -33,6 +36,7 @@ module desktop_pmod (
             if (cx == 0 && cy == 720 && request_sync != socket_ack) begin
                 active_word <= socket_word;
                 active_cursor <= oled_cursor;
+                active_font <= oled_font;
                 socket_ack <= request_sync;
             end
         end
@@ -62,6 +66,7 @@ module desktop_pmod (
     desktop_oled terminal_panel (
         .control_clk(control_clk),.pixel_clk(pixel_clk),.resetn(resetn),
         .selected(active_word[7:4]==1 || active_word[11:8]==1),
+        .font_mode(active_font),
         .cell_we(oled_cell_we),.cell_index(oled_cell_index),.cell_word(oled_cell_word),
         .cursor_word(active_cursor),.lane_o(oled_lanes),.lane_oe(oled_enables),
         .frames(oled_frames),.signature(oled_signature)

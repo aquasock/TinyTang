@@ -74,17 +74,24 @@ and that cost the desktop core its rebuildability on 2026-10-13.
 
 ## Expected artifacts
 
-Recorded from builds on 2026-10-13; a release should reproduce these or say why
+Recorded from builds of this tree; a release should reproduce these or say why
 not.
 
-- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 1,
-  written to `build/desktop/open-s1/`
-  - `desktop.fs` sha256 `7453ad6c940062882f80416b334bf516b0382ee0092f60bb52b547d703103989`
-  - `desktop.bin` sha256 `b9af4f06221e5c11750f3575f3b6d6e344a2671a4ca0d98f738d8d2ec0eb96de`
+- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 26,
+  written to `build/desktop/open-s26/` (desktop ABI 1.2, recorded 2026-10-14)
+  - `desktop.fs` sha256 `be6f111c0b53b644bd55b18ca1cc128f75e26ca562f62fcf72f886d92f9783bb`
+  - `desktop.bin` sha256 `16c6c5998c9a9c940ace86e0548f16e7e719f48982008ecc18e88d66599e0ba7`
   - Both of the build's gates pass with nothing overridden: setup and hold
     are met, and the clock topology matches
     `tools/desktop_open/clock_profile.json`, which is recorded from this core.
     A build that needs `ALLOW_UNVERIFIED_CLOCK=1` is not this one.
+  - The seed is not a property of the design.  Any change to the core's
+    netlist re-rolls the placement, and a timing-clean placement can still
+    load with a dead main clock, so a changed core needs a seed sweep and a
+    board test, not only these gates (core-log entry 67).
+  - `v0.1.0` shipped the ABI 1.1 core built at seed 1 from that tag:
+    `desktop.bin` `b9af4f06221e5c11750f3575f3b6d6e344a2671a4ca0d98f738d8d2ec0eb96de`,
+    `desktop.fs` `7453ad6c940062882f80416b334bf516b0382ee0092f60bb52b547d703103989`.
 - **TinyNES core**, `tools/build_ae350_soc.sh`
   - `ae350_soc.bin` sha256 `bafc2cf2ea79fc9e36a948b948afda62df07b9c5698da738d46eaaeb516ddfcf`
   - `ae350_soc.fs` sha256 `6b0c433a5c7e0783d6a06e557f9878ffb9cfac4d432072f2acf8b5dbb62640a8`
@@ -95,7 +102,10 @@ not.
     with uncommitted changes and reported `a1e6275-dirty.240903a`.  The build
     from entry 57's commit reported `dba104c-dirty.17f81b2`, 611520 bytes,
     sha256 `238cee62ce93fbf70d5332e03ea10e61776f1330afa059d99c0f60df1dc90c59`,
-    and that is the digest the release card carries.
+    and that is the digest the release card carries.  The firmware has
+    changed since `v0.1.0` (the OLED font sets, core-log entry 67), so a build
+    of this tree is a development build with its own identity, not that
+    digest.
   - The identity keeps its `-dirty` suffix by design, and a bare one is not
     reachable without moving a pin.  `third_party/tinydesk` is pinned at
     upstream v0.1.5 and the build applies two carried patches to it on every

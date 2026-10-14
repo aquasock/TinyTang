@@ -282,13 +282,13 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 # Build the desktop core.  It is TinyTang's own (fpga/desktop/) and needs only
 # the open flow; the TinyNES core, its player and its open handler are built
 # and put on the card from the TinyNES repository (tools/deploy_tinytang.sh).
-tools/build_desktop_core_open.sh # build/desktop/open-s1/desktop.bin, open flow: HDMI + VGA
+tools/build_desktop_core_open.sh # build/desktop/open-s26/desktop.bin, open flow: HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_nestang_core.sh   # nestang's NES core with the desktop layer: Gowin EDA, not released
 # tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
 
 # Put the core and the scripts on the card (at a plain shell prompt -- fact 15)
-tools/tinytang_put.py build/desktop/open-s1/desktop.bin                /root/cores/console138k/desktop.bin   # b9af4f06221e
+tools/tinytang_put.py build/desktop/open-s26/desktop.bin               /root/cores/console138k/desktop.bin   # 16c6c5998c9a
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
 tools/tinytang_put.py scripts/phosphor.tdsh  /root/scripts/phosphor.tdsh
 
@@ -385,12 +385,13 @@ clock-topology gate against the recorded profile, and the apicula fork's
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
 the vendor's HCLK block, with nextpnr rebuilt against that database; at the
-default seed 1 it builds `desktop.b9af4f06221e.bin`, which drives HDMI and VGA
+default seed 26 it builds `desktop.16c6c5998c9a.bin`, which drives HDMI and VGA
 together and stays clean when the board is hot (`pll_nes` at `PLL_R[0]`; see
 `fpga/desktop/desktop.cst` and [BUILDING.md](BUILDING.md)). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
-`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate 24×16 OLED
-terminal using an original 4×4 font alongside released sockets and the complete
-VGA pair; the desktop's **OLED Terminal** app runs an independent shell on it.
+`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED terminal
+alongside released sockets and the complete VGA pair, and ABI 1.2 gives it
+three font sets -- Standard 8×8 (12×8), Compact 6×8 (16×8) and Graphics 4×4
+(24×16); the desktop's **OLED Terminal** app runs an independent shell on it.
 Encoder and I2S remain features of Phosphor. The old menu image and build tool
 remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
 for the register interface and regression commands.

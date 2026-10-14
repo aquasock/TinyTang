@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Independent shell session; only display text is reduced to the 4x4 alphabet.
+// Independent shell session on the OLED, in one of three font sets: Standard
+// (8x8, 12x8), Compact (6x8, 16x8) and Graphics (4x4, 24x16).  Only display
+// text is reduced to the panel's printable ASCII.
 #include "oled_vterm.h"
 #include "tang_oled.h"
 #include "tdsh_bl616.h"
@@ -27,6 +29,14 @@ static unsigned s_head, s_tail;
 static td_window_t *s_window;
 static uint32_t s_revision, s_drawn;
 int tdsh_printf(const char *fmt, ...);
+
+// Indexed by TANG_OLED_GRAPHICS, _STANDARD and _COMPACT.  The emulator's cells
+// keep a stride of 24 at every size, and so does the core's cell store.
+static const struct { int cols, rows; const char *name; } k_fonts[3] = {
+    {24, 16, "graphics"}, {12, 8, "standard"}, {16, 8, "compact"},
+};
+static volatile int s_font_requested = TANG_OLED_STANDARD;
+static int s_font_effective = TANG_OLED_STANDARD;
 
 static bool enqueue(const void *data, size_t length)
 {
@@ -75,7 +85,7 @@ static int route_write(void *context,const void *data,size_t length)
     if (!length) xSemaphoreGive(s_lock);
     return (int)length;
 }
-static tdsh_bl616_route_t s_route={NULL,route_read,route_write,24};
+static tdsh_bl616_route_t s_route={NULL,route_read,route_write,12};
 static int io_read(void *context,uint8_t *out)
 {
     int c;
@@ -84,14 +94,17 @@ static int io_read(void *context,uint8_t *out)
 }
 static int io_write(void *context,const void *data,size_t length)
 { return route_write(context,data,length); }
-static int columns(void *context) { (void)context; return 24; }
+static int columns(void *context) { (void)context; return k_fonts[s_font_effective].cols; }
 static void shell_task(void *arg)
 {
     (void)arg;
     tdsh_bl616_route_set(&s_route);
     const tdsh_terminal_io_t io={.read_byte=io_read,.write_bytes=io_write,.columns=columns};
     char line[512],prompt[TDSH_MAX_PATH+32];
-    route_write(NULL,"OLED Terminal 24x16\r\n",21);
+    char banner[24];
+    int n=snprintf(banner,sizeof(banner),"OLED %dx%d\r\n",
+                   k_fonts[s_font_effective].cols,k_fonts[s_font_effective].rows);
+    route_write(NULL,banner,(size_t)n);
     for (;;) {
         snprintf(prompt,sizeof(prompt),"\033[1;32moled\033[0m:%s# ",s_session->cwd);
         int rc=tdsh_terminal_readline(s_session,&io,prompt,line,sizeof(line));
@@ -123,7 +136,9 @@ static int start_claimed(void)
     if (rc) return start_failed(rc);
     s_session->terminal_caps=TDSH_TERM_CAP_ANSI|TDSH_TERM_CAP_COLOR|TDSH_TERM_CAP_FULLSCREEN;
     xSemaphoreTake(s_lock,portMAX_DELAY);
-    oled_vterm_init(&s_st->vt,24,16);s_st->vt.reply=reply;s_revision++;
+    oled_vterm_init(&s_st->vt,k_fonts[s_font_effective].cols,k_fonts[s_font_effective].rows);
+    s_st->vt.reply=reply;s_revision++;
+    s_route.columns=k_fonts[s_font_effective].cols;
     xSemaphoreGive(s_lock);
     TaskHandle_t task=NULL;
     if (xTaskCreate(shell_task,"oledterm",4096,NULL,3,&task)!=pdPASS) return start_failed(-ENOMEM);
@@ -131,6 +146,22 @@ static int start_claimed(void)
     s_task=task;
     taskEXIT_CRITICAL();
     return 0;
+}
+int tang_oled_font_requested(void) { return s_font_requested; }
+bool tang_oled_font_effective(int font)
+{
+    if (font<0 || font>2 || !s_lock) return false;
+    xSemaphoreTake(s_lock,portMAX_DELAY);
+    bool changed=font!=s_font_effective;
+    if (changed) {
+        s_font_effective=font;
+        s_route.columns=k_fonts[font].cols;
+        // Resizing keeps the text and the cursor's line, and blanks the
+        // cells the new grid no longer shows.
+        if (s_st) { oled_vterm_resize(&s_st->vt,k_fonts[font].cols,k_fonts[font].rows);++s_revision; }
+    }
+    xSemaphoreGive(s_lock);
+    return changed;
 }
 bool tang_oled_running(void)
 {
@@ -179,7 +210,7 @@ static void draw(td_window_t *window,int w,int h)
     td_fill(td_rect(0,0,w,h),' ',7,0);
     if (!s_task) { td_text(0,0,"Unable to start shell",9,0,0);return; }
     xSemaphoreTake(s_lock,portMAX_DELAY);
-    for (int y=0;y<16 && y<h;y++) for(int x=0;x<24 && x<w;x++) {
+    for (int y=0;y<s_st->vt.rows && y<h;y++) for(int x=0;x<s_st->vt.cols && x<w;x++) {
         td_vcell_t c=s_st->vt.cells[y*24+x];
         if(s_st->vt.cursor_visible && x==s_st->vt.cx && y==s_st->vt.cy) {
             uint8_t tmp=c.fg;c.fg=c.bg;c.bg=tmp;
@@ -257,7 +288,25 @@ static int command(tdsh_session_t *session,int argc,char **argv)
 {
     (void)session;
     if(argc==2 && !strcmp(argv[1],"status")) {
-        tdsh_printf("OLED terminal: %s, 24x16, input only in focused window\r\n",s_task ? "running":"stopped");return 0;
+        const int f=s_font_effective;
+        tdsh_printf("OLED terminal: %s, %s %dx%d%s, input only in focused window\r\n",
+                    s_task ? "running":"stopped",k_fonts[f].name,k_fonts[f].cols,k_fonts[f].rows,
+                    f!=s_font_requested ? " (the loaded core shows Graphics only)":"");
+        return 0;
+    }
+    if(argc==2 && !strcmp(argv[1],"font")) {
+        tdsh_printf("%s\r\n",k_fonts[s_font_requested].name);return 0;
+    }
+    if(argc==3 && !strcmp(argv[1],"font")) {
+        for(int f=0;f<3;f++) if(!strcmp(argv[2],k_fonts[f].name)) {
+            // Takes effect now; the panel follows within one link poll, and a
+            // core before desktop ABI 1.2 holds the terminal at Graphics.
+            s_font_requested=f;
+            if(s_lock) (void)tang_oled_font_effective(f);
+            else s_font_effective=f;
+            return 0;
+        }
+        tdsh_printf("oledterm: font is standard, compact or graphics\r\n");return 1;
     }
     if(argc==2 && !strcmp(argv[1],"start")) return tang_oled_start() ? 1:0;
     if(argc==3 && !strcmp(argv[1],"run")) {
@@ -266,10 +315,10 @@ static int command(tdsh_session_t *session,int argc,char **argv)
         char buf[513];buf[0]=21;memcpy(buf+1,argv[2],n);buf[n+1]='\r';
         return enqueue(buf,n+2) ? 0:1;
     }
-    tdsh_printf("usage: oledterm start|status|run <quoted command>\r\n");return 1;
+    tdsh_printf("usage: oledterm start|status|font [standard|compact|graphics]|run <quoted command>\r\n");return 1;
 }
 int tang_oled_register(void)
 {
-    static const tdsh_command_t cmd={"oledterm","oledterm start|status|run <command>","Independent 24x16 OLED shell",command,0};
+    static const tdsh_command_t cmd={"oledterm","oledterm start|status|font [name]|run <command>","Independent OLED shell: standard 12x8, compact 16x8, graphics 24x16",command,0};
     return tdsh_register_command(&cmd);
 }

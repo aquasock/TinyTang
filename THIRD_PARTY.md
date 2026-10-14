@@ -169,6 +169,10 @@ documented UART protocol. Provenance by file:
 - `uart_fixed.v` is fpga4fun.com / KNJN LLC's RS-232 module as nestang carried
   it; its header carries the original notice.
 - `font.vh` is the 8x8 font nestang ships in `src/assets/`.
+  `oled_font_standard.vh`, the OLED's Standard set, is generated from it by
+  `tools/make_oled_font.py` (rows mirrored, DEL drawn as a box), so it carries
+  the same origin; the 4x4 Graphics and 6x8 Compact sets in `oled_font.vh` and
+  `oled_font_compact.vh` are this project's own glyphs.
 - `pll/` holds this project's own hand-written instantiations of the Gowin PLL
   primitive, replacing the Gowin IP-generator wrappers that carried those module
   names.  The generated files opened with "Copyright (C)2014-2025 Gowin

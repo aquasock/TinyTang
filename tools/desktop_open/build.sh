@@ -51,11 +51,13 @@ NPNR=${NEXTPNR_BUILD:-/home/vash/tools/nextpnr-mathieufro}
 # clock accumulates: `clk` rides general fabric, because the chipdb's model of
 # the TLPLL0CLK0 spine and bridge path does not match the silicon (cores routed
 # over it meet timing and load dead), so the skew depends on where its segments
-# land.  With pll_nes pinned to PLL_R[0], seed 1 is the hardware-proven core
-# (b9af4f06221e, HDMI and VGA correct and clean when hot; see
-# fpga/desktop/desktop.cst) -- the gate below refuses to publish a placement
-# that is not violation-free.
-SEED=${NEXTPNR_SEED:-1}
+# land.  With pll_nes pinned to PLL_R[0], seed 26 is the hardware-proven core
+# (16c6c5998c9a, HDMI, VGA and the OLED's three font sets correct and clean
+# when booted at 67.3 C; see fpga/desktop/desktop.cst) -- the gate below
+# refuses to publish a placement that is not violation-free.  A seed is not a
+# property of the design: any netlist change re-rolls the placement, and a
+# timing-clean seed can still load with a dead `clk` (core-log entry 67).
+SEED=${NEXTPNR_SEED:-26}
 export NEXTPNR_SEED=$SEED
 PY=${PY:-/home/vash/oss-cad-suite/py3bin/python3}
 PYDEPS=${PYDEPS:-/home/vash/tools/pydeps}
@@ -127,13 +129,16 @@ fi
 # NOT a demand that every clock be dedicated.  On this die a PLL's clock
 # reaches the clock plane through fabric and a logic gate, and nextpnr says so
 # itself: "no clock gate reaches both its source and its loads".  No build on
-# record has every clock dedicated -- the hardware-proven baseline, the seed-1
+# record has every clock dedicated -- the hardware-proven baseline, the seed-26
 # core with pll_nes at PLL_R[0], has `clk` on global resources only and the
 # pixel clock and hclk5 partly on fabric -- so an all-dedicated gate refuses
 # every build forever, which is a wall, not a check.  "Global resources only"
 # is not by itself the dead TLPLL0CLK0 route TOOL-017 records: it is that route
 # only with pll_nes at PLL_L[0], which the profile no longer guards against, so
-# pll_nes stays at PLL_R[0] (fpga/desktop/desktop.cst).  What is checked instead is *regression*: the
+# pll_nes stays at PLL_R[0] (fpga/desktop/desktop.cst).  Nor does a matching
+# verdict prove a global route works: the one dead PLL_R[0] core on record
+# (seed 6, entry 67) differed from the working ones only in taking `clk`
+# through SPINE17 <- CBRIDGEOUT_TOP2, which this check does not look at.  What is checked instead is *regression*: the
 # run is compared with the recorded profile of the hardware-proven build, and
 # it stops only when a clock that was better has become worse.  The full
 # topology is written beside the log, so a fabric fallback is visible and

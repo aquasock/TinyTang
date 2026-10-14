@@ -335,9 +335,9 @@ int main(void)
     CHECK(tang_oled_start() == 0);
 
     /* The banner and prompt reach the OLED, not USB. */
-    CHECK(wait_oled("OLED Terminal 24x16"));
+    CHECK(wait_oled("OLED 12x8"));         /* Standard is the default set */
     CHECK(wait_oled("oled:/root#"));
-    CHECK(!usb_has("OLED Terminal"));
+    CHECK(!usb_has("OLED 12x8"));
     CHECK(tdsh_bl616_route_current() == NULL);
 
     /* A command submitted from the console runs in the OLED session, on the
@@ -414,6 +414,26 @@ int main(void)
     CHECK(usb_all);
     CHECK(!usb_has("o0") && !usb_has("o1"));
     CHECK(!oled_has("u"));
+
+    /* Font sets: the terminal is resized at once, text wraps at the new width
+     * and the status line says so; an unknown set is refused. */
+    CHECK(oledterm("font", NULL) == 0);
+    CHECK(usb_has("standard"));
+    CHECK(oledterm("font", "compact") == 0);
+    CHECK(oledterm("status", NULL) == 0);
+    CHECK(usb_has("compact 16x8"));
+    CHECK(oledterm("run", "echo abcdefghijklmnopqrst") == 0);
+    CHECK(wait_oled("qrst"));
+    CHECK(oled_has("abcdefghijklmnop"));
+    CHECK(!oled_has("abcdefghijklmnopq"));  /* wrapped at 16 columns */
+    CHECK(oledterm("font", "graphics") == 0);
+    CHECK(oledterm("run", "echo ABCDEFGHIJKLMNOPQRSTUVWX") == 0);
+    CHECK(wait_oled("ABCDEFGHIJKLMNOPQRSTUVWX"));
+    CHECK(oledterm("font", "bogus") == 1);
+    CHECK(usb_has("font is standard, compact or graphics"));
+    CHECK(oledterm("font", "standard") == 0);
+    CHECK(oledterm("status", NULL) == 0);
+    CHECK(usb_has("standard 12x8"));
 
     if (failures) {
         printf("test_oled_session: %d failure(s)\n", failures);

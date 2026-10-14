@@ -2185,3 +2185,56 @@ The next build cycle gives the OLED three font sets the user chose, 8x8 Standard
 - User Test: PASS
 
 ---
+
+## 67 COMMIT Unreleased 2026-10-14T04:01:41-07:00
+
+#### Coming From:
+
+v0.1.0 bf4da16
+
+#### Purpose:
+
+Give the OLED terminal the three font sets the user chose -- 8x8 Standard as the default, 8x6 Compact and the existing 4x4 Graphics -- in the desktop core and the firmware, and take the rebuilt core to a hot-board test.
+
+#### Outcome:
+
+The desktop core now renders the OLED in one of three sets chosen by a new register `0x118`, applied at vertical blank through the cursor's handshake: 0 Graphics, the original 4x4 glyphs at 24x16 and the reset value, so firmware that predates it is unaffected; 1 Standard, the desktop's own 8x8 font at 12x8; and 2 Compact, 95 new original glyphs drawn five columns wide in a 6x8 cell at 16x8, so the whole `root@tinytang:~#` prompt fits. Geometry at `0x100` follows the set, cells keep a stride of 24 in every set so the firmware's cell blocks are unchanged, a value above 2 is refused with status 6, and the desktop ABI is `0x00010002`. `tools/make_oled_font.py` generates `oled_font_compact.vh` and `oled_font_standard.vh`, the latter converted from `font.vh` into a case function with DEL drawn as a box, because Icarus cannot read `font.vh`'s array parameter, and `THIRD_PARTY.md` records that origin. The firmware's OLED Terminal starts in Standard at every boot, `oledterm font standard|compact|graphics` resizes it at once, keeping its text and cursor line, the link poller writes `0x118` before any cell and holds the terminal at Graphics on an older core, the banner shortened to `OLED 12x8`, and the graphics demo players select Graphics while they play. `tb_desktop_oled.sv` checks every pixel of a frame in each set against hand-written reference glyphs and failed on a planted bit-order fault, the register testbench gained ten font-mode cases, `tb_oled_link.cpp` covers the font write's order, its resending and its refusal and failed on a planted fault once a case was added for the command resizing first, and `tb_oled_session.c` checks wrapping at 16 and 24 columns; every OLED, core, vterm, desk and ini test passes, and the help-width gate passes. The firmware built clean as `bf4da16-dirty.c7fcd91`, 611,520 bytes, SHA-256 `099a15f1`, was installed with `tools/tinytang_flash.py` and confirmed by `platform`. The new netlist moved the placement: of seeds 1 to 37, 21 met setup and hold but every one routed more pixel-clock sinks on fabric than the profile's 1, the fewest being seed 6 with 4. The user chose to test seed 6, packed with `ALLOW_UNVERIFIED_CLOCK=1` as `desktop.ec5213d4a9fd.bin`; loaded from the card it left HDMI synced at 720p and black and the UART silent, so its `clk` domain was dead, and the released core was reloaded. At the user's direction the dead core's `clk` route was compared with the working released core, rebuilt bit for bit as `b9af4f06221e` in a worktree: they differ only in the dead one's `SPINE17 <- CBRIDGEOUT_TOP2` hop at `X94Y81` and six `GT00 <- SPINE17` taps, and only seeds 10 and 26 of the 37 avoid `SPINE17`. Seed 26, `desktop.16c6c5998c9a.bin` (`.fs` `be6f111c0b53`), timing clean with 21 pixel-clock fabric sinks, 11 of them in the HDMI text layer, answered as ABI 1.2 with the OLED declared, and the user accepted HDMI, VGA and all three font sets, then installed as the card's `desktop.bin` with the released core kept as `desktop.bin.v0.1.0`, a power cycle at 67.3 C, the hottest test on record, came up clean, and `tangini` read back ABI 1.2 after it. With the user's approval seed 26 is the default in `tools/build_desktop_core_open.sh` and `tools/desktop_open/build.sh`, `clock_profile.json` was re-recorded from it, and a build from a cleared directory with nothing overridden passed both gates and reproduced `16c6c5998c9a` and `be6f111c0b53`; `BUILDING.md` and the README name it, keeping v0.1.0's seed-1 core as that tag's. The `SPINE17` hop is recorded in TOOL-017 as a lead rather than a finding, resting on one dead and two working cores, and the topology gate does not check it; TOOL-003 names the new default. `desktop-fonts.bin` was deleted from the card. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Whether the topology gate should refuse a `clk` route through `SPINE17` is the user's decision; it would have rejected seed 6 and 35 of the 37 seeds, and more hardware results or a decoded Gowin probe of that bridge would turn the lead into a finding. The card's `desktop.fs.gz` is still the v0.1.0 core's `.fs` and should be replaced with seed 26's `be6f111c0b53` when the card is next updated. The separate graphics app that will own the 4x4 set is still to be designed.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/README.md
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_oled.sv
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/oled_font_compact.vh
+- fpga/desktop/oled_font_standard.vh
+- ports/bl616/phosphor/oled_link.cpp
+- ports/bl616/tang_oled.c
+- ports/bl616/tang_oled.h
+- tools/build_desktop_core_open.sh
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_profile.json
+- tools/make_oled_demo.py
+- tools/make_oled_font.py
+- tools/tests/sim/tb_desktop_oled.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/tb_oled_link.cpp
+- tools/tests/tb_oled_session.c
+- tools/tests/test_desktop_core.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

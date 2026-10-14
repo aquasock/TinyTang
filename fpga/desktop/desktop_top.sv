@@ -146,6 +146,7 @@ wire desktop_oled_cell_we;
 wire [8:0] desktop_oled_cell_index;
 wire [15:0] desktop_oled_cell_word;
 wire [16:0] desktop_oled_cursor;
+wire [1:0] desktop_oled_font;
 wire [31:0] desktop_oled_frames, desktop_oled_signature;
 desktop_pmod desktop_sockets (
     .control_clk(clk), .pixel_clk(hclk), .resetn(sys_resetn),
@@ -154,6 +155,7 @@ desktop_pmod desktop_sockets (
     .socket_ack(desktop_socket_ack), .pmod0_io(pmod0_io), .pmod1_io(pmod1_io),
     .oled_cell_we(desktop_oled_cell_we), .oled_cell_index(desktop_oled_cell_index),
     .oled_cell_word(desktop_oled_cell_word), .oled_cursor(desktop_oled_cursor),
+    .oled_font(desktop_oled_font),
     .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature)
 );
 localparam [15:0] THIS_CORE_ID = 16'h0054;
@@ -189,6 +191,7 @@ desktop_link #(.FREQ(21_492_000), .CORE_ID(THIS_CORE_ID))
     .desktop_socket_ack(desktop_socket_ack),
     .desktop_oled_cell_we(desktop_oled_cell_we), .desktop_oled_cell_index(desktop_oled_cell_index),
     .desktop_oled_cell_word(desktop_oled_cell_word), .desktop_oled_cursor(desktop_oled_cursor),
+    .desktop_oled_font(desktop_oled_font),
     .desktop_oled_frames(desktop_oled_frames), .desktop_oled_signature(desktop_oled_signature),
 
     .rom_loading(), .rom_do(), .rom_do_valid()

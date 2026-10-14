@@ -23,7 +23,7 @@ import binascii
 import sys
 from pathlib import Path
 replies=Path(sys.argv[1]).read_text().splitlines()
-assert len(replies)==56
+assert len(replies)==66
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15

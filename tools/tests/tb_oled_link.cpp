@@ -33,6 +33,12 @@ static uint32_t g_cursor = 0x10000;
 static uint16_t g_panel[384];            // what the core has been sent
 static uint32_t g_panel_cursor;
 static int g_ids, g_ext, g_blocks, g_cursor_writes, g_block_words;
+// The font set: what the terminal asks for, what it was last sized for, and
+// what the core was sent and when, against the first block write.
+static int g_requested = 1, g_effective = 1;
+static uint32_t g_panel_font;
+static int g_font_writes, g_ops, g_font_op, g_first_block_op;
+static bool g_refuse_font;
 
 // Counts the link's own heap use (linked with -Wl,--wrap=calloc).
 static int g_callocs;
@@ -44,6 +50,13 @@ extern "C" void *__wrap_calloc(size_t n, size_t size)
 }
 
 extern "C" bool tang_oled_running(void) { return g_started; }
+extern "C" int tang_oled_font_requested(void) { return g_requested; }
+extern "C" bool tang_oled_font_effective(int font)
+{
+    bool changed = font != g_effective;
+    g_effective = font;
+    return changed;
+}
 
 extern "C" bool tang_oled_snapshot(uint16_t cells[384], uint32_t *cursor)
 {
@@ -76,6 +89,16 @@ bool fpga_debug_request(uint8_t opcode, uint32_t address, uint32_t data,
         else result->status = 4;
         return true;
     }
+    if (opcode == FPGA_EXT_WRITE32 && address == 0x118) {
+        g_font_writes++;
+        g_font_op = ++g_ops;
+        if (g_abi < 0x00010002 || g_refuse_font) {
+            result->status = g_abi < 0x00010002 ? 4 : 6;
+            return true;
+        }
+        g_panel_font = data;
+        return true;
+    }
     if (opcode == FPGA_EXT_WRITE32 && address == 0x114) {
         g_cursor_writes++;
         g_panel_cursor = data;
@@ -94,6 +117,7 @@ bool fpga_debug_write_block(uint32_t address, const uint32_t *words, size_t coun
     if (g_id != 0x54) return false;
     g_blocks++;
     g_block_words += (int)count;
+    if (!g_first_block_op) g_first_block_op = ++g_ops;
     if (g_refuse_blocks) {
         result->status = 6;
         return true;
@@ -102,7 +126,11 @@ bool fpga_debug_write_block(uint32_t address, const uint32_t *words, size_t coun
     return true;
 }
 
-static void reset_counts() { g_ids = g_ext = g_blocks = g_cursor_writes = g_block_words = 0; }
+static void reset_counts()
+{
+    g_ids = g_ext = g_blocks = g_cursor_writes = g_block_words = 0;
+    g_font_writes = g_ops = g_font_op = g_first_block_op = 0;
+}
 static void polls(int n) { for (int i = 0; i < n; i++) tang_oled_poll(); }
 static bool panel_matches() { return std::memcmp(g_panel, g_cells, sizeof(g_cells)) == 0; }
 static void load(uint8_t id)
@@ -167,10 +195,12 @@ int main()
     g_abi = 0x00010001;
 
     // ABI 1.1 with the OLED on PMOD0: the first poll paints every cell and the
-    // cursor, the next sends nothing.
+    // cursor, the next sends nothing.  That core has no font register, so the
+    // terminal is sized for Graphics and no font is sent.
     load(0x54);
     reset_counts();
     polls(1);
+    CHECK(g_effective == 0 && g_font_writes == 0);
     CHECK(g_blocks == 6 && g_block_words == 384);
     CHECK(g_cursor_writes == 1 && g_panel_cursor == g_cursor);
     CHECK(panel_matches());
@@ -244,6 +274,64 @@ int main()
     load(0x54);
     polls(1);
     CHECK(panel_matches());
+
+    // ABI 1.2: the requested set, Standard, is sent once and before any cell;
+    // the terminal is sized for it; nothing more goes until it changes.
+    g_abi = 0x00010002;
+    load(0x54);
+    reset_counts();
+    polls(1);
+    CHECK(g_effective == 1);
+    CHECK(g_font_writes == 1 && g_panel_font == 1);
+    CHECK(g_font_op != 0 && g_font_op < g_first_block_op);
+    CHECK(g_blocks == 6 && panel_matches());
+    reset_counts();
+    polls(50);
+    CHECK(g_font_writes == 0 && g_blocks == 0);
+
+    // `oledterm font compact`: one font write, the terminal resized, and the
+    // whole panel repainted.
+    g_requested = 2;
+    reset_counts();
+    polls(1);
+    CHECK(g_effective == 2 && g_font_writes == 1 && g_panel_font == 2);
+    CHECK(g_blocks == 6);
+    reset_counts();
+    polls(10);
+    CHECK(g_font_writes == 0 && g_blocks == 0);
+
+    // The way `oledterm font` really does it: the command has already resized
+    // the terminal, so only the register is behind, and it is still sent.
+    g_requested = 1;
+    g_effective = 1;
+    reset_counts();
+    polls(1);
+    CHECK(g_font_writes == 1 && g_panel_font == 1);
+    reset_counts();
+    polls(10);
+    CHECK(g_font_writes == 0);
+
+    // A refused font write stops drawing until the next check, which sends the
+    // font again and repaints everything.
+    g_requested = 0;
+    g_refuse_font = true;
+    reset_counts();
+    polls(1);
+    CHECK(g_font_writes == 1 && g_blocks == 0 && g_cursor_writes == 0);
+    reset_counts();
+    polls(20);
+    CHECK(g_font_writes == 0 && g_blocks == 0);
+    g_refuse_font = false;
+    polls(10);
+    CHECK(g_font_writes == 1 && g_panel_font == 0 && g_blocks == 6 && panel_matches());
+
+    // Replaced by an ABI 1.1 core: back to Graphics, and no font register write.
+    g_requested = 1;
+    g_abi = 0x00010001;
+    load(0x54);
+    reset_counts();
+    polls(1);
+    CHECK(g_effective == 0 && g_font_writes == 0 && panel_matches());
 
     if (failures) {
         std::printf("test_oled_link: %d failure(s)\n", failures);

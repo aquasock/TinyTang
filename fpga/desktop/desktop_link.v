@@ -38,6 +38,7 @@ module desktop_link #(
     output wire [8:0] desktop_oled_cell_index,
     output wire [15:0] desktop_oled_cell_word,
     output wire [16:0] desktop_oled_cursor,
+    output wire [1:0] desktop_oled_font,
     input [31:0] desktop_oled_frames, desktop_oled_signature,
     input [11:0] joy1,              // pad 1, SNES layout: (R L X A RT LT DN UP START SELECT Y B)
     input [11:0] joy2,              // pad 2
@@ -227,6 +228,7 @@ desktop_regs desktop_endpoint (
     .socket_ack(desktop_socket_ack), .block_request(rx_data == 8'h12),
     .oled_cell_we(desktop_oled_cell_we), .oled_cell_index(desktop_oled_cell_index),
     .oled_cell_word(desktop_oled_cell_word), .oled_cursor(desktop_oled_cursor),
+    .oled_font(desktop_oled_font),
     .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature)
 );
 

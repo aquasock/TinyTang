@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate OLED Terminal graphics demos: pre-rendered 24x16 ANSI frames.
 
-The OLED Terminal (desktop ABI 1.1) is 24x16 cells of 4x4 pixels, each cell a
+The OLED Terminal's Graphics font set (register 0x118 on desktop ABI 1.2, and
+the only set before it) is 24x16 cells of 4x4 pixels, each cell a
 glyph in one of 16 palette colours over another.  A cell can therefore show
 more than 16 tones: a density glyph such as ':' or '#' in colour B over
 colour A mixes the two in proportion to its lit pixels.  These demos build a
@@ -157,8 +158,11 @@ def main():
 
 
 # Plays each demo LOOPS times, about 17 frames a second (the OLED link sends
-# the screen at most every 40 ms), then restores the screen and cursor.
+# the screen at most every 40 ms), then restores the screen and cursor.  The
+# frames are 24x16 cells of 4x4 glyphs, so the players select the Graphics
+# font set first and return the terminal to Standard after.
 PLAY = f'''# OLED Terminal graphics demos (tools/make_oled_demo.py).
+oledterm font graphics
 LOOPS=3
 for DEMO in plasma fire
     L=0
@@ -173,12 +177,14 @@ for DEMO in plasma fire
     endwhile
 endfor
 cat /root/demos/restore.ans
+oledterm font standard
 '''
 
 
 
 def fire_player(title, loops):
     return f'''{title}
+oledterm font graphics
 L=0
 while $L < {loops}
     I=0
@@ -190,6 +196,7 @@ while $L < {loops}
     L=$((L + 1))
 endwhile
 cat /root/demos/restore.ans
+oledterm font standard
 '''
 
 

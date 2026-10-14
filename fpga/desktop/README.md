@@ -71,7 +71,7 @@ The boot script loads `/root/cores/console138k/desktop.bin`; removing or
 renaming the script leaves the board at a plain prompt. Firmware must include
 the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 
-## Register ABI 1.1
+## Register ABI 1.2
 
 The endpoint accepts version-1 extended TangCore command `0x10` with the
 existing big-endian fields and CRC-16/CCITT-FALSE. Read32 and write32 are
@@ -86,14 +86,15 @@ frames made by the firmware's own encoder.
 | Address | Access | Meaning |
 |---|---|---|
 | `0x00` | Read | Identity `0x00544453` (TDS) |
-| `0x04` | Read | Desktop ABI `0x00010001` |
+| `0x04` | Read | Desktop ABI `0x00010002` |
 | `0x08` | Read | Personality bitmap `0x0000000f` (none, OLEDrgb, VGA J1, VGA J2) |
 | `0xc0` | Read/write | Socket declaration |
-| `0x100` | Read | Geometry `0x00180010`: 24 columns, 16 rows |
+| `0x100` | Read | Geometry of the active font set: `0x00180010` (24×16), `0x000c0008` (12×8) or `0x00100008` (16×8) |
 | `0x108` | Read | Completed OLED frame count |
 | `0x10c` | Read | CRC32 of the last emitted RGB565 frame, high byte first |
 | `0x114` | Read/write | Cursor visible bit 16, row bits 15:8, column bits 7:0 |
-| `0x200`–`0x7fc` | Write | 384 row-major cells, word-aligned |
+| `0x118` | Read/write | OLED font set: 0 Graphics (reset), 1 Standard, 2 Compact |
+| `0x200`–`0x7fc` | Write | 384 row-major cells with a stride of 24, word-aligned |
 
 The socket word uses personality nibbles `[7:4]` and `[11:8]`, and row flips
 `[12]` and `[13]`. All other bits must be zero. Personalities are 0 (released),
@@ -118,9 +119,22 @@ pixels against a reference glyph image, including line and frame wraps.
 
 ## OLED terminal
 
-The OLED is a separate shell display with a fixed 24×16 grid, filling its
-96×64 pixels with original 4×4 glyphs. ASCII 32–126 is supported; unsupported
-printable Unicode uses one boxed fallback cell. The display conversion does
+The OLED is a separate shell display filling its 96×64 pixels in one of three
+font sets, chosen by register `0x118` (desktop ABI 1.2):
+
+| Set | Value | Cell | Grid | Glyphs |
+|---|---|---|---|---|
+| Graphics | 0 | 4×4 | 24×16 | original TinyTang glyphs (`oled_font.vh`) |
+| Standard | 1 | 8×8 | 12×8 | the desktop's own 8×8 font (`oled_font_standard.vh`, from `font.vh`) |
+| Compact | 2 | 6×8 | 16×8 | original TinyTang glyphs (`oled_font_compact.vh`) |
+
+The core resets to Graphics, which is the only set an ABI 1.1 firmware knows,
+and a value above 2 is refused with status 6. The cell store keeps a stride of
+24 in every set, so a cell's address is `0x200 + 4 × (row × 24 + column)`
+whichever grid is showing, and cells outside the grid are kept but not drawn.
+A set change is applied with the cursor and socket word at vertical blank.
+ASCII 32–126 is supported in every set; unsupported printable Unicode uses
+one boxed fallback cell (DEL). The display conversion does
 not change command input or file contents. Each 16-bit cell stores character
 7:0, foreground 11:8 and background 15:12 in a 16-colour palette. Upper bits
 of a write32 value must be zero. Block writes validate the whole request
@@ -130,7 +144,13 @@ The panel clocks SPI at a 161.6 ns period and latches both pixel bytes before
 sending them. Its frame signature covers the serialized pixels.
 
 The BL616 app **OLED Terminal** owns an independent TinyDesk Shell session
-and compact terminal emulator, fixed at 24 columns for the line editor.
+and compact terminal emulator, sized to the font set's grid, Standard by
+default at every boot; `oledterm font standard|compact|graphics` changes it
+at once, keeping the text and the cursor's line. The link poller sends the
+set to `0x118` before any cell, and on a desktop core older than ABI 1.2 it
+holds the terminal at Graphics, the only set that core can draw. The graphics
+demos (`tools/make_oled_demo.py`) select Graphics while they play and return
+to Standard.
 Keyboard and paste input go there only when its window has focus; output
 continues while unfocused or closed. The shell task and script workers use
 a task-local terminal route, separate from TinyConsole and the existing
@@ -148,10 +168,11 @@ another desktop, or `tangput`, from the OLED shell is refused, and a second
 `~/.tdsh_history`, so commands entered in both at the same instant can lose
 a history line.
 
-Diagnostic shell commands are `oledterm start`, `oledterm status`, and
-`oledterm run "echo hello"`. The last submits a command to the independent
-session. Run `tools/make_oled_font.py` to regenerate the font and native
-proof sheet under `build/oled-terminal/`. Additional regressions:
+Diagnostic shell commands are `oledterm start`, `oledterm status`,
+`oledterm font [standard|compact|graphics]` and `oledterm run "echo hello"`.
+The last submits a command to the independent session. Run
+`tools/make_oled_font.py` to regenerate the three font files and a native
+96×64 specimen of each set under `build/oled-terminal/`. Additional regressions:
 
 ```bash
 bash tools/tests/test_oled_vterm.sh
