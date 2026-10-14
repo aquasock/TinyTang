@@ -2124,3 +2124,33 @@ The user creates the `v0.1.0` tag and GitHub release on the commit that carries 
 - User Test: N/A
 
 ---
+
+## 65 COMMIT Unreleased 2026-10-14T01:31:24-07:00
+
+#### Coming From:
+
+v0.1.0 2c2a69c
+
+#### Purpose:
+
+Check the `v0.1.0` GitHub release the user published and correct its description where it did not match the asset, as the user directed.
+
+#### Outcome:
+
+The user published `v0.1.0` on `2c2a69c`, titled `TinyTang 0.1.0`, marked pre-release, with the description taken from `docs/releases/v0.1.0.md` and one asset, `TinyTang.v0.1.0.tar.gz`, 6,053,820 bytes, SHA-256 `f69bd833ec784bea249e9f77cdfc215dba2e1e36730bf3f53d867875850726d3`, for which GitHub recorded no digest. The asset was downloaded and extracted: it holds the card's 36 files and its `README.md` with no `.Trash-1000`, `bl616-firmware.bin` is `238cee62`, both `.fs.gz` files decompress to `7453ad6c9400` and `6b0c433a5c7e`, and every file matches entry 61's card hashes except `root/scripts/boot.tdsh`, which the user edited on the card afterwards in its header comment only, replacing `nestang-menu.bin` with `desktop.bin`, so it still names the Gowin `tools/build_desktop_core.sh` and `boot-cart.tdsh` and differs from the repository's copy. The description said GitHub shows each asset's SHA-256, told the user to unzip the archive, and presented `bl616-firmware.bin` as an asset of its own, none of which held, so with the user's approval `gh release edit` changed three passages of the published description: the install step now extracts `TinyTang.v0.1.0.tar.gz`, the first-install step writes the archive's `bl616-firmware.bin` as the repository README's quick start shows, and the Assets section names the single asset with its SHA-256. The tagged `docs/releases/v0.1.0.md` is unchanged, so the published description now differs from it in those passages. Being marked pre-release, the release is not the repository's latest release. Nothing was built, deployed or tested. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Whether `v0.1.0` stays a pre-release is the user's call. Items carried past the release are unchanged from entry 64: the TinyDesk patches that keep the firmware identity `-dirty`, a check of the README's BLFlashCommand line in the ROM bootloader, the Releasing section of `.ai/core.md` if the user wants it written, and mirroring the toolchain archives.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
