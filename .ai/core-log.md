@@ -2442,3 +2442,39 @@ Wire the Input tab: Remap and Restore defaults are inert, and Player 1/2 changes
 - User Test: PASS
 
 ---
+
+## 74 COMMIT Unreleased 2026-10-14T16:55:17-07:00
+
+#### Coming From:
+
+Unreleased f7e744c
+
+#### Purpose:
+
+Wire the TinyNES Controls app's Input tab, make its Save button actually write `/nes.ini` after the user reported it refused, and put that file's parser under a host test.
+
+#### Outcome:
+
+`ports/bl616/tinynes_app.cpp` now wires the Input tab it laid out last cycle: a row steps to the next controller button name, Restore defaults puts the built-in mapping back, a Player 1/2 button swaps which player the rows edit, and Save writes the file, which the app re-reads every time the window opens so a hand edit shows without a power cycle. Capture -- pressing the button you want -- is still absent because the only pad an app can read is the desk layer's seven-bit word and not the player's nine, so the rows cycle through the eight names the board has identified instead. Save was this cycle's fault: the user pressed it and the app answered `cannot rename over the settings file`, while `/nes.ini` stayed at 1226 bytes and no temporary was left behind. The cause is in the SDK's FatFs, whose `f_rename` checks the new name and returns `FR_EXIST` when an object already holds it, because FAT has no atomic replace, so the temporary-to-real rename the save was built on could never succeed against an existing file; the new settings were written to the temporary and then discarded by the failure path. The save now goes through a backup name -- the file is set aside, the temporary takes its place, the backup is dropped -- so it never asks FatFs to overwrite, a whole file sits under one of those three names at every point, and each failure returns its own reason instead of one catch-all; the status line was also a single widget shared by all four pages, which `show_tab`'s last-page-wins visibility left hidden on the Input tab where Save lives, and there is one label per page now. `tools/tests/test_fat_rename.sh` builds the SDK's real FatFs against an image `mkfs.fat` makes and holds both halves: the single rename is refused with `FR_EXIST` (8) while the settings file keeps its old mapping and the temporary is still whole, and the sequence the app uses now passes every check with `fsck.fat` accepting the image afterwards, 16 checks and none failed. `tools/tests/test_nes_ini.sh` runs the parser on the host beside `test_ini.sh` as entry 73 asked -- 30 checks, none failed, covering the several-keys-to-a-line case that cost a cycle, a failed read, an absent file, clamping, and the shipped `docs/nes.ini` at 25 keys. That parser's stub had been left in `tools/tests/`, where it shadowed the SDK's `ff.h` for quoted includes and stopped `tools/tests/test_fat_names.sh` compiling; it now lives in `tools/tests/stubs/` with the other host stubs and that test passes again. The build finished with no warning in `tinynes_app.cpp`, 623936 bytes were staged and committed to the board, and after the power cycle the user reported everything working: Save answers `Saved.  It applies from the next game start.`, the card's `/nes.ini` kept its comments and its whole `[video]` and `[audio]` sections with only the `p1_` and `p2_` lines rewritten to the stepped mapping, no `nes.ini.bak` or `nes.ini.tmp` was left behind, and a game started from that file follows the mapping. The core-syntax audit passed.
+
+#### Next Steps:
+
+Video and Audio, whose tabs still show what the file says and reach nothing, are the next cycle, with save states after them. Two limits carry forward and neither was touched here: the shell's rename shim in `tdsh_fs_bl616.c` maps `FR_EXIST` to `EACCES`, so anything that renames onto an existing name -- a desktop drag-to-move over a file, `mv` -- fails the way the save did, and whether those should clobber is the user's call; and the Bluetooth co-processor assert, which resets the board and can spoil a hardware test, is still open. The Save button's exit-only saving is deliberate and stays.
+
+#### Files Modified:
+
+- docs/nes.ini
+- ports/bl616/tinynes_app.cpp
+- tools/tests/stubs/ff.h
+- tools/tests/tb_fat_rename.c
+- tools/tests/tb_nes_ini.c
+- tools/tests/test_fat_rename.sh
+- tools/tests/test_nes_ini.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
