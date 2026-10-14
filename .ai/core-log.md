@@ -2033,3 +2033,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 62 COMMIT Unreleased 2026-10-14T01:18:29-07:00
+
+#### Coming From:
+
+Unreleased 1896dc0
+
+#### Purpose:
+
+Carry the release card's wording of `scripts/phosphor.tdsh` back into this repository, at the user's direction, and record the card's state as the user archived it.
+
+#### Outcome:
+
+The release card's `root/scripts/phosphor.tdsh` differed from this repository's only in its usage comment, where the user had changed the example track from a personal recording to `/root/music/test.mp3`, a generated tone the card ships. The card's file was copied over the repository's, the diff is that one comment line, and the repository copy is now byte-identical to the card's, SHA-256 `d5814bc00fcd15fd205da1d374bb9f8d649f4868b47b82917bde6eb92856fea4`. The matching change to TinyNES's `scripts/open/nes.tdsh`, whose example now names `nova.nes`, is that repository's entry 30 at `9e1c027`. After entry 61 the user removed the SHA-256 section from the card's `README.md` and made the release zip; the README is otherwise as entry 61 wrote it, so the card no longer carries a hash list, and the zip itself was not located on this machine and has not been checked, including for the card's `.Trash-1000`. The card's `boot.tdsh` remains the copy from before entry 59's comment fix, which the user did not ask to change. Nothing was built, deployed or tested. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Confirm that the release zip does not carry the card's `.Trash-1000`, which holds 663 MB of personal music. TinyNES's pin in `deps.conf` is now two commits behind its head, both log or comment changes, and is to be re-pinned at tagging; the release notes and the `v0.1.0` `VERSION` entry remain.
+
+#### Files Modified:
+
+- scripts/phosphor.tdsh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
