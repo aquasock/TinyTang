@@ -169,7 +169,16 @@ documented UART protocol. Provenance by file:
 - `uart_fixed.v` is fpga4fun.com / KNJN LLC's RS-232 module as nestang carried
   it; its header carries the original notice.
 - `font.vh` is the 8x8 font nestang ships in `src/assets/`.
-- `pll/` holds Gowin IP-generator wrappers.
+- `pll/` holds this project's own hand-written instantiations of the Gowin PLL
+  primitive, replacing the Gowin IP-generator wrappers that carried those module
+  names.  The generated files opened with "Copyright (C)2014-2025 Gowin
+  Semiconductor Corporation.  All rights reserved." and no vendor-generated file
+  is kept in this repository.  The replacements deliberately keep the module
+  names, the port lists, the inner instance names and the generated net
+  structure: on this device and toolchain the netlist decides the placement, the
+  placement decides where the clocks land, and that decides whether the core runs
+  at all, so the structure is load-bearing rather than decoration.  The seed-1
+  build is bit-for-bit identical to the generated build; see core-log entry 55.
 - `oled_spi.sv` and `oled_panel.sv` come from Tang-Phosphor (below).
 - The rest (`textdisp_wide.sv`, `keylink_rx.sv`, `desktop_regs.sv`,
   `desktop_pmod.sv`, `desktop_oled.sv`, `clock_monitor.sv`, constraints and

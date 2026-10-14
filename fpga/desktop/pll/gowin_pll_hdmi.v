@@ -1,32 +1,58 @@
-//Copyright (C)2014-2025 Gowin Semiconductor Corporation.
-//All rights reserved.
-//File Title: IP file
-//Tool Version: V1.9.11.01 (64-bit)
-//Part Number: GW5AST-LV138PG484AC1/I0
-//Device: GW5AST-138
-//Device Version: B
-//Created Time: Thu Mar  6 21:19:04 2025
+// SPDX-License-Identifier: MIT
+//
+// 371.25 MHz from the 27 MHz PLL: 27 * 55 / 4, the HDMI serialiser bit clock.
+//
+// Hand-written instantiation of the PLL primitive.  The Gowin IP-generator
+// wrapper that carried this name opened with "Copyright (C)2014-2025 Gowin
+// Semiconductor Corporation.  All rights reserved.", and this project's rule is
+// that no vendor-generated file is brought into the repository, so the
+// configuration is expressed here instead.  See THIRD_PARTY.md.
+//
+// The module name, the port list, the inner instance name and the net structure
+// are deliberately unchanged.  desktop.cst pins the flattened cell `pll_hdmi.PLL_inst`, and
+// on this device and toolchain the netlist decides the placement, the placement
+// decides where the clocks land, and that decides whether the core runs at all.
+// Tidying these dangling nets is therefore not a safe refactor: bit-for-bit
+// identity with the generated build is the requirement.
 
 module gowin_pll_hdmi (clkout, clkin);
 
 output clkout;
-input clkin;
+input  clkin;
 
-wire lock;
-wire clkout1;
-wire clkout2;
-wire clkout3;
-wire clkout4;
-wire clkout5;
-wire clkout6;
-wire clkfbout;
-wire gw_vcc;
-wire gw_gnd;
+wire lock, clkout1, clkout2, clkout3, clkout4, clkout5, clkout6, clkfbout;
+wire gw_vcc, gw_gnd;
 
 assign gw_vcc = 1'b1;
 assign gw_gnd = 1'b0;
 
-PLL PLL_inst (
+PLL #(
+    .FCLKIN("27"),
+    .IDIV_SEL(1),
+    .FBDIV_SEL(1),
+    .MDIV_SEL(55),
+    .MDIV_FRAC_SEL(0),
+    .ODIV0_SEL(4),
+    .ODIV0_FRAC_SEL(0),
+    .ODIV1_SEL(8),
+    .ODIV2_SEL(8),
+    .ODIV3_SEL(8),
+    .ODIV4_SEL(8),
+    .ODIV5_SEL(8),
+    .ODIV6_SEL(8),
+    .CLKOUT0_EN("TRUE"),
+    .CLKOUT1_EN("FALSE"),
+    .CLKOUT2_EN("FALSE"),
+    .CLKOUT3_EN("FALSE"),
+    .CLKOUT4_EN("FALSE"),
+    .CLKOUT5_EN("FALSE"),
+    .CLKOUT6_EN("FALSE"),
+    .CLKFB_SEL("INTERNAL"),
+    .CLKOUT0_DT_DIR(1'b1),
+    .CLKOUT0_DT_STEP(0),
+    .CLKOUT0_PE_COARSE(0),
+    .CLKOUT0_PE_FINE(0)
+) PLL_inst (
     .LOCK(lock),
     .CLKOUT0(clkout),
     .CLKOUT1(clkout1),
@@ -42,26 +68,26 @@ PLL PLL_inst (
     .PLLPWD(gw_gnd),
     .RESET_I(gw_gnd),
     .RESET_O(gw_gnd),
-    .FBDSEL({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .IDSEL({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .MDSEL({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .MDSEL_FRAC({gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL0({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL0_FRAC({gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL1({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL2({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL3({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL4({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL5({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ODSEL6({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .DT0({gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .DT1({gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .DT2({gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .DT3({gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .ICPSEL({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .LPFRES({gw_gnd,gw_gnd,gw_gnd}),
-    .LPFCAP({gw_gnd,gw_gnd}),
-    .PSSEL({gw_gnd,gw_gnd,gw_gnd}),
+    .FBDSEL(6'b0),
+    .IDSEL(6'b0),
+    .MDSEL(7'b0),
+    .MDSEL_FRAC(3'b0),
+    .ODSEL0(7'b0),
+    .ODSEL0_FRAC(3'b0),
+    .ODSEL1(7'b0),
+    .ODSEL2(7'b0),
+    .ODSEL3(7'b0),
+    .ODSEL4(7'b0),
+    .ODSEL5(7'b0),
+    .ODSEL6(7'b0),
+    .DT0(4'b0),
+    .DT1(4'b0),
+    .DT2(4'b0),
+    .DT3(4'b0),
+    .ICPSEL(6'b0),
+    .LPFRES(3'b0),
+    .LPFCAP(2'b0),
+    .PSSEL(3'b0),
     .PSDIR(gw_gnd),
     .PSPULSE(gw_gnd),
     .ENCLK0(gw_vcc),
@@ -73,103 +99,8 @@ PLL PLL_inst (
     .ENCLK6(gw_vcc),
     .SSCPOL(gw_gnd),
     .SSCON(gw_gnd),
-    .SSCMDSEL({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
-    .SSCMDSEL_FRAC({gw_gnd,gw_gnd,gw_gnd})
+    .SSCMDSEL(7'b0),
+    .SSCMDSEL_FRAC(3'b0)
 );
 
-defparam PLL_inst.FCLKIN = "27";
-defparam PLL_inst.IDIV_SEL = 1;
-defparam PLL_inst.FBDIV_SEL = 1;
-defparam PLL_inst.ODIV0_SEL = 4;
-defparam PLL_inst.ODIV1_SEL = 8;
-defparam PLL_inst.ODIV2_SEL = 8;
-defparam PLL_inst.ODIV3_SEL = 8;
-defparam PLL_inst.ODIV4_SEL = 8;
-defparam PLL_inst.ODIV5_SEL = 8;
-defparam PLL_inst.ODIV6_SEL = 8;
-defparam PLL_inst.MDIV_SEL = 55;
-defparam PLL_inst.MDIV_FRAC_SEL = 0;
-defparam PLL_inst.ODIV0_FRAC_SEL = 0;
-defparam PLL_inst.CLKOUT0_EN = "TRUE";
-defparam PLL_inst.CLKOUT1_EN = "FALSE";
-defparam PLL_inst.CLKOUT2_EN = "FALSE";
-defparam PLL_inst.CLKOUT3_EN = "FALSE";
-defparam PLL_inst.CLKOUT4_EN = "FALSE";
-defparam PLL_inst.CLKOUT5_EN = "FALSE";
-defparam PLL_inst.CLKOUT6_EN = "FALSE";
-defparam PLL_inst.CLKFB_SEL = "INTERNAL";
-defparam PLL_inst.CLKOUT0_DT_DIR = 1'b1;
-defparam PLL_inst.CLKOUT1_DT_DIR = 1'b1;
-defparam PLL_inst.CLKOUT2_DT_DIR = 1'b1;
-defparam PLL_inst.CLKOUT3_DT_DIR = 1'b1;
-defparam PLL_inst.CLKOUT0_DT_STEP = 0;
-defparam PLL_inst.CLKOUT1_DT_STEP = 0;
-defparam PLL_inst.CLKOUT2_DT_STEP = 0;
-defparam PLL_inst.CLKOUT3_DT_STEP = 0;
-defparam PLL_inst.CLK0_IN_SEL = 1'b0;
-defparam PLL_inst.CLK0_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK1_IN_SEL = 1'b0;
-defparam PLL_inst.CLK1_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK2_IN_SEL = 1'b0;
-defparam PLL_inst.CLK2_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK3_IN_SEL = 1'b0;
-defparam PLL_inst.CLK3_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK4_IN_SEL = 2'b00;
-defparam PLL_inst.CLK4_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK5_IN_SEL = 1'b0;
-defparam PLL_inst.CLK5_OUT_SEL = 1'b0;
-defparam PLL_inst.CLK6_IN_SEL = 1'b0;
-defparam PLL_inst.CLK6_OUT_SEL = 1'b0;
-defparam PLL_inst.DYN_DPA_EN = "FALSE";
-defparam PLL_inst.CLKOUT0_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT0_PE_FINE = 0;
-defparam PLL_inst.CLKOUT1_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT1_PE_FINE = 0;
-defparam PLL_inst.CLKOUT2_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT2_PE_FINE = 0;
-defparam PLL_inst.CLKOUT3_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT3_PE_FINE = 0;
-defparam PLL_inst.CLKOUT4_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT4_PE_FINE = 0;
-defparam PLL_inst.CLKOUT5_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT5_PE_FINE = 0;
-defparam PLL_inst.CLKOUT6_PE_COARSE = 0;
-defparam PLL_inst.CLKOUT6_PE_FINE = 0;
-defparam PLL_inst.DYN_PE0_SEL = "FALSE";
-defparam PLL_inst.DYN_PE1_SEL = "FALSE";
-defparam PLL_inst.DYN_PE2_SEL = "FALSE";
-defparam PLL_inst.DYN_PE3_SEL = "FALSE";
-defparam PLL_inst.DYN_PE4_SEL = "FALSE";
-defparam PLL_inst.DYN_PE5_SEL = "FALSE";
-defparam PLL_inst.DYN_PE6_SEL = "FALSE";
-defparam PLL_inst.DE0_EN = "FALSE";
-defparam PLL_inst.DE1_EN = "FALSE";
-defparam PLL_inst.DE2_EN = "FALSE";
-defparam PLL_inst.DE3_EN = "FALSE";
-defparam PLL_inst.DE4_EN = "FALSE";
-defparam PLL_inst.DE5_EN = "FALSE";
-defparam PLL_inst.DE6_EN = "FALSE";
-defparam PLL_inst.RESET_I_EN = "FALSE";
-defparam PLL_inst.RESET_O_EN = "FALSE";
-defparam PLL_inst.ICP_SEL = 6'bXXXXXX;
-defparam PLL_inst.LPF_RES = 3'bXXX;
-defparam PLL_inst.LPF_CAP = 2'b00;
-defparam PLL_inst.SSC_EN = "FALSE";
-defparam PLL_inst.DYN_IDIV_SEL = "FALSE";
-defparam PLL_inst.DYN_FBDIV_SEL = "FALSE";
-defparam PLL_inst.DYN_MDIV_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV0_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV1_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV2_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV3_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV4_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV5_SEL = "FALSE";
-defparam PLL_inst.DYN_ODIV6_SEL = "FALSE";
-defparam PLL_inst.DYN_DT0_SEL = "FALSE";
-defparam PLL_inst.DYN_DT1_SEL = "FALSE";
-defparam PLL_inst.DYN_DT2_SEL = "FALSE";
-defparam PLL_inst.DYN_DT3_SEL = "FALSE";
-defparam PLL_inst.DYN_ICP_SEL = "FALSE";
-defparam PLL_inst.DYN_LPF_SEL = "FALSE";
-
-endmodule //gowin_pll_hdmi
+endmodule

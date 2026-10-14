@@ -1805,3 +1805,36 @@ Step 2 is to run `tools/fetch-deps.sh` for real and materialise the seven absent
 - User Test: N/A
 
 ---
+
+## 55 COMMIT Unreleased 2026-10-13T18:15:42-07:00
+
+#### Coming From:
+
+Unreleased 338e36b
+
+#### Purpose:
+
+Remove the last vendor-generated files from this repository, the three Gowin IP-generator PLL wrappers in `fpga/desktop/pll/`, without changing the core that runs on the board.
+
+#### Outcome:
+
+The three modules were rewritten as the project's own hand-written instantiations of the PLL primitive, with our header, our comments and our parameter form, so that no file carrying Gowin's copyright and generated boilerplate remains. The first attempt was a clean rewrite that also dropped the primitive's unused output wires and used literal tie-offs in place of the generated `gw_vcc`/`gw_gnd` wires; it built, but the core did not come up: `fpga` reported no answer on UART1, and the user saw no desktop. That false start is the substance of this cycle. Measurement then separated configuration from mapping: the synthesised netlist carries all 94 parameters of each of the three PLL cells identically before and after, and identical flip-flop counts (537 DFF and 1987 DFFRE on both sides), while about 130 LUT, MUX and ALU cells map differently and the packed bitstream differs. The build is deterministic, which was checked by rebuilding the unmodified source and getting the identical bitstream back, so the difference was real rather than noise. An experiment identified it exactly: mirroring the generated wrapper's net structure, meaning the same dangling output wires by the same names and tie-offs through named wires, reproduced the generated build bit-for-bit. The delivered change therefore keeps that structure, our own form of it, and the seed-1 build is bit-for-bit identical to the known-good core: `desktop.fs` SHA-256 7453ad6c9400 and `desktop.bin` SHA-256 b9af4f06221e, the image the user had already held to 60.4 C and hot-booted at 59.7 C. It was put on the card with `tools/tinytang_put.py` and the user power-cycled: the core comes up. The finding this cycle records is that on this device and toolchain a netlist change moves the placement, the placement decides where the clocks land, and that decides whether the core runs at all, which is the same class as DEV-016 and DEV-017 met from a new direction; so removing dangling nets here is not a safe refactor, and bit-for-bit identity is the acceptance criterion for these files. `THIRD_PARTY.md`'s `pll/` line was rewritten from "holds Gowin IP-generator wrappers" to describe the replacements and why the structure is kept. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The release steps still open are `BUILDING.md`, the chipdb decision, Tang-Build's stale claim that the open flow carries no HDMI and the fact that it has no LICENSE file, and whether this vendor-free build joins the backups folder beside the one it reproduces.
+
+#### Files Modified:
+
+- THIRD_PARTY.md
+- fpga/desktop/pll/gowin_pll_27.v
+- fpga/desktop/pll/gowin_pll_hdmi.v
+- fpga/desktop/pll/gowin_pll_nes.v
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
