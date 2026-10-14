@@ -1870,3 +1870,38 @@ The release still wants its three toolchain gaps closed, meaning a URL and a dig
 - User Test: N/A
 
 ---
+
+## 57 COMMIT Unreleased 2026-10-13T22:21:40-07:00
+
+#### Coming From:
+
+Unreleased 134c4a1
+
+#### Purpose:
+
+Fix the three defects the user found while validating the release card -- boot narration that never named the core, `help` lines that wrapped, and function keys that reached nothing -- and commit the work so the delivered firmware no longer carries an uncommitted delta of ours.
+
+#### Outcome:
+
+The shell renders a command-list line as `printf("  " C_CYAN "%-10s" C_RESET " %s\n", name, help)`, which leaves a help text 67 characters at the 80 columns the USB console and the desktop terminal use, and seven of the 116 registered commands exceeded it: the five Bluetooth commands in `ports/bl616/tang_ble.c`, plus `crash` in `tang_crash.c` (108 characters) and `ae350run` in `tang_fpga_uart.c` (81). All seven were shortened in place, and the budget became a gate rather than a note: `tools/check_help_width.py` parses the registered tables in `ports/`, `third_party/tinydesk` and `third_party/tinydesk-shell`, reports every entry over budget with its file and line, and exits nonzero; it was run against the fixed tree (134 entries, none over) and against a narrower `--cols` to confirm it fails on a real overflow rather than toward fine. Function keys reached nothing because `ports/bl616/tang_key.c` translates HID usages into the ANSI bytes TinyDesk's input parser decodes and mapped only the editing and arrow keys, so a new `fkey_sequences` table emits F1-F11, usages 0x3a-0x44, as `ESC [ 11~` through `ESC [ 23~`, the forms `third_party/tinydesk/src/input.c`'s `tilde_key()` already decodes to `TD_KEY_F1`-`TD_KEY_F11`; F12 (usage 0x45) remains `TANG_KEY_USAGE_TOGGLE`, reserved for the desktop/core screen swap and still skipped before translation, so no layer ever sees an F12 and the swap cannot be typed. The boot narration never named the core because the line added to `scripts/boot.tdsh` was placed before `tangload`: until a core is programmed the board has no raster, and `osd desk on` mirrors the console from that point forward rather than replaying it, so the one line the user could never see was the one naming the core. The name now sits in the post-load line, `boot: desktop.bin loaded - type 'desktop' to bring up TinyDesk`, the earlier echo became a comment recording the constraint, and the script's Bluetooth first-run hint was unified on the shipped wording, which also brings two echoed lines that ran past 80 columns inside it. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` against `BL_SDK_BASE` at `~/.cache/tangcore-dev/sdk-2.3.36` and the Xuantie toolchain at `~/.cache/tangcore-dev/toolchain`, with no warning or error from any changed file; the image is 611520 bytes. The user flashed the pre-commit build -- identity `134c4a1-dirty.f8757e0`, sha256 `ef818fd7a82fe0edbad43df0a8981c9fe40adf965147a64be2ddf87458b72963` -- with the desktop's Software Update app and confirmed the identity through `platform`, unwrapped `help` output at 80 columns, working function keys with F12 still swapping the screen, and then reported validation complete after the corrected `boot.tdsh` was pushed to the card with `tools/tinytang_put.py`. One limitation is recorded rather than fixed: the identity keeps its `-dirty` suffix because `third_party/tinydesk`'s working tree carries the two patches `scripts/apply-tinydesk-patches.sh` applies on every configure by design, and because `git diff` renders a dirty submodule only as `<sha>-dirty`, the identity's hash is the same whatever patches are applied -- which is why `TOOL-018`, `TOOL-019` and `TOOL-020` were added to the reference and why the patches must be named rather than identified by that id. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The identity will keep its `-dirty` suffix until `third_party/tinydesk` goes through the cycle `third_party/tinydesk-shell` has already completed: carry the two patches into a commit that can be pinned -- upstream, or a fork under aquasock -- re-pin `deps.conf`, and give `scripts/apply-tinydesk-patches.sh` the newer-checkout early exit its shell sibling carries. That is the next release-quality job; `BUILDING.md` can meanwhile record the firmware identity and digest from this commit instead of the placeholder it holds, and it should name the two carried patches beside that identity. The release card still needs its sixteen commercial ROMs removed and its README hash block regenerated, its README still calls the superseded AE350 player qualified, and `boot.tdsh`'s header comment still points at `nestang-menu.bin` for a rollback the release no longer ships.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_crash.c
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_key.c
+- scripts/boot.tdsh
+- tools/check_help_width.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

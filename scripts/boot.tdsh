@@ -31,6 +31,12 @@
 # boot script available for rollback. Cartridge launching uses boot-cart.tdsh.
 CORE=/root/cores/console138k/desktop.bin
 
+# The core is named at the "loaded" line below, not up here.  Until tangload has
+# programmed the FPGA the board has no raster, and `osd desk on` starts showing
+# the console from that point rather than replaying it, so anything printed
+# before the core is in is invisible on the display.  It is only ever seen by
+# someone already attached to the USB console.
+
 # Drop the layer before touching the core.
 #
 # Programming the FPGA from underneath a live overlay leaves the overlay
@@ -69,4 +75,16 @@ osd desk on
 # Stop here, at a loaded core, a displayed prompt and a live console.  The
 # desktop is the only thing that draws into the layer as a window manager, so
 # starting it from here would take the console before the user asked.
-echo "boot: core loaded; type 'desktop' to bring up TinyDesk"
+echo "boot: desktop.bin loaded - type 'desktop' to bring up TinyDesk"
+
+# A fresh card ships no Bluetooth pairings, and this desktop has no other input:
+# there is no wired keyboard port, and the two USB-A sockets belong to the cores
+# rather than to the console.  With nothing paired the user is looking at a
+# console they cannot type into, so say what to do on the display, which is the
+# one place they are certain to be looking.
+if test ! -f /root/ble/bonds.bin
+    echo "boot: no Bluetooth keyboard or mouse is paired."
+    echo "boot: connect a PC to the Tang's USB-C OTG console port and run:"
+    echo "boot:     blekbd pair      (put the keyboard in pairing mode first)"
+    echo "boot:     blemouse pair"
+endif

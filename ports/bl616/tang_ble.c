@@ -2593,19 +2593,19 @@ int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv);
 
 static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
-      "Bluetooth status: the radio, the heap, the pairings and both devices",
+      "Bluetooth radio, heap, pairings and both devices",
       cmd_ble, 0 },
     { "blescan", "blescan [seconds]",
-      "Listen for Bluetooth LE devices and list them by signal strength (dBm)",
+      "List Bluetooth LE devices by signal strength (dBm)",
       cmd_blescan, 0 },
     { "blekbd", "blekbd pair [name] | <addr> | watch | off | on | forget",
-      "Pair a Bluetooth LE keyboard as an input; it reconnects by itself after that",
+      "Pair a Bluetooth LE keyboard; it reconnects by itself",
       cmd_blekbd, 0 },
     { "blemouse", "blemouse pair [name] | <addr> | watch | off | on | forget",
-      "Pair a Bluetooth LE mouse as the desktop's pointer; it reconnects by itself after that",
+      "Pair a Bluetooth LE mouse as the desktop pointer",
       cmd_blemouse, 0 },
     { "bletrace", "bletrace [clear | free | dump [from [count]]]",
-      "Diagnostic HCI trace of the Bluetooth stack (tools/ble_trace_to_btsnoop.py reads a dump)",
+      "Diagnostic HCI trace; tools/ble_trace_to_btsnoop.py reads a dump",
       tang_ble_trace_cmd, 0 },
 };
 

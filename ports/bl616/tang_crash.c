@@ -579,7 +579,7 @@ static int cmd_crash(tdsh_session_t *session, int argc, char **argv)
 
 static const tdsh_command_t s_crash_commands[] = {
     { "crash", "crash [tasks | test trap|hang|spin]",
-      "Show how the previous run ended (crash or hang record), list task stack margins, or cause a crash to test it",
+      "Show how the last run ended, stack margins, or crash on purpose",
       cmd_crash, 0 },
 };
 

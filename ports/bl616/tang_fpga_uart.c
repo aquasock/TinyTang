@@ -1140,7 +1140,7 @@ static const tdsh_command_t s_fpga_commands[] = {
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",
       cmd_fpgapipe, 0 },
     { "ae350run", "ae350run <program.elf> [<file>]",
-      "Load a program into a TinyNES core's AE350, send it a file, follow it to its exit",
+      "Load a program into a TinyNES core's AE350 and serve its files",
       cmd_ae350run, 0 },
 };
 

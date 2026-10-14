@@ -50,6 +50,26 @@ static const char *const csi_sequences[0x4F - 0x49 + 1] = {
     /* 0x4f Right  */ "\x1b[C",
 };
 
+/* The function keys, as the escape sequences a terminal sends for them.  They
+ * are usages 0x3a..0x44, below the editing block above, and the parser decodes
+ * them through the same CSI handling -- input.c's tilde_key().  F12 (0x45) is
+ * absent on purpose: it is TANG_KEY_USAGE_TOGGLE, reserved for the desktop/core
+ * screen swap, and tang_key_step skips it before this is ever reached, so the
+ * desktop never sees an F12 and the swap cannot be typed by accident. */
+static const char *const fkey_sequences[0x44 - 0x3a + 1] = {
+    /* 0x3a F1  */ "\x1b[11~",
+    /* 0x3b F2  */ "\x1b[12~",
+    /* 0x3c F3  */ "\x1b[13~",
+    /* 0x3d F4  */ "\x1b[14~",
+    /* 0x3e F5  */ "\x1b[15~",
+    /* 0x3f F6  */ "\x1b[17~",
+    /* 0x40 F7  */ "\x1b[18~",
+    /* 0x41 F8  */ "\x1b[19~",
+    /* 0x42 F9  */ "\x1b[20~",
+    /* 0x43 F10 */ "\x1b[21~",
+    /* 0x44 F11 */ "\x1b[23~",
+};
+
 /* The arrow keys sit above that range and are not contiguous with it. */
 static const char *csi_for(uint8_t usage)
 {
@@ -58,6 +78,9 @@ static const char *csi_for(uint8_t usage)
     case 0x51: return "\x1b[B";   /* Down  */
     case 0x52: return "\x1b[A";   /* Up    */
     default: break;
+    }
+    if (usage >= 0x3a && usage <= 0x44) {
+        return fkey_sequences[usage - 0x3a];
     }
     if (usage >= 0x49 && usage <= 0x4F) {
         return csi_sequences[usage - 0x49];
