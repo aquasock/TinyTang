@@ -2063,3 +2063,33 @@ Confirm that the release zip does not carry the card's `.Trash-1000`, which hold
 - User Test: N/A
 
 ---
+
+## 63 COMMIT Unreleased 2026-10-14T01:22:55-07:00
+
+#### Coming From:
+
+Unreleased 5698a33
+
+#### Purpose:
+
+Correct the README's install instruction and its cartridge sections before `v0.1.0` is tagged, as the user approved, because the quick start told a user to run `make flash`, which overwrites Sipeed's loader, and described a NES core the release does not ship.
+
+#### Outcome:
+
+The README's quick start installed the firmware with `make flash CHIP=bl616 BOARD=bl616dk COMX=/dev/ttyACM0`, which writes from `0x0` and replaces Sipeed's loader and with it the FT2232 debugger and the one-wire mode, the exact command BRD-009 and `tools/tinytang_flash.py`'s own hint forbid. It now tells the user to hold BOOT at power-up, names the `349b:6160` ROM bootloader on `/dev/ttyACM0`, and writes only the application at `0x40000` with `BLFlashCommand-ubuntu --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --write --start=0x40000 --file=...`, with `make flash` named only as a warning. The full command lines entries 22 to 25 ran were not recorded anywhere this session could reach, so this form is the SDK's own `tools/bflb_tools/project_flash.build` arguments, whose `BAUDRATE` defaults to 2000000, plus the single-region `--write --start --file` that BLFlashCommand's help lists; it has not itself been run on this board. The quick start now opens by pointing at the release's card archive and `BUILDING.md`, builds only the desktop core with `open-s1`, marks the nestang and menu core builds as Gowin-only and not released, and puts `phosphor.tdsh` on the card in place of `nestang-desk.bin` and `boot-cart.tdsh`. The Cartridges section, which was written around `nestang-desk.bin`, `nesload` and `boot-cart.tdsh`, now describes the release's path: opening a `.nes` runs TinyNES's `open/nes.tdsh`, which loads `tinynes.bin`, has `ae350run` send `tinynes-play.elf` and the cartridge, and returns to the desktop core, with HOME or F12 swapping to TinyDesk and HOME with `-` ending the game, as TinyNES's script and TinyTang entry 49 record; the nestang path is kept as a note that it needs Gowin EDA and is not released. "What the board boots" no longer offers `nestang-desk.bin` as a boot core, the card table describes `/root/data/nes/` as cartridges opened on the desktop, and the FPGA-cores section says the nestang cores are not part of the release. BRD-009 in `.ai/core-reference.md` was revised in place from SOURCED to VERIFIED, because entries 22 to 25 used the path repeatedly, and now records the `349b:6160` enumeration, the flash rule's arguments, its use as the first install, and that the README's line is derived rather than copied from a run. Nothing was built, deployed or tested. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, checked that the reference's YAML blocks parse, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The release notes, TinyNES's re-pin in `deps.conf` and the `v0.1.0` `VERSION` entry follow as the next cycle, and the tag is made on the commit that carries that entry. The README's BLFlashCommand line should be confirmed the next time the board is in its ROM bootloader, ideally with a `--read` of `0x40000` rather than a write.
+
+#### Files Modified:
+
+- README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

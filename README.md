@@ -252,31 +252,41 @@ Building and flashing are under *Quick start* and *Building requirements*.
 
 ## Quick start
 
+The fastest start is the release: its SD-card archive holds every core,
+script and player, and its `bl616-firmware.bin` is the firmware to install
+below.  To build everything instead, follow [BUILDING.md](BUILDING.md).
+
 ```bash
 # Build the BL616 firmware (needs the Bouffalo SDK and the RISC-V toolchain)
 make CHIP=bl616 BOARD=bl616dk
 
-# Install over the ROM bootloader (BOOT button, once):
-make flash CHIP=bl616 BOARD=bl616dk COMX=/dev/ttyACM0
+# Install once over the BL616's ROM bootloader.  Hold the BOOT button (inside
+# the case) while powering up: the BL616 then appears as 349b:6160 on
+# /dev/ttyACM0.  Write ONLY the application, at 0x40000.  Never run
+# `make flash`: it writes from 0x0 and overwrites Sipeed's loader, and with it
+# the FT2232 debugger and the one-wire mode (BRD-009).
+$BL_SDK_BASE/tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu \
+    --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 \
+    --write --start=0x40000 --file=build/build_out/tinytang_bl616.bin
+#   ... then power-cycle without BOOT, and `platform` reports the build identity
 
 # From then on, reflash over USB with no BOOT button:
 tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 #   ... then power-cycle the board (see fact 6), and confirm with `platform`:
 #   it prints the build identity, which must match build/tinytang/tinytang_build_id.h
 
-# Build the FPGA cores. desktop.bin is TinyTang's own (fpga/desktop/) and
-# needs only the open flow; the NES and menu cores need Gowin EDA 1.9.11.03
-# and a nestang checkout at ../tangcore/nestang (or NESTANG_DIR)
-tools/build_desktop_core_open.sh # desktop.bin, open flow (yosys, nextpnr fork, apicula fork >= 93761f4): HDMI + VGA
-tools/build_nestang_core.sh     # the NES core, with the desktop layer
+# Build the desktop core.  It is TinyTang's own (fpga/desktop/) and needs only
+# the open flow; the TinyNES core, its player and its open handler are built
+# and put on the card from the TinyNES repository (tools/deploy_tinytang.sh).
+tools/build_desktop_core_open.sh # build/desktop/open-s1/desktop.bin, open flow: HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
-# tools/build_menu_core.sh      # legacy HDMI-only host, retained for rollback
+# tools/build_nestang_core.sh   # nestang's NES core with the desktop layer: Gowin EDA, not released
+# tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
 
-# Put the cores and the scripts on the card (at a plain shell prompt -- fact 15)
-tools/tinytang_put.py <nestang>/impl/pnr/nestang_console138k_ds2.bin      /root/cores/console138k/nestang-desk.bin
+# Put the core and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py build/desktop/open-s1/desktop.bin                /root/cores/console138k/desktop.bin   # b9af4f06221e
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
-tools/tinytang_put.py scripts/boot-cart.tdsh /root/scripts/boot-cart.tdsh
+tools/tinytang_put.py scripts/phosphor.tdsh  /root/scripts/phosphor.tdsh
 
 # Talk to it from a computer as well
 screen /dev/ttyACM0 115200
@@ -294,7 +304,7 @@ firmware's own files stay at the top of the card.
 |---|---|
 | `/root/scripts/` | `boot.tdsh`, run at power-up, and the other scripts; bring-up scripts in `diagnostics/` |
 | `/root/cores/console138k/` | FPGA core images for `tangload` |
-| `/root/data/nes/` | NES cartridge images for `nesload` |
+| `/root/data/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
 | `/root/music/` | tracks for `phosphor play` and the Phosphor app |
 | `/root/ae350/` | AE350 programs, `resident.tpi` among them |
 | `/root/ble/bonds.bin` | Bluetooth pairings |
@@ -306,55 +316,43 @@ firmware's own files stay at the top of the card.
 
 ### Cartridges
 
-Booting a cartridge is three commands, in this order:
+Cartridges play on the TinyNES core.  Put `.nes` files under `/root/data/nes/`,
+or anywhere on the card, and open one: double-click it on the desktop or in
+Files.  TinyDesk runs `/root/scripts/open/nes.tdsh` with `FILE` set to it,
+which loads `tinynes.bin`, has `ae350run` send the player
+`/root/ae350/tinynes-play.elf` to the core's AE350 and the cartridge when the
+player asks for it, and loads the desktop core again when the game ends.  The
+controllers are Wii Classic Controllers on PMOD0, and sound needs a Pmod I2S2
+on PMOD1, declared in `/tang.ini`.  From the console or the Terminal:
 
 ```
-tangload /root/cores/console138k/nestang-desk.bin  # put the NES core in
-fpga                                          # confirm it answers (expect: core 1)
-nesload /root/data/nes/castlevania.nes                 # stream the ROM; the core starts
+FILE="/root/data/nes/nova.nes"; tdsh run /root/scripts/open/nes.tdsh
 ```
 
-`scripts/boot-cart.tdsh` runs all three with a check between each, from the
-console or from the desktop's Terminal:
+While a game runs, a tap of HOME on the controller, or F12, swaps between the
+game and TinyDesk; HOME and `-` held together end it.  The core, the player and
+the handler come from the TinyNES repository, whose `tools/deploy_tinytang.sh`
+puts them on the card.
 
-```
-tdsh run /root/scripts/boot-cart.tdsh
-```
-
-It defaults to the NES core and `/root/data/nes/castlevania.nes`. Set `CORE` or `ROM` in
-the session first to use another pair; `tdsh run` passes no arguments, but the
-script inherits the session's variables:
-
-```
-ROM=/root/data/nes/other.nes; tdsh run /root/scripts/boot-cart.tdsh
-```
-
-The check that matters is the probe between the two loads. A ROM streamed into
-a core that is not listening disappears with no error anywhere, and the
-symptom is a black screen that looks like a video fault; the script stops with
-a non-zero status instead. Once the game is running, F12 brings TinyDesk back
-over it and F12 again returns to the game. `scripts/castlevania.tdsh` is the
-same cycle under a Castlevania-specific name.
-
-The NES core here is the patched one, `nestang-desk.bin`. nand2mario's stock
-`nestang.bin` carries neither the desktop layer nor the keyboard link, so with
-it loaded the keyboard and TinyDesk are gone until the next boot.
+Earlier builds played cartridges on nand2mario's nestang through
+`scripts/boot-cart.tdsh` and `nesload`.  Those scripts stay in the repository,
+but the core they load, `nestang-desk.bin`, needs Gowin EDA to build
+(`tools/build_nestang_core.sh`) and is not part of the release.
 
 ### What the board boots
 
 `/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
 line -- `desktop.bin` -- probes it, applies `/tang.ini`, enables the desktop
-layer and stops at the prompt. Pointing `CORE` at `nestang-desk.bin` boots the
-NES core instead. Removing or renaming the file boots to a plain prompt with no
-core loaded; the FPGA then stays on the core it configured itself with, and
+layer and stops at the prompt. Removing or renaming the file boots to a plain
+prompt with no core loaded; the FPGA then stays on the core it configured itself with, and
 the screen shows a TangCore splash (fact 14).
 
 ## The FPGA cores
 
 The default host, `desktop.bin`, is TinyTang's own core in `fpga/desktop/`
 (below). The NES and menu cores derive from nand2mario's nestang, carried as
-patches against upstream rather
-than as a fork. The checkout stays pristine at commit `c2450818`, and
+patches against upstream rather than as a fork; they need Gowin EDA and are
+not part of the release, whose NES core is TinyNES's. The checkout stays pristine at commit `c2450818`, and
 `scripts/apply-nestang-patches.sh` applies `third_party/patches/0001` through
 `0007` before a build:
 
