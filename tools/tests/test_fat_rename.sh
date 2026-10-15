@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Renaming over a name that is already in use, through the SDK's real FatFs and
 # this repository's fatfs_conf_user.h (tools/tests/tb_fat_rename.c).  f_rename()
-# refuses an occupied name with FR_EXIST, so the Controls app's save cannot be a
+# refuses an occupied name with FR_EXIST, so the Control Deck app's save cannot be a
 # single rename over /nes.ini and goes through a backup name instead.
 set -euo pipefail
 

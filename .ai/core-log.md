@@ -2478,3 +2478,38 @@ Video and Audio, whose tabs still show what the file says and reach nothing, are
 - User Test: PASS
 
 ---
+
+## 75 COMMIT Unreleased 2026-10-14T17:15:43-07:00
+
+#### Coming From:
+
+Unreleased 6583ea3
+
+#### Purpose:
+
+Rename the desktop settings app from TinyNES Controls to TinyNES Control Deck, in the name the user sees and everywhere this repository repeats it.
+
+#### Outcome:
+
+The app now registers as `"TinyNES Control Deck"` and opens a window of the same title, so the start menu entry and the title bar both read the new name, and the comments that carried the old one are updated with the shipped `docs/nes.ini`, whose header names the app that writes it. The rename was checked before it was made rather than after: nothing launches this app by name, because every `td_app_launch` call in TinyDesk and in this port names a TinyDesk app (Settings, Bluetooth, Software Update, Terminal, Network), so no lookup could break; `td_app_t.name` is a `const char *` drawn directly rather than a fixed buffer, and window titles are copied into `TD_TITLE_MAX`, which is 32, where the new name is 20 characters, so neither truncation nor overflow was possible; and once the edit was made no occurrence of the old name remained in either repository outside the settled history in `.ai/core-log.md` and the build directory. The source file keeps its name, `ports/bl616/tinynes_app.cpp`, which never carried the app's name and would have cost a `CMakeLists.txt` edit and a prototype change in `td_desktop_bl616.c` for nothing a user can see. The build finished without a new warning, 623936 bytes were staged and committed to the board, and the user confirmed the start menu and the title bar both read TinyNES Control Deck with the Input tab and its Save unchanged. The TinyNES half of the rename is entry 33. The core-syntax audit passed.
+
+#### Next Steps:
+
+The Video tab is the next cycle: the three aspect ratios, which live in `fpga/ae350_soc/video.sv` where the 3x3 picture and its centring are constants today, and palette selection, which the core can carry from FCEUmm's own tables, both applied at launch the way the controls already are. The user dropped scale, scanlines and overscan, so the app will stop offering what nothing honours while the `/nes.ini` keys stay, and the shipped file's `aspect = 8:7` default becomes true only when that ratio is implemented.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- docs/nes.ini
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinynes_app.cpp
+- tools/tests/tb_fat_rename.c
+- tools/tests/test_fat_rename.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

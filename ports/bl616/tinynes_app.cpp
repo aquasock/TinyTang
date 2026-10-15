@@ -1,4 +1,4 @@
-// TinyNES Controls -- the window that changes how a game behaves.
+// TinyNES Control Deck -- the window that changes how a game behaves.
 //
 // Opened from the start menu or the desktop, over a running game, and driven
 // with F12 the way the desktop is: the game keeps running behind it.  The
@@ -359,7 +359,7 @@ void launch(void)
     load_settings();
 
     td_window_desc_t d = {};
-    d.title = "TinyNES Controls";
+    d.title = "TinyNES Control Deck";
     d.rect = td_rect(-1, -1, 66, 22);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 50;
@@ -432,7 +432,7 @@ void launch(void)
     show_tab(0);
 }
 
-const td_app_t s_app = { "TinyNES Controls", launch, "NES" };
+const td_app_t s_app = { "TinyNES Control Deck", launch, "NES" };
 
 } // namespace
 

@@ -59,7 +59,7 @@ int tdsh_printf(const char *fmt, ...);
 int tang_td_terminal_start(void);
 void td_bridge_bl616_stop(void);
 void td_phosphor_register(void);   /* phosphor/td_phosphor_app.cpp */
-void td_tinynes_register(void);    /* tinynes_app.cpp: TinyNES Controls */
+void td_tinynes_register(void);    /* tinynes_app.cpp: TinyNES Control Deck */
 void td_bluetooth_register(void);  /* td_bluetooth_app.c */
 
 /* The desktop's root is the card -- the same filesystem the shell uses, so

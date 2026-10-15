@@ -6,7 +6,7 @@
  * the app uses, two dots and all, so it is the long-name path that is
  * exercised.
  *
- * The TinyNES Controls app saved its settings by building /nes.ini.tmp and
+ * The TinyNES Control Deck app saved its settings by building /nes.ini.tmp and
  * renaming it over /nes.ini.  That cannot work: f_rename() checks the new name
  * and returns FR_EXIST when an object holds it, because FAT has no atomic
  * replace, so the save failed with "cannot rename over the settings file"
