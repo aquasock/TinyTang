@@ -2613,3 +2613,34 @@ Nothing more is planned for the Control Deck here; TinyNES's next cycle is an Ac
 - User Test: PASS
 
 ---
+
+## 79 COMMIT Unreleased 2026-10-15T06:58:43-07:00
+
+#### Coming From:
+
+Unreleased 6145683
+
+#### Purpose:
+
+Give a core the board's own mouse as input, so that a program running under the desktop layer can be driven by it, and prove the path with TinyCreature's terrain renderer.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_link.h` gains `FPGA_CMD_INPUT 0x16`, the first command that carries input *into* a core: six bytes of the frame it belongs to, the buttons, and the mouse's dx, dy and wheel, the shape its HID boot report has, with the frame 0xffff meaning apply it as it arrives. It is additive like the desktop layer beside it, so a core that does not implement it ignores the frame, and its comment names the reader on the other side (TinyCreature's firmware/terrain/main.c). `ports/bl616/tang_osd_desk.c` gains `pointer_frame()`, which clamps a count to a signed byte rather than wrapping it, sends only when there is movement or a button change to report, and is called from both branches of `desk_task` -- the desktop's own poll and the hidden case -- because the overlay is cleared while a program runs, which is exactly when a game wants the mouse and the desk layer's poll does not run. Built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36 this machine already had at ~/.cache/tangcore-dev, with no warning in the changed files, 623968 bytes and SHA-256 `07818c0d824406bf0baa7607bd5feef8c3185c0b7f84313a30f85ae8dc31737d`; installed with `tools/tinytang_flash.py` and a power cycle, after which `platform` reported `6145683-dirty.7381d83` against `0947b57-dirty.aafcfe8` before it. The first interactive attempt drove nothing, and both causes are worth keeping: the mouse had not reconnected, `blemouse` saying "waiting" until it did, and the host's loader held the link for the whole run, since TinyCreature's `load_ae350.py` keeps `fpgapipe` open until the program exits and `fpgapipe` holds the transmit lock throughout -- so a program loaded and watched from the PC cannot receive in-band input until the host lets go, which is the same exclusivity that keeps the desktop off the screen while a cartridge loads. With the mouse woken and the pipe released the user drove TinyCreature's camera with it and called the result perfect. One defect is left open and named here rather than left to be found: `pointer_frame()` guards on `tang_fpga_link_open()`, which only brings the UART up and does not report whether the host's pipe is open, so while a pipe holds the link the call takes the transmit lock with `portMAX_DELAY` and stalls `desk_task` for the pipe's lifetime instead of returning; it recovers when the pipe closes, but a host that holds the port for minutes holds the desktop's task with it. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed the only change to `.ai/core.md` is the user's own uncommitted line forbidding delegation, which this cycle left in the working tree rather than commit, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Fix the guard: the pipe's state wants a query of its own -- `s_pipe` is already tracked in `tang_fpga_uart.c` -- so that `pointer_frame()` returns early instead of taking the lock while a host owns the link, which needs one more build and one more flash with a power cycle. The keyboard is deliberately not in this cycle: TinyTang types its reports into its own desktop rather than passing them on, so forwarding them needs its own decision about what the core should receive. What a mouse count means to a camera lives on the far side, as `TC_TURN_PER_COUNT` and `TC_ZOOM_PER_COUNT` in TinyCreature's firmware/terrain/terrain.h, and belongs to the user's feel for it rather than to this repository.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

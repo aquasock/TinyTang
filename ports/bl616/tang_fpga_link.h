@@ -44,6 +44,17 @@
 #define FPGA_CMD_DESK_CELLS  0x14u  /* 5 bytes per cell, from cursor */
 #define FPGA_CMD_DESK_CTRL   0x15u  /* one byte; bit 0 enables       */
 
+/* Input to the core: a program that drives its own camera or character wants
+ * the mouse's movement itself, not the desktop's pointer.  Six bytes: the
+ * frame the report belongs to, the buttons, and the mouse's dx, dy and wheel,
+ * the shape its HID boot report has.  The frame 0xffff means "apply it as it
+ * arrives" -- a live mouse does not know the core's frame numbers, while a
+ * recorded one can name the frame it belongs to, so the same sequence draws
+ * the same frames however the link was paced (TinyCreature's
+ * firmware/terrain/main.c reads both).  Additive like the desktop layer: a
+ * core that does not implement it ignores the frame. */
+#define FPGA_CMD_INPUT       0x16u
+
 /* Cartridge loading. */
 #define FPGA_CMD_SET_LOAD   0x06u   /* one byte; 0 starts the core   */
 #define FPGA_CMD_ROM_DATA   0x07u   /* ROM bytes                     */

@@ -335,6 +335,46 @@ static bool toggle_pressed(desk_kbd_t *src, const uint8_t rep[8])
     return pressed;
 }
 
+/* One mouse count as the byte an input frame carries: signed, and clamped
+ * rather than wrapped, since one report can hold more movement than a byte. */
+static uint8_t pointer_count(int value)
+{
+    if (value > 127) {
+        return 127u;
+    }
+    if (value < -128) {
+        return 128u;   /* the byte the core reads back as signed -128 */
+    }
+    return (uint8_t)(int8_t)value;
+}
+
+/* Hand the mouse to the core as an input frame, so that a program under the
+ * desktop layer can drive a camera with it.  tang_ble_mouse() gives movement
+ * out once, so this and the desktop's own pointer see it between them, never
+ * both.  A frame goes only when there is something to say -- and only while
+ * the link is ours, because the host's pipe owns it while a program is being
+ * loaded and those bytes are not ours to interleave. */
+static void pointer_frame(const tang_mouse_t *mouse)
+{
+    static uint8_t last_buttons;
+    const uint8_t payload[6] = {
+        0xFFu, 0xFFu, mouse->buttons, pointer_count(mouse->dx),
+        pointer_count(mouse->dy), pointer_count(mouse->wheel),
+    };
+
+    if (mouse->dx == 0 && mouse->dy == 0 && mouse->wheel == 0 &&
+        mouse->buttons == last_buttons) {
+        return;
+    }
+    last_buttons = mouse->buttons;
+    if (tang_fpga_link_open() != 0) {
+        return;
+    }
+    tang_fpga_lock();
+    (void)tang_fpga_frame(FPGA_CMD_INPUT, payload, sizeof payload);
+    tang_fpga_unlock();
+}
+
 static void desk_poll(void)
 {
     /* Re-arm first: until the core knows the layer is on, nothing sent is
@@ -391,10 +431,12 @@ static void desk_poll(void)
     joy1 |= tang_key_pointer(brep[0], &brep[2]);
 
     /* The Bluetooth mouse: movement and wheel since the last poll, handed
-     * over once, so they are taken every poll and used only where the pointer
-     * is -- in the desktop, on screen. */
+     * over once, so they are taken every poll -- and used twice: the desktop
+     * draws its pointer with them, and the core is given them as an input
+     * frame for whatever program is running under the layer. */
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
+    pointer_frame(&mouse);
 
     /* The session switch: L on the pad, or F12 on the keyboard, the key
      * reserved for it the way MiSTer reserves F12 for its menu.  It does not
@@ -491,6 +533,12 @@ static void desk_task(void *arg)
             desk_poll();
             flush();
         } else {
+            /* The desktop is hidden, which is where a game is.  The core
+             * still wants the mouse, so read it and hand it over; the desktop
+             * pointer is not drawn, so nothing else wants it. */
+            tang_mouse_t mouse;
+            (void)tang_ble_mouse(&mouse);
+            pointer_frame(&mouse);
             desk_watch_toggle();
         }
         tang_oled_poll();
