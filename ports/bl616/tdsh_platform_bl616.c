@@ -430,13 +430,11 @@ static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
                 }
                 tdsh_printf("\r\n");
             }
-            tdsh_printf("  video aspect=%s scale=%u scanlines=%s overscan=%s\r\n",
-                        tang_nes_aspect_name(nes.aspect), (unsigned)nes.scale,
+            tdsh_printf("  video aspect=%s palette=%s scale=%u scanlines=%s overscan=%s\r\n",
+                        tang_nes_aspect_name(nes.aspect),
+                        tang_nes_palette_name(nes.palette), (unsigned)nes.scale,
                         nes.scanlines ? "on" : "off",
                         nes.overscan ? "hide" : "show");
-            tdsh_printf("  audio volume=%u mute=%s channels=%s\r\n",
-                        (unsigned)nes.volume, nes.mute ? "yes" : "no",
-                        nes.channels == TANG_CHANNELS_MONO ? "mono" : "stereo");
         }
     }
     return 0;

@@ -97,9 +97,6 @@ void tang_nes_defaults(tang_nes_settings_t *s)
     s->scanlines = 0;
     s->palette = 0;
     s->overscan = 1;
-    s->volume = 75;
-    s->mute = 0;
-    s->channels = TANG_CHANNELS_STEREO;
     s->version = 1;
 }
 
@@ -197,23 +194,11 @@ static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
         }
         return false;
     }
-    if (strcmp(section, "audio") == 0) {
-        if (strcmp(key, "volume") == 0) {
-            const int v = atoi(value);
-            s->volume = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
-            return true;
-        }
-        if (strcmp(key, "mute") == 0) {
-            s->mute = strcmp(value, "yes") == 0;
-            return true;
-        }
-        if (strcmp(key, "channels") == 0) {
-            s->channels = strcmp(value, "mono") == 0 ? TANG_CHANNELS_MONO
-                                                     : TANG_CHANNELS_STEREO;
-            return true;
-        }
-        return false;
-    }
+    /* There is no [audio] section any more: the I2S2's Line Out is a fixed
+     * level for the amplifier to set, the NES is mono, and mute is the
+     * amplifier's too, so volume, mute and channels were dropped rather than
+     * wired up.  An old file's [audio] keys are ignored, like any unknown key,
+     * and simply not counted. */
     if (strcmp(section, "tinynes") == 0) {
         if (strcmp(key, "version") == 0) {
             s->version = (uint8_t)atoi(value);

@@ -44,7 +44,6 @@ enum { TANG_ASPECT_8_7, TANG_ASPECT_1_1, TANG_ASPECT_4_3 };
  * tools/gen_fceumm_palettes.py NAMES, which fails its build if upstream's
  * table ever stops matching it; the two change together. */
 #define TANG_NES_PALETTES 24
-enum { TANG_CHANNELS_STEREO, TANG_CHANNELS_MONO };
 
 typedef struct {
     uint8_t  p1[TANG_NES_BUTTONS];   /* controller button per NES button */
@@ -54,9 +53,6 @@ typedef struct {
     uint8_t  scanlines;
     uint8_t  palette;                /* index into the palette names */
     uint8_t  overscan;               /* 1 = hide the top and bottom lines */
-    uint8_t  volume;                 /* 0 to 100 */
-    uint8_t  mute;
-    uint8_t  channels;
     uint8_t  version;
     bool     found;                  /* the file was there to be read */
     uint16_t keys;                   /* how many of its keys were understood */

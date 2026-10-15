@@ -31,7 +31,7 @@ extern "C" {
 namespace {
 
 const int TICK_MS = 400;
-const int TABS = 4;
+const int TABS = 3;
 const int PAGE_WIDGETS = 12;
 const int PLAYERS = 2;
 
@@ -46,7 +46,9 @@ const int ACCENT = 14;
 const char TMP_PATH[] = "/sd/nes.ini.tmp";
 const char BAK_PATH[] = "/sd/nes.ini.bak";
 
-const char *const TAB_NAMES[TABS] = { "Input", "Video", "Audio", "Saves" };
+/* No Audio tab: the I2S2's Line Out is a fixed level for the amplifier, and
+ * the NES is mono, so volume, mute and channels had nothing to set. */
+const char *const TAB_NAMES[TABS] = { "Input", "Video", "Saves" };
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -480,8 +482,6 @@ void launch(void)
     page_add(0, td_label(s_win, 38, 10, 0, "Change steps the"));
     page_add(0, td_label(s_win, 38, 11, 0, "selected row."));
 
-    char text[64];
-
     /* Video: two rows, the pixel aspect and the palette, and the Save that
      * writes them.  Scale, scanlines and overscan were dropped, so the page
      * no longer offers them. */
@@ -496,20 +496,10 @@ void launch(void)
     page_add(1, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
     page_add(1, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
-    snprintf(text, sizeof text, "Volume      %u%%", (unsigned)s_set.volume);
-    page_add(2, td_label(s_win, 1, 2, 0, text));
-    page_add(2, td_label(s_win, 1, 3, 0,
-                         s_set.mute ? "Mute        yes" : "Mute        no"));
-    page_add(2, td_label(s_win, 1, 4, 0,
-                         s_set.channels == TANG_CHANNELS_MONO
-                             ? "Channels    mono" : "Channels    stereo"));
-    page_add(2, td_label(s_win, 1, 6, 0, "Output      48,909 Hz to the"));
-    page_add(2, td_label(s_win, 1, 7, 0, "            Pmod I2S2"));
-
-    page_add(3, td_label(s_win, 1, 2, 0, "Battery saves are in /root/saves/nes"));
-    page_add(3, td_label(s_win, 1, 3, 0, "and written when the game ends."));
-    page_add(3, td_label(s_win, 1, 5, 0, "Save states are not implemented,"));
-    page_add(3, td_label(s_win, 1, 6, 0, "so this page is a placeholder."));
+    page_add(2, td_label(s_win, 1, 2, 0, "Battery saves are in /root/saves/nes"));
+    page_add(2, td_label(s_win, 1, 3, 0, "and written when the game ends."));
+    page_add(2, td_label(s_win, 1, 5, 0, "Save states are not implemented,"));
+    page_add(2, td_label(s_win, 1, 6, 0, "so this page is a placeholder."));
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is

@@ -2578,3 +2578,38 @@ The Audio tab's volume, mute and channels follow in the same blob. The `tang` co
 - User Test: PASS
 
 ---
+
+## 78 COMMIT Unreleased 2026-10-14T19:50:40-07:00
+
+#### Coming From:
+
+Unreleased 0947b57
+
+#### Purpose:
+
+Remove the Control Deck's Audio tab and `/nes.ini`'s `volume`, `mute` and `channels` keys, as the user decided, and name the palette in the `tang` command's report.
+
+#### Outcome:
+
+The I2S2's Line Out is a fixed level for the amplifier to set, the NES's sound is mono and reaches both channels as one sample, and muting a line output is the amplifier's job, so the user chose to drop the three keys and the tab rather than wire them up (TinyNES entry 36). `ports/bl616/tang_nes_ini.c` no longer reads an `[audio]` section, with a comment saying why, so an old file's audio keys are ignored like any unknown key and not counted; `tang_nes_settings_t` lost the three fields and `TANG_CHANNELS_*` went with them. `ports/bl616/tinynes_app.cpp` has three tabs, Input, Video and Saves, the Saves page moving from index 3 to 2. The first firmware build failed because `ports/bl616/tdsh_platform_bl616.c`'s `tang` command printed the audio fields; its audio line is gone and its video line now names the palette, the item entry 77 left for this cycle. `docs/nes.ini` lost its `[audio]` section, and `tools/tests/tb_nes_ini.c` dropped the five audio checks and now requires that an `[audio]` section's keys are not counted; `tools/tests/test_nes_ini.sh` passed 32 of 32, with the shipped file parsing to 22 keys. The firmware built with no warning in the changed files, 623952 bytes with SHA-256 `4f61ea4a6dded87035cdb7e7f0c99a28b0021b3cde7239105248a48f40888cb2`, was installed with `tools/tinytang_flash.py`, and after the power cycle `platform` reported `0947b57-dirty.aafcfe8` and `tang` read 22 keys from the card's `/nes.ini`, whose `[audio]` lines the user may delete by hand, and printed `video aspect=8:7 palette=fceumm`. The user found three tabs with Saves opening, Input and Video editing and saving, and games launching with their aspect and palette, and passed the cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Nothing more is planned for the Control Deck here; TinyNES's next cycle is an AccuracyCoin harness and a carried series of FCEUmm patches, which needs no TinyTang change. Entry 74's open items are unchanged: the shell's rename shim mapping `FR_EXIST` to `EACCES`, and the Bluetooth co-processor assert of BLE-018.
+
+#### Files Modified:
+
+- docs/nes.ini
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tinynes_app.cpp
+- tools/tests/tb_nes_ini.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

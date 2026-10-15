@@ -88,7 +88,6 @@ int main(int argc, char **argv)
     check(s.p1[TANG_NES_A] == NES_CTL_B, "default: NES A answers to B");
     check(s.p1[TANG_NES_B] == NES_CTL_Y, "default: NES B answers to Y");
     check(s.aspect == TANG_ASPECT_8_7, "default: aspect is 8:7");
-    check(s.volume == 75, "default: volume is 75");
 
     /* The regression: four keys on one line, as the shipped file has them. */
     load(&s, "[input]\n"
@@ -122,13 +121,10 @@ int main(int argc, char **argv)
     /* The rest of the file. */
     load(&s, "[video]\naspect = 1:1\nscale = 2\noverscan = show\n"
              "[audio]\nvolume = 40\nmute = yes\nchannels = mono\n");
-    check(s.keys == 6, "video and audio counted");
+    check(s.keys == 3, "video counted, the dropped [audio] keys not");
     check(s.aspect == TANG_ASPECT_1_1, "aspect 1:1");
     check(s.scale == 2, "scale 2");
     check(s.overscan == 0, "overscan show");
-    check(s.volume == 40, "volume 40");
-    check(s.mute == 1, "mute yes");
-    check(s.channels == TANG_CHANNELS_MONO, "channels mono");
 
     /* The palette, by name: the first, a middle and the last of the list,
      * whose indices are the player's (TinyNES tools/gen_fceumm_palettes.py). */
@@ -145,8 +141,7 @@ int main(int argc, char **argv)
     check(strcmp(tang_nes_palette_name(99), "fceumm") == 0, "an index out of range names 0");
 
     /* Out-of-range values are clamped, not taken. */
-    load(&s, "[audio]\nvolume = 900\n[video]\nscale = 0\n");
-    check(s.volume == 100, "volume clamps at 100");
+    load(&s, "[video]\nscale = 0\n");
     check(s.scale == 1, "scale clamps at 1");
 
     /* No file at all: the defaults, and no error. */
