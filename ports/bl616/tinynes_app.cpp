@@ -55,6 +55,7 @@ int s_page_count[TABS];
 int s_tab_shown = -1;
 
 td_widget_t *s_list;             /* the Input page's rows */
+td_widget_t *s_video_list;       /* the Video page's one row: the aspect */
 td_widget_t *s_player_button;    /* which player the rows are showing */
 td_widget_t *s_status[TABS];     /* one per page: a shared widget cannot be
                                   * shown on one page and hidden on another */
@@ -160,6 +161,22 @@ bool is_key_line(const char *line)
     return line[0] == 'p' && (line[1] == '1' || line[1] == '2') && line[2] == '_';
 }
 
+/* The one [video] key this app owns: the picture's pixel aspect, written in
+ * the names the parser reads back. */
+bool put_aspect(FIL *file)
+{
+    char line[48];
+
+    snprintf(line, sizeof line, "aspect = %s\n", tang_nes_aspect_name(s_set.aspect));
+    return put(file, line);
+}
+
+bool is_aspect_line(const char *line)
+{
+    return strncmp(line, "aspect", 6) == 0 &&
+           (line[6] == ' ' || line[6] == '\t' || line[6] == '=');
+}
+
 /* Write the mapping where the file's [input] section is, keeping every other
  * byte of it -- a hand-written comment survives a save from here, and a key
  * this build does not know is not thrown away.  Built beside the real file and
@@ -175,7 +192,9 @@ const char *save_settings(void)
     char line[200];
     size_t len = 0;
     bool in_input = false;
+    bool in_video = false;
     bool done = false;          /* the mapping has been put out */
+    bool aspect_done = false;   /* ...and the aspect */
     bool ok = true;
     UINT got = 0;
     const char *reason = NULL;
@@ -205,16 +224,28 @@ const char *save_settings(void)
                     ok = put_mapping(&out);
                     done = true;
                 }
+                if (in_video && !aspect_done) {
+                    ok = ok && put_aspect(&out);
+                    aspect_done = true;
+                }
                 in_input = strncmp(line, "[input]", 7) == 0;
+                in_video = strncmp(line, "[video]", 7) == 0;
                 ok = ok && put(&out, line) && put(&out, "\n");
                 if (in_input) {
                     ok = ok && put_mapping(&out);
                     done = true;
                 }
+                if (in_video) {
+                    ok = ok && put_aspect(&out);
+                    aspect_done = true;
+                }
                 continue;
             }
             if (in_input && is_key_line(line)) {
                 continue;       /* ours, and already out under the header */
+            }
+            if (in_video && is_aspect_line(line)) {
+                continue;       /* likewise */
             }
             ok = ok && put(&out, line) && put(&out, "\n");
         }
@@ -222,14 +253,18 @@ const char *save_settings(void)
     /* A last line with no newline after it. */
     if (ok && len != 0) {
         line[len] = '\0';
-        if (!(in_input && is_key_line(line))) {
+        if (!(in_input && is_key_line(line)) &&
+            !(in_video && is_aspect_line(line))) {
             ok = put(&out, line) && put(&out, "\n");
         }
     }
     /* A file with no [input] section at all, as the first save on a fresh card
-     * would be. */
+     * would be, and the same for [video]. */
     if (ok && !done) {
         ok = put(&out, "\n[input]\n") && put_mapping(&out);
+    }
+    if (ok && !aspect_done) {
+        ok = put(&out, "\n[video]\n") && put_aspect(&out);
     }
     if (reason == NULL && !ok) {
         reason = "a write to the temporary failed";
@@ -298,6 +333,31 @@ void on_row(td_widget_t *, void *)
     }
 }
 
+/* The Video page's one row: the picture's pixel aspect, which the core takes
+ * from the host when a game starts. */
+const char *video_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[48];
+
+    (void)fg;
+    if (index != 0) {
+        return "";
+    }
+    snprintf(text, sizeof text, "Aspect      %s%s", tang_nes_aspect_name(s_set.aspect),
+             s_dirty ? " *" : "");
+    return text;
+}
+
+void on_video_row(td_widget_t *, void *)
+{
+    s_set.aspect = (uint8_t)((s_set.aspect + 1) % 3);
+    s_dirty = true;
+    status_from_file();
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
 void on_player(td_widget_t *, void *)
 {
     s_player = (s_player + 1) % PLAYERS;
@@ -345,6 +405,7 @@ void on_close(td_window_t *)
 {
     s_win = nullptr;
     s_list = nullptr;
+    s_video_list = nullptr;
     s_player_button = nullptr;
     memset(s_status, 0, sizeof s_status);
     s_tab_shown = -1;
@@ -394,16 +455,20 @@ void launch(void)
     page_add(0, td_label(s_win, 38, 11, 0, "selected row."));
 
     char text[64];
-    snprintf(text, sizeof text, "Aspect      %s", tang_nes_aspect_name(s_set.aspect));
-    page_add(1, td_label(s_win, 1, 2, 0, text));
-    snprintf(text, sizeof text, "Scale       %ux", (unsigned)s_set.scale);
-    page_add(1, td_label(s_win, 1, 3, 0, text));
-    snprintf(text, sizeof text, "Scanlines   %s", s_set.scanlines ? "on" : "off");
-    page_add(1, td_label(s_win, 1, 4, 0, text));
-    snprintf(text, sizeof text, "Overscan    %s", s_set.overscan ? "hide" : "show");
-    page_add(1, td_label(s_win, 1, 5, 0, text));
-    page_add(1, td_label(s_win, 1, 7, 0, "Nothing here reaches the video"));
-    page_add(1, td_label(s_win, 1, 8, 0, "unit yet."));
+
+    /* Video: one row, the pixel aspect, and the Save that writes it.  Scale,
+     * scanlines and overscan were dropped, so the page no longer offers
+     * them. */
+    s_video_list = td_list(s_win, td_rect(1, 2, 34, 1), video_item,
+                           on_video_row, nullptr);
+    if (s_video_list != nullptr) {
+        td_list_set_count(s_video_list, 1);
+    }
+    page_add(1, s_video_list);
+    page_add(1, td_button(s_win, 38, 2, "Change", on_video_row, nullptr));
+    page_add(1, td_button(s_win, 38, 4, "Save", on_save, nullptr));
+    page_add(1, td_label(s_win, 1, 5, 0, "The aspect is taken when the next"));
+    page_add(1, td_label(s_win, 1, 6, 0, "game starts, like the buttons."));
 
     snprintf(text, sizeof text, "Volume      %u%%", (unsigned)s_set.volume);
     page_add(2, td_label(s_win, 1, 2, 0, text));

@@ -1383,20 +1383,27 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
             continue;
         }
         if (starts_with(run.line, "TinyNES SETTINGS WANT ")) {
-            static uint8_t blob[2 * TANG_NES_BUTTONS];
+            /* The blob's bytes are the ABI with the core (TinyNES
+             * firmware/apps/nes_bench/main.cpp): player 1's mapping, player
+             * 2's, then the picture's pixel aspect.  The core prints the
+             * length it wants, and an older core wants only the first sixteen
+             * of these, so nothing beyond what was asked for is ever sent. */
+            static uint8_t blob[2 * TANG_NES_BUTTONS + 1];
             unsigned long address = 0, room = 0;
             if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 ||
-                room < sizeof blob) {
+                room < 2 * TANG_NES_BUTTONS) {
                 tdsh_printf("ae350run: the settings request is malformed\r\n");
                 continue;
             }
             memcpy(blob, nes.p1, TANG_NES_BUTTONS);
             memcpy(blob + TANG_NES_BUTTONS, nes.p2, TANG_NES_BUTTONS);
+            blob[2 * TANG_NES_BUTTONS] = nes.aspect;
+            const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
             run.blob = blob;
-            run.blob_length = sizeof blob;
+            run.blob_length = sending;
             ae350_link_t set_link = link;
             set_link.image = ae350_blob_bytes;
-            rc = ae350_send_image(&set_link, (uint32_t)address, sizeof blob,
+            rc = ae350_send_image(&set_link, (uint32_t)address, sending,
                                   (uint32_t)address, 5, s_ae350_block, &reason);
             tdsh_printf("ae350run: settings %s, p1:",
                         nes.found ? TANG_NES_INI_SHOWN : "(defaults)");
@@ -1404,7 +1411,7 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
                 tdsh_printf(" %s=%s", tang_nes_button_name(i),
                             tang_nes_pad_name(nes.p1[i]));
             }
-            tdsh_printf("\r\n");
+            tdsh_printf(" aspect=%s\r\n", tang_nes_aspect_name(nes.aspect));
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }

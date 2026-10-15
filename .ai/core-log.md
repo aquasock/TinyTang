@@ -2513,3 +2513,34 @@ The Video tab is the next cycle: the three aspect ratios, which live in `fpga/ae
 - User Test: PASS
 
 ---
+
+## 76 COMMIT Unreleased 2026-10-14T18:33:20-07:00
+
+#### Coming From:
+
+Unreleased ea95d78
+
+#### Purpose:
+
+Give the Control Deck's Video tab a working aspect row and carry the aspect to the core, so the setting `/nes.ini` has always held finally reaches the picture.
+
+#### Outcome:
+
+The Video tab now holds one row, Aspect, which steps through 8:7, 1:1 and 4:3 the way the Input rows step a button, with its own Save and its own explanation; the Scale, Scanlines and Overscan rows are deleted, because the user dropped those three options and the app must not keep offering what nothing honours. `save_settings()` learned to own the aspect as it owns the pad mapping: it writes `aspect = <name>` under `[video]`, skips the file's own aspect line wherever it sits, preserves every other byte so hand-written comments survive, and appends a `[video]` section when the file has none -- the temporary-file, backup-name and rename swap is untouched. The settings blob the host answers to `TinyNES SETTINGS WANT` grew from sixteen bytes to seventeen: player 1's mapping, player 2's, then the aspect, the same order and meaning the core's struct now has, and the reply sends no more bytes than the core asked for, so an older core asking for sixteen cannot have its buffer overrun while a new core asking for seventeen receives the aspect; the report line `ae350run` prints now names the aspect it sent, which is the instrument for a launch that looks unchanged. The firmware built with no new warning in project files and the user reports all three ratios working on the board, with the file's 8:7 default widening the picture before anything was touched. The TinyNES half is entry 34. The core-syntax audit passed.
+
+#### Next Steps:
+
+Palette selection is the Video tab's next setting, carried to the core the same way, choosing among the tables FCEUmm already carries in the tree. The Audio tab's volume, mute and channels follow, since `/nes.ini` carries them and nothing reads them yet. Nothing else on the Video tab needs the app changed: the aspect is taken at the start of each game, like the button mapping.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
