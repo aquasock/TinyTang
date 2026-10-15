@@ -29,6 +29,16 @@ static const char *const s_nes_names[TANG_NES_BUTTONS] = {
     "a", "b", "select", "start", "up", "down", "left", "right",
 };
 
+static const char *const s_palette_names[TANG_NES_PALETTES] = {
+    "fceumm",
+    "asqrealc", "restored-wii-vc", "wii-vc", "rgb", "yuv-v3",
+    "unsaturated-final", "sony-cxa2025as-us", "pal", "bmf-final2",
+    "bmf-final3", "smooth-fbx", "composite-direct-fbx", "pvm-style-d93-fbx",
+    "ntsc-hardware-fbx", "nes-classic-fbx-fs", "nescap", "wavebeam",
+    "digital-prime-fbx", "magnum-fbx", "smooth-v2-fbx", "nes-classic-fbx",
+    "royaltea", "mugicha",
+};
+
 const char *tang_nes_pad_name(int button)
 {
     if (button < 0 || button >= NES_CTL_COUNT) {
@@ -52,6 +62,24 @@ const char *tang_nes_aspect_name(int aspect)
     case TANG_ASPECT_4_3: return "4:3";
     default:              return "8:7";
     }
+}
+
+const char *tang_nes_palette_name(int palette)
+{
+    if (palette < 0 || palette >= TANG_NES_PALETTES) {
+        return s_palette_names[0];
+    }
+    return s_palette_names[palette];
+}
+
+static int palette_index(const char *name)
+{
+    for (int i = 0; i < TANG_NES_PALETTES; i++) {
+        if (strcmp(name, s_palette_names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 void tang_nes_defaults(tang_nes_settings_t *s)
@@ -153,7 +181,14 @@ static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
             return true;
         }
         if (strcmp(key, "palette") == 0) {
-            s->palette = 0;         /* FCEUmm's is the only one so far */
+            /* A name this build does not know keeps the default and is not
+             * counted, so a misspelt palette shows in the key count rather
+             * than as a game that silently looks the same. */
+            const int palette = palette_index(value);
+            if (palette < 0) {
+                return false;
+            }
+            s->palette = (uint8_t)palette;
             return true;
         }
         if (strcmp(key, "overscan") == 0) {

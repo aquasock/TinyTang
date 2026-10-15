@@ -130,6 +130,20 @@ int main(int argc, char **argv)
     check(s.mute == 1, "mute yes");
     check(s.channels == TANG_CHANNELS_MONO, "channels mono");
 
+    /* The palette, by name: the first, a middle and the last of the list,
+     * whose indices are the player's (TinyNES tools/gen_fceumm_palettes.py). */
+    check(s.palette == 0, "default: palette is FCEUmm's own");
+    load(&s, "[video]\npalette = smooth-fbx\n");
+    check(s.keys == 1 && s.palette == 11, "palette smooth-fbx is 11");
+    load(&s, "[video]\npalette = mugicha\n");
+    check(s.keys == 1 && s.palette == 23, "palette mugicha is 23, the last");
+    load(&s, "[video]\npalette = fceumm\n");
+    check(s.keys == 1 && s.palette == 0, "palette fceumm is 0");
+    load(&s, "[video]\npalette = smooth\n");
+    check(s.keys == 0 && s.palette == 0, "an unknown palette counts nothing and keeps 0");
+    check(strcmp(tang_nes_palette_name(11), "smooth-fbx") == 0, "name of 11");
+    check(strcmp(tang_nes_palette_name(99), "fceumm") == 0, "an index out of range names 0");
+
     /* Out-of-range values are clamped, not taken. */
     load(&s, "[audio]\nvolume = 900\n[video]\nscale = 0\n");
     check(s.volume == 100, "volume clamps at 100");

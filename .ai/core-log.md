@@ -2544,3 +2544,37 @@ Palette selection is the Video tab's next setting, carried to the core the same 
 - User Test: PASS
 
 ---
+
+## 77 COMMIT Unreleased 2026-10-14T19:12:40-07:00
+
+#### Coming From:
+
+Unreleased 7cb1639
+
+#### Purpose:
+
+Give the TinyNES Control Deck's Video tab a palette row and carry the chosen palette to the AE350 player in the settings blob, as TinyNES entry 35 does on the core's side.
+
+#### Outcome:
+
+`ports/bl616/tang_nes_ini.c` now reads `palette = <name>` under `[video]` against 24 names in index order, `fceumm` for FCEUmm's own and the 23 preset option values of FCEUmm's libretro driver in upstream's order, which is the list TinyNES's `tools/gen_fceumm_palettes.py` enforces on its side; the two lists were compared and are identical. A name it does not know keeps the default and is not counted, so a misspelt palette shows in the key count, and `tang_nes_palette_name()` names an index, giving `fceumm` for one out of range. The blob `ae350run` answers `TinyNES SETTINGS WANT` with grew from seventeen bytes to eighteen, the palette after the aspect, still sending no more than the core asks for, and its settings line now prints `palette=<name>` and adds `(not asked for)` when an older core took fewer bytes. In `ports/bl616/tinynes_app.cpp` the Video tab's list has two rows, Aspect and Palette, Change steps the selected one, and Save writes `aspect` and `palette` together under `[video]` in place of the file's own lines, keeping every other byte as before. `tools/tests/tb_nes_ini.c` gained checks of the default, the first, a middle and the last name, an unknown name and the name lookup, and `tools/tests/test_nes_ini.sh` passed 37 of 37, against 30 before, with the shipped `docs/nes.ini` parsing to 25 keys. The firmware built with no warning in the changed files, 623952 bytes with SHA-256 `85dd2a8349915c45fd13918471a57482a2740ee9b355ac5e73472e0568dadc94`; `tools/tinytang_flash.py` installed it over the console, and after the power cycle `platform` reported `7cb1639-dirty.0ff2f60`, the identity in that image, and `tang` read 25 keys from the card's `/nes.ini`. The user stepped the palette in the app, saw `wii-vc` show the game darker after a launch, and passed the cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The Audio tab's volume, mute and channels follow in the same blob. The `tang` command's video line does not yet name the palette, which belongs in that cycle. Entry 74's open items are unchanged: the shell's rename shim mapping `FR_EXIST` to `EACCES`, so a move onto an existing name fails, and the Bluetooth co-processor assert of BLE-018, which resets the board and can spoil a hardware test.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/tinynes_app.cpp
+- tools/tests/tb_nes_ini.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

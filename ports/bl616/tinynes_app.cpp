@@ -55,7 +55,7 @@ int s_page_count[TABS];
 int s_tab_shown = -1;
 
 td_widget_t *s_list;             /* the Input page's rows */
-td_widget_t *s_video_list;       /* the Video page's one row: the aspect */
+td_widget_t *s_video_list;       /* the Video page's rows: aspect, palette */
 td_widget_t *s_player_button;    /* which player the rows are showing */
 td_widget_t *s_status[TABS];     /* one per page: a shared widget cannot be
                                   * shown on one page and hidden on another */
@@ -161,20 +161,31 @@ bool is_key_line(const char *line)
     return line[0] == 'p' && (line[1] == '1' || line[1] == '2') && line[2] == '_';
 }
 
-/* The one [video] key this app owns: the picture's pixel aspect, written in
- * the names the parser reads back. */
-bool put_aspect(FIL *file)
+/* The [video] keys this app owns: the picture's pixel aspect and its palette,
+ * written in the names the parser reads back. */
+bool put_video(FIL *file)
 {
     char line[48];
 
     snprintf(line, sizeof line, "aspect = %s\n", tang_nes_aspect_name(s_set.aspect));
+    if (!put(file, line)) {
+        return false;
+    }
+    snprintf(line, sizeof line, "palette = %s\n", tang_nes_palette_name(s_set.palette));
     return put(file, line);
 }
 
-bool is_aspect_line(const char *line)
+bool is_named_line(const char *line, const char *key)
 {
-    return strncmp(line, "aspect", 6) == 0 &&
-           (line[6] == ' ' || line[6] == '\t' || line[6] == '=');
+    const size_t n = strlen(key);
+
+    return strncmp(line, key, n) == 0 &&
+           (line[n] == ' ' || line[n] == '\t' || line[n] == '=');
+}
+
+bool is_video_line(const char *line)
+{
+    return is_named_line(line, "aspect") || is_named_line(line, "palette");
 }
 
 /* Write the mapping where the file's [input] section is, keeping every other
@@ -194,7 +205,7 @@ const char *save_settings(void)
     bool in_input = false;
     bool in_video = false;
     bool done = false;          /* the mapping has been put out */
-    bool aspect_done = false;   /* ...and the aspect */
+    bool video_done = false;    /* ...and the aspect and palette */
     bool ok = true;
     UINT got = 0;
     const char *reason = NULL;
@@ -224,9 +235,9 @@ const char *save_settings(void)
                     ok = put_mapping(&out);
                     done = true;
                 }
-                if (in_video && !aspect_done) {
-                    ok = ok && put_aspect(&out);
-                    aspect_done = true;
+                if (in_video && !video_done) {
+                    ok = ok && put_video(&out);
+                    video_done = true;
                 }
                 in_input = strncmp(line, "[input]", 7) == 0;
                 in_video = strncmp(line, "[video]", 7) == 0;
@@ -236,15 +247,15 @@ const char *save_settings(void)
                     done = true;
                 }
                 if (in_video) {
-                    ok = ok && put_aspect(&out);
-                    aspect_done = true;
+                    ok = ok && put_video(&out);
+                    video_done = true;
                 }
                 continue;
             }
             if (in_input && is_key_line(line)) {
                 continue;       /* ours, and already out under the header */
             }
-            if (in_video && is_aspect_line(line)) {
+            if (in_video && is_video_line(line)) {
                 continue;       /* likewise */
             }
             ok = ok && put(&out, line) && put(&out, "\n");
@@ -254,7 +265,7 @@ const char *save_settings(void)
     if (ok && len != 0) {
         line[len] = '\0';
         if (!(in_input && is_key_line(line)) &&
-            !(in_video && is_aspect_line(line))) {
+            !(in_video && is_video_line(line))) {
             ok = put(&out, line) && put(&out, "\n");
         }
     }
@@ -263,8 +274,8 @@ const char *save_settings(void)
     if (ok && !done) {
         ok = put(&out, "\n[input]\n") && put_mapping(&out);
     }
-    if (ok && !aspect_done) {
-        ok = put(&out, "\n[video]\n") && put_aspect(&out);
+    if (ok && !video_done) {
+        ok = put(&out, "\n[video]\n") && put_video(&out);
     }
     if (reason == NULL && !ok) {
         reason = "a write to the temporary failed";
@@ -333,24 +344,39 @@ void on_row(td_widget_t *, void *)
     }
 }
 
-/* The Video page's one row: the picture's pixel aspect, which the core takes
- * from the host when a game starts. */
+/* The Video page's rows: the picture's pixel aspect and its palette, which
+ * the core takes from the host when a game starts. */
+const int VIDEO_ROWS = 2;
+
 const char *video_item(td_widget_t *, int index, int *fg, void *)
 {
     static char text[48];
 
     (void)fg;
-    if (index != 0) {
+    if (index == 0) {
+        snprintf(text, sizeof text, "Aspect      %s%s",
+                 tang_nes_aspect_name(s_set.aspect), s_dirty ? " *" : "");
+    } else if (index == 1) {
+        snprintf(text, sizeof text, "Palette     %s%s",
+                 tang_nes_palette_name(s_set.palette), s_dirty ? " *" : "");
+    } else {
         return "";
     }
-    snprintf(text, sizeof text, "Aspect      %s%s", tang_nes_aspect_name(s_set.aspect),
-             s_dirty ? " *" : "");
     return text;
 }
 
+/* Steps the selected row to its next value. */
 void on_video_row(td_widget_t *, void *)
 {
-    s_set.aspect = (uint8_t)((s_set.aspect + 1) % 3);
+    const int row = s_video_list != nullptr ? td_list_selected(s_video_list) : -1;
+
+    if (row == 0) {
+        s_set.aspect = (uint8_t)((s_set.aspect + 1) % 3);
+    } else if (row == 1) {
+        s_set.palette = (uint8_t)((s_set.palette + 1) % TANG_NES_PALETTES);
+    } else {
+        return;
+    }
     s_dirty = true;
     status_from_file();
     if (s_win != nullptr) {
@@ -456,19 +482,19 @@ void launch(void)
 
     char text[64];
 
-    /* Video: one row, the pixel aspect, and the Save that writes it.  Scale,
-     * scanlines and overscan were dropped, so the page no longer offers
-     * them. */
-    s_video_list = td_list(s_win, td_rect(1, 2, 34, 1), video_item,
+    /* Video: two rows, the pixel aspect and the palette, and the Save that
+     * writes them.  Scale, scanlines and overscan were dropped, so the page
+     * no longer offers them. */
+    s_video_list = td_list(s_win, td_rect(1, 2, 34, VIDEO_ROWS), video_item,
                            on_video_row, nullptr);
     if (s_video_list != nullptr) {
-        td_list_set_count(s_video_list, 1);
+        td_list_set_count(s_video_list, VIDEO_ROWS);
     }
     page_add(1, s_video_list);
     page_add(1, td_button(s_win, 38, 2, "Change", on_video_row, nullptr));
     page_add(1, td_button(s_win, 38, 4, "Save", on_save, nullptr));
-    page_add(1, td_label(s_win, 1, 5, 0, "The aspect is taken when the next"));
-    page_add(1, td_label(s_win, 1, 6, 0, "game starts, like the buttons."));
+    page_add(1, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
+    page_add(1, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
     snprintf(text, sizeof text, "Volume      %u%%", (unsigned)s_set.volume);
     page_add(2, td_label(s_win, 1, 2, 0, text));

@@ -1385,10 +1385,11 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         if (starts_with(run.line, "TinyNES SETTINGS WANT ")) {
             /* The blob's bytes are the ABI with the core (TinyNES
              * firmware/apps/nes_bench/main.cpp): player 1's mapping, player
-             * 2's, then the picture's pixel aspect.  The core prints the
-             * length it wants, and an older core wants only the first sixteen
-             * of these, so nothing beyond what was asked for is ever sent. */
-            static uint8_t blob[2 * TANG_NES_BUTTONS + 1];
+             * 2's, the picture's pixel aspect, then its palette.  The core
+             * prints the length it wants, and an older core wants only the
+             * first sixteen or seventeen of these, so nothing beyond what was
+             * asked for is ever sent. */
+            static uint8_t blob[2 * TANG_NES_BUTTONS + 2];
             unsigned long address = 0, room = 0;
             if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 ||
                 room < 2 * TANG_NES_BUTTONS) {
@@ -1398,6 +1399,7 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
             memcpy(blob, nes.p1, TANG_NES_BUTTONS);
             memcpy(blob + TANG_NES_BUTTONS, nes.p2, TANG_NES_BUTTONS);
             blob[2 * TANG_NES_BUTTONS] = nes.aspect;
+            blob[2 * TANG_NES_BUTTONS + 1] = nes.palette;
             const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
             run.blob = blob;
             run.blob_length = sending;
@@ -1411,7 +1413,9 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
                 tdsh_printf(" %s=%s", tang_nes_button_name(i),
                             tang_nes_pad_name(nes.p1[i]));
             }
-            tdsh_printf(" aspect=%s\r\n", tang_nes_aspect_name(nes.aspect));
+            tdsh_printf(" aspect=%s palette=%s%s\r\n", tang_nes_aspect_name(nes.aspect),
+                        tang_nes_palette_name(nes.palette),
+                        sending < sizeof blob ? " (not asked for)" : "");
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }

@@ -37,6 +37,13 @@ enum {
 };
 
 enum { TANG_ASPECT_8_7, TANG_ASPECT_1_1, TANG_ASPECT_4_3 };
+
+/* Palettes, by index: 0 is FCEUmm's own, 1 to 23 the presets of FCEUmm's
+ * libretro driver in its own order, named by its own option values.  The
+ * index is what the AE350 player is sent, and the list is TinyNES's
+ * tools/gen_fceumm_palettes.py NAMES, which fails its build if upstream's
+ * table ever stops matching it; the two change together. */
+#define TANG_NES_PALETTES 24
 enum { TANG_CHANNELS_STEREO, TANG_CHANNELS_MONO };
 
 typedef struct {
@@ -45,7 +52,7 @@ typedef struct {
     uint8_t  aspect;
     uint8_t  scale;
     uint8_t  scanlines;
-    uint8_t  palette;                /* only FCEUmm's, for now */
+    uint8_t  palette;                /* index into the palette names */
     uint8_t  overscan;               /* 1 = hide the top and bottom lines */
     uint8_t  volume;                 /* 0 to 100 */
     uint8_t  mute;
@@ -68,6 +75,7 @@ bool tang_nes_load(tang_nes_settings_t *s, const char *path);
 const char *tang_nes_pad_name(int button);
 const char *tang_nes_button_name(int button);
 const char *tang_nes_aspect_name(int aspect);
+const char *tang_nes_palette_name(int palette);
 
 #ifdef __cplusplus
 }
