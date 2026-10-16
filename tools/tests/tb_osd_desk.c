@@ -40,6 +40,23 @@ int tang_fpga_link_open(void) { return 0; }
 void tang_fpga_lock(void) { }
 void tang_fpga_unlock(void) { }
 
+/* The two answers the desk layer acts on: who owns the link, and whether the
+ * transmit lock could be taken.  Both are ways the desk task used to be
+ * stopped, so the test drives them by hand rather than waiting for a host. */
+static bool     g_pipe;
+static bool     g_lock_available = true;
+static uint32_t g_lock_ms_last;
+
+bool tang_fpga_pipe_open(void) { return g_pipe; }
+
+/* The lock the desk layer asks for, which is bounded.  The bound is recorded so
+ * the test can check it asked for one rather than waiting for ever. */
+bool tang_fpga_lock_within(uint32_t ms)
+{
+    g_lock_ms_last = ms;
+    return g_lock_available;
+}
+
 int tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length)
 {
     if (g_frames >= MAX_FRAMES || length > MAX_PAYLOAD) {
@@ -572,6 +589,67 @@ int main(void)
         desk_in_push("\x1b[<0;1;1M", 11);       /* one byte too many */
         read_typed(got, sizeof(got));
         check(strlen(got) == DESK_IN_MAX - 10, "a push that did not fit was cut short");
+    }
+
+    /* ---- a host's pipe, and a lock that is not free, hold the desk layer's
+     * own sends back without stopping the task --------------------------- */
+    {
+        /* A clean screen first, so the paint below is the thing being sent. */
+        feed("\x1b[2J\x1b[H");
+        flush();
+        feed("PAINT");
+        flush();
+
+        /* A host's pipe: the paint is held back, and the next poll sends it.
+         * The check is not vacuous -- the screen had changed, so a flush that
+         * was not held back would have put frames on the link. */
+        frames_clear();
+        feed("\x1b[2J\x1b[H");
+        feed("HELD");
+        g_pipe = true;
+        flush();
+        check(g_frames == 0, "the desk layer sent frames while a host owned the link");
+        g_pipe = false;
+        flush();
+        check(g_frames > 0, "the paint a host's pipe held back was never retried");
+
+        /* The same for the mouse, which the pointer hands over once. */
+        frames_clear();
+        g_mouse_live = true;
+        g_mouse.buttons = 0;
+        g_mouse.dx = 5;
+        g_pipe = true;
+        desk_poll();
+        check(g_frames == 0, "the pointer sent a frame while a host owned the link");
+        g_pipe = false;
+
+        /* A lock that is not free is waited for with the bound and not for
+         * ever; what it costs is the poll, and the next one sends. */
+        frames_clear();
+        feed("\x1b[2J\x1b[H");
+        feed("BUSY");
+        g_lock_available = false;
+        g_lock_ms_last = 0;
+        flush();
+        check(g_frames == 0, "the desk layer sent a frame it never held the lock for");
+        check(g_lock_ms_last == DESK_LOCK_MS,
+              "the desk layer did not bound its wait for the transmit lock");
+        g_lock_available = true;
+        flush();
+        check(g_frames > 0, "the paint skipped for a busy lock was never retried");
+
+        /* And the mouse with the lock busy: the frame is dropped and the task
+         * carries on, which is the whole point of the bound. */
+        frames_clear();
+        g_mouse.dx = 5;
+        g_lock_available = false;
+        g_lock_ms_last = 0;
+        desk_poll();
+        check(g_frames == 0, "the pointer sent a frame it never held the lock for");
+        check(g_lock_ms_last == DESK_LOCK_MS, "the pointer did not bound its wait");
+        g_lock_available = true;
+        g_mouse_live = false;
+        g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
     }
 
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);

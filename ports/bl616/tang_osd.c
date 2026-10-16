@@ -63,6 +63,13 @@ static int put_locked(uint8_t x, uint8_t y, const char *text, size_t length)
 
 /* ---------------------------------------------------------------- the API */
 
+/* How long this file's desk-task paths -- the toggle and the re-assert -- will
+ * wait for the transmit lock before giving the poll up.  They take the link the
+ * way tang_fpga_link.h says a periodic task must: nothing while a host owns it,
+ * and a bound on the lock, because the desk task reaches these every poll and a
+ * host's run must not be able to stop it through them. */
+#define OSD_LOCK_MS 20
+
 int tang_osd_set(bool on)
 {
     if (tang_fpga_link_open() != 0) {
@@ -81,10 +88,10 @@ bool tang_osd_shown(void)
 
 int tang_osd_reassert(void)
 {
-    if (tang_fpga_link_open() != 0) {
+    if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open() ||
+        !tang_fpga_lock_within(OSD_LOCK_MS)) {
         return -1;
     }
-    tang_fpga_lock();
     const int rc = overlay_locked(s_shown);
     tang_fpga_unlock();
     return rc;
@@ -92,10 +99,10 @@ int tang_osd_reassert(void)
 
 int tang_osd_toggle(void)
 {
-    if (tang_fpga_link_open() != 0) {
+    if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open() ||
+        !tang_fpga_lock_within(OSD_LOCK_MS)) {
         return -1;
     }
-    tang_fpga_lock();
     const int rc = overlay_locked(!s_shown);
     tang_fpga_unlock();
     return rc;

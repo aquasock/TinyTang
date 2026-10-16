@@ -35,6 +35,12 @@ int tdsh_printf(const char *fmt, ...);
  * keeps the link idle between changes. */
 #define DESK_POLL_MS 40
 
+/* How long the desk task will wait for the transmit lock before it gives the
+ * poll up.  A frame's own transmit is well inside this; a host's pipe and a
+ * load hold the lock for seconds, and the task must not go with them.  Below
+ * DESK_POLL_MS, so a skipped poll cannot put the task behind. */
+#define DESK_LOCK_MS 20
+
 /* How many polls to keep re-arming the layer after the FPGA has been
  * reprogrammed.  The core needs a moment before it will answer, and nothing
  * acknowledges the enable, so it is sent a few times rather than assumed. */
@@ -275,12 +281,24 @@ static bool flush_row(int y)
     return true;
 }
 
+/* Every one of the desk layer's own sends takes the link this way, and this is
+ * the one place it is written: nothing while a host owns the link, and a
+ * bounded wait for the lock itself.  Entry 79's guard tested
+ * tang_fpga_link_open(), which only says the UART is up.  The link_open() call
+ * stays for its own sake, since it brings the UART up. */
+static bool desk_lock(void)
+{
+    if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open()) {
+        return false;
+    }
+    return tang_fpga_lock_within(DESK_LOCK_MS);
+}
+
 static void flush(void)
 {
-    if (tang_fpga_link_open() != 0) {
+    if (!desk_lock()) {
         return;
     }
-    tang_fpga_lock();
     for (int y = 0; y < TANG_DESK_ROWS; y++) {
         if (!flush_row(y)) {
             /* The link refused part of a row.  The shadow for that row is
@@ -367,10 +385,9 @@ static void pointer_frame(const tang_mouse_t *mouse)
         return;
     }
     last_buttons = mouse->buttons;
-    if (tang_fpga_link_open() != 0) {
+    if (!desk_lock()) {
         return;
     }
-    tang_fpga_lock();
     (void)tang_fpga_frame(FPGA_CMD_INPUT, payload, sizeof payload);
     tang_fpga_unlock();
 }
@@ -393,10 +410,9 @@ static void keyboard_frame(const uint8_t mods, const uint8_t keys[6])
         return;
     }
     memcpy(last, payload, sizeof payload);
-    if (tang_fpga_link_open() != 0) {
+    if (!desk_lock()) {
         return;
     }
-    tang_fpga_lock();
     (void)tang_fpga_frame(FPGA_CMD_KEYBOARD, payload, sizeof payload);
     tang_fpga_unlock();
 }
@@ -408,8 +424,7 @@ static void desk_poll(void)
     if (s_rearm > 0) {
         s_rearm--;
         const uint8_t p[1] = { 1 };
-        if (tang_fpga_link_open() == 0) {
-            tang_fpga_lock();
+        if (desk_lock()) {
             (void)tang_fpga_frame(FPGA_CMD_DESK_CTRL, p, sizeof(p));
             tang_fpga_unlock();
         }
@@ -542,7 +557,7 @@ static void desk_poll(void)
  * nothing was mirrored while the layer was off; the next output repaints it. */
 static void desk_watch_toggle(void)
 {
-    if (tang_fpga_link_open() != 0) {
+    if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open()) {
         return;
     }
     uint8_t rep[8];

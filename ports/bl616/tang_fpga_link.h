@@ -94,6 +94,30 @@ int  tang_fpga_link_open(void);
 void tang_fpga_lock(void);
 void tang_fpga_unlock(void);
 
+/* The transmit lock, with a bound: it waits at most `ms` and returns false when
+ * it did not get it.  It exists for a periodic task's own sends -- the desk
+ * layer's frames, and the overlay toggle and re-assert the desk task reaches --
+ * which must never be held by another caller's long run.  Such a caller takes
+ * the link like this:
+ *
+ *     tang_fpga_link_open() == 0 && !tang_fpga_pipe_open() &&
+ *     tang_fpga_lock_within(ms)
+ *
+ * because a host's pipe (fpgapipe, or ae350run's load and follow) holds the
+ * lock for its whole run, and the bound covers the same stall arriving between
+ * the check and the take.  False means nothing was sent and the caller tries
+ * again on its next poll; nothing it sends could have reached the core while a
+ * host owned the link anyway.  tang_fpga_lock() stays for a caller that must
+ * not lose its frame. */
+bool tang_fpga_lock_within(uint32_t ms);
+
+/* True while a host owns the link: fpgapipe, or ae350run's load and follow.
+ * Those paths hold the transmit lock for their whole run and read the core's
+ * replies themselves.  The check is advisory on its own -- the bound above is
+ * what makes it safe -- because the state cannot be read and the lock taken in
+ * one step. */
+bool tang_fpga_pipe_open(void);
+
 /* Throw away anything already in the RX ring, so a stale reply cannot be
  * mistaken for the answer to the frame about to be sent. */
 void tang_fpga_drain(void);

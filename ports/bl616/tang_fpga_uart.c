@@ -225,6 +225,29 @@ void tang_fpga_unlock(void)
     }
 }
 
+/* The lock with a bound, for a caller that must not be held by another's long
+ * run; the header carries the rule and the check that goes beside it.  A
+ * frame's own transmit is a fraction of a tick at 2 Mbaud, while a host's pipe
+ * and a load hold this for seconds -- which is the stall this refuses.  It
+ * judges nothing itself: the pipe is asked about by the caller, so that the
+ * caller's own code is what a host test can plant a fault in. */
+bool tang_fpga_lock_within(uint32_t ms)
+{
+    if (!s_tx_lock) {
+        return false;
+    }
+    return xSemaphoreTake(s_tx_lock, pdMS_TO_TICKS(ms)) == pdTRUE;
+}
+
+/* Set by cmd_fpgapipe and by ae350run's load, and read by the desk layer so it
+ * sends nothing while a host owns the link.  A plain read of the flag the
+ * writers set inside a critical section: a stale answer costs one skipped poll,
+ * which is why the lock it guards is also taken with a bound. */
+bool tang_fpga_pipe_open(void)
+{
+    return s_pipe;
+}
+
 /* ------------------------------------------------------------------ startup */
 
 /* Program UART1 at a rate and (re)attach the RX interrupt.  Shared by the

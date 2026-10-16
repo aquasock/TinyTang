@@ -2737,3 +2737,37 @@ None.
 - User Test: N/A
 
 ---
+
+## 83 COMMIT Unreleased 2026-10-16T03:25:56-07:00
+
+#### Coming From:
+
+Unreleased 78a0748
+
+#### Purpose:
+
+Fix the guard entry 79 left open, where the desk task took the transmit lock with portMAX_DELAY while a host owned the link, so a host holding the port for minutes held the desk task with it.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_link.h` gains `tang_fpga_pipe_open()`, which reports the state `s_pipe` already tracked in `tang_fpga_uart.c` -- true while `fpgapipe` or `ae350run` owns the link -- and `tang_fpga_lock_within(ms)`, the transmit lock with a bound, and its comment states the rule a periodic task must follow: take the link as `tang_fpga_link_open() == 0 && !tang_fpga_pipe_open() && tang_fpga_lock_within(ms)`, because those paths hold the lock for their whole run and the bound covers the same stall arriving between the check and the take. In `ports/bl616/tang_osd_desk.c` every one of the task's own sends -- `flush()`, `pointer_frame()`, `keyboard_frame()`, the re-arm's control frame and `desk_watch_toggle()`'s early return -- now goes through one helper, `desk_lock()`, where the rule is written once. Reading the poll against that fix found it would have moved the stall rather than removed it: `desk_poll()` reaches `tang_osd_toggle()` further down the same function, so covering `pointer_frame()` alone would only have parked the task one call later. `ports/bl616/tang_osd.c`'s `tang_osd_toggle()` and `tang_osd_reassert()`, whose only callers are the desk task, therefore take the link the same way. `tools/tests/tb_osd_desk.c` gains stubs for the two new answers and a case for each way the task could be stopped: a screen changed while a host owns the link sends nothing and is sent by the next poll, the same for a mouse report the pointer hands over once, and with the lock unavailable the desk layer asks for `DESK_LOCK_MS`, sends nothing, and is sent by the next poll. Two planted faults each failed the test -- the pipe forgotten, and the lock taken unbounded again -- and the restored tree passes 78 checks, while the rest of the suite, run against this tree, is 24 of 26 with both failures pre-existing and outside this change: `test_fat_rename.sh` is committed mode 100644 and cannot execute, and `test_oled_session.sh` cannot link because `tdsh_platform_bl616.c` calls `tang_nes_palette_name`, which `tang_nes_ini.c` defines and that test does not compile. The firmware built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36 with no warning in the changed files, 624,032 bytes, build id `78a0748-dirty.5428ee7`, SHA-256 `6c9bfaac8f6c3a57c96d3044ea755f8239dc03255e5663fa245197ac7f8240bb`, and was installed with `tools/tinytang_flash.py` and a power cycle, after which `platform` reports `78a0748-dirty.5428ee7` against `b526e93-dirty.9361c55` before it. On the board the desk layer's own counter stood at 4,443 cells in 71 rows with 0 refused, and at 4,640 in 78 after a host pipe was held through `fpgapipe` for eight seconds and released, which is the guard letting go rather than staying shut; reloading the desktop core through `tangload`, which is what arms the re-arm and so calls `tang_osd_reassert()`, the path no host test reaches, left the counter at 35,773 cells in 487 rows with 0 refused. `tangload`'s warning that the core did not take the socket declaration is `phosphor/pmod_sockets.cpp`'s and predates the contract for a desktop core of ABI 1.2. What the board cannot show is the absence of the stall itself: while a host owns the link the desktop cannot draw, so nothing on the console tells a parked task from one skipping its sends, and the host test is the evidence for the mechanism rather than these runs. One window is left and named: `desk_watch_toggle()` reaches `tang_osd_desk_set(true)`, whose lock is still unbounded, so a holder that is not a pipe at the instant of an F12 press could still stop the task there. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md`, whose only change is still the user's own uncommitted line forbidding delegation, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Three things this cycle owes or leaves. A host test for `tang_osd.c` is owed, because the two functions changed there are compiled only by the firmware build, so a planted fault in the toggle would go unnoticed. The window above wants the same bound as the rest, which is a change to `tang_osd_desk_set()`'s own lock rather than to its callers. And the two pre-existing suite failures want fixing, since each makes a test that never runs: `test_fat_rename.sh` needs an executable bit committed, and `test_oled_session.sh` needs `tang_nes_ini.c` in its link list. Entry 80's keyboard half still waits on Tiny89, which must deploy an image built from its current sources before the frames this repository sends are read; the firmware image is still not byte-reproducible, which the user has kept open rather than fixed; and the guard entry 79 raised is now closed.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_osd.c
+- ports/bl616/tang_osd_desk.c
+- tools/tests/tb_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
