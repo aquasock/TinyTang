@@ -2803,3 +2803,33 @@ Three things. The byte payload wants a board test, and Tiny89 is where it can be
 - User Test: PASS
 
 ---
+
+## 85 COMMIT Unreleased 2026-10-16T13:15:52-07:00
+
+#### Coming From:
+
+Unreleased 844a3ad
+
+#### Purpose:
+
+Make `saved` a statement about what the card holds rather than about a write call returning, and stop a save that fails from destroying the one already there.
+
+#### Outcome:
+
+The save direction now verifies what it wrote and commits it only then, and a failed attempt costs the previous save nothing. `ae350_save_open_file()` opens a temporary path -- the name a load finds with `.part` on the end, from the new `ae350_save_temp_path()` -- so both payload shapes are written somewhere nothing loads; `ae350_save_verify()` then reopens it, checks the length the header gave, and reads the whole payload back off the card through the save's own 512-byte chunk buffer, hashing it with the same `ae350_crc32` the writer used, so no stack is spent on a payload that may be megabytes; and `ae350_save_finish()` unlinks the previous save and renames the temporary into place only after the read-back has agreed with the header. A save that does not arrive whole now deletes its own temporary and nothing else, and so does one that arrives whole but does not verify, which is a second distinct message because it is a different fault: from the writer's side a card that did not take the bytes, a file that closed short and a card that is full all look alike. FatFS will not rename onto a name that exists, which is why the old file goes first -- after the new one is known good, never before. The reason this matters is measured: nine byte-payload saves of 256 KiB were attempted on the board tonight and six arrived whole, so about one in three fails, and every failure arrived with all 262144 bytes present and a CRC that disagreed. That defect is Tiny89's entry 15's subject and unchanged here; what this cycle changes is its cost. The firmware built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36 at 628,176 bytes, build id `844a3ad-dirty.e16ea1b`, SHA-256 `14bee380bb233c9c16f382229608b6d7a3512d5b6e5c534013e55e474dc3ddec`, was installed with `tools/tinytang_flash.py` and a power cycle, and `platform` reported `844a3ad-dirty.e16ea1b` against `162ff40-dirty.627b0e9` before it. On the board the user pressed Ctrl+S three times on the new firmware. The first wrote the whole 262144 bytes and reported `ae350run: saved 262144 bytes to /sd/root/saves/nes/TI89Titanium_OS.sav, read back and verified 8d058e63`, which is the read-back agreeing with the header's CRC. The second failed the way the payload fails and printed `the save did not arrive whole: 262144 of 262144 bytes, 0 dropped in the link ring, close 0`. The third was not needed: `ls -l /root/saves/nes` after a power cycle showed `262144 TI89Titanium_OS.sav` still present and no `.part` file anywhere in the directory, so the failed attempt had destroyed nothing and left no debris, which is the property the temporary was added for. The same reboot then loaded the surviving file and the program reported `Tiny89 RAM GOT 262144 8d058e63` -- the CRC the verified save carried, one power cycle later, which is entry 14's round trip holding through this change. `tb_osd_desk` passes 82 checks, `fpga_frames` 24 and `ae350_load` 26, and the changed file builds without a warning. Two limitations have to be stated. The loss itself is untouched: this repository's save direction carries whatever arrives, and about one byte-payload save in three arrives shifted, which is why the verification is worth having rather than a substitute for finding the fault. And the verification is not host-tested, because `tang_fpga_uart.c` is not compiled by any test in `tools/tests` -- entry 83 recorded the same gap for `tang_osd.c` -- so its evidence is the board runs above and nothing else. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md`, whose only change is still the user's own uncommitted line forbidding delegation, and validated this entry's sequential number, six sections, prose, Status values and the log's 85 entries against the 100-entry limit.
+
+#### Next Steps:
+
+Find the lost frame, which is now the only defect on this path and the one this cycle has made survivable without making it go away: about one byte-payload save in three arrives with every byte present and the CRC disagreeing, and nothing in the counters at either end reports it, so the next cycle's instrument has to be something that counts frames where they are framed. The flash is the work this repository is next a dependency of -- `tihw.rom` at 4 MiB, entry 13's subject -- and it is about 4.4 minutes of byte payload at the pace measured, so the loss wants finding first or at least a retry loop the user is willing to stand through; the load direction already carries bytes the way TinyNES does. Entry 84's board test of the byte payload is closed by this cycle: it has now crossed the link nine times, six of them whole. A user-work item was deferred rather than dropped: a Bluetooth keyboard-and-mouse combo device connects and discovers its HID services but dies on a supervision timeout afterwards, and the slots are fixed one keyboard and one mouse, each its own connection, with reports routed to a slot by which connection carried them, so such a device can only fill both slots if it holds two links at once and the firmware would need changing if it does not. Entry 83's three items still stand, none touched here: a host test for `tang_osd.c`, the unbounded lock `desk_watch_toggle()` reaches through `tang_osd_desk_set(true)`, and the two suite failures that make a test which never runs. The firmware image is still not byte-reproducible, and this cycle produced a second instance of it: the same source built twice gave `f9a30a8e...` and then `14bee380...`, so a cycle that needs to name an image must hash the one it flashed rather than the one it built.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

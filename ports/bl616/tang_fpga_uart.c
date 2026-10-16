@@ -1157,15 +1157,71 @@ static void ae350_save_raw(uint8_t byte)
     }
 }
 
+/* Where a save is built: the name a load will find, with ".part" on the end.
+ * Nothing loads it, so a save that does not verify is a file nobody sees, and
+ * the previous good save is still sitting under the real name. */
+static bool ae350_save_temp_path(char *out, size_t size)
+{
+    int n;
+
+    out[0] = '\0';
+    if (s_ae350_save_path[0] == '\0') {
+        return false;
+    }
+    n = snprintf(out, size, "%s.part", s_ae350_save_path);
+    return n > 0 && (size_t)n < size;
+}
+
+/* Read a save back and hash it: the length the header gave and the CRC-32 it
+ * gave, against what the card actually holds.  From the writer's side a card
+ * that did not take the bytes, a file that closed short and a card that is
+ * full all look the same, so without this "saved" is a promise rather than a
+ * fact.  The buffer is the save's own chunk buffer, empty by the time this
+ * runs, so no stack is spent on a payload that may be megabytes. */
+static bool ae350_save_verify(const char *path, uint32_t expect, uint32_t crc)
+{
+    FIL file;
+    uint32_t running = 0, total = 0;
+    bool ok = false;
+
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        return false;
+    }
+    for (;;) {
+        UINT got = 0;
+
+        if (f_read(&file, s_ae350_save_chunk, sizeof s_ae350_save_chunk,
+                   &got) != FR_OK) {
+            break;
+        }
+        if (got == 0) {
+            ok = total == expect && running == crc;
+            break;
+        }
+        running = ae350_crc32(running, s_ae350_save_chunk, got);
+        total += got;
+        if (total > expect) {
+            break;
+        }
+    }
+    (void)f_close(&file);
+    return ok;
+}
+
 /* Open the save file, making the folders a card that has never saved lacks.
- * Both kinds write straight into it as the payload arrives. */
+ * Both kinds write straight into it as the payload arrives, and what it opens
+ * is the temporary rather than the name a load finds: see ae350_save_finish(). */
 static bool ae350_save_open_file(void)
 {
+    char temp[TDSH_MAX_REAL_PATH];
+
     (void)f_mkdir("/sd/root/saves");
     (void)f_mkdir(AE350_SAVE_DIR);
-    if (f_open(&s_ae350_save_file, s_ae350_save_path,
-               FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
-        tdsh_printf("ae350run: cannot write %s\r\n", s_ae350_save_path);
+    if (!ae350_save_temp_path(temp, sizeof temp)) {
+        return false;
+    }
+    if (f_open(&s_ae350_save_file, temp, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+        tdsh_printf("ae350run: cannot write %s\r\n", temp);
         return false;
     }
     s_ae350_save_open = true;
@@ -1208,13 +1264,20 @@ static void ae350_save_arm(const char *counts, bool binary)
     }
 }
 
-/* The save arrived: check it twice over and write it, or say why not. */
+/* The save arrived: check it twice over, read it back, and only then let it be
+ * the save -- or say why not.  What the card holds matters more than what was
+ * sent, and the order here is what makes trying again safe: the previous good
+ * save is untouched until a new one has been read back and hashed, because
+ * this link loses a frame now and then -- about one run in six, measured on
+ * 2026-10-16 -- and the answer to that is to press the key again. */
 static void ae350_save_finish(void)
 {
     const bool whole = !s_ae350_save_failed && s_ae350_save_open &&
                        s_ae350_save_got == s_ae350_save_expect &&
                        s_ae350_save_running == s_ae350_save_crc;
     FRESULT closed = FR_OK;
+    char temp[TDSH_MAX_REAL_PATH];
+    const bool named = ae350_save_temp_path(temp, sizeof temp);
 
     if (s_ae350_save_open) {
         /* Sync, then close, and believe the answer: a close that fails leaves
@@ -1232,14 +1295,45 @@ static void ae350_save_finish(void)
                     (unsigned long)s_ae350_save_got,
                     (unsigned long)s_ae350_save_expect,
                     (unsigned long)s_rx_drops, (int)closed);
-        /* Half a save on the card would be loaded as one next time. */
-        if (s_ae350_save_path[0] != '\0') {
-            (void)f_unlink(s_ae350_save_path);
+        /* The half-save is removed and the save already on the card is left
+         * alone: what must never happen is a partial file under the real name,
+         * and what must not happen is losing the last good one to a bad try. */
+        if (named) {
+            (void)f_unlink(temp);
         }
         return;
     }
-    tdsh_printf("ae350run: saved %lu bytes to %s\r\n",
-                (unsigned long)s_ae350_save_got, s_ae350_save_path);
+
+    /* Whole as it arrived, which is not the same as whole on the card. */
+    if (!named ||
+        !ae350_save_verify(temp, s_ae350_save_expect, s_ae350_save_crc)) {
+        tdsh_printf("ae350run: the card does not hold the save that was sent: "
+                    "%lu bytes to %s, and %s\r\n",
+                    (unsigned long)s_ae350_save_got,
+                    named ? temp : s_ae350_save_path,
+                    s_ae350_save_path[0] != '\0' ? "the save already there is "
+                    "left alone" : "there was none there to leave");
+        if (named) {
+            (void)f_unlink(temp);
+        }
+        return;
+    }
+
+    if (named) {
+        /* Replace the old save with the verified one.  FatFS will not rename
+         * onto a name that exists, so the old one goes first -- after the new
+         * one is known good, never before. */
+        (void)f_unlink(s_ae350_save_path);
+        if (f_rename(temp, s_ae350_save_path) != FR_OK) {
+            tdsh_printf("ae350run: the card will not put %s in place over %s\r\n",
+                        temp, s_ae350_save_path);
+            (void)f_unlink(temp);
+            return;
+        }
+    }
+    tdsh_printf("ae350run: saved %lu bytes to %s, read back and verified %08lx\r\n",
+                (unsigned long)s_ae350_save_got, s_ae350_save_path,
+                (unsigned long)s_ae350_save_running);
 }
 
 /* The line that opens a hex save; its hex follows.  Everything from here to
