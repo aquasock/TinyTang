@@ -2833,3 +2833,37 @@ Find the lost frame, which is now the only defect on this path and the one this 
 - User Test: PASS
 
 ---
+
+## 86 COMMIT Unreleased 2026-10-16T13:30:50-07:00
+
+#### Coming From:
+
+Unreleased 946cdb8
+
+#### Purpose:
+
+Hand the repository over in a state a later session can pick up without reconstructing tonight, and record where the Bluetooth and save work stands.
+
+#### Outcome:
+
+This cycle changes no engineering file; it is the log catching up with a night that produced four commits. Two of them are this repository's own and have their entries. Entry 84 gave a core its keyboard while the desktop layer is hidden, which is what made Tiny89's calculator stop ignoring its keyboard, and gave the save direction `TinyNES NVRAM DATA`, a payload of bytes rather than hex. Entry 85 made `saved` a statement about the card by writing the save to `<name>.sav.part`, reading it back, hashing it and only then renaming it into place, which also made a failed save stop destroying the one already there. The third is the user's own, `946cdb8 ai core update`, which added one line to `.ai/core.md` forbidding delegation -- the same line Tiny89's core.md already carried. It was committed by the user without a log entry, and this entry records it so the trail does not appear interrupted; it is a project-control change of one line and nothing else.
+
+The fourth commit is in Tiny89 and its entry 17 is where the measurement lives, but this repository should not have to open another tree to know what its own save path does, so the summary is here as well. On the board the save path is exercised as follows: nine byte-payload saves of 256 KiB were attempted across two firmware builds and six arrived whole, then two more on the build entry 85 left behind -- one failed and one was written, read back and verified -- making seven whole of eleven, so about one in three fails. Every failure arrives with all 262144 bytes present and a CRC that disagrees, and the reason is now measured rather than guessed: on the failing attempt the reading program's own send line reached this board as `2144 ea943086 16585 ms` where `Tiny89 RAM SENT 262144 ea943086 16585 ms` was printed, its first eighteen characters and the whole `TinyNES NVRAM DONE` line before it consumed by `ae350_follow_link()`'s reader because it was still short of the length the header had promised. That is a deficit of eighteen bytes at the payload's opening, which shifts every byte after it and moves the DONE line into the payload. A moving emulator state cannot produce it, because such a payload would still end at its promised length; the deficit can, and does. Nothing counts it at either end: `s_rx_drops` reads zero because the byte ring is 4096 and never overflows, and the fabric's text framer cannot drop a byte because `txt_ready` withholds permission from the CPU instead. The suspicion therefore falls on how a frame is cut or how one is taken off the queue, and the instrument for it does not exist here yet.
+
+The live state a later session inherits. The board runs `844a3ad-dirty.e16ea1b`, flashed with `tools/tinytang_flash.py` and confirmed by `platform` after a power cycle, and that firmware carries the save verification of entry 85. The card holds a verified save, `8d058e63`, which has itself been loaded back byte-exact twice, so the round trip of Tiny89's entry 14 holds through this change. The K950 keyboard is paired and delivering; `ble` reports the radio up, the pairings loaded from `/sd/root/ble/bonds.bin`, and both slots reconnect by themselves. A Bluetooth keyboard-and-mouse combo device was tried and deferred: it connects and discovers both boot HID characteristics but dies on a supervision timeout, and since the slots are one keyboard and one mouse with reports routed to a slot by which connection carried them, filling both from one device needs it to hold two links at once or the routing needs changing. The tree is clean apart from `third_party/tinydesk`, whose only difference is `apps/settings.c` and which `scripts/apply-tinydesk-patches.sh` dirties again at every configure. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md` itself, and validated this entry's sequential number, six sections, prose, Status values and the log's 86 entries against the 100-entry limit.
+
+#### Next Steps:
+
+Find the eighteen bytes, which is the only open defect on this path and the one thing between here and a flash that could be trusted: they go missing at a byte payload's opening, nothing at either end counts them, and the next instrument has to count frames where they are framed rather than bytes where they arrive -- the frame queue is sixteen deep, `rx_decode()` stops at a full queue, and `push_frame()` evicts the oldest if it is ever reached, which the comment says should not happen and which nothing would report if it did. The flash is what that unblocks: `tihw.rom` at 4 MiB, Tiny89's entry 13, about 4.4 minutes of byte payload at the pace measured, and a one-in-three failure over four minutes is not something to hand a user. Two small things are owed and both are recorded in Tiny89's entry 17 as well: the comment at `ports/bl616/tang_fpga_uart.c` line 1271 in the save path says "about one run in six" where the measurement is one in three, and the instrument that produced the measurement wants a few blank lines after the payload so that a failed save does not consume its own diagnostic. Entry 83's three items still stand untouched: a host test for `tang_osd.c`, the unbounded lock `desk_watch_toggle()` reaches through `tang_osd_desk_set(true)`, and the two suite failures that make a test which never runs. The firmware image is still not byte-reproducible, and the night produced a second instance of it -- the same source built twice gave `f9a30a8e...` and then `14bee380...` -- so a cycle that needs to name an image must hash the one it flashed rather than the one it built. Finally, the user's own TiEmu fails the same intermittent way on their desktop with no link involved, which is a separate fault in a separate program and is recorded in Tiny89's entry 17 so it is chased on its own evidence rather than folded into this one.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
