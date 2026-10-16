@@ -409,10 +409,16 @@ static void keyboard_frame(const uint8_t mods, const uint8_t keys[6])
     if (memcmp(payload, last, sizeof payload) == 0) {
         return;
     }
-    memcpy(last, payload, sizeof payload);
+    /* The report is remembered only once it has been handed to the link.  It
+     * used to be remembered first, and a poll whose lock was refused then
+     * dropped the keystroke for good: the next poll compared against the same
+     * payload, found no change, and sent nothing -- so a press or a release
+     * lost in a busy link never reached the core, and the core's idea of the
+     * keyboard stayed where it was. */
     if (!desk_lock()) {
         return;
     }
+    memcpy(last, payload, sizeof payload);
     (void)tang_fpga_frame(FPGA_CMD_KEYBOARD, payload, sizeof payload);
     tang_fpga_unlock();
 }
@@ -571,6 +577,33 @@ static void desk_watch_toggle(void)
     }
 }
 
+/* What the desk task does while the layer is hidden -- which is where a game
+ * or an emulator is.  The core wants both input frames there: the mouse to
+ * drive a camera, and the keyboard so a program under the layer can read keys.
+ * desk_poll() is the branch that does not run in that state, so both are read
+ * and sent here.
+ *
+ * The mouse was moved into this branch first, for exactly this reason (entry
+ * 79).  The keyboard was added inside desk_poll() only, so a key did nothing
+ * while something else held the screen -- which is how Tiny89's calculator
+ * came to ignore its keyboard.  A function of its own rather than a block in
+ * desk_task() because the task loop is infinite and this is what a host test
+ * can call (tools/tests/tb_osd_desk.c). */
+static void desk_poll_hidden(void)
+{
+    tang_mouse_t mouse;
+    (void)tang_ble_mouse(&mouse);
+    pointer_frame(&mouse);
+
+    /* After the pointer, so a keystroke and a pointer move arriving in the
+     * same poll keep the order they happened in, as in desk_poll(). */
+    uint8_t brep[8];
+    (void)tang_ble_keyboard(brep);
+    keyboard_frame(brep[0], &brep[2]);
+
+    desk_watch_toggle();
+}
+
 static void desk_task(void *arg)
 {
     (void)arg;
@@ -580,13 +613,7 @@ static void desk_task(void *arg)
             desk_poll();
             flush();
         } else {
-            /* The desktop is hidden, which is where a game is.  The core
-             * still wants the mouse, so read it and hand it over; the desktop
-             * pointer is not drawn, so nothing else wants it. */
-            tang_mouse_t mouse;
-            (void)tang_ble_mouse(&mouse);
-            pointer_frame(&mouse);
-            desk_watch_toggle();
+            desk_poll_hidden();
         }
         tang_oled_poll();
     }

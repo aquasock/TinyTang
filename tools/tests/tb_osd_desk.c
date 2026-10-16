@@ -652,6 +652,51 @@ int main(void)
         g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
     }
 
+    /* ---- while the layer is hidden, both input frames are still sent ------
+     * desk_poll() does not run then -- a game or an emulator holds the screen
+     * -- and the keyboard frame was sent from there only, which is why a key
+     * did nothing on Tiny89's calculator. */
+    {
+        bool kbd = false, mouse = false;
+        int kbd_at = -1;
+
+        memset(g_ble_rep, 0, sizeof g_ble_rep);
+        g_ble_rep[2] = 0x04;                 /* usage 0x04: the 'a' key */
+        g_ble_live = true;
+        g_mouse_live = true;
+        g_mouse.dx = 3;                      /* and a pointer move */
+        g_mouse.dy = 0;
+        g_mouse.wheel = 0;
+
+        frames_clear();
+        desk_poll_hidden();
+        for (int i = 0; i < g_frames; i++) {
+            if (g_type[i] == 0x17) { kbd = true; kbd_at = i; }
+            if (g_type[i] == 0x16) { mouse = true; }
+        }
+        check(mouse, "the hidden branch sent no pointer frame");
+        check(kbd, "the hidden branch sent no keyboard frame");
+        if (kbd_at >= 0) {
+            check(g_len[kbd_at] == 7, "the keyboard frame is not seven bytes");
+            check(g_payload[kbd_at][0] == 0x00 && g_payload[kbd_at][1] == 0x04,
+                  "the keyboard frame does not carry the report");
+        }
+
+        /* The same report again sends nothing: a boot keyboard reports state,
+         * so its frame goes only when the state changes. */
+        frames_clear();
+        g_mouse.dx = 0;
+        desk_poll_hidden();
+        for (int i = 0; i < g_frames; i++) {
+            check(g_type[i] != 0x17, "an unchanged keyboard report sent a frame");
+        }
+
+        g_ble_live = false;
+        g_mouse_live = false;
+        memset(g_ble_rep, 0, sizeof g_ble_rep);
+        g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
+    }
+
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;
 }

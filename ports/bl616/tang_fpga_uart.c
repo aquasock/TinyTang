@@ -830,9 +830,13 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
 #define AE350_SILENT_S 300
 /* A battery save rides the link as hex text: in link mode the FPGA frames the
  * AE350's bytes as TinyTang's text frames, and that receiver drops CR and ends
- * a line on LF, so raw binary would not survive.  8 KiB is an NES battery RAM,
- * and a larger one is refused rather than truncated. */
-#define AE350_SAVE_MAX 8192
+ * a line on LF, so raw binary would not survive.  The bound is the largest
+ * thing a core may hand back, and what a core hands back is a memory image
+ * rather than only a NES battery now: 8 KiB was a Nintendo cartridge's SRAM,
+ * and Tiny89's calculator hands back its 256 KiB of RAM, with its 4 MiB flash
+ * the next one in line.  A save over the bound is still refused rather than
+ * truncated -- the length is judged before a byte is written. */
+#define AE350_SAVE_MAX (8u * 1024u * 1024u)
 #define AE350_SAVE_DIR "/sd/root/saves/nes"
 
 typedef struct {
@@ -1040,16 +1044,25 @@ static bool ae350_save_path(const char *cart_real, char *out, size_t size)
     return n > 0 && (size_t)n < size;
 }
 
-/* The save coming back: hex lines between "TinyNES NVRAM SAVE", which
- * carries its length and CRC-32, and "TinyNES NVRAM DONE".  The AE350 prints
- * 32 bytes a line.  Kept in statics: 8 KiB does not belong on a shell task's
- * stack. */
+/* The save coming back, in either of two ways.  TinyNES's is hex lines
+ * between "TinyNES NVRAM SAVE", which carries the length and CRC-32, and
+ * "TinyNES NVRAM DONE", 32 bytes a line, because a line is what the text
+ * path frames and it cannot carry arbitrary bytes.  Tiny89's is the bytes
+ * themselves between "TinyNES NVRAM DATA" and the length it gave: no byte is
+ * special there, so none is escaped and none is expanded, which is what makes
+ * a 4 MiB memory image minutes rather than the hours hex would take.  Kept in
+ * statics: 8 KiB does not belong on a shell task's stack. */
+#define AE350_SAVE_CHUNK 512u
 static char s_ae350_save_line[AE350_LINE_MAX];
 static size_t s_ae350_save_line_len;
 static uint32_t s_ae350_save_expect, s_ae350_save_crc, s_ae350_save_got;
 static uint32_t s_ae350_save_running;    /* CRC-32 of what has been written */
 static bool s_ae350_save_active, s_ae350_save_failed, s_ae350_save_open;
 static FIL s_ae350_save_file;
+static bool s_ae350_save_bin;            /* the payload is bytes, not hex */
+static uint32_t s_ae350_save_left;       /* payload bytes still due */
+static unsigned s_ae350_save_chunk_len;
+static uint8_t s_ae350_save_chunk[AE350_SAVE_CHUNK];
 
 static int ae350_hex_digit(char c)
 {
@@ -1107,6 +1120,94 @@ static void ae350_save_hex(const char *line)
     }
 }
 
+/* A binary save's buffer, written out when it fills and when its payload
+ * ends: a file call a byte would be 4 MiB of file calls. */
+static void ae350_save_flush(void)
+{
+    if (s_ae350_save_chunk_len == 0) {
+        return;
+    }
+    if (ae350_save_write(s_ae350_save_chunk, s_ae350_save_chunk_len) != 0) {
+        s_ae350_save_failed = true;
+    }
+    s_ae350_save_chunk_len = 0;
+}
+
+/* One payload byte of a binary save.  A frame carries up to 128 of them, so
+ * this fills a chunk every few frames, and the length the header gave is what
+ * ends the payload -- always, failure included.  A save that cannot be written
+ * still counts its bytes down rather than stopping at the first bad one: the
+ * length is the only thing that says where the payload ends, and a reader that
+ * lost count would swallow every byte after it, take the console with it and
+ * never return ae350run.  Latched here, the failure ends the payload at the
+ * right place, and ae350_save_finish prints it and removes the file. */
+static void ae350_save_raw(uint8_t byte)
+{
+    if (s_ae350_save_left == 0) {
+        return;
+    }
+    s_ae350_save_left--;
+    if (!s_ae350_save_open || s_ae350_save_failed) {
+        s_ae350_save_failed = true;
+        return;
+    }
+    s_ae350_save_chunk[s_ae350_save_chunk_len++] = byte;
+    if (s_ae350_save_chunk_len == sizeof s_ae350_save_chunk) {
+        ae350_save_flush();
+    }
+}
+
+/* Open the save file, making the folders a card that has never saved lacks.
+ * Both kinds write straight into it as the payload arrives. */
+static bool ae350_save_open_file(void)
+{
+    (void)f_mkdir("/sd/root/saves");
+    (void)f_mkdir(AE350_SAVE_DIR);
+    if (f_open(&s_ae350_save_file, s_ae350_save_path,
+               FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+        tdsh_printf("ae350run: cannot write %s\r\n", s_ae350_save_path);
+        return false;
+    }
+    s_ae350_save_open = true;
+    return true;
+}
+
+/* The header both kinds share: a length and a CRC-32 after a fixed-width
+ * prefix, which is the same width whether the payload is hex or bytes.  Every
+ * save starts from nothing, so one that follows a failed one inherits none of
+ * its state. */
+static void ae350_save_arm(const char *counts, bool binary)
+{
+    unsigned long expect = 0, crc = 0;
+
+    s_ae350_save_got = 0;
+    s_ae350_save_running = 0;
+    s_ae350_save_line_len = 0;
+    s_ae350_save_chunk_len = 0;
+    s_ae350_save_left = 0;
+    s_ae350_save_failed = false;
+    s_ae350_save_open = false;
+    s_ae350_save_bin = binary;
+    s_ae350_save_active = true;
+    if (sscanf(counts, "%lu %lx", &expect, &crc) != 2 || expect == 0 ||
+        expect > AE350_SAVE_MAX) {
+        s_ae350_save_expect = 0;
+        s_ae350_save_crc = 0;
+        s_ae350_save_failed = true;
+        return;
+    }
+    s_ae350_save_expect = (uint32_t)expect;
+    s_ae350_save_crc = (uint32_t)crc;
+    s_ae350_save_left = (uint32_t)expect;
+    if (s_ae350_save_path[0] == '\0') {
+        s_ae350_save_failed = true;
+        return;
+    }
+    if (!ae350_save_open_file()) {
+        s_ae350_save_failed = true;
+    }
+}
+
 /* The save arrived: check it twice over and write it, or say why not. */
 static void ae350_save_finish(void)
 {
@@ -1141,42 +1242,21 @@ static void ae350_save_finish(void)
                 (unsigned long)s_ae350_save_got, s_ae350_save_path);
 }
 
-/* The line that opens a save; its hex follows.  Everything from here to the
- * DONE line is consumed in this file so hex never reaches the console. */
+/* The line that opens a hex save; its hex follows.  Everything from here to
+ * the DONE line is consumed in this file so hex never reaches the console. */
 static void ae350_save_begin(const char *line)
 {
-    unsigned long expect = 0, crc = 0;
+    ae350_save_arm(line + 19, false);
+}
 
-    s_ae350_save_got = 0;
-    s_ae350_save_running = 0;
-    s_ae350_save_line_len = 0;
-    s_ae350_save_failed = false;
-    s_ae350_save_open = false;
-    s_ae350_save_active = true;
-    if (sscanf(line + 19, "%lu %lx", &expect, &crc) != 2 || expect == 0 ||
-        expect > AE350_SAVE_MAX) {
-        s_ae350_save_expect = 0;
-        s_ae350_save_crc = 0;
-        s_ae350_save_failed = true;
-        return;
-    }
-    s_ae350_save_expect = (uint32_t)expect;
-    s_ae350_save_crc = (uint32_t)crc;
-    if (s_ae350_save_path[0] == '\0') {
-        s_ae350_save_failed = true;
-        return;
-    }
-    /* A card that has never saved has neither folder; the file is opened here
-     * because the hex that follows is written straight into it. */
-    (void)f_mkdir("/sd/root/saves");
-    (void)f_mkdir(AE350_SAVE_DIR);
-    if (f_open(&s_ae350_save_file, s_ae350_save_path,
-               FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
-        tdsh_printf("ae350run: cannot write %s\r\n", s_ae350_save_path);
-        s_ae350_save_failed = true;
-        return;
-    }
-    s_ae350_save_open = true;
+/* The same thing with the bytes themselves as the payload: TinyNES's framing
+ * with the data put in whole.  The length the header carries says where the
+ * payload ends, so nothing in it needs escaping and nothing is special -- CR,
+ * LF and 0xAA are bytes here, and the text reader that would have mangled
+ * them is not the one reading this. */
+static void ae350_save_data_begin(const char *line)
+{
+    ae350_save_arm(line + 19, true);
 }
 
 /* One byte of a save's hex, or of its DONE line. */
@@ -1236,12 +1316,26 @@ static int ae350_follow_link(ae350_run_t *run)
         bool done = false;
         for (int i = 0; i < n && !done; i++) {
             if (s_ae350_save_active) {
-                ae350_save_byte(text[i]);
+                if (s_ae350_save_bin) {
+                    ae350_save_raw(text[i]);
+                    if (s_ae350_save_left == 0) {
+                        ae350_save_flush();
+                        ae350_save_finish();
+                        s_ae350_save_active = false;
+                        s_ae350_save_bin = false;
+                    }
+                } else {
+                    ae350_save_byte(text[i]);
+                }
                 continue;
             }
             run->line_ready = false;
             ae350_text(run, text[i]);
             if (!run->line_ready) {
+                continue;
+            }
+            if (starts_with(run->line, "TinyNES NVRAM DATA ")) {
+                ae350_save_data_begin(run->line);
                 continue;
             }
             if (starts_with(run->line, "TinyNES NVRAM SAVE ")) {

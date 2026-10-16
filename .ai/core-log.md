@@ -2771,3 +2771,35 @@ Three things this cycle owes or leaves. A host test for `tang_osd.c` is owed, be
 - User Test: PASS
 
 ---
+
+## 84 COMMIT Unreleased 2026-10-16T12:09:36-07:00
+
+#### Coming From:
+
+Unreleased 162ff40
+
+#### Purpose:
+
+Give a core's save a payload that carries bytes rather than hex, and forward the keyboard to a core while the desktop layer is hidden, because Tiny89's calculator could read neither its keyboard nor a memory image larger than a battery save.
+
+#### Outcome:
+
+Both halves landed, and the second was the fault that had made Tiny89's calculator ignore its keyboard entirely. `ports/bl616/tang_osd_desk.c` gains `desk_poll_hidden()`, holding what the desk task does while the layer is hidden, which is where a game or an emulator is: `desk_poll()` does not run in that state and the keyboard frame was sent from there alone, so a key did nothing while anything else held the screen. The mouse had already been moved into the hidden branch for the same reason by entry 79, and the keyboard was left behind. The same file's `keyboard_frame()` also had its report remembered before the link had accepted it, so a poll whose `desk_lock()` was refused dropped the keystroke for good, the next poll comparing against the same payload and sending nothing; the report is now recorded only after the frame is handed over, which makes a refused poll retry instead of losing a press or a release. `ports/bl616/tang_fpga_uart.c` carries the save direction's other half: `AE350_SAVE_MAX` rises from 8192 to 8 MiB, because what a core hands back is a memory image now rather than only a NES battery, and Tiny89's calculator hands back 256 KiB of RAM with 4 MiB of flash next in line; and beside the hex payload there is a byte payload behind `TinyNES NVRAM DATA`, whose bytes need no escaping or expansion and so make a multi-megabyte image minutes rather than hours. It is built out of `ae350_save_open_file()`, `ae350_save_arm()` -- the one place a save starts from nothing, shared by both shapes -- `ae350_save_flush()` and `ae350_save_raw()`, with a 512-byte write buffer because a file call a byte would be thousands of them. `ae350_save_raw()` counts its payload down before latching a failure rather than after, since the length the header gave is the only thing that says where a payload ends and a reader that lost count would swallow everything after it and never return `ae350run`. The text reader dispatches per byte to whichever shape is armed, and the load direction is untouched. `tools/tests/tb_osd_desk.c` gains a case for the hidden branch: with the layer hidden, a keyboard report and a pointer move both produce their frames, the keyboard frame is seven bytes and carries the report, and the same report again produces nothing, because a boot keyboard reports state. Two planted faults failed that case before it passed -- the `desk_poll_hidden()` call removed, and the report recorded before the lock instead of after -- and the restored tree is 82 checks against entry 83's 78; the rest of the suite run against this tree is `fpga_frames` 24, `ae350_load` 26, `tang_pad` 43 and `tb_key` 53, all passing. The firmware built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36 at 624,064 bytes, build id `162ff40-dirty.627b0e9`, SHA-256 `54fde9425f683ccac951464001696767f87a2d71e49edc925823b7b2fc875fbf`, and was installed with `tools/tinytang_flash.py` and a power cycle, after which `platform` reports `162ff40-dirty.627b0e9` against `162ff40-dirty.d53b803` before it. On the board the two halves were tested by Tiny89 rather than by this repository: with the calculator on screen and the layer hidden, one right-arrow press arrived at the program as three keyboard reports -- an empty one, usage 0x4f, and the release -- where before the flash the same press produced nothing at all, and the user confirmed the cursor moved on the calculator's Apps desktop, which is entry 14's `User Test: PASS`. The save then landed whole for the first time on this board: `ae350run: saved 262144 bytes` with the header's CRC agreeing at both ends, after a previous run on the earlier firmware lost exactly three lines of an 8192-byte payload with nothing counted as dropped, all of it recorded in Tiny89's entry 14. One limitation has to be stated plainly: the byte payload this cycle adds was never exercised on the board, because Tiny89 still sends hex; its only coverage is the code path itself, and entry 83's note stands that `tang_fpga_uart.c` is not host-tested, so the first board test of `TinyNES NVRAM DATA` is still owed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md`, whose only change is still the user's own uncommitted line forbidding delegation, and validated this entry's sequential number, six sections, prose, Status values and the log against the 100-entry limit.
+
+#### Next Steps:
+
+Three things. The byte payload wants a board test, and Tiny89 is where it can be given one: with the payload warm-up and the eight-millisecond pace that entry 14 measured, a save in that shape may now survive, and if it does the 4 MiB flash stops being nine minutes of hex and the flash work this repository is next a dependency of is unblocked. Entry 83's three items still stand, none of them touched here: a host test for `tang_osd.c`, whose two functions only the firmware build compiles; the unbounded lock `desk_watch_toggle()` reaches through `tang_osd_desk_set(true)` on an F12 press, which is a change to that function rather than to its callers; and the two suite failures that make a test which never runs, `test_fat_rename.sh`'s missing executable bit and `test_oled_session.sh`'s link list. The firmware image is still not byte-reproducible, which the user has kept open rather than fixed. Entry 80's keyboard half is closed: Tiny89 has now deployed an image built from its current sources, which is what that entry was waiting for.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_osd_desk.c
+- tools/tests/tb_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
