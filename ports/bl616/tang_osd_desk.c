@@ -375,6 +375,32 @@ static void pointer_frame(const tang_mouse_t *mouse)
     tang_fpga_unlock();
 }
 
+/* Hand the Bluetooth keyboard to the core as an input frame, so that a program
+ * under the desktop layer can read keys.  The payload is the HID boot report's
+ * own shape: the modifier byte and then the six usage codes.  A frame goes
+ * only when the report changes, because a boot keyboard reports state rather
+ * than events -- a key held down sends one report and then nothing -- so a core
+ * that wants auto-repeat generates it itself, the way tang_key_step() does for
+ * the desktop.  Only the Bluetooth keyboard is sent; the wired report comes
+ * *from* a core (see FPGA_CMD_KEYBOARD). */
+static void keyboard_frame(const uint8_t mods, const uint8_t keys[6])
+{
+    static uint8_t last[7];
+    const uint8_t payload[7] = { mods, keys[0], keys[1], keys[2],
+                                 keys[3], keys[4], keys[5] };
+
+    if (memcmp(payload, last, sizeof payload) == 0) {
+        return;
+    }
+    memcpy(last, payload, sizeof payload);
+    if (tang_fpga_link_open() != 0) {
+        return;
+    }
+    tang_fpga_lock();
+    (void)tang_fpga_frame(FPGA_CMD_KEYBOARD, payload, sizeof payload);
+    tang_fpga_unlock();
+}
+
 static void desk_poll(void)
 {
     /* Re-arm first: until the core knows the layer is on, nothing sent is
@@ -437,6 +463,12 @@ static void desk_poll(void)
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
     pointer_frame(&mouse);
+
+    /* The keyboard beside it, from the same report the desktop types from, so
+     * that a program under the layer sees the keys whether or not the desktop
+     * is drawn.  Freshness is the desktop's, read-and-clear; this only watches
+     * the report itself. */
+    keyboard_frame(brep[0], &brep[2]);
 
     /* The session switch: L on the pad, or F12 on the keyboard, the key
      * reserved for it the way MiSTer reserves F12 for its menu.  It does not

@@ -55,6 +55,16 @@
  * core that does not implement it ignores the frame. */
 #define FPGA_CMD_INPUT       0x16u
 
+/* Input to the core: a keyboard's own report, in the HID boot layout -- the
+ * modifier byte first and then the six usage codes.  Sent only when the
+ * report changes, because a boot keyboard reports state rather than events: a
+ * key held down sends one report and then nothing.  Additive like the desktop
+ * layer and the input frame above, so a core that does not implement it
+ * ignores the frame.  Only the Bluetooth keyboard's reports are sent: the
+ * wired report the desk task reads with tang_fpga_keyboard() comes *from* a
+ * core, and sending that back to one would echo it. */
+#define FPGA_CMD_KEYBOARD    0x17u
+
 /* Cartridge loading. */
 #define FPGA_CMD_SET_LOAD   0x06u   /* one byte; 0 starts the core   */
 #define FPGA_CMD_ROM_DATA   0x07u   /* ROM bytes                     */

@@ -2644,3 +2644,34 @@ Fix the guard: the pipe's state wants a query of its own -- `s_pipe` is already 
 - User Test: PASS
 
 ---
+
+## 80 COMMIT Unreleased 2026-10-16T02:38:23-07:00
+
+#### Coming From:
+
+Unreleased 62fe6a7
+
+#### Purpose:
+
+Send the Bluetooth keyboard to a loaded core as a frame of its own, so a program running under the desk layer can read keys, which entry 79 deferred as a decision of its own and which Tiny89's calculator is waiting on.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_link.h` gains `FPGA_CMD_KEYBOARD 0x17`, the second command that carries input into a core: the keyboard's own HID boot report, the modifier byte and then the six usage codes, additive like the input frame beside it so a core that does not implement it ignores it. It goes only when the report changes, because a boot keyboard reports state rather than events -- a key held down sends one report and then nothing -- so a core that wants auto-repeat makes its own, and only the Bluetooth keyboard is forwarded, the wired report the desk task reads with `tang_fpga_keyboard()` coming *from* a core and echoing back if it were sent to one. `ports/bl616/tang_osd_desk.c` gains `keyboard_frame()`, called from `desk_poll()` beside `pointer_frame()` and from the same report the desktop types from, so a program under the layer sees the keys whether or not the desktop is drawn. The firmware built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36 this machine already held, with no warning in the changed files, 623,968 bytes; the artifact installed with `tools/tinytang_flash.py` and a power cycle is SHA-256 `31a303c2e9fc250b56428db5d5e3827f7e510156b2a238295b9b9f859b3d8533`, and `platform` reports `62fe6a7-dirty.616fce5` against `6145683-dirty.7381d83` before it. Two things are stated rather than rounded off. The image is not byte-reproducible: later builds of this same tree report the same identity and the same size but a different digest, because a build-time string is inside it, so a recorded digest names one build and not the source it came from. And the change is flashed and waiting rather than proven: its consumer is Tiny89, whose app booted under this firmware, printed `TinyNES LINK` and then took a load access fault at `0xe8000020`, the high keyboard register, because the fabric image it ran had been packed from a build that started before its own sources changed and carries no `kbd` cells (Tiny89 entry 5); that cycle was deferred for a handoff and its clean platform build has not been deployed, so no key has yet been read on this board. TinyCreature's log records the one check available without Tiny89, its decoder surviving a run on the firmware that now also sends `0x17`, which it reads past as an unknown type. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that this cycle changed no line of `.ai/core.md`, whose only change is the user's own uncommitted line forbidding delegation, left in the working tree rather than committed, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Tiny89 must deploy an image built from its current sources and read a key to close this half; until then the frames this repository sends are unread. The pipe guard entry 79 left open is still this repository's one defect -- `pointer_frame()` takes the transmit lock with `portMAX_DELAY` while a host owns the link, where `s_pipe`'s state wants a query of its own so the call can return early -- and it wants a build and a flash. The next approved cycle here is the NES launcher: a TinyDesk window that browses `/root/media/nes`, its letter folders and their cartridges, and starts the one chosen through TinyNES's `scripts/open/nes.tdsh`, which is also the desktop path to a zipped cartridge that the Files app deliberately does not have. `.ai/core-reference.md`'s BLE-017 still says the core link carries no command to send input into a core, which entry 79's `0x16` and this entry's `0x17` have made untrue, and it wants a correction. The same file's fast index also carries three lines with no record behind them -- `TOOL-018`, `TOOL-019` and `TOOL-020`, on a command's help text fitting the terminal, the keyboard link's usage translation and output printed before `tangload` -- so its index names 132 ids against 129 records; the facts are stated but cannot be opened, which this cycle's audit found and did not author records for, since a record needs sources and a verification this cycle did not earn.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
