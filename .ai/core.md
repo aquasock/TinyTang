@@ -81,6 +81,8 @@ C and C++ firmware sources
 
 - Never push anything onto any Github repos for any reason except for ones under the username "aquasock".
 
+- Do not spawn sub-agents or otherwise delegate tasks away. Development work is always 1 on 1.
+
 ---
 
 ## Standard Workflow:
