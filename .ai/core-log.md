@@ -2707,3 +2707,33 @@ TinyNES's `README.md` now sits behind this: it says a zipped cartridge is starte
 - User Test: PASS
 
 ---
+
+## 82 COMMIT Unreleased 2026-10-16T02:59:03-07:00
+
+#### Coming From:
+
+Unreleased 0637eae
+
+#### Purpose:
+
+Correct two defects in `.ai/core-reference.md` that entry 80 named and did not fix: a record whose verification still said the core link carried no command to send input into a core, and three ids the fast index named with no record behind them.
+
+#### Outcome:
+
+`BLE-017`'s verification is revised in place. The sentence that said the BL616's core link carries no command to send input into a core, and that a BLE pad could therefore only ever have driven TinyDesk and never a running core, now names the commands that carry input instead -- `FPGA_CMD_INPUT 0x16`, the buttons and the mouse's dx, dy and wheel, since entry 79, and `FPGA_CMD_KEYBOARD 0x17`, the Bluetooth keyboard's HID boot report, since entry 80 -- and says that what stands between a pad and a running core is that record's own finding, the binary controller library, rather than the link; a source line for `ports/bl616/tang_fpga_link.h` was added beside the record's own sources, and the change is noted as `Revised 2026-10-16 (core-log entry 82)`. The three ids the fast index named with nothing behind them -- `TOOL-018`, on a registered command's help text having to fit one `help` line within `TERMINAL_COLS - 13`; `TOOL-019`, on the keyboard link's HID usage table and F12's reservation for the screen swap; and `TOOL-020`, on output printed before `tangload` having no raster and `osd desk on` mirroring rather than replaying -- now have records, written from this project's own code (`third_party/tinydesk-shell/src/core/tdsh_builtin.c`, `tools/check_help_width.py`, `ports/bl616/tang_key.c` and `tang_key.h`, `third_party/tinydesk/src/input.c`, `ports/bl616/tang_osd_desk.c` and `scripts/boot.tdsh`) and from entry 57, which established all three facts, confirmed them on the board and is where the three ids were added to the reference; they stand VERIFIED on that entry's evidence rather than on this cycle's, and `tools/check_help_width.py` was re-run here and reports 137 entries, none over 80 columns. The fast index and the records now name the same 132 ids in the same order, where the index had 132 against 129, and all six YAML blocks parse. One fault of this session's own is recorded because a checker caught it and the eye did not: the source line added to `BLE-017` was first placed by an edit that also consumed the opening of that record's verification value, which left an unquoted scalar holding a colon and broke the records block's parse; the missing text was restored word for word from `HEAD` and the block parses again. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md`, whose only change is still the user's own uncommitted line forbidding delegation, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The reference's remaining open item is the one entry 81 named and the user kept open: the firmware image is not byte-reproducible, so a recorded SHA-256 names one build and not the source it came from. Entry 80's half is still waiting on Tiny89, which must deploy an image built from its current sources before the keyboard frames this repository sends are read, and the pipe guard entry 79 left is still this repository's one defect, `pointer_frame()` taking the transmit lock while a host owns the link and wanting a build and a flash.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
