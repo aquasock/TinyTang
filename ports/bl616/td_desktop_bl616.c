@@ -60,6 +60,7 @@ int tang_td_terminal_start(void);
 void td_bridge_bl616_stop(void);
 void td_phosphor_register(void);   /* phosphor/td_phosphor_app.cpp */
 void td_tinynes_register(void);    /* tinynes_app.cpp: TinyNES Control Deck */
+void td_tinynes_launcher_register(void); /* tinynes_launcher.cpp: cartridge browser */
 void td_bluetooth_register(void);  /* td_bluetooth_app.c */
 
 /* The desktop's root is the card -- the same filesystem the shell uses, so
@@ -214,6 +215,7 @@ void td_apps_register_all(void)
     td_counter_register();
     td_phosphor_register();
     td_tinynes_register();     /* tinynes_app.cpp: the TinyNES settings app */
+    td_tinynes_launcher_register(); /* tinynes_launcher.cpp: the cartridge browser */
     td_update_register();       /* td_update_app.c: from the card, not the network */
     td_bluetooth_register();    /* td_bluetooth_app.c: Settings' Bluetooth button */
     td_about_register();

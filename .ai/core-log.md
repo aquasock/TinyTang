@@ -2675,3 +2675,35 @@ Tiny89 must deploy an image built from its current sources and read a key to clo
 - User Test: NOT RUN
 
 ---
+
+## 81 COMMIT Unreleased 2026-10-16T02:53:57-07:00
+
+#### Coming From:
+
+Unreleased b526e93
+
+#### Purpose:
+
+Give the desktop a window that browses the NES library and starts the cartridge chosen, a zipped one included, which is the desktop path to a zipped cartridge the Files app deliberately does not have and the open item TinyNES's entry 39 left.
+
+#### Outcome:
+
+`ports/bl616/tinynes_launcher.cpp` is new: a TinyDesk window, "TinyNES Launcher", registered beside the Control Deck in `td_desktop_bl616.c` and named in `CMakeLists.txt`, which lists it explicitly because the port's source glob takes only `ports/bl616/*.c`. It reads `/root/media/nes` (`/sd/root/media/nes`), shows directories first and then cartridges, each sorted by name without case, with `..` at the top whenever it is not at the root, and lists `.nes` and `.zip` alike; Enter, a double-click and the Launch button all activate the selected row, so a folder descends and a cartridge starts. Starting types `FILE="<path>"; tdsh run /root/scripts/open/nes.tdsh` into the Terminal, which is the launch a `.nes` opened in the Files app already makes, and gives a zipped cartridge the desktop path it did not have -- the Files app still starts nothing for a `.zip`, there being no `zip.tdsh`, so the user's rule for that holds. Two things are shaped by the heap rather than by the list: the folder is counted before anything is allocated, allocated exactly and freed on close, because the script worker a launch starts wants 16 KB of stack from the same heap, and the ceiling is 256 entries with a folder past it saying `N shown, more not listed` rather than dropping files; and a name carrying a quote, a `$` or a backtick is left out of the list instead of being listed and then refused, because such a name cannot be handed to the shell unchanged and a launch at a mangled path fails silently, which this project has been through once already, and the library carries none of them. This SDK's FatFS declares no volume-label bit, so 0x08 is named in the file with that note. Built with the Xuantie-900 GCC 10.2.0 and SDK 2.3.36, with no warning in the changed files, 624,032 bytes, build id `b526e93-dirty.9361c55`, SHA-256 `b451d676891c07e7281cafa90536d7820fffde24c5d45185a0698a704be332d9`; installed with `tools/tinytang_flash.py` and a power cycle, after which `platform` reports `b526e93-dirty.9361c55` against `62fe6a7-dirty.616fce5` before it. The user opened the window, browsed the library and started a cartridge from it, and passed the cycle. `crash` after the test reads no record from a previous run, the last reset a power-up, 61,700 of 120,680 bytes free with a 29,504-byte largest block, and 10,656 of the script task's 16,384 stack bytes. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed this cycle changed no line of `.ai/core.md`, whose only change is still the user's own uncommitted line forbidding delegation, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+TinyNES's `README.md` now sits behind this: it says a zipped cartridge is started from the shell with `FILE` naming the `.zip` and that a `.zip` opened on the desktop does not start TinyNES, and while the second half still holds -- there is no `zip.tdsh` -- the desktop now has this window, so that file wants a sentence in that repository's own cycle. The pipe guard entry 79 left open is still this repository's one defect, `pointer_frame()` taking the transmit lock while a host owns the link, and it wants a build and a flash. Entry 80's half is still waiting on Tiny89, which must deploy an image built from its current sources and read a key before the keyboard frames this repository sends are read. `.ai/core-reference.md` still wants the two corrections entry 80 named: BLE-017 says the core link carries no command to send input into a core, which `0x16` and `0x17` have made untrue, and the fast index names `TOOL-018`, `TOOL-019` and `TOOL-020` with no record behind them.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinynes_launcher.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

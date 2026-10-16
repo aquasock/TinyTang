@@ -129,6 +129,8 @@ else()
     target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TINYTANG_PHOSPHOR_SOURCES}
                                # TinyNES Control Deck, the settings app.
                                ports/bl616/tinynes_app.cpp
+                               # TinyNES Launcher, the cartridge browser.
+                               ports/bl616/tinynes_launcher.cpp
                                ${TDSH_CORE_SOURCES}
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
                                third_party/tinydesk/ports/common/td_fs_stdio.c)
