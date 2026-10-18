@@ -2867,3 +2867,52 @@ None.
 - User Test: N/A
 
 ---
+
+## 87 COMMIT Unreleased 2026-10-18T15:45:17-07:00
+
+#### Coming From:
+
+Unreleased 6bf5f18
+
+#### Purpose:
+
+Make the PMOD socket a generic I2C bus with the Adafruit DS3231 as its first device, and keep the added logic out of the clock domains that the open flow cannot place reliably.
+
+#### Outcome:
+
+The PMOD socket is now a generic I2C bus, and the board carries the firmware for it, but the core that would exercise it could not be made a core and the RTC was never reached. `fpga/desktop/i2c_master.sv` replaces the RTC-specific engine: a transaction names a 7-bit device address, an 8-bit register, a length of 1 to 8 bytes and a direction, and the engine runs START, address, register, data, repeated START, read N and STOP on the two open-drain pins; a bus scan is the same machine with an address probe, and a once-a-second read of the configured address and register is the desktop clock's snapshot. The socket personality is `i2c` (6) in `tang_ini`, `/tang.ini` and `desktop_regs`, accepting the word `0x0160` with the OLED on the other socket; the firmware's `i2c` command does `scan`, `read <addr> <reg> <n>`, `write <addr> <reg> <bytes>`, `rtc` for the DS3231 at 0x68 or the MCP79410 at 0x6F, and `auto on|off`, and the desktop ABI is 1.3 with capability `0x4f`. The engine runs on the 50 MHz crystal clock (`desktop_sockets.sys_clk`) so it does not load the 21.49 MHz `clk` net; command and result cross on toggles, the 8-byte data window is two distributed-RAM arrays in `desktop_regs` written byte-serially, and the four pixel-domain synchronizer flops were removed, so neither the `clk` domain nor the pixel domain carries the new window. `tb_i2c_master` passes a seven-byte read, a five-byte write, a scan that finds 0x68 and a NACK for an absent device, and the desktop regressions pass, including the ABI 1.3 and capability expectations updated in `tb_desktop_uart`. The firmware built as `6bf5f18-dirty.aac3c0b` at 628208 bytes, SHA-256 `e0cf9777d3cf52579ff6f22dfc127b1ec6d30bc5a89ae46be41a8d338e84dbf2`, was installed with `tools/tinytang_flash.py` and a power cycle, and `platform` confirmed it. The core did not follow. The seed-26 build of the final netlist passed timing but placed 201 pixel-clock sinks on fabric against the profile's 21; the 8-seed sweeps of the final netlist left only seeds 5, 6 and 8 timing-clean, with pixel-clock fabric fallbacks of 28 to 201, and all eight routed `clk` through SPINE17 at 7 to 15 pips. On the user's choice of the experimental path, seed 13 of the earlier 8-byte netlist, timing clean with 63 fallbacks and 10 SPINE17 pips, was packed with `ALLOW_UNVERIFIED_CLOCK=1` and `ALLOW_SPINE17_CLOCK=1` as `desktop.90f531b7b194.bin` and put on the card as `/root/cores/console138k/desktop-i2c-s13.bin`; `tangload` reported `core loaded`, `fpga` answered no answer on UART1, and it is the third timing-clean SPINE17 core to load dead, after seeds 6 and 16, against the two working cores that avoid the hop. The card's `desktop.bin` was not replaced: it was reloaded, `fpga` answers core 84, and `/tang.ini` was set to `pmod0 none, pmod1 oledrgb` (word `0x0100`) so the OLED on PMOD1 works; the card's original file was saved locally, and the experimental core remains on the card. The timing gate now requires `desktop_sockets.sys_clk` instead of `keyboard_link.clk`, because the I2C engine shares the 50 MHz net with the keyboard link, and `clock_profile.json` carries the same rename. The cycle's conclusion is not about the RTL: the core is small, and the failing paths are pixel-clock hold and setup with clock skew of -1.4 to -2.4 ns, because the open flow distributes much of the pixel clock on general fabric and routes `clk` through a centre spine the chipdb models incorrectly. The vendor's flow has the complete clock-network database, clock-tree synthesis and the clock fuses; the open flow has a partial reverse-engineered model, a generic router and decoded fragments, which is why the same RTL is stable for the vendor and seed-dependent here. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry's sequential number, six sections, prose, Status values and the 87-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The clock tree is the next cycle and the only path back to the RTC: diff the vendor's clock-network data for the GW5AST-138C against the apicula chipdb, name the missing HCLK, spine and quadrant-bridge arcs, the clock mux and bridge fuses and their delays, and add them to the apicula fork and a rebuilt nextpnr, then re-run the 8-seed sweep and expect the pixel-clock fabric fallbacks to approach zero and the SPINE17 route to disappear, with the vendor's generated-clock and skew data feeding the timing gate. Until that lands the board stays on the card's seed-26 core with `/tang.ini` at `pmod0 none, pmod1 oledrgb`; the generic engine, the `i2c` command and the DS3231 wiring on PMOD0 (red 1, black 2, blue 3, yellow 4) are in place but hardware-unverified, and the experimental seed-13 core remains on the card as evidence, not as a core. Once a clock-clean core exists, the board test is `tangload` of that core, `tangini` reading `0x0160`, `i2c scan` finding 0x68 and `i2c rtc` reading the DS3231, with `i2c auto on` feeding the once-a-second snapshot the desktop's `time_now` will use.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- docs/tang.ini
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/i2c_master.sv
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- ports/bl616/tdsh_platform_bl616.c
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_profile.json
+- tools/desktop_open/synth.ys
+- tools/tests/sim/tb_desktop_pmod.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_i2c_master.sv
+- tools/tests/tb_ini.c
+- tools/tests/test_desktop_core.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

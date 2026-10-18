@@ -33,8 +33,11 @@ PY
 iverilog -g2012 -I "$root/fpga/desktop" -s tb_desktop_pmod -o "$work/pmod" \
     "$root/tools/tests/sim/tb_desktop_pmod.sv" "$root/fpga/desktop/desktop_pmod.sv" \
     "$root/fpga/desktop/desktop_oled.sv" "$root/fpga/desktop/oled_panel.sv" \
-    "$root/fpga/desktop/oled_spi.sv"
+    "$root/fpga/desktop/oled_spi.sv" "$root/fpga/desktop/i2c_master.sv"
 vvp "$work/pmod"
+iverilog -g2012 -s tb_i2c_master -o "$work/rtcc" \
+    "$root/tools/tests/sim/tb_i2c_master.sv" "$root/fpga/desktop/i2c_master.sv"
+vvp "$work/rtcc"
 bash "$root/tools/tests/test_desktop_link.sh" > "$work/link.log" 2>&1 || \
     { tail -80 "$work/link.log"; exit 1; }
 tail -5 "$work/link.log"

@@ -47,6 +47,7 @@ enum {
     TANG_PMOD_VGA_J2  = 3,
     TANG_PMOD_ENCODER = 4,
     TANG_PMOD_I2S2    = 5,
+    TANG_PMOD_I2C     = 6,   /* the desktop core's generic I2C bus */
 };
 
 typedef struct {

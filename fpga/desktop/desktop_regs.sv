@@ -25,7 +25,17 @@ module desktop_regs (
     output logic [15:0] oled_cell_word,
     output logic [16:0] oled_cursor,
     output logic [1:0] oled_font,
-    input logic [31:0] oled_frames, oled_signature
+    input logic [31:0] oled_frames, oled_signature,
+    // Generic I2C bus: the latched result window and status from the engine,
+    // and the command, write window and automatic-read configuration sent to
+    // it.
+    input  logic [63:0]  i2c_rdata,
+    input  logic         i2c_res_toggle,
+    input  logic [31:0]  i2c_status,
+    output logic [31:0]  i2c_cmd,
+    output logic         i2c_cmd_toggle,
+    output logic [63:0]  i2c_wdata,
+    output logic [31:0]  i2c_auto
 );
     function automatic [15:0] crc_byte(input [15:0] old,input [7:0] data);
         reg [15:0] c;
@@ -52,13 +62,30 @@ module desktop_regs (
     wire [7:0] opcode=packet[103:96];
     wire [31:0] address=packet[79:48],write_data=packet[47:16];
     wire [3:0] p0=write_data[7:4],p1=write_data[11:8];
+    // none/OLED may sit beside an RTCC, and the VGA pair still has to come
+    // together; two RTCCs are refused because there is one I2C engine.
     wire supported_word=(write_data&32'hffffc00f)==0 &&
-        ((p0<=1 && p1<=1)||(p0==2 && p1==3)||(p0==3 && p1==2));
+        (((p0<=1)&&(p1<=1))||
+         ((p0==6)&&(p1<=1))||((p1==6)&&(p0<=1))||
+         ((p0==2)&&(p1==3))||((p0==3)&&(p1==2)));
     wire cell_address=address>=32'h200 && address<32'h800 && address[1:0]==0;
     wire [7:0] block_count=packet[47:40];
     wire [31:0] last_address=address+(({24'b0,block_count}-32'd1)<<2);
     logic [7:0] status;
     logic [31:0] read_data;
+
+    // I2C data windows.  The write window is written four bytes at a time by
+    // 0x160/0x164; the read window is filled eight bytes at a time from the
+    // engine's result.  Both are distributed RAM, so the 21.49 MHz domain
+    // does not carry 128 flops for them.
+    logic [7:0] i2c_wram [0:7];
+    logic [7:0] i2c_rram [0:7];
+    logic [2:0] i2c_wptr, i2c_rptr;
+    logic i2c_wbusy, i2c_rbusy;
+    logic [31:0] i2c_wshift;
+    logic [2:0] i2c_res_sync;
+    assign i2c_wdata = {i2c_wram[7], i2c_wram[6], i2c_wram[5], i2c_wram[4],
+                        i2c_wram[3], i2c_wram[2], i2c_wram[1], i2c_wram[0]};
 
     // The clock monitor answers addresses 0x120..0x134.  It is a leaf here:
     // it counts, and this module only reads it.
@@ -85,8 +112,8 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010002; // desktop ABI 1.2: OLED font modes
-                32'h08:read_data=32'h0000000f; // none, OLED, VGA J1/J2
+                32'h04:read_data=32'h00010003; // desktop ABI 1.3: Pmod RTCC
+                32'h08:read_data=32'h0000004f; // none, OLED, VGA J1/J2, RTCC
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,
                 // Compact 16x8.  Cells keep a stride of 24 in every mode.
@@ -102,6 +129,13 @@ module desktop_regs (
                 32'h12c:read_data=mon_pix_b;  // `hclk` cycles, probe B
                 32'h130:read_data=mon_ref;    // `ref_clk` (50 MHz) cycles
                 32'h134:read_data=32'h4d4f4e31; // "MON1", the monitor's stamp
+                32'h140:read_data=i2c_status;
+                32'h144:read_data={i2c_rram[3],i2c_rram[2],i2c_rram[1],i2c_rram[0]};
+                32'h148:read_data={i2c_rram[7],i2c_rram[6],i2c_rram[5],i2c_rram[4]};
+                32'h154:read_data=i2c_cmd;
+                32'h158:read_data=i2c_auto;
+                32'h160:read_data={i2c_wram[3],i2c_wram[2],i2c_wram[1],i2c_wram[0]};
+                32'h164:read_data={i2c_wram[7],i2c_wram[6],i2c_wram[5],i2c_wram[4]};
                 default:status=4;
             endcase
         end else if(opcode==2) begin
@@ -113,6 +147,19 @@ module desktop_regs (
             end else if(address==32'h118) begin
                 // 0 Graphics, 1 Standard, 2 Compact.
                 if(write_data>2)status=6;else read_data=write_data;
+            end else if(address==32'h154) begin
+                // op[1:0], addr[14:8], reg[23:16], len[28:24], start[31]
+                if(write_data[7:2]!=0 || write_data[15] || write_data[30:29] ||
+                   write_data[1:0]>2 || write_data[28:24]==0 ||
+                   write_data[28:24]>8)status=6;
+                else read_data=write_data;
+            end else if(address==32'h158) begin
+                // auto addr[6:0], reg[15:8], len[20:16], enable[31]
+                if(write_data[7] || write_data[21] || write_data[30] ||
+                   write_data[20:16]>8)status=6;
+                else read_data=write_data;
+            end else if(address>=32'h160 && address<=32'h164 && address[1:0]==0) begin
+                read_data=write_data;
             end else if(cell_address) begin
                 if(write_data[31:16]!=0)status=6;else read_data=write_data;
             end else status=4;
@@ -126,8 +173,38 @@ module desktop_regs (
             socket_word<=0;socket_request<=0;is_block<=0;invalid_word<=0;
             assembly<=0;apply_index<=0;oled_cell_we<=0;
             oled_cell_index<=0;oled_cell_word<=0;oled_cursor<=0;oled_font<=0;
+            i2c_cmd<=0;i2c_cmd_toggle<=0;i2c_auto<=0;
+            i2c_wptr<=0;i2c_rptr<=0;i2c_wbusy<=0;i2c_rbusy<=0;
+            i2c_wshift<=0;i2c_res_sync<=0;
+            for(int i=0;i<8;i=i+1) begin i2c_wram[i]<=0;i2c_rram[i]<=0;end
         end else begin
             oled_cell_we<=0;
+            // Four bytes of the write window per 32-bit register write.
+            if(i2c_wbusy) begin
+                i2c_wram[i2c_wptr]<=i2c_wshift[7:0];
+                i2c_wshift<={8'b0,i2c_wshift[31:8]};
+                if(i2c_wptr[1:0]==2'b11)i2c_wbusy<=0;
+                else i2c_wptr<=i2c_wptr+3'd1;
+            end
+            // Eight bytes of the read window from the engine's result.
+            i2c_res_sync<={i2c_res_sync[1:0],i2c_res_toggle};
+            if(i2c_res_sync[1]^i2c_res_sync[2])begin
+                i2c_rptr<=0;i2c_rbusy<=1;
+            end
+            if(i2c_rbusy)begin
+                case(i2c_rptr)
+                    3'd0:i2c_rram[0]<=i2c_rdata[7:0];
+                    3'd1:i2c_rram[1]<=i2c_rdata[15:8];
+                    3'd2:i2c_rram[2]<=i2c_rdata[23:16];
+                    3'd3:i2c_rram[3]<=i2c_rdata[31:24];
+                    3'd4:i2c_rram[4]<=i2c_rdata[39:32];
+                    3'd5:i2c_rram[5]<=i2c_rdata[47:40];
+                    3'd6:i2c_rram[6]<=i2c_rdata[55:48];
+                    default:i2c_rram[7]<=i2c_rdata[63:56];
+                endcase
+                if(i2c_rptr==3'd7)i2c_rbusy<=0;
+                else i2c_rptr<=i2c_rptr+3'd1;
+            end
             if(start && state==IDLE) begin
                 packet<=0;received<=0;length_q<=frame_length;
                 is_block<=block_request;invalid_word<=0;assembly<=0;crc_tail<=0;
@@ -160,6 +237,18 @@ module desktop_regs (
                             else if(address==32'h114)oled_cursor<=write_data[16:0];
                             else oled_font<=write_data[1:0];
                             socket_request<=~socket_request;state<=WAIT_ACK;
+                        end else if(address==32'h154) begin
+                            i2c_cmd<=write_data;
+                            if(write_data[31])i2c_cmd_toggle<=~i2c_cmd_toggle;
+                            state<=SEAL;
+                        end else if(address==32'h158) begin
+                            i2c_auto<=write_data;
+                            state<=SEAL;
+                        end else if(address==32'h160 || address==32'h164) begin
+                            i2c_wshift<=write_data;
+                            i2c_wptr<=(address==32'h160)?3'd0:3'd4;
+                            i2c_wbusy<=1;
+                            state<=SEAL;
                         end else begin
                             oled_cell_we<=1;oled_cell_index<=(address-32'h200)>>2;
                             oled_cell_word<=write_data[15:0];state<=SEAL;

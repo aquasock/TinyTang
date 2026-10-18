@@ -504,6 +504,10 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_tangini_register();
     if (rc) return rc;
 
+    extern int tang_i2c_register(void);
+    rc = tang_i2c_register();
+    if (rc) return rc;
+
     extern int tang_osd_register(void);
     rc = tang_osd_register();
     if (rc) return rc;

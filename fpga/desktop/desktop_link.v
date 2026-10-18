@@ -40,6 +40,17 @@ module desktop_link #(
     output wire [16:0] desktop_oled_cursor,
     output wire [1:0] desktop_oled_font,
     input [31:0] desktop_oled_frames, desktop_oled_signature,
+    // Generic I2C bus: the engine's latched result window and status, and the
+    // command, write window and automatic-read configuration.  The engine
+    // lives beside the socket in desktop_pmod; this is the register file's
+    // side of it.
+    input  wire [63:0]  desktop_i2c_rdata,
+    input  wire         desktop_i2c_res_toggle,
+    input  wire [31:0]  desktop_i2c_status,
+    output wire [31:0]  desktop_i2c_cmd,
+    output wire         desktop_i2c_cmd_toggle,
+    output wire [63:0]  desktop_i2c_wdata,
+    output wire [31:0]  desktop_i2c_auto,
     input [11:0] joy1,              // pad 1, SNES layout: (R L X A RT LT DN UP START SELECT Y B)
     input [11:0] joy2,              // pad 2
     // The keyboard link's report, straight from keylink_rx.  It is
@@ -229,7 +240,11 @@ desktop_regs desktop_endpoint (
     .oled_cell_we(desktop_oled_cell_we), .oled_cell_index(desktop_oled_cell_index),
     .oled_cell_word(desktop_oled_cell_word), .oled_cursor(desktop_oled_cursor),
     .oled_font(desktop_oled_font),
-    .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature)
+    .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature),
+    .i2c_rdata(desktop_i2c_rdata), .i2c_res_toggle(desktop_i2c_res_toggle),
+    .i2c_status(desktop_i2c_status),
+    .i2c_cmd(desktop_i2c_cmd), .i2c_cmd_toggle(desktop_i2c_cmd_toggle),
+    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto)
 );
 
 // UART RX: command processing

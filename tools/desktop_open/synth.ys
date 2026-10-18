@@ -80,6 +80,7 @@ read_slang --std 1800-2017 -U SYNTHESIS \
     src/desktop/clock_monitor.sv \
     src/desktop/desktop_regs.sv \
     src/desktop/desktop_pmod.sv \
+    src/desktop/i2c_master.sv \
     src/desktop/desktop_oled.sv \
     src/desktop/oled_panel.sv \
     src/desktop/oled_spi.sv \

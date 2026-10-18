@@ -148,15 +148,23 @@ wire [15:0] desktop_oled_cell_word;
 wire [16:0] desktop_oled_cursor;
 wire [1:0] desktop_oled_font;
 wire [31:0] desktop_oled_frames, desktop_oled_signature;
+wire [63:0] desktop_i2c_rdata, desktop_i2c_wdata;
+wire [31:0]  desktop_i2c_status, desktop_i2c_cmd, desktop_i2c_auto;
+wire         desktop_i2c_cmd_toggle;
+wire         desktop_i2c_res_toggle;
 desktop_pmod desktop_sockets (
-    .control_clk(clk), .pixel_clk(hclk), .resetn(sys_resetn),
+    .control_clk(clk), .pixel_clk(hclk), .sys_clk(sys_clk), .resetn(sys_resetn),
     .cx(desktop_cx), .cy(desktop_cy), .rgb(desktop_rgb),
     .socket_word(desktop_socket_word), .socket_request(desktop_socket_request),
     .socket_ack(desktop_socket_ack), .pmod0_io(pmod0_io), .pmod1_io(pmod1_io),
     .oled_cell_we(desktop_oled_cell_we), .oled_cell_index(desktop_oled_cell_index),
     .oled_cell_word(desktop_oled_cell_word), .oled_cursor(desktop_oled_cursor),
     .oled_font(desktop_oled_font),
-    .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature)
+    .oled_frames(desktop_oled_frames), .oled_signature(desktop_oled_signature),
+    .i2c_cmd(desktop_i2c_cmd), .i2c_cmd_toggle(desktop_i2c_cmd_toggle),
+    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto),
+    .i2c_rdata(desktop_i2c_rdata), .i2c_res_toggle(desktop_i2c_res_toggle),
+    .i2c_status(desktop_i2c_status)
 );
 localparam [15:0] THIS_CORE_ID = 16'h0054;
 
@@ -193,6 +201,14 @@ desktop_link #(.FREQ(21_492_000), .CORE_ID(THIS_CORE_ID))
     .desktop_oled_cell_word(desktop_oled_cell_word), .desktop_oled_cursor(desktop_oled_cursor),
     .desktop_oled_font(desktop_oled_font),
     .desktop_oled_frames(desktop_oled_frames), .desktop_oled_signature(desktop_oled_signature),
+
+    .desktop_i2c_rdata(desktop_i2c_rdata),
+    .desktop_i2c_res_toggle(desktop_i2c_res_toggle),
+    .desktop_i2c_status(desktop_i2c_status),
+    .desktop_i2c_cmd(desktop_i2c_cmd),
+    .desktop_i2c_cmd_toggle(desktop_i2c_cmd_toggle),
+    .desktop_i2c_wdata(desktop_i2c_wdata),
+    .desktop_i2c_auto(desktop_i2c_auto),
 
     .rom_loading(), .rom_do(), .rom_do_valid()
 );

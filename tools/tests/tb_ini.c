@@ -94,6 +94,12 @@ int main(int argc, char **argv)
     assert(ini.word == 0x1540);
     parse("[tang]\npmod0 = none\npmod1 = oledrgb\n");
     assert(ini.word == 0x0100 && ini.nnotes == 0);
+    /* The desktop's I2C bus, beside the OLED. */
+    parse("[tang]\npmod0 = i2c\npmod1 = oledrgb\n");
+    assert(ini.word == 0x0160 && ini.nnotes == 0);
+    assert(ini.module[0] == TANG_PMOD_I2C && ini.module[1] == TANG_PMOD_OLEDRGB);
+    parse("[tang]\npmod0 = i2c\npmod0_flip = yes\n");
+    assert(ini.word == 0x1060 && ini.nnotes == 0);
 
     /* The PmodVGA takes both halves. */
     parse("[tang]\npmod0 = vga_j1\npmod1 = vga_j2\n");
