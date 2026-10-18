@@ -2947,3 +2947,33 @@ The next change is to replace `is_allowed_spine_input()` with the vendor `CMuxTo
 - User Test: N/A
 
 ---
+
+## 89 COMMIT Unreleased 2026-10-18T15:59:05-0700
+
+#### Coming From:
+
+Unreleased 0a9dabf
+
+#### Purpose:
+
+Test the vendor clock-mux rows against the apicula fork's hardcoded bridge permutation with the 8-seed sweep, and measure whether the missing vendor arcs were what kept the pixel clock on fabric.
+
+#### Outcome:
+
+The hardcoded bridge permutation was the missing arc filter, and removing it moved the pixel clock fully onto the clock network. In `apycula/chipdb.py` the non-bridge branch of `fse_clock_pips_138()` no longer calls `is_allowed_spine_input()`; it keeps the measured-dead list and accepts the vendor `CBRIDGEOUT` rows, with the change recorded in a comment and committed to the apicula fork as `65cf206` on `aquasock/apicula` `epic/gw5ast138c`. The chipdb regenerated from the 1.9.11.03 vendor data from 850,644 to 851,232 bytes and the nextpnr `.bba` to 93,897,666 bytes; the generated files are build products and are gitignored. On the TinyTang desktop netlist the 8-seed sweep then passed timing on all eight seeds with **0** `desktop_sockets.pixel_clk` fabric fallbacks, down from 28 to 201, at 82.7 to 90.1 MHz, and the topology inventory shows the pixel clock on global resources only instead of the profile's 21 fabric sinks. `clk` still routes through SPINE17 at 7 to 15 pips, so step 2d still refuses a normal pack, and the pixel clock's new global-only topology is a regression against the recorded profile until a board test qualifies it; the topology gate and the hop gate would both need their overrides for an experimental core. The measured dead/good bridge-pip tests and the raw/kept inventory test all pass (21 tests), and the fork's new inventory test pins the bridge-tile counts that the change does not touch. No TinyTang core was built or deployed and the board was not touched; the RTC stays parked. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry's sequential number, six sections, prose, Status values and the 89-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The control clock is the remaining half: decode the vendor `PllIn`, `PllOut` and `CMux` rows for the `pll_nes` (`TRPLL0CLK0`) route, correct the global-route model and run the 8-seed sweep until `clk` no longer takes SPINE17. Then board-test the new pixel-clock topology (global resources only) with an experimental core carrying both overrides; if HDMI and the OLED pass, re-record `clock_profile.json` and update the topology gate, and only then resume the I2C/RTC bring-up. The board stays on the card's seed-26 core with `/tang.ini` at `pmod0 none, pmod1 oledrgb`; the I2C engine, the `i2c` command and the DS3231 wiring on PMOD0 remain in place and hardware-unverified.
+
+#### Files Modified:
+
+- docs/clock-tree-inventory.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

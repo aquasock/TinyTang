@@ -89,16 +89,32 @@ sinks), and the `clk` route can take a centre spine the model mislabels
 (SPINE17).  The hardcoded permutation and the skipped ranges are the two
 places to prove or replace against the vendor data.
 
+## Result — permutation experiment (2026-10-18)
+
+The fork's hardcoded `is_allowed_spine_input()` was removed on the non-bridge
+clock cells, the measured-dead list was kept, the chipdb was regenerated
+(850,644 -> 851,232 bytes) and the nextpnr `.bba` rebuilt (93,897,666 bytes).
+On the TinyTang desktop netlist, **all 8 placement seeds pass timing with 0
+pixel-clock fabric fallbacks** (was 28-201), at 82.7-90.1 MHz.  The vendor rows
+were the missing arcs.
+
+The pixel clock now routes on **global resources only**, which the topology
+gate flags against the profile's 21 fabric sinks.  That is a new topology, not
+a proven bad one; it needs a board test before the profile is re-recorded.
+`clk` still takes SPINE17 (7-15 pips), so step 2d still refuses: the
+control-clock route is the remaining blocker.  The bridge-tile golden counts
+are unchanged (the change is on tile types 196-251); the measured dead/good pip
+tests and the inventory test all pass (21 tests).
+
+Fork commit: `65cf206` on `aquasock/apicula` `epic/gw5ast138c`.  The generated
+chipdb and `.bba` are build products; regenerate with the Makefile target.
+
 ## Next change
 
-1. Replace `is_allowed_spine_input()` with the vendor `CMuxTopIns` /
-   `CMuxBotIns` / `CMuxTopInNodes` / `CMuxBotInNodes` tables, and test the
-   generated pips against every `.fse` row for tile types 80–85.
-2. Classify the skipped longwire/unknown ranges against the vendor HCLK and PLL
-   tables; un-skip the rows that are real dedicated arcs, with the vendor row
-   as the evidence.
-3. Parse the `.tm` clock classes and feed the clock delays to the timing gate.
-4. Rebuild nextpnr against the corrected chipdb and run the 8-seed sweep:
-   target zero `pixel_clk` fabric fallbacks, no `SPINE17`, timing margin.
-5. The I2C/RTC bring-up resumes only after a clock-clean normal core passes the
+1. `clk`: decode the vendor `PllIn` / `PllOut` / `CMux` rows for the `pll_nes`
+   (`TRPLL0CLK0`) route and correct the global-route model; target no SPINE17.
+2. Board-test the new pixel-clock topology (global resources only) with an
+   experimental core carrying both overrides; if HDMI and the OLED pass, the
+   profile can be re-recorded and the topology gate updated.
+3. The I2C/RTC bring-up resumes after a clock-clean normal core passes the
    board test.
