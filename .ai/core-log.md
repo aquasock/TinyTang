@@ -2916,3 +2916,34 @@ The clock tree is the next cycle and the only path back to the RTC: diff the ven
 - User Test: FAIL
 
 ---
+
+## 88 COMMIT Unreleased 2026-10-18T15:50:04-0700
+
+#### Coming From:
+
+Unreleased 6ecc5f3
+
+#### Purpose:
+
+Inventory the vendor GW5AST-138C clock data against the apicula clock model, and name the arcs and selections where the model departs from the vendor before changing either.
+
+#### Outcome:
+
+`tools/desktop_open/clock_inventory.py` and `docs/clock-tree-inventory.md` now inventory the vendor GW5AST-138C clock data against the apicula model, and the first inventory names where the model departs from the vendor. The vendor `.dat` carries `PllIn` (216), `PllOut` (32), `CMuxTopInNodes` and `CMuxBotInNodes` (189 rows each) and `CMuxTopIns`/`CMuxBotIns` (189 rows of three inputs each), while `SpineColumn` reads as eight zeros, which is recorded as a lead rather than a fact because the field may be unused or misread. The `.fse` carries the raw `CLOCK_MUX` (38), `CLOCK_MUX_TOP` (90) and `CLOCK_MUX_BOTTOM` (91) tables for the central bridge tiles 80 to 85. The fork's `fse_clock_pips_138` keeps only part of them: for tile 80 it keeps 807 pips over 18 destinations from 1672 `CLOCK_MUX` rows, dropping 992 longwire rows (164 to 236), 136 unknown-wire rows (105 to 128) and 544 other rows that include the dead `TLPLL0CLK0` route and the per-half-renamed logic gates; tile 81 keeps 275 of 479, tile 84 264 of 388, tile 85 775 of 1259, and tile 82 all 40. The model also replaces the bridge-input selection with the hardcoded permutation `{top: "02136574", bottom: "30214657"}` and drops the three measured-dead bridge pips. The inventory does not yet separate the renamed gates from the dropped non-gates in the other bucket, and the `.tm` timing model and the HCLK table remain unread; both are the next references. No build or deployment was made; the board stays on the card's seed-26 core. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry's sequential number, six sections, prose, Status values and the 88-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The next change is to replace `is_allowed_spine_input()` with the vendor `CMuxTopIns`/`CMuxBotIns` tables and prove the generated pips against every `.fse` row for tile types 80 to 85, then classify the skipped longwire (164 to 236) and unknown (105 to 128) rows against the vendor HCLK and PLL tables and un-skip the rows that are real dedicated arcs, with the vendor row as the evidence; parse the `.tm` clock classes into the timing gate; rebuild nextpnr against the corrected chipdb; and run the 8-seed sweep, whose target is zero `pixel_clk` fabric fallbacks, no `SPINE17` and timing margin. The I2C and RTC bring-up stays parked behind that: the generic engine, the `i2c` firmware command and the DS3231 wiring on PMOD0 are in place but hardware-unverified, and the board remains on the card's seed-26 core with `/tang.ini` at `pmod0 none, pmod1 oledrgb`.
+
+#### Files Modified:
+
+- docs/clock-tree-inventory.md
+- tools/desktop_open/clock_inventory.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
