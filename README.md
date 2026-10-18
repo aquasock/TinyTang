@@ -279,10 +279,13 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 #   ... then power-cycle the board (see fact 6), and confirm with `platform`:
 #   it prints the build identity, which must match build/tinytang/tinytang_build_id.h
 
-# Build the desktop core.  It is TinyTang's own (fpga/desktop/) and needs only
-# the open flow; the TinyNES core, its player and its open handler are built
-# and put on the card from the TinyNES repository (tools/deploy_tinytang.sh).
-tools/build_desktop_core_open.sh # build/desktop/open-s26/desktop.bin, open flow: HDMI + VGA
+# Build the desktop core.  It is TinyTang's own (fpga/desktop/) and builds with
+# the open toolchain (yosys, nextpnr, apicula); the device database it needs is
+# generated from a user-supplied Gowin EDA 1.9.11.03 install, whose files are
+# not redistributed (see BUILDING.md).  The TinyNES core, its player and its
+# open handler are built and put on the card from the TinyNES repository
+# (tools/deploy_tinytang.sh).
+tools/build_desktop_core_open.sh # build/desktop/open-s26/desktop.bin, open toolchain: HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_nestang_core.sh   # nestang's NES core with the desktop layer: Gowin EDA, not released
 # tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
@@ -383,7 +386,7 @@ not part of the release, whose NES core is TinyNES's. The checkout stays pristin
 menu core: the NES machine, its loader and SDRAM are not instantiated, and the
 legacy text page is removed. It remains the legacy HDMI-only rollback host.
 
-The default host is `desktop.bin`, built with the open flow by
+The default host is `desktop.bin`, built with the open toolchain by
 `tools/build_desktop_core_open.sh`. Its sources all live in `fpga/desktop/`:
 the top, the UART link and the HDMI compositor began as nestang's, with the
 NES machine, loader, controllers, frame buffer and scaler removed, and no
@@ -392,7 +395,10 @@ nestang checkout or patch is involved. The script stages them with
 clock-topology gate against the recorded profile, a refusal when `clk` is
 routed through a hop suspected of not existing in silicon
 (`tools/desktop_open/clock_route_hops.py`), and the apicula fork's
-`gowin_pack`. It needs the apicula fork (`aquasock/apicula`, branch
+`gowin_pack`. The toolchain is open-source; the device database is generated
+from a user-supplied Gowin EDA 1.9.11.03 install and is not distributed,
+because the vendor's device files are not redistributable (see [BUILDING.md](BUILDING.md),
+"What 'open flow' means here"). It needs the apicula fork (`aquasock/apicula`, branch
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
 the vendor's HCLK block, with nextpnr rebuilt against that database; at the
@@ -475,11 +481,11 @@ for the register interface and regression commands.
   - `tinytang_put.py`, `tinytang_run.py`, `tinytang_flash.py` — put a file on
     the card, run a command, reflash the BL616. `tinytang_put.py` refuses to
     send unless the console is at a shell prompt (fact 15).
-  - `build_desktop_core_open.sh` and `desktop_open/` — build the desktop core with the open flow.
+  - `build_desktop_core_open.sh` and `desktop_open/` — build the desktop core with the open toolchain.
   - `build_hdmi_test.sh` — build the minimal HDMI colour-bar core in `fpga/hdmi_test/` (720p or 480p,
-    open flow or Gowin reference) to isolate the HDMI hardware path.
+    open toolchain or Gowin reference) to isolate the HDMI hardware path.
   - `build_desktop_core.sh` — stage `fpga/desktop/` and build it with Gowin as a reference
-    (`--prepare-only` stages it for the open flow).
+    (`--prepare-only` stages it for the open toolchain).
   - `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build the NES and menu
     cores with Gowin.
   - `test_textdisp_wide.sh` — simulates the layer against a free-running

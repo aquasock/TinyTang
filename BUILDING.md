@@ -30,6 +30,12 @@ x86-64 archives.
 
 ## What you must supply yourself
 
+"Open flow" in this document means the open **toolchain**, not a vendor-free
+device model.  yosys, nextpnr, apicula and `gowin_pack` are open-source; the
+device database they use is generated from Gowin EDA's own device files, which
+cannot be redistributed.  The generated database's digest is pinned below, and
+a machine without a Gowin install cannot regenerate it.
+
 - **Gowin EDA 1.9.11.03** -- needed only to *generate* the device database, and
   only if you do not already have the pinned one.  It cannot be redistributed, so
   a release can only name the version it was checked against.  It is the one
@@ -146,7 +152,8 @@ them.
   it is an engineering one.
 - **The NES and menu cores.**  Not covered here: they come from nestang, which
   the manifest pins at `c2450818`, and need Gowin EDA to build.  Only the desktop
-  core and the TinyNES core are open-flow.
+  core and the TinyNES core use the open toolchain; both still need Gowin's
+  device files to generate the database.
 
 ## Licences
 

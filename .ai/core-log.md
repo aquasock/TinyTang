@@ -2977,3 +2977,34 @@ The control clock is the remaining half: decode the vendor `PllIn`, `PllOut` and
 - User Test: N/A
 
 ---
+
+## 90 COMMIT Unreleased 2026-10-18T16:09:31-0700
+
+#### Coming From:
+
+Unreleased cdb7dba
+
+#### Purpose:
+
+Make the project's "open flow" claim precise in the documentation: the flow's toolchain is open-source, but the device database it consumes is generated from vendor files and is not a vendor-free model.
+
+#### Outcome:
+
+The README and BUILDING.md no longer present the flow as vendor-free. The build comment and the default-host paragraph now say the desktop core is built with the open *toolchain* (yosys, nextpnr, apicula, `gowin_pack`), whose device database is generated from a user-supplied Gowin EDA 1.9.11.03 install and is not distributed because the vendor's device files are not redistributable; BUILDING.md gains the explicit definition under "What you must supply yourself" ("Open flow" means the open toolchain, not a vendor-free device model) and its core table now says the desktop and TinyNES cores use the open toolchain while still needing Gowin's device files to generate the database. The licence check that motivated the wording change found no standalone EULA in the installed Gowin tree (the terms are accepted at licence issuance; the install carries only the licence-update release note and the quick installation guide), that apicula upstream is MIT for its code but gitignores `*.msgpack.xz` and builds the database with vendor tools, and that the project already recorded the restriction in `deps.conf` and BUILDING.md. Shipping the generated database is therefore rejected without written permission from Gowin; the honest position is the one now documented, with independent derivation of the database as the long-term path. `.ai/core.md` was not edited because it is restricted and its one-line "Open-flow" policy was not the user's request; `deps.conf` already carried the precise statement and was left unchanged. This was a documentation-only cycle: no core was built or deployed and the board was not touched. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was unchanged and no settled entry was rewritten, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 90-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The engineering target remains the control clock: decode the vendor `PllIn`, `PllOut` and `CMux` rows for the `pll_nes` (`TRPLL0CLK0`) route, correct the `clk` global-route model, and run the 8-seed sweep until `clk` no longer takes SPINE17. Then board-test the new pixel-clock topology (global resources only) with an experimental core carrying both overrides; if HDMI and the OLED pass, re-record `clock_profile.json` and update the topology gate, and only then resume the I2C/RTC bring-up with the DS3231 already wired on PMOD0. The board stays on the card's seed-26 core with firmware `6bf5f18-dirty.aac3c0b` and `/tang.ini` at `pmod0 none, pmod1 oledrgb`; if a policy change to the restricted `core.md` line is wanted, it needs an explicit user request.
+
+#### Files Modified:
+
+- README.md
+- BUILDING.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
