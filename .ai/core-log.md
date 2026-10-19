@@ -3008,3 +3008,33 @@ The engineering target remains the control clock: decode the vendor `PllIn`, `Pl
 - User Test: N/A
 
 ---
+
+## 91 COMMIT Unreleased 2026-10-18T17:35:05-0700
+
+#### Coming From:
+
+Unreleased ea829bb
+
+#### Purpose:
+
+Remove the SPINE17 clock hop from the GW5AST-138C model and test an open-flow I2C core on the board, falling back to a vendor-built validation core when the open-flow clock route remained unproven.
+
+#### Outcome:
+
+The apicula fork now drops every `SPINE17` destination for the GW5AST-138C in `fse_clock_pips_138` (both the bridge and central-mux loops), because every observed route into it clocks nothing: `CBRIDGEOUT_BOTTOM0` from TinyNES entry 14, `CBRIDGEOUT_TOP2` from desktop seeds 6 and 16, and `CBRIDGEOUT_TOP0` from the I2C netlist. Two more unproven bridge pairs, `SPINE18 <- CBRIDGEOUT_TOP0` and `SPINE25 <- CBRIDGEOUT_TOP0`, were added to the measured-dead list after the first open-flow core loaded and answered nothing. With SPINE17 removed the 8-seed sweep on the I2C netlist passed timing on all eight (pixel 82.9-90.4 MHz, clk 78.2-89.3 MHz), the hop gate found no SPINE17, and pixel and clk had zero fabric fallbacks (clk27 one sink, hclk5 five). The seed-26 open-flow core built from that database, `desktop.763ad9384017.bin` / `desktop.97b2295ecd08.fs`, loaded with `tangload` but was dead on the board: `fpga` and `tangini` both reported no core answering, and a retest after a power cycle reproduced it. The dead route differs from the working seed-26 route only in the bridge pairs: it took `SPINE18 <- CBRIDGEOUT_TOP0` at X94 and `SPINE25 <- CBRIDGEOUT_TOP0` at X96 where the working core takes `SPINE16 <- CBRIDGEOUT_TOP0` at X94 and `SPINE25 <- CBRIDGEOUT_TOP2` at X96; blocking the TOP0 pairs only moved the router to `TOP1`, so the bridge-output-to-spine permutation, not SPINE17 alone, is the remaining model defect. The vendor build then supplied a validation core: `tools/build_desktop_core.sh` needed the CST's flattened PLL names changed to `/` separators, and placements 2, 3 and 4 all failed `div5/CLKOUT` setup (-21.512, -14.399 and -17.962 ns), but the placement-4 image booted and answered. On the card as `/root/cores/console138k/desktop-i2c-gowin.bin` with `/tang.ini` at `pmod0 i2c, pmod1 oledrgb` (word `0x0160`) it declared the sockets, but `i2c scan` found 112 devices, first at 0x08, and `i2c rtc` read all zeros, the signature of SDA held low; the Adafruit DS3231 and the Digilent Pmod RTCC produced the same result, and the wiring was confirmed correct by the user, so the fault is not yet localized. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was unchanged and no settled entry was rewritten, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 91-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The open-flow route still needs the true bridge-output-to-spine mapping for the 138C, taken from a vendor route or the vendor clock fuses, because the measured-dead list is now chasing a permutation and the router keeps finding another unproven pair; the next sweep should confirm all 8 seeds avoid every unproven pair before another core is packed. The RTC is hardware-blocked at the bus, not the engine: with the vendor validation core answering and two modules giving the same 112-device scan, the next diagnostic is the electrical one at the module (VCC, GND, and the idle levels on SDA/SCL) or the FPGA's internal pull-ups on PMOD0, not another core build. The board is on the vendor I2C core with `/tang.ini` at `pmod0 i2c, pmod1 oledrgb` (word `0x0160`); the card's original `desktop.bin` is untouched and restores the known-good core with `tangload`, and `/tang.ini.bak-i2c` restores `pmod0 none, pmod1 oledrgb`.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
