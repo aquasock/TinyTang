@@ -285,13 +285,13 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 # not redistributed (see BUILDING.md).  The TinyNES core, its player and its
 # open handler are built and put on the card from the TinyNES repository
 # (tools/deploy_tinytang.sh).
-tools/build_desktop_core_open.sh # build/desktop/open-s26/desktop.bin, open toolchain: HDMI + VGA
+tools/build_desktop_core_open.sh # build/desktop/open-s3/desktop.bin, open toolchain: HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
 # tools/build_nestang_core.sh   # nestang's NES core with the desktop layer: Gowin EDA, not released
 # tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
 
 # Put the core and the scripts on the card (at a plain shell prompt -- fact 15)
-tools/tinytang_put.py build/desktop/open-s26/desktop.bin               /root/cores/console138k/desktop.bin   # 16c6c5998c9a
+tools/tinytang_put.py build/desktop/open-s3/desktop.bin                /root/cores/console138k/desktop.bin   # 24a11e81a46c
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
 tools/tinytang_put.py scripts/phosphor.tdsh  /root/scripts/phosphor.tdsh
 
@@ -402,8 +402,10 @@ because the vendor's device files are not redistributable (see [BUILDING.md](BUI
 `epic/gw5ast138c`) at `93761f4` or later, whose packer encodes the HDMI
 serialisers as the vendor does and whose chip database serves each IOLOGIC from
 the vendor's HCLK block, with nextpnr rebuilt against that database; at the
-default seed 26 it builds `desktop.16c6c5998c9a.bin`, which drives HDMI and VGA
-together and stays clean when the board is hot (`pll_nes` at `PLL_R[0]`; see
+default seed 3 it builds `desktop.24a11e81a46c.bin`, which drives HDMI and VGA
+together and carries the PMOD I2C bus (apicula `04bc3c5` and nextpnr
+`8be8657b` or later, whose spine select ports hold VSS; TOOL-021). Seed 26 of
+ABI 1.2 was the core that stayed clean when the board was hot (`pll_nes` at `PLL_R[0]`; see
 `fpga/desktop/desktop.cst` and [BUILDING.md](BUILDING.md)). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
 `/tang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED terminal
 alongside released sockets and the complete VGA pair, and ABI 1.2 gives it

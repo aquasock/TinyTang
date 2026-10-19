@@ -83,10 +83,14 @@ and that cost the desktop core its rebuildability on 2026-10-13.
 Recorded from builds of this tree; a release should reproduce these or say why
 not.
 
-- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 26,
-  written to `build/desktop/open-s26/` (desktop ABI 1.2, recorded 2026-10-14)
-  - `desktop.fs` sha256 `be6f111c0b53b644bd55b18ca1cc128f75e26ca562f62fcf72f886d92f9783bb`
-  - `desktop.bin` sha256 `16c6c5998c9a9c940ace86e0548f16e7e719f48982008ecc18e88d66599e0ba7`
+- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
+  written to `build/desktop/open-s3/` (desktop ABI 1.3 with the PMOD I2C bus,
+  apicula `04bc3c5`, nextpnr `8be8657b`, recorded 2026-10-18)
+  - `desktop.fs` sha256 `d993899c24a44dcfa503554e27ca873d012b0592162a7335f6b4c46378ed865b`
+  - `desktop.bin` sha256 `24a11e81a46cd6a9937c9dca8e2e0f5d8494fc6f4f1e029d3917cef846519fb0`
+  - The previous core of record, seed 26 of desktop ABI 1.2 (`desktop.bin`
+    `16c6c5998c9a`), is rebuilt from commit `97cf0db` with the chipdb
+    digest `446b89c0e96e` that `deps.conf` pinned there.
   - Both of the build's gates pass with nothing overridden: setup and hold
     are met, and the clock topology matches
     `tools/desktop_open/clock_profile.json`, which is recorded from this core.

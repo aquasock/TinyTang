@@ -3134,3 +3134,38 @@ Promote the open-flow I2C core to the card's `desktop.bin` as its own cycle with
 - User Test: PASS
 
 ---
+
+## 95 COMMIT Unreleased 2026-10-18T18:46:22-07:00
+
+#### Coming From:
+
+Unreleased 2d84ee8
+
+#### Purpose:
+
+Make entry 94's open-flow I2C core, seed 3 of desktop ABI 1.3, the build of record and the card's `desktop.bin`, with the toolchain pins, defaults and clock profile it was built from.
+
+#### Outcome:
+
+`deps.conf` now pins apicula at `04bc3c5c0e778ac2fbdeb9191a22efe7e6124150` and nextpnr at `8be8657b8e9c24355532f1ead78791ea110274dd`, both on the aquasock forks' `epic/gw5ast138c` branches, and the generated GW5AST-138C database at `aecb123e44cdec19cb034a4f92210bbe062438b6f81896884e401d727e2ff389`, which a generation from a clean worktree of `04bc3c5` under Gowin EDA 1.9.11.03 reproduced byte for byte, the manifest's comment naming the previous pin `446b89c0e96e` as the v0.1.0 and seed-26 database; `tools/fetch-deps.sh --check` reports these entries as missing exactly as it did before the change, because it looks for the release root's `apicula` and `nextpnr` checkouts and this machine's are the `*-mathieufro` directories. `tools/build_desktop_core_open.sh` and `tools/desktop_open/build.sh` default to seed 3, and the gate comments now say the dead PLL_R[0] cores took `clk` through a select spine without its VSS ties (TOOL-021) rather than through SPINE17 as such. `tools/desktop_open/clock_profile.json` was re-recorded from seed 3's sweep log, so the pixel clock's baseline is global resources only with no fabric fallback where seed 26's had 21. A build from the cleared directory `build/desktop-rec95` with nothing overridden passed setup and hold, reported no clock-topology regression and no `clk` pip through SPINE17, and reproduced `desktop.bin` `24a11e81a46cd6a9937c9dca8e2e0f5d8494fc6f4f1e029d3917cef846519fb0` and `desktop.fs` `d993899c24a44dcfa503554e27ca873d012b0592162a7335f6b4c46378ed865b` bit for bit. On the card, the seed-26 `desktop.bin` (4,492,268 bytes, the size of `16c6c5998c9a`; the board has no hash command) and its `desktop.fs.gz` were renamed to `desktop.bin.abi12-s26` and `desktop.fs.gz.abi12-s26` for rollback, and the rebuilt `desktop.bin` (4,463,286 bytes) and a `gzip -9 -n` `desktop.fs.gz` (415,141 bytes, decompressing to `d993899c24a4`) were put there with `tools/tinytang_put.py`. After the user's power cycle `boot.tdsh` loaded it, the user confirmed HDMI, VGA and the OLED, `fpga` answered core 84, `tangini` read `core 0x54 (ABI 1.3) has 0xc0 = 0x0160, as declared`, and `pmodi2c rtc` read `2026-10-18 18:45:40, running` with status `08` against the host's 18:45:45. `BUILDING.md`'s expected hashes and the README's build lines name the new core and how the seed-26 core is rebuilt, and TOOL-003 and TOOL-017 in `.ai/core-reference.md` were revised in place. Seed 26 had been booted hot at 67.3 C; the new core has not had a hot-board test. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 144 ids, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 95-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+A hot-board test of the new `desktop.bin`, booted with the package near the 60 to 67 C that seed 26 was held at, would close the thermal question for this core. SPINE17 and the bridge pairs the measured-dead list still drops can then be re-admitted one at a time, each with a core that uses it and a board test, retiring the step-2d refusal if SPINE17 runs; SPINE20, SPINE21 and SPINE23 have no board evidence yet. The select-polarity fault is upstream apicula's too and can be reported there when the user chooses, and the false-path constraints for the socket-word crossings into the I2C synchronizers and pull-ups for the Digilent Pmod RTCC remain open. The desktop clock could now take its time from the DS3231 through `pmodi2c auto on` and `time_now`, which is a feature cycle of its own.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- deps.conf
+- tools/build_desktop_core_open.sh
+- tools/desktop_open/build.sh
+- tools/desktop_open/clock_profile.json
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

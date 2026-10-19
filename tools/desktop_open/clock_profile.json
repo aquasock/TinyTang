@@ -1,10 +1,16 @@
 {
-  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=26 with pll_nes at PLL_R[0]: desktop.16c6c5998c9a.bin (desktop.be6f111c0b53.fs), desktop ABI 1.2 with the OLED's three font sets, HDMI, VGA and the OLED correct and clean on a board booted at 67.3 C, 2026-10-14; re-recorded in core-log entry 67",
+  "source": "tools/build_desktop_core_open.sh at NEXTPNR_SEED=3 with pll_nes at PLL_R[0], apicula 04bc3c5 and nextpnr 8be8657b: desktop.24a11e81a46c.bin (desktop.d993899c24a4.fs), desktop ABI 1.3 with the PMOD I2C bus, clk through SPINE18 with its select ports held at VSS, HDMI, VGA, the OLED and the DS3231 correct on the board, 2026-10-18; re-recorded in core-log entry 95",
   "nets": {
+    "desktop_sockets.sys_clk": {
+      "dedicated": true,
+      "fallbacks": 0,
+      "global_only": false,
+      "partial": false
+    },
     "desktop_sockets.pixel_clk": {
       "dedicated": false,
-      "fallbacks": 21,
-      "global_only": false,
+      "fallbacks": 0,
+      "global_only": true,
       "partial": false
     },
     "clk": {
@@ -22,12 +28,6 @@
     "hclk5": {
       "dedicated": false,
       "fallbacks": 5,
-      "global_only": false,
-      "partial": false
-    },
-    "desktop_sockets.sys_clk": {
-      "dedicated": true,
-      "fallbacks": 0,
       "global_only": false,
       "partial": false
     }
