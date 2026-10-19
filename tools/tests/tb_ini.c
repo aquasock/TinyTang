@@ -100,6 +100,13 @@ int main(int argc, char **argv)
     assert(ini.module[0] == TANG_PMOD_I2C && ini.module[1] == TANG_PMOD_OLEDRGB);
     parse("[tang]\npmod0 = i2c\npmod0_flip = yes\n");
     assert(ini.word == 0x1060 && ini.nnotes == 0);
+    /* i2c_uart is personality 7: the same bus plus the lower row's UART. */
+    parse("[tang]\npmod0 = i2c_uart\npmod1 = oledrgb\n");
+    assert(ini.word == 0x0170 && ini.nnotes == 0);
+    assert(ini.module[0] == TANG_PMOD_I2C_UART);
+    assert(strcmp(tang_ini_module_name(TANG_PMOD_I2C_UART), "i2c_uart") == 0);
+    parse("[tang]\npmod1 = i2c_uart\npmod1_flip = yes\n");
+    assert(ini.word == 0x2700 && ini.nnotes == 0);
 
     /* The PmodVGA takes both halves. */
     parse("[tang]\npmod0 = vga_j1\npmod1 = vga_j2\n");

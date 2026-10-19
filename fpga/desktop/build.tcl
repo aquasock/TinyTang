@@ -9,6 +9,7 @@ foreach source {
     src/desktop/textdisp_wide.sv src/desktop/desktop_hdmi.sv src/desktop/desktop_top.sv
     src/desktop/clock_monitor.sv
     src/desktop/desktop_regs.sv src/desktop/desktop_pmod.sv src/desktop/i2c_master.sv
+    src/desktop/pmod_uart.sv
     src/desktop/desktop_oled.sv src/desktop/oled_panel.sv src/desktop/oled_spi.sv
     src/desktop/hdmi/audio_clock_regeneration_packet.sv src/desktop/hdmi/audio_info_frame.sv
     src/desktop/hdmi/audio_sample_packet.sv src/desktop/hdmi/auxiliary_video_information_info_frame.sv

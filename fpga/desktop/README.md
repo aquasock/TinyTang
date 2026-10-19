@@ -63,7 +63,11 @@ This produces `0xc0 = 0x0230`. The first desktop ABI supports both sockets
 released or a complete VGA pair, in either order, with independent row flips.
 Unsupported module words are rejected without changing the active word.
 Sockets start released after reset. ABI 1.1 additionally supports OLEDrgb
-on either socket, including two panels sharing the same terminal. Encoder
+on either socket, including two panels sharing the same terminal. ABI 1.3
+adds `i2c` (the generic bus on both rows) and ABI 1.4 adds `i2c_uart`, which
+keeps the bus on pins 3 and 4 and puts an 8N1 UART at 115200 on pins 8 (NRST),
+9 (TX) and 10 (RX). At most one socket may be `i2c` or `i2c_uart`, because
+there is one I2C engine; either may sit beside `none` or `oledrgb`. Encoder
 and I2S remain Phosphor features. The OLED build is deployed and was
 accepted by the user on hardware (core-log entry 65).
 
@@ -71,7 +75,7 @@ The boot script loads `/root/cores/console138k/desktop.bin`; removing or
 renaming the script leaves the board at a plain prompt. Firmware must include
 the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 
-## Register ABI 1.2
+## Register ABI 1.4
 
 The endpoint accepts version-1 extended TangCore command `0x10` with the
 existing big-endian fields and CRC-16/CCITT-FALSE. Read32 and write32 are
@@ -86,19 +90,24 @@ frames made by the firmware's own encoder.
 | Address | Access | Meaning |
 |---|---|---|
 | `0x00` | Read | Identity `0x00544453` (TDS) |
-| `0x04` | Read | Desktop ABI `0x00010002` |
-| `0x08` | Read | Personality bitmap `0x0000000f` (none, OLEDrgb, VGA J1, VGA J2) |
+| `0x04` | Read | Desktop ABI `0x00010004` |
+| `0x08` | Read | Personality bitmap `0x000000cf` (none, OLEDrgb, VGA J1, VGA J2, i2c, i2c_uart) |
 | `0xc0` | Read/write | Socket declaration |
 | `0x100` | Read | Geometry of the active font set: `0x00180010` (24×16), `0x000c0008` (12×8) or `0x00100008` (16×8) |
 | `0x108` | Read | Completed OLED frame count |
 | `0x10c` | Read | CRC32 of the last emitted RGB565 frame, high byte first |
 | `0x114` | Read/write | Cursor visible bit 16, row bits 15:8, column bits 7:0 |
 | `0x118` | Read/write | OLED font set: 0 Graphics (reset), 1 Standard, 2 Compact |
+| `0x170` | Write | One byte into the UART's transmit FIFO (`i2c_uart`) |
+| `0x174` | Read | One byte from the UART's receive FIFO; reading pops it |
+| `0x178` | Read | UART status: `[0]` rx available, `[1]` tx full, `[2]` rx overrun, `[3]` byte in flight, `[19:8]` rx count, `[31:20]` tx count |
+| `0x17c` | Read/write | UART control: bit 0 NRST low, bit 1 flush (a pulse), bit 2 internal loopback, bit 3 hold the transmitter while the FIFO fills |
 | `0x200`–`0x7fc` | Write | 384 row-major cells with a stride of 24, word-aligned |
 
 The socket word uses personality nibbles `[7:4]` and `[11:8]`, and row flips
 `[12]` and `[13]`. All other bits must be zero. Personalities are 0 (released),
-1 (OLEDrgb), 2 (VGA J1) and 3 (VGA J2). A validated write commits at the beginning of
+1 (OLEDrgb), 2 (VGA J1), 3 (VGA J2), 6 (i2c) and 7 (i2c_uart). A validated
+write commits at the beginning of
 vertical blank; its reply waits for the pixel-domain acknowledgement. The
 held word and synchronized toggles prevent a partial pin configuration.
 

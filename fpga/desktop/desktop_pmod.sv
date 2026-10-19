@@ -2,7 +2,9 @@
 // Raster timing is 1280x720p60, matching the existing HDMI transmitter.
 module desktop_pmod #(
     // The I2C engine's clock, sys_clk: the board's 50 MHz crystal.
-    parameter integer I2C_CLK_HZ = 50_000_000
+    parameter integer I2C_CLK_HZ = 50_000_000,
+    // The PMOD UART's rate on personality 7.
+    parameter integer UART_BAUD = 115_200
 ) (
     input logic control_clk, pixel_clk, sys_clk, resetn,
     input logic [10:0] cx,
@@ -27,6 +29,16 @@ module desktop_pmod #(
     output logic [63:0]  i2c_rdata,
     output logic         i2c_res_toggle,
     output logic [31:0] i2c_status,
+    // PMOD UART (personality 7), control clock.
+    input  logic [7:0]  uart_tx_data,
+    input  logic        uart_tx_push,
+    input  logic        uart_flush,
+    input  logic        uart_hold,
+    input  logic        uart_nrst_low,
+    input  logic        uart_loopback,
+    input  logic        uart_rx_pop,
+    output logic [7:0]  uart_rx_data,
+    output logic [31:0] uart_status,
     inout wire [7:0] pmod0_io, pmod1_io
 );
     (* ASYNC_REG = "TRUE" *) logic request_meta, request_sync;
@@ -88,11 +100,24 @@ module desktop_pmod #(
     // with both rows identical the socket's row swap does not change that.
     wire i2c_on0 = active_word[7:4] == 6;
     wire i2c_on1 = active_word[11:8] == 6;
-    wire i2c_enable = i2c_on0 || i2c_on1;
+    // Personality 7 is the same I2C engine on the upper row only, with the
+    // UART on the lower row.  One engine serves either personality.
+    wire uart_on0 = active_word[7:4] == 7;
+    wire uart_on1 = active_word[11:8] == 7;
+    wire i2c_enable = i2c_on0 || i2c_on1 || uart_on0 || uart_on1;
     wire i2c_flip = i2c_on0 ? active_word[12] : active_word[13];
+    // Personality 6 reads SDA from the same row's duplicate; personality 7
+    // reads it from pin 4, or pin 10 when the module's rows are mirrored.
     wire i2c_sda_raw = i2c_on0
                      ? (i2c_flip ? pmod0_io[4] : pmod0_io[6])
                      : i2c_on1 ? (i2c_flip ? pmod1_io[4] : pmod1_io[6])
+                     : uart_on0 ? (active_word[12] ? pmod0_io[7] : pmod0_io[6])
+                     : uart_on1 ? (active_word[13] ? pmod1_io[7] : pmod1_io[6])
+                     : 1'b1;
+    // The module's TXD arrives on pin 10, or on pin 4 when mirrored.
+    wire uart_rx_raw = uart_on0
+                     ? (active_word[12] ? pmod0_io[6] : pmod0_io[7])
+                     : uart_on1 ? (active_word[13] ? pmod1_io[6] : pmod1_io[7])
                      : 1'b1;
     wire i2c_scl_low, i2c_sda_low;
     wire [63:0] i2c_rdata_p;
@@ -122,6 +147,28 @@ module desktop_pmod #(
         .scan_done(i2c_scan_done_p),
         .scl_low(i2c_scl_low), .sda_low(i2c_sda_low), .sda_in(i2c_sda_raw)
     );
+
+    // Personality 7's byte link.  Its register side is in the control clock
+    // and its shifters in sys_clk; the two lane outputs cross into the pixel
+    // domain below.
+    wire uart_tx_line;
+    pmod_uart #(.CLK_HZ(I2C_CLK_HZ), .BAUD(UART_BAUD)) uart (
+        .control_clk(control_clk), .clk(sys_clk), .resetn(resetn),
+        .tx_data(uart_tx_data), .tx_push(uart_tx_push), .flush(uart_flush),
+        .hold(uart_hold), .loopback(uart_loopback), .rx_data(uart_rx_data), .rx_pop(uart_rx_pop),
+        .status(uart_status),
+        .rx_pin(uart_rx_raw), .tx_pin(uart_tx_line)
+    );
+    logic uart_tx_meta, uart_tx_px, uart_nrst_meta, uart_nrst_px;
+    always_ff @(posedge pixel_clk) begin
+        if (!resetn) begin
+            uart_tx_meta <= 1'b1; uart_tx_px <= 1'b1;
+            uart_nrst_meta <= 1'b0; uart_nrst_px <= 1'b0;
+        end else begin
+            uart_tx_meta <= uart_tx_line; uart_tx_px <= uart_tx_meta;
+            uart_nrst_meta <= uart_nrst_low; uart_nrst_px <= uart_nrst_meta;
+        end
+    end
 
     // The result toggle crosses back; the data is static until the next
     // transaction, so a latch on the edge is enough.  Busy is a live level
@@ -189,6 +236,21 @@ module desktop_pmod #(
         i2c_enables[7] = i2c_flip ? i2c_scl_low : i2c_sda_low;
     end
 
+    logic [7:0] uart_lanes, uart_enables;
+    always_comb begin
+        uart_lanes = 8'b0;
+        uart_enables = 8'b0;
+        // Upper row: I2C on pins 3 and 4 only.  An I2C Pmod that ties its two
+        // rows together must not be seated in this personality, because the
+        // lower row is the UART's here.
+        uart_enables[2] = i2c_scl_low;   // SCL, pin 3
+        uart_enables[3] = i2c_sda_low;   // SDA, pin 4
+        // Lower row: NRST on pin 8 and TX on pin 9; RX (pin 10) stays input.
+        // The register bit asserts reset, so the pin carries its inverse.
+        uart_lanes[5] = ~uart_nrst_px; uart_enables[5] = 1'b1;
+        uart_lanes[6] = uart_tx_px;   uart_enables[6] = 1'b1;
+    end
+
     wire [7:0] oled_lanes, oled_enables;
     desktop_oled terminal_panel (
         .control_clk(control_clk),.pixel_clk(pixel_clk),.resetn(resetn),
@@ -203,9 +265,11 @@ module desktop_pmod #(
         wire [3:0] personality = slot == 0 ? active_word[7:4] : active_word[11:8];
         wire flipped = slot == 0 ? active_word[12] : active_word[13];
         wire [7:0] lanes = personality == 1 ? oled_lanes : personality == 2 ? j1
-                         : personality == 3 ? j2 : personality == 6 ? 8'b0 : 8'b0;
+                         : personality == 3 ? j2 : personality == 6 ? 8'b0
+                         : personality == 7 ? uart_lanes : 8'b0;
         wire [7:0] enables = personality == 1 ? oled_enables : personality == 2 ? 8'hff
-                           : personality == 3 ? 8'h3f : personality == 6 ? i2c_enables : 8'h00;
+                           : personality == 3 ? 8'h3f : personality == 6 ? i2c_enables
+                           : personality == 7 ? uart_enables : 8'h00;
         for (genvar io = 0; io < 8; io = io + 1) begin : g_pin
             // The dock interleaves rows: even IO numbers are pins 1-4.
             localparam integer NORMAL_LANE = io/2 + (io%2)*4;

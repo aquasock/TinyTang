@@ -16,6 +16,7 @@ static const char *const s_names[] = {
     [TANG_PMOD_ENCODER] = "encoder",
     [TANG_PMOD_I2S2]    = "i2s2",
     [TANG_PMOD_I2C]     = "i2c",
+    [TANG_PMOD_I2C_UART] = "i2c_uart",
 };
 #define NAMES (sizeof(s_names) / sizeof(s_names[0]))
 

@@ -48,6 +48,7 @@ enum {
     TANG_PMOD_ENCODER = 4,
     TANG_PMOD_I2S2    = 5,
     TANG_PMOD_I2C     = 6,   /* the desktop core's generic I2C bus */
+    TANG_PMOD_I2C_UART = 7,  /* that bus on the upper row, UART on the lower */
 };
 
 typedef struct {

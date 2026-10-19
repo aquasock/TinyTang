@@ -183,14 +183,15 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`/tang.ini` declares the PMOD sockets.** PMOD modules cannot be detected,
   so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
   and the desktop core) drives only what the file says is seated.  The desktop
-  core takes `none` or `oledrgb` in each socket, `i2c` in one socket beside
-  `none` or `oledrgb`, or the PmodVGA pair; any other combination makes it
-  refuse the whole declaration, leaving
+  core takes `none` or `oledrgb` in each socket, `i2c` or `i2c_uart` in one
+  socket beside `none` or `oledrgb`, or the PmodVGA pair; any other
+  combination makes it refuse the whole declaration, leaving
   both sockets released, and `tangload` then prints `the core did not take the
   socket declaration`. `tangload` sends it after every
   core load, whichever way the core arrives, and leaves cores without sockets
   alone. Under `[tang]`, `pmod0` and `pmod1` take `none`, `oledrgb`,
-  `encoder`, `i2s2`, `i2c`, `vga_j1` or `vga_j2`, and `pmod0_flip`/`pmod1_flip` take
+  `encoder`, `i2s2`, `i2c`, `i2c_uart`, `vga_j1` or `vga_j2`, and
+  `pmod0_flip`/`pmod1_flip` take
   `yes` for a module seated upside down; `docs/tang.ini` is a commented
   example. No file, or no entry, leaves a socket released. An unknown module,
   a flip that is not yes or no, or one half of the PmodVGA without the other
@@ -199,13 +200,19 @@ Building and flashing are under *Quick start* and *Building requirements*.
   the loaded core's sockets, and `tangini apply` sends it again without
   reloading the core.
 - **`pmodi2c scan | read | write | rtc | auto`** drives the desktop core's I2C
-  bus on whichever socket `/tang.ini` declares `i2c`: SCL on pins 3 and 9, SDA
-  on 4 and 10, 100 kHz, register-addressed transfers of 1 to 8 bytes, and no
-  pull-ups from the FPGA, so the module brings its own (an Adafruit DS3231 on a
-  STEMMA QT cable does; a Digilent Pmod RTCC needs 2.2 kOhm added).
+  bus on whichever socket `/tang.ini` declares `i2c` (or `i2c_uart`): SCL on
+  pins 3 and 9, SDA on 4 and 10, 100 kHz, register-addressed transfers of 1 to
+  8 bytes, and no pull-ups from the FPGA, so the module brings its own (an
+  Adafruit DS3231 on a STEMMA QT cable does; a Digilent Pmod RTCC needs
+  2.2 kOhm added).
   `pmodi2c rtc` reads the DS3231 at 0x68 and prints the desktop clock in UTC
   and local time; `pmodi2c rtc set YYYY-MM-DD HH:MM:SS` sets the RTC in UTC and
   `pmodi2c rtc sync` rereads it.
+- **`i2c_uart` adds a UART below the I2C row.** The same socket keeps the I2C
+  bus on pins 3 and 4 and gains an 8N1 UART at 115200 on pins 8, 9 and 10:
+  NRST, TX and RX. `pmodlora at <text>|recv|reset|loopback on|off|flush|status`
+  is the transport for the RYLR998 LoRa module on that row; the module's own
+  AT command set is unchanged and passes through `pmodlora at`.
 - **The desktop clock** is the DS3231's UTC, read when a core with an I2C
   socket is loaded and about hourly after that (`ports/bl616/tang_clock.c`),
   shown in the zone the Date & time window keeps in `/tinydesk_tz`. Root can

@@ -31,6 +31,10 @@ module tb_desktop_uart;
     wire [15:0] cell_word;
     logic [15:0] cells[0:383];
     integer writes=0;
+    logic [7:0] uart_rx_data=8'h5a;
+    logic [31:0] uart_status=32'h12345678;
+    wire [7:0] uart_tx_data;
+    wire uart_tx_push,uart_flush,uart_hold,uart_nrst_low,uart_loopback,uart_rx_pop;
     always @(posedge clk) if(cell_we) begin
         if(cell_index>=384) $fatal(1,"out-of-range cell write");
         cells[cell_index]=cell_word;writes++;
@@ -50,7 +54,11 @@ module tb_desktop_uart;
         .desktop_socket_ack(socket_ack),
         .desktop_oled_cell_we(cell_we),.desktop_oled_cell_index(cell_index),
         .desktop_oled_cell_word(cell_word),.desktop_oled_font(oled_font),
-        .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0)
+        .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0),
+        .desktop_uart_tx_data(uart_tx_data),.desktop_uart_tx_push(uart_tx_push),
+        .desktop_uart_flush(uart_flush),.desktop_uart_hold(uart_hold),.desktop_uart_nrst_low(uart_nrst_low),
+        .desktop_uart_loopback(uart_loopback),.desktop_uart_rx_pop(uart_rx_pop),
+        .desktop_uart_rx_data(uart_rx_data),.desktop_uart_status(uart_status)
     );
     function automatic [15:0] crc_byte(input [15:0] old, input [7:0] b);
         reg [15:0] c;
@@ -107,6 +115,7 @@ module tb_desktop_uart;
         end
     end
     integer transaction_sequence=0;
+    integer empty_before=0;
     task automatic request(input [7:0] op,input [31:0] addr,input [31:0] data,
                            input integer fault,input [7:0] status,input [31:0] expected);
         reg [111:0] p;
@@ -237,9 +246,23 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        request(1,4,0,0,0,32'h00010003);
-        request(1,8,0,0,0,32'h4f);
+        request(1,4,0,0,0,32'h00010004);
+        request(1,8,0,0,0,32'hcf);
         request(1,32'hc0,0,0,0,0);
+        // ABI 1.4's UART window: status and receive reads, a transmit write,
+        // the control register's stored bits, and refusals above the fields.
+        request(1,32'h178,0,0,0,32'h12345678);
+        request(1,32'h174,0,0,0,32'h5a);
+        request(2,32'h170,32'ha5,0,0,32'ha5);
+        if(uart_tx_data!==8'ha5)$fatal(1,"UART transmit register is %02h",uart_tx_data);
+        request(2,32'h17c,32'h5,0,0,32'h5);
+        request(1,32'h17c,0,0,0,32'h5);
+        if(!uart_nrst_low || !uart_loopback)$fatal(1,"UART control bits did not latch");
+        request(2,32'h17c,32'h8,0,0,32'h8);
+        request(1,32'h17c,0,0,0,32'h8);
+        if(!uart_hold)$fatal(1,"UART hold bit did not latch");
+        request(2,32'h17c,32'h10,0,6,0);
+        request(2,32'h170,32'h1a5,0,6,0);
         request(2,32'hc0,32'h0230,0,0,32'h0230);
         request(1,32'hc0,0,0,0,32'h0230);
         request(2,32'hc0,32'h0320,1,3,0);
@@ -253,8 +276,9 @@ module tb_desktop_uart;
         request(2,32'hc0,32'h3320,0,0,32'h3320);
         request(2,32'hc0,0,0,0,0);
         // A command with no register payload must reject and recover too.
+        empty_before=reply_count;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(16);
-        wait(reply_count==17);
+        wait(reply_count>empty_before);
         if(reply[119:16]!={8'h01,8'h80,8'h05,16'h0000,32'h0,32'h0})
             $fatal(1,"empty-payload rejection failed");
         request(1,32'h100,0,0,0,32'h00180010);

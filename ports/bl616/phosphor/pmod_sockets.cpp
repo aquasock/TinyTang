@@ -30,6 +30,7 @@ int tang_tangini_register(void);
 void tang_ini_core_loaded(void);
 void tang_ini_core_replacing(void);
 bool tang_ini_i2c_declared(void);
+bool tang_ini_uart_declared(void);
 }
 
 #include "fpga_debug.h"
@@ -62,6 +63,8 @@ tang_ini_t s_ini;
 // True while the loaded core is the desktop core and holds a declaration with
 // an I2C socket, which is when the PMOD RTC can be reached (tang_clock.c).
 bool s_i2c_declared;
+// True while that socket is personality 7, whose lower row is the PMOD UART.
+bool s_uart_declared;
 
 bool core_id(uint8_t *id)
 {
@@ -182,6 +185,7 @@ bool send(const socket_core &core)
 {
     uint32_t back = 0;
     s_i2c_declared = false;
+    s_uart_declared = false;
     if (!write_reg(core.reg, s_ini.word) || !read_reg(core.reg, &back)) {
         tdsh_printf("tang.ini: the core did not take the socket declaration\r\n");
         return false;
@@ -194,9 +198,13 @@ bool send(const socket_core &core)
     }
     tdsh_printf("tang.ini: sockets declared (0x%02lx = 0x%04lx)\r\n",
                 static_cast<unsigned long>(core.reg), static_cast<unsigned long>(s_ini.word));
+    const uint32_t p0 = (s_ini.word >> 4) & 0xfu;
+    const uint32_t p1 = (s_ini.word >> 8) & 0xfu;
     s_i2c_declared = core.id == 0x54 &&
-                     (((s_ini.word >> 4) & 0xfu) == TANG_PMOD_I2C ||
-                      ((s_ini.word >> 8) & 0xfu) == TANG_PMOD_I2C);
+                     (p0 == TANG_PMOD_I2C || p1 == TANG_PMOD_I2C ||
+                      p0 == TANG_PMOD_I2C_UART || p1 == TANG_PMOD_I2C_UART);
+    s_uart_declared = core.id == 0x54 &&
+                      (p0 == TANG_PMOD_I2C_UART || p1 == TANG_PMOD_I2C_UART);
     return true;
 }
 
@@ -251,6 +259,7 @@ const tdsh_command_t s_commands[] = {
 void tang_ini_core_loaded(void)
 {
     s_i2c_declared = false;
+    s_uart_declared = false;
     tang_clock_core_changed();
     bool answered = false;
     uint8_t id = 0;
@@ -268,12 +277,18 @@ void tang_ini_core_loaded(void)
 void tang_ini_core_replacing(void)
 {
     s_i2c_declared = false;
+    s_uart_declared = false;
     tang_clock_core_changed();
 }
 
 bool tang_ini_i2c_declared(void)
 {
     return s_i2c_declared;
+}
+
+bool tang_ini_uart_declared(void)
+{
+    return s_uart_declared;
 }
 
 int tang_tangini_register(void)
