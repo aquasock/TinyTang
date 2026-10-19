@@ -3072,3 +3072,34 @@ The RTL and firmware of the I2C bus are now proven on hardware, so what keeps th
 - User Test: PASS
 
 ---
+
+## 93 COMMIT Unreleased 2026-10-18T18:11:37-07:00
+
+#### Coming From:
+
+Unreleased 462a85e
+
+#### Purpose:
+
+Rename the PMOD I2C shell command from `i2c`, a name TinyDesk Shell's STANDARDS.md reserves for an upstream command, to `pmodi2c`, the name the user chose.
+
+#### Outcome:
+
+Neither TinyDesk nor TinyDesk Shell at their pins implements any I2C command, driver or app; `third_party/tinydesk-shell/STANDARDS.md` reserves `i2c` among the peripheral names a port may register only if it does what the upstream command does, and this command drives the loaded core's PMOD I2C engine through the register window at 0x140 rather than the BL616's own I2C, so it is a port-specific command and the user named it `pmodi2c`. `ports/bl616/tang_i2c.cpp` registers `pmodi2c` with its usage and help line, every message it prints now starts `pmodi2c:` as the standard asks of errors, and a comment at the registration says why the name is not `i2c`; the `CMakeLists.txt` comment follows. The `/tang.ini` module name `i2c` is the socket personality, not a command, and is unchanged. `tools/check_help_width.py` reports 137 entries with none over 80 columns. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `462a85e-dirty.d34aec6`, 628,208 bytes, SHA-256 `c6e8f9570d42016235865b9e7d64df52328ec9ca2f46435025f2302e93ec738e`, with only the three unused-variable warnings in `tang_i2c.cpp` that entry 92 recorded, was installed with `tools/tinytang_flash.py --yes`, and `platform` reported it after the user's power cycle. With entry 92's validation core `desktop-i2c-pins-gowin.bin` loaded by `tangload`, answering core 84 with the sockets declared at `0x0160`, `pmodi2c scan` found one device at 0x68, `pmodi2c rtc` read `2026-10-18 18:11:11, day 7, running` with status `08` against the host's 18:11:15, the DS3231 having kept time through two board power cycles, and `i2c scan` answered `tdsh: command not found: i2c`; the user passed the cycle. The card's `desktop.bin` is unchanged. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, found no record in `.ai/core-reference.md` naming the old command, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 93-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+Entry 92's next steps stand unchanged: decode the validation core's `clk` route through the central clock bridge with the apicula fork's `gowin_unpack`, correct `fse_clock_pips_138` from that vendor pairing, regenerate the chipdb and nextpnr, and require every seed of the 8-seed sweep to avoid all unproven pairs before an open-flow core is packed and board-tested, so that a core passing HDMI, VGA, the OLED and `pmodi2c rtc` can replace `desktop.bin`. The false-path constraints for the socket-word crossings into the I2C synchronizers and pull-ups for the Digilent Pmod RTCC also remain open, and the three unused-variable warnings in `tang_i2c.cpp` can be cleared when that file is next changed.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_i2c.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

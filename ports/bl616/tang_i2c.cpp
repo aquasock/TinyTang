@@ -3,8 +3,8 @@
 // The FPGA's engine (fpga/desktop/i2c_master.sv) runs one transaction at a
 // time: a device address, a register, 1..16 bytes and a direction.  The first
 // client is the desktop clock's RTC (Adafruit DS3231 at 0x68, or MCP79410 at
-// 0x6F); `i2c scan` is how a new device is found.  The engine also refreshes
-// the RTC once a second when `i2c auto on` has configured the address.
+// 0x6F); `pmodi2c scan` is how a new device is found.  The engine also refreshes
+// the RTC once a second when `pmodi2c auto on` has configured the address.
 //
 // Register map (desktop_regs):
 //   0x140 status: valid, busy, nack, scan_done, seq, scan_addr, scan_count
@@ -215,7 +215,7 @@ int bcd(unsigned v)
 
 void print_status(const status_t &s)
 {
-    tdsh_printf("i2c: %s%s%s seq %u, scan %02x/%u\r\n",
+    tdsh_printf("pmodi2c: %s%s%s seq %u, scan %02x/%u\r\n",
                 s.valid ? "valid" : "no data",
                 s.busy ? ", busy" : "",
                 s.nack ? ", nack" : "",
@@ -259,7 +259,7 @@ int command(tdsh_session_t *session, int argc, char **argv)
     uint32_t raw;
     status_t s;
     if (!get_status(&s)) {
-        tdsh_printf("i2c: the core did not answer at 0x140\r\n");
+        tdsh_printf("pmodi2c: the core did not answer at 0x140\r\n");
         return 1;
     }
 
@@ -272,44 +272,44 @@ int command(tdsh_session_t *session, int argc, char **argv)
 
     if (std::strcmp(what, "scan") == 0) {
         if (!write32(REG_CMD, cmd_word(OP_SCAN, 0, 0, 1))) {
-            tdsh_printf("i2c: cannot start a scan\r\n");
+            tdsh_printf("pmodi2c: cannot start a scan\r\n");
             return 1;
         }
         const TickType_t start = xTaskGetTickCount();
         for (;;) {
             if (!get_status(&s)) {
-                tdsh_printf("i2c: the core did not answer during the scan\r\n");
+                tdsh_printf("pmodi2c: the core did not answer during the scan\r\n");
                 return 1;
             }
             if (s.scan_done) break;
             if ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS >= 1000) {
-                tdsh_printf("i2c: the scan did not finish\r\n");
+                tdsh_printf("pmodi2c: the scan did not finish\r\n");
                 return 1;
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
-        tdsh_printf("i2c: scan found %u device%s, first at 0x%02x\r\n",
+        tdsh_printf("pmodi2c: scan found %u device%s, first at 0x%02x\r\n",
                     s.scan_count, s.scan_count == 1 ? "" : "s", s.scan_addr);
         return 0;
     }
 
     if (std::strcmp(what, "read") == 0) {
         if (argc < 5) {
-            tdsh_printf("usage: i2c read <addr> <reg> <n>\r\n");
+            tdsh_printf("usage: pmodi2c read <addr> <reg> <n>\r\n");
             return 1;
         }
         uint32_t addr, reg, len;
         if (!parse_hex(argv[2], &addr) || !parse_hex(argv[3], &reg) ||
             !parse_hex(argv[4], &len) || len == 0 || len > 8) {
-            tdsh_printf("i2c: address, register and length are hex; length 1..8\r\n");
+            tdsh_printf("pmodi2c: address, register and length are hex; length 1..8\r\n");
             return 1;
         }
         uint8_t data[8] = {0};
         if (!transaction(OP_READ, addr, reg, len, nullptr, data)) {
-            tdsh_printf("i2c: read from 0x%02x failed (nack or timeout)\r\n", addr);
+            tdsh_printf("pmodi2c: read from 0x%02x failed (nack or timeout)\r\n", addr);
             return 1;
         }
-        tdsh_printf("i2c: %02x/%02x:", addr, reg);
+        tdsh_printf("pmodi2c: %02x/%02x:", addr, reg);
         for (uint32_t i = 0; i < len; i++) tdsh_printf(" %02x", data[i]);
         tdsh_printf("\r\n");
         return 0;
@@ -317,40 +317,40 @@ int command(tdsh_session_t *session, int argc, char **argv)
 
     if (std::strcmp(what, "write") == 0) {
         if (argc < 5) {
-            tdsh_printf("usage: i2c write <addr> <reg> <byte> [byte...]\r\n");
+            tdsh_printf("usage: pmodi2c write <addr> <reg> <byte> [byte...]\r\n");
             return 1;
         }
         uint32_t addr, reg;
         if (!parse_hex(argv[2], &addr) || !parse_hex(argv[3], &reg)) {
-            tdsh_printf("i2c: address and register are hex\r\n");
+            tdsh_printf("pmodi2c: address and register are hex\r\n");
             return 1;
         }
         uint8_t data[8] = {0};
         const int n = argc - 4;
         if (n > 8) {
-            tdsh_printf("i2c: at most 8 bytes\r\n");
+            tdsh_printf("pmodi2c: at most 8 bytes\r\n");
             return 1;
         }
         for (int i = 0; i < n; i++) {
             uint32_t v;
             if (!parse_hex(argv[4 + i], &v) || v > 0xff) {
-                tdsh_printf("i2c: bad byte '%s'\r\n", argv[4 + i]);
+                tdsh_printf("pmodi2c: bad byte '%s'\r\n", argv[4 + i]);
                 return 1;
             }
             data[i] = (uint8_t)v;
         }
         if (!transaction(OP_WRITE, addr, reg, (uint32_t)n, data, nullptr)) {
-            tdsh_printf("i2c: write to 0x%02x failed (nack or timeout)\r\n", addr);
+            tdsh_printf("pmodi2c: write to 0x%02x failed (nack or timeout)\r\n", addr);
             return 1;
         }
-        tdsh_printf("i2c: wrote %d byte%s to %02x/%02x\r\n", n, n == 1 ? "" : "s", addr, reg);
+        tdsh_printf("pmodi2c: wrote %d byte%s to %02x/%02x\r\n", n, n == 1 ? "" : "s", addr, reg);
         return 0;
     }
 
     if (std::strcmp(what, "rtc") == 0) {
         uint8_t data[8] = {0};
         if (!transaction(OP_READ, DS3231, 0x00, 7, nullptr, data)) {
-            tdsh_printf("i2c: no RTC at 0x%02x\r\n", DS3231);
+            tdsh_printf("pmodi2c: no RTC at 0x%02x\r\n", DS3231);
             return 1;
         }
         print_ds3231(data);
@@ -365,27 +365,30 @@ int command(tdsh_session_t *session, int argc, char **argv)
     if (std::strcmp(what, "auto") == 0) {
         const bool on = argc >= 3 && std::strcmp(argv[2], "on") == 0;
         if (argc >= 3 && !on && std::strcmp(argv[2], "off") != 0) {
-            tdsh_printf("usage: i2c auto [on|off]\r\n");
+            tdsh_printf("usage: pmodi2c auto [on|off]\r\n");
             return 1;
         }
         if (!write32(REG_AUTO, auto_word(DS3231, 0x00, 7, on))) {
-            tdsh_printf("i2c: cannot set the automatic read\r\n");
+            tdsh_printf("pmodi2c: cannot set the automatic read\r\n");
             return 1;
         }
-        tdsh_printf("i2c: automatic RTC read %s\r\n", on ? "on" : "off");
+        tdsh_printf("pmodi2c: automatic RTC read %s\r\n", on ? "on" : "off");
         return 0;
     }
 
-    tdsh_printf("usage: i2c [status|scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto [on|off]]\r\n");
+    tdsh_printf("usage: pmodi2c [status|scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto [on|off]]\r\n");
     return 1;
 }
 
 } // namespace
 
+// `i2c` is a name TinyDesk Shell's STANDARDS.md reserves for an upstream
+// command; this one drives the loaded core's PMOD engine, not the BL616's own
+// I2C, so it is named for the socket.
 extern "C" int tang_i2c_register(void)
 {
     static const tdsh_command_t commands[] = {
-        {"i2c", "i2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto",
+        {"pmodi2c", "pmodi2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto",
          "I2C bus: scan, read, write, RTC", command, 0},
     };
     return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));

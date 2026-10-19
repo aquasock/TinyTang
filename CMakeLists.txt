@@ -131,7 +131,7 @@ else()
                                ports/bl616/tinynes_app.cpp
                                # TinyNES Launcher, the cartridge browser.
                                ports/bl616/tinynes_launcher.cpp
-                               # Generic I2C bus client and `i2c` command.
+                               # Generic I2C bus client and `pmodi2c` command.
                                ports/bl616/tang_i2c.cpp
                                ${TDSH_CORE_SOURCES}
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
