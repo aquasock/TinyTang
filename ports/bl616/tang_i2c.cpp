@@ -5,6 +5,10 @@
 // client is the desktop clock's RTC (Adafruit DS3231 at 0x68, or MCP79410 at
 // 0x6F); `pmodi2c scan` is how a new device is found.  The engine also refreshes
 // the RTC once a second when `pmodi2c auto on` has configured the address.
+// The desktop's wall clock (tang_clock.c) reads the RTC through the hooks at
+// the end of this file, so every transaction holds one recursive bus lock: the
+// clock's sync and a shell command must not interleave one transaction's
+// register steps.
 //
 // Register map (desktop_regs):
 //   0x140 status: valid, busy, nack, scan_done, seq, scan_addr, scan_count
@@ -22,8 +26,13 @@
 extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 #include "tdsh.h"
+#include "bflb_mtimer.h"
+#include "tang_clock.h"
+#include "tang_fpga_link.h"
 int tdsh_printf(const char *fmt, ...);
+bool tang_ini_i2c_declared(void);
 }
 
 #include "fpga_debug.h"
@@ -40,8 +49,17 @@ constexpr uint32_t OP_READ  = 0;
 constexpr uint32_t OP_WRITE = 1;
 constexpr uint32_t OP_SCAN  = 2;
 
-constexpr uint8_t DS3231 = 0x68;
+constexpr uint8_t DS3231 = TANG_CLOCK_RTC_ADDR;
 constexpr uint8_t MCP79410 = 0x6F;
+
+SemaphoreHandle_t s_bus;
+
+// Held for one whole transaction or command; recursive, because `pmodi2c rtc
+// set` holds it and calls into the clock, which takes it again.
+struct bus_lock {
+    bus_lock() { if (s_bus) xSemaphoreTakeRecursive(s_bus, portMAX_DELAY); }
+    ~bus_lock() { if (s_bus) xSemaphoreGiveRecursive(s_bus); }
+};
 
 bool read32(uint32_t address, uint32_t *value)
 {
@@ -158,8 +176,6 @@ bool write_window(const uint8_t in[8])
 
 // Turn the once-a-second refresh off before a manual transaction, and back on
 // afterwards if it was on.
-uint32_t auto_saved;
-bool auto_was_on;
 bool auto_read(uint32_t *word, bool *on)
 {
     if (!read32(REG_AUTO, word)) {
@@ -169,16 +185,9 @@ bool auto_read(uint32_t *word, bool *on)
     return true;
 }
 
-bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
-                 const uint8_t *wdata, uint8_t *rdata)
+bool transaction_body(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
+                      const uint8_t *wdata, uint8_t *rdata)
 {
-    uint32_t saved_auto;
-    bool on = false;
-    (void)auto_read(&saved_auto, &on);
-    if (on) {
-        (void)write32(REG_AUTO, saved_auto & ~(1u << 31));
-        vTaskDelay(pdMS_TO_TICKS(2));
-    }
     if (wdata != nullptr) {
         uint8_t buf[8] = {0};
         std::memcpy(buf, wdata, len > 8 ? 8 : len);
@@ -198,14 +207,34 @@ bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
         return false;
     }
     if (op == OP_READ && rdata != nullptr) {
-        if (!read_window(rdata)) {
+        // The window is always 8 bytes; the caller's buffer is only `len`.
+        uint8_t window[8];
+        if (!read_window(window)) {
             return false;
         }
+        std::memcpy(rdata, window, len > 8 ? 8 : len);
     }
+    return !after.nack;
+}
+
+bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
+                 const uint8_t *wdata, uint8_t *rdata)
+{
+    bus_lock lock;
+    uint32_t saved_auto;
+    bool on = false;
+    (void)auto_read(&saved_auto, &on);
+    if (on) {
+        (void)write32(REG_AUTO, saved_auto & ~(1u << 31));
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    const bool ok = transaction_body(op, addr, reg, len, wdata, rdata);
+    // Turned back on whatever the outcome; a failed transaction used to
+    // leave the once-a-second read off.
     if (on) {
         (void)write32(REG_AUTO, saved_auto);
     }
-    return !after.nack;
+    return ok;
 }
 
 int bcd(unsigned v)
@@ -222,8 +251,9 @@ void print_status(const status_t &s)
                 s.seq, s.scan_addr, s.scan_count);
 }
 
-// The DS3231's time block: 0x00 sec (bit7 EOSC), 0x01 min, 0x02 hour
-// (bit6 12/24), 0x03 day, 0x04 date, 0x05 month (bit7 century), 0x06 year.
+// The DS3231's time block: 0x00 sec, 0x01 min, 0x02 hour (bit6 12/24),
+// 0x03 day, 0x04 date, 0x05 month (bit7 century), 0x06 year.  Whether the time
+// is valid is OSF, bit 7 of the status register 0x0F, not anything here.
 void print_ds3231(const uint8_t b[7])
 {
     const bool twelves = (b[2] & 0x40) != 0;
@@ -234,10 +264,10 @@ void print_ds3231(const uint8_t b[7])
     } else {
         hour = bcd(hour);
     }
-    tdsh_printf("ds3231: %04d-%02d-%02d %02d:%02d:%02d, day %u, %s\r\n",
-                2000 + bcd(b[6]), bcd(b[5] & 0x1f), bcd(b[4] & 0x3f),
-                hour, bcd(b[1] & 0x7f), bcd(b[0] & 0x7f),
-                bcd(b[3] & 0x07), (b[0] & 0x80) ? "oscillator off" : "running");
+    tdsh_printf("ds3231: %04d-%02d-%02d %02d:%02d:%02d UTC, day %u\r\n",
+                2000 + bcd(b[6]) + ((b[5] & 0x80) ? 100 : 0), bcd(b[5] & 0x1f),
+                bcd(b[4] & 0x3f), hour, bcd(b[1] & 0x7f), bcd(b[0] & 0x7f),
+                bcd(b[3] & 0x07));
     tdsh_printf("ds3231: raw %02x %02x %02x %02x %02x %02x %02x\r\n",
                 b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
 }
@@ -253,10 +283,105 @@ bool parse_hex(const char *s, uint32_t *out)
     return true;
 }
 
+// The desktop's time zone, seconds east of UTC (td_desktop_bl616.c's file).
+long desktop_tz(void)
+{
+    long v = 0;
+    FILE *f = std::fopen("/sd/tinydesk_tz", "r");
+    if (f) {
+        if (std::fscanf(f, "%ld", &v) != 1) v = 0;
+        std::fclose(f);
+    }
+    return v;
+}
+
+void print_time(const char *label, int64_t utc)
+{
+    uint8_t r[7];
+    if (!tang_clock_to_regs(utc, r)) {
+        tdsh_printf("%s: out of range\r\n", label);
+        return;
+    }
+    tdsh_printf("%s: %04d-%02d-%02d %02d:%02d:%02d\r\n", label,
+                2000 + bcd(r[6]) + ((r[5] & 0x80) ? 100 : 0), bcd(r[5] & 0x1f),
+                bcd(r[4]), bcd(r[2]), bcd(r[1]), bcd(r[0]));
+}
+
+// `YYYY-MM-DD` `HH:MM:SS` to UTC seconds, through the RTC's own register
+// check so the range rules are the clock's.
+bool parse_utc(const char *date, const char *time, int64_t *utc)
+{
+    unsigned y, mo, d, h, mi, se;
+    char tail;
+    if (std::sscanf(date, "%4u-%2u-%2u%c", &y, &mo, &d, &tail) != 3 ||
+        std::sscanf(time, "%2u:%2u:%2u%c", &h, &mi, &se, &tail) != 3 ||
+        y < 2000 || y > 2199 || mo > 12 || d > 31 || h > 23 || mi > 59 || se > 59) {
+        return false;
+    }
+    auto b = [](unsigned v) { return (uint8_t)(((v / 10u) << 4) | (v % 10u)); };
+    const uint8_t r[7] = {b(se), b(mi), b(h), 1, b(d),
+                          (uint8_t)(b(mo) | (y >= 2100 ? 0x80 : 0)), b(y % 100u)};
+    return tang_clock_from_regs(r, utc);
+}
+
+int command_rtc(int argc, char **argv)
+{
+    if (argc >= 3 && std::strcmp(argv[2], "set") == 0) {
+        int64_t utc;
+        if (argc != 5 || !parse_utc(argv[3], argv[4], &utc)) {
+            tdsh_printf("usage: pmodi2c rtc set YYYY-MM-DD HH:MM:SS  (UTC)\r\n");
+            return 1;
+        }
+        if (!tang_clock_hw_ready()) {
+            tdsh_printf("pmodi2c: no I2C socket declared on the loaded core\r\n");
+            return 1;
+        }
+        if (!tang_clock_set(utc)) {
+            tdsh_printf("pmodi2c: the RTC at 0x%02x did not take the time\r\n", DS3231);
+            return 1;
+        }
+        print_time("pmodi2c: set, UTC", utc);
+        return 0;
+    }
+    if (argc >= 3 && std::strcmp(argv[2], "sync") == 0) {
+        static const char *const why[] = {
+            "synced", "no I2C socket declared, or the link is busy",
+            "no answer from the RTC", "the RTC holds no valid time (OSF)"};
+        const tang_clock_sync_t got = tang_clock_sync();
+        tdsh_printf("pmodi2c: clock %s\r\n", why[got]);
+        return got == TANG_CLOCK_SYNCED ? 0 : 1;
+    }
+    if (argc != 2) {
+        tdsh_printf("usage: pmodi2c rtc [set YYYY-MM-DD HH:MM:SS | sync]\r\n");
+        return 1;
+    }
+    uint8_t data[8] = {0};
+    if (!transaction(OP_READ, DS3231, 0x00, 7, nullptr, data)) {
+        tdsh_printf("pmodi2c: no RTC at 0x%02x\r\n", DS3231);
+        return 1;
+    }
+    print_ds3231(data);
+    uint8_t osf = 0;
+    if (transaction(OP_READ, DS3231, 0x0f, 1, nullptr, &osf)) {
+        tdsh_printf("ds3231: status 0x0f = %02x%s\r\n", osf,
+                    (osf & 0x80) ? " (OSF: time invalid)" : "");
+    }
+    int64_t now;
+    if (tang_clock_now(&now)) {
+        const long tz = desktop_tz();
+        print_time("clock: UTC  ", now);
+        tdsh_printf("clock: zone  %+ld s\r\n", tz);
+        print_time("clock: local", now + tz);
+    } else {
+        tdsh_printf("clock: not set\r\n");
+    }
+    return 0;
+}
+
 int command(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
-    uint32_t raw;
+    bus_lock lock;
     status_t s;
     if (!get_status(&s)) {
         tdsh_printf("pmodi2c: the core did not answer at 0x140\r\n");
@@ -348,18 +473,7 @@ int command(tdsh_session_t *session, int argc, char **argv)
     }
 
     if (std::strcmp(what, "rtc") == 0) {
-        uint8_t data[8] = {0};
-        if (!transaction(OP_READ, DS3231, 0x00, 7, nullptr, data)) {
-            tdsh_printf("pmodi2c: no RTC at 0x%02x\r\n", DS3231);
-            return 1;
-        }
-        print_ds3231(data);
-        uint8_t osf = 0;
-        if (transaction(OP_READ, DS3231, 0x0f, 1, nullptr, &osf)) {
-            tdsh_printf("ds3231: status 0x0f = %02x%s\r\n", osf,
-                        (osf & 0x80) ? " (OSF: time invalid)" : "");
-        }
-        return 0;
+        return command_rtc(argc, argv);
     }
 
     if (std::strcmp(what, "auto") == 0) {
@@ -376,7 +490,8 @@ int command(tdsh_session_t *session, int argc, char **argv)
         return 0;
     }
 
-    tdsh_printf("usage: pmodi2c [status|scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto [on|off]]\r\n");
+    tdsh_printf("usage: pmodi2c [status|scan|read <a> <r> <n>|write <a> <r> <b...>|\r\n"
+                "                rtc [set YYYY-MM-DD HH:MM:SS|sync]|auto [on|off]]\r\n");
     return 1;
 }
 
@@ -385,10 +500,40 @@ int command(tdsh_session_t *session, int argc, char **argv)
 // `i2c` is a name TinyDesk Shell's STANDARDS.md reserves for an upstream
 // command; this one drives the loaded core's PMOD engine, not the BL616's own
 // I2C, so it is named for the socket.
+// ---- the wall clock's hardware (tang_clock.h) ----
+
+extern "C" bool tang_clock_hw_ready(void)
+{
+    // tang_fpga_link.h's rule for a caller that is not the link's owner: a
+    // host pipe or ae350run holds the link for its whole run.
+    return tang_ini_i2c_declared() && tang_fpga_link_open() == 0 && !tang_fpga_pipe_open();
+}
+
+extern "C" bool tang_clock_hw_read(uint8_t reg, uint8_t *buf, unsigned n)
+{
+    // transaction() copies only `n` bytes out of the 8-byte result window;
+    // when it copied all 8, the clock's 1-byte status read overwrote the 7
+    // time bytes beside it on the stack (core-log entry 2).
+    return n >= 1 && n <= 8 && transaction(OP_READ, DS3231, reg, n, nullptr, buf);
+}
+
+extern "C" bool tang_clock_hw_write(uint8_t reg, const uint8_t *buf, unsigned n)
+{
+    return n >= 1 && n <= 8 && transaction(OP_WRITE, DS3231, reg, n, buf, nullptr);
+}
+
+extern "C" uint64_t tang_clock_hw_ms(void)
+{
+    return bflb_mtimer_get_time_ms();
+}
+
 extern "C" int tang_i2c_register(void)
 {
+    if (s_bus == nullptr) {
+        s_bus = xSemaphoreCreateRecursiveMutex();
+    }
     static const tdsh_command_t commands[] = {
-        {"pmodi2c", "pmodi2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc|auto",
+        {"pmodi2c", "pmodi2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc [set|sync]|auto",
          "I2C bus: scan, read, write, RTC", command, 0},
     };
     return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));

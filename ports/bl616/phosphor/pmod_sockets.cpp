@@ -23,10 +23,13 @@ extern "C" {
 #include "tdsh.h"
 #include "tang_fpga_link.h"
 #include "tang_ini.h"
+#include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
 int tang_tangini_register(void);
 void tang_ini_core_loaded(void);
+void tang_ini_core_replacing(void);
+bool tang_ini_i2c_declared(void);
 }
 
 #include "fpga_debug.h"
@@ -55,6 +58,10 @@ const socket_core s_socket_cores[] = {
 
 // Kept off the stack: the parser holds a line and its notes.
 tang_ini_t s_ini;
+
+// True while the loaded core is the desktop core and holds a declaration with
+// an I2C socket, which is when the PMOD RTC can be reached (tang_clock.c).
+bool s_i2c_declared;
 
 bool core_id(uint8_t *id)
 {
@@ -174,6 +181,7 @@ void print_declaration(bool present)
 bool send(const socket_core &core)
 {
     uint32_t back = 0;
+    s_i2c_declared = false;
     if (!write_reg(core.reg, s_ini.word) || !read_reg(core.reg, &back)) {
         tdsh_printf("tang.ini: the core did not take the socket declaration\r\n");
         return false;
@@ -186,6 +194,9 @@ bool send(const socket_core &core)
     }
     tdsh_printf("tang.ini: sockets declared (0x%02lx = 0x%04lx)\r\n",
                 static_cast<unsigned long>(core.reg), static_cast<unsigned long>(s_ini.word));
+    s_i2c_declared = core.id == 0x54 &&
+                     (((s_ini.word >> 4) & 0xfu) == TANG_PMOD_I2C ||
+                      ((s_ini.word >> 8) & 0xfu) == TANG_PMOD_I2C);
     return true;
 }
 
@@ -213,7 +224,9 @@ int cmd_tangini(tdsh_session_t *session, int argc, char **argv)
         return apply ? 1 : 0;
     }
     if (apply) {
-        return send(*core) ? 0 : 1;
+        const bool sent = send(*core);
+        tang_clock_core_changed();
+        return sent ? 0 : 1;
     }
     uint32_t now = 0;
     if (read_reg(core->reg, &now)) {
@@ -237,6 +250,8 @@ const tdsh_command_t s_commands[] = {
 
 void tang_ini_core_loaded(void)
 {
+    s_i2c_declared = false;
+    tang_clock_core_changed();
     bool answered = false;
     uint8_t id = 0;
     uint32_t abi = 0;
@@ -246,6 +261,19 @@ void tang_ini_core_loaded(void)
     }
     print_declaration(parse_file());
     (void)send(*core);
+}
+
+// The core is about to be replaced: its sockets, and any RTC behind them, go
+// with it, whether or not the next load succeeds.
+void tang_ini_core_replacing(void)
+{
+    s_i2c_declared = false;
+    tang_clock_core_changed();
+}
+
+bool tang_ini_i2c_declared(void)
+{
+    return s_i2c_declared;
 }
 
 int tang_tangini_register(void)

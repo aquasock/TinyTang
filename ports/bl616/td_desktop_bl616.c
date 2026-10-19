@@ -19,8 +19,10 @@
 //
 // Three things are deliberately absent for now:
 //
-//   * There is no clock.  The board has no RTC and nothing sets the time, so
-//     time_now() reports "not set" rather than inventing a date.
+//   * The clock is only as good as the RTC behind it.  The board has none of
+//     its own; time_now() is the PMOD I2C RTC's UTC, kept by tang_clock.c,
+//     and reports "not set" rather than invent a date when no RTC has ever
+//     been read.
 //   * The network apps (Network, MQTT, Modbus, OTA) are left out, because they
 //     are built on POSIX sockets and mbedTLS; see td_apps_register_all() below.
 //     Software Update is this port's own, installing an image from the card
@@ -52,6 +54,7 @@
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
 #include "tang_oled.h"
+#include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -161,12 +164,18 @@ static bool settings_save(const void *data, int len)
     return ok;
 }
 
-/* No RTC and nothing here sets the clock, so say so rather than inventing a
- * date that the Files app would then stamp on everything. */
+/* UTC from the PMOD I2C RTC (tang_clock.c); false while no RTC has ever been
+ * read, rather than a date the Files app would then stamp on everything. */
 static bool time_now(int64_t *utc)
 {
-    (void)utc;
-    return false;
+    return tang_clock_now(utc);
+}
+
+/* The Date & time window's manual set (root only): the RTC, and the running
+ * clock with it. */
+static bool time_set(int64_t utc)
+{
+    return tang_clock_set(utc);
 }
 
 static bool get_tz(long *seconds)
@@ -320,6 +329,7 @@ static int desktop_run(void)
     s_info.settings_save = settings_save;
     s_info.fs = td_fs_stdio(TD_DESKTOP_ROOT);
     s_info.time_now = time_now;
+    s_info.time_set = time_set;
     s_info.get_tz = get_tz;
     s_info.set_tz = set_tz;
 

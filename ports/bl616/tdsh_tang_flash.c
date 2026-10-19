@@ -162,6 +162,7 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
  * on this board: the .bin is a bitstream, not anything the BL616 executes. */
 bool fpga_program(const char *fname);
 void tang_ini_core_loaded(void);
+void tang_ini_core_replacing(void);
 
 /* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
 void tang_phosphor_core_replacing(void);
@@ -195,6 +196,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
      * be told, so the playback task never talks to the core that replaces it. */
     tang_phosphor_core_replacing();
     tang_oled_core_replacing();
+    tang_ini_core_replacing();
 
     tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
     const bool ok = fpga_program(real);
