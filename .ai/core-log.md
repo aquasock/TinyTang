@@ -3169,3 +3169,33 @@ A hot-board test of the new `desktop.bin`, booted with the package near the 60 t
 - User Test: PASS
 
 ---
+
+## 96 COMMIT Unreleased 2026-10-18T19:01:40-07:00
+
+#### Coming From:
+
+Unreleased cfb29aa
+
+#### Purpose:
+
+Test the desktop core of record with the OLED on PMOD0 and the I2C RTC on PMOD1, the one socket arrangement the core accepts that had not run on hardware.
+
+#### Outcome:
+
+The user reseated the modules, the OLED on PMOD0 and the Adafruit DS3231 on PMOD1, and rebooted; the card's `/tang.ini` still declared `pmod0 = i2c`, `pmod1 = oledrgb`, so it was moved to `/tang.ini.bak-pmod0-i2c` with the shell's `mv` and a new `/tang.ini` declaring `pmod0 = oledrgb`, `pmod1 = i2c`, neither flipped, was put there with `tools/tinytang_put.py`. `tangini apply` declared word `0x0610` and the core of record, `desktop.24a11e81a46c.bin`, read it back as declared; `pmodi2c scan` found one device at 0x68 and `pmodi2c rtc` read `2026-10-18 18:57:30, running` with status `08`. The user then rebooted and confirmed the OLED on PMOD0, and after the desktop was exited to the shell prompt, which the console guard required before it would send, `tangini` reported `core 0x54 (ABI 1.3) has 0xc0 = 0x0610, as declared` from the boot-time declaration, `pmodi2c scan` again found 0x68, and `pmodi2c rtc` read `19:01:09, running` with status `08` against the host's 19:01:14, so the I2C personality works in either socket beside the OLED. Nothing was built and no repository file outside `.ai/` changed; PMOD-006 and PMOD-007 in `.ai/core-reference.md` were revised in place with the `0x0610` layout. The card is left with `/tang.ini` at `0x0610`, `/tang.ini.bak-pmod0-i2c` holding the `0x0160` declaration and the older `/tang.ini.bak-i2c` beside it. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 144 ids, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 96-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+Entry 95's next steps stand: a hot-board test of the new `desktop.bin`, re-admitting SPINE17 and the dropped bridge pairs one at a time with a board test each, reporting the select-polarity fault to upstream apicula when the user chooses, the false-path constraints for the I2C synchronizers, pull-ups for the Digilent Pmod RTCC, and taking the desktop clock's time from the DS3231. The log holds 96 of its 100 entries, so the archival rollover in `.ai/core.md` comes within four cycles.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
