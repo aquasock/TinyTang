@@ -118,3 +118,44 @@ chipdb and `.bba` are build products; regenerate with the Makefile target.
    profile can be re-recorded and the topology gate updated.
 3. The I2C/RTC bring-up resumes after a clock-clean normal core passes the
    board test.
+
+## Result — the spine select ports (2026-10-18, core-log entry 94)
+
+The bridge-output-to-spine pairing was not the fault.  Decoding the vendor
+validation core (`desktop-i2c-pins-gowin.bin`) and three open-flow cores
+against Gowin's own clock tables, unfiltered by the model, with
+`tools/desktop_open/clock_route_decode.py`:
+
+| core | `clk` (TRPLL0CLK0) path | select spines | board |
+|---|---|---|---|
+| vendor | centre SPINE11 → `TOP3` → SPINE19 / SPINE27 | SPINE19, ports driven from VSS | runs |
+| open seed 26 (ABI 1.2) | SPINE8/10 → `TOP0`/`TOP2` → SPINE16 / SPINE25 | none | runs |
+| open seed 16 | SPINE10 → `TOP2` → SPINE17 / SPINE25 | SPINE17, port unprogrammed | dead |
+| open I2C (entry 91) | SPINE8 → `TOP0` → SPINE18 / SPINE25 | SPINE18/19, ports carry user nets | dead |
+
+SPINE17 to SPINE21 and SPINE23 clock only while the CLK or A ports of the
+logic tiles at rows 27/81, columns 92 to 94 hold a constant
+(`fse_create_spine_select_wires`, nextpnr `enable_spines()`).  The fork's
+table asked for VCC; the `.fse` has no VCC row for a CLK port, so the tie
+routed to a fuseless pip and the port stayed unprogrammed.  The vendor drives
+SPINE19's ports, (27, 94) and (81, 94) CLK0/CLK1, from VSS (`N210 <= VSS` one
+row below, then `N211 -> X02`).  The placer could also put logic in those
+tiles, whose clock then took the port.
+
+Fixes: apicula `04bc3c5` (every select port holds VSS; SPINE19 measured, the
+rest a lead) and nextpnr `8be8657b` (no logic bels in the select tiles).  The
+8-seed sweep of the I2C netlist then put `clk` on SPINE9 → `TOP1` → SPINE18 /
+SPINE25 in every seed, with another clock on SPINE19, every select port routed
+to `$PACKER_GND` and programmed, and no logic in the select tiles; all passed
+setup and hold with the pixel clock on global resources only.  Seed 3
+(`desktop.24a11e81a46c.bin`) answered on the board, read the DS3231, and drove
+HDMI, VGA and the OLED.
+
+Reproduce the decode:
+
+```sh
+PYTHONPATH=/run/media/vash/GIT/apicula-mathieufro:/home/vash/tools/pydeps \
+/home/vash/oss-cad-suite/py3bin/python3 tools/desktop_open/clock_route_decode.py \
+    vendor=VENDOR.fs open=OPEN.fs            # clock pips
+    ... --selects                            # spine select ports
+```

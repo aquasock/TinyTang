@@ -3103,3 +3103,34 @@ Entry 92's next steps stand unchanged: decode the validation core's `clk` route 
 - User Test: PASS
 
 ---
+
+## 94 COMMIT Unreleased 2026-10-18T18:38:45-07:00
+
+#### Coming From:
+
+Unreleased 97cf0db
+
+#### Purpose:
+
+Decode the vendor validation core's clock route against Gowin's own tables to find why open-flow cores whose `clk` took certain centre spines loaded dead, fix the device model and router, and prove an open-flow I2C core on the board.
+
+#### Outcome:
+
+The new `tools/desktop_open/clock_route_decode.py` reads a bitstream's clock pips from the CLOCK_MUX, CLOCK_MUX_TOP and CLOCK_MUX_BOTTOM rows of Gowin IDE 1.9.11.03's `GW5AST-138C.fse` without apicula's filters, and with `--selects` the spine select ports from the GENERAL table; run on the Gowin validation core of entry 92, the working open-flow seed 26, dead seed 16 and entry 91's dead I2C core, it showed that the bridge-output-to-spine pairing entries 89 and 91 had been chasing was not the fault. The vendor's `clk` runs `TRPLL0CLK0` through centre SPINE11 and `CBRIDGEOUT_TOP3` to SPINE19 and SPINE27, seed 26's through `TOP0`/`TOP2` to SPINE16 and SPINE25, and the dead cores' through SPINE17 (seed 16) or SPINE18 and SPINE19 (entry 91); what separates them is the spine select ports that apicula's `fse_create_spine_select_wires` lists for SPINE17 to SPINE21 and SPINE23 and nextpnr's `enable_spines()` ties to a constant. The fork's table, copied unchanged from upstream apicula `7c913a8` and still the same on upstream master, asked for VCC on every port, the `.fse` has no VCC row for a CLK port, so seed 16's tie routed to a fuseless pip and the port stayed unprogrammed, and in entry 91's core the placer had put logic in the select tiles so the ports carried user nets; the vendor drives SPINE19's ports, (27,94) and (81,94) CLK0 and CLK1, from VSS through `N210 <= VSS` one row below and `N211 -> X02`, and nextpnr's own comment at the call site says VSS/GND. With the user's approval of the revised plan, apicula commit `04bc3c5` on `aquasock/apicula` `epic/gw5ast138c` sets every select port to VSS, measured for SPINE19 and a lead for the rest, with `tests/test_spine_select_138c.py` passing, and nextpnr commit `8be8657b` on `aquasock/nextpnr` `epic/gw5ast138c` refuses LUT, DFF, ALU, SSRAM and wide-MUX bels in the select tiles; both were pushed, the chipdb regenerated to SHA-256 `aecb123e44cdec19cb034a4f92210bbe062438b6f81896884e401d727e2ff389`, nextpnr was rebuilt with `~/tools/rebuild-nextpnr.sh`, and the previous build and chipdb were kept as `~/tools/nextpnr-mathieufro.98c31df` and `~/tools/GW5AST-138C.98c31df.msgpack.xz`. SPINE17 stays dropped and the measured-dead bridge pairs stay listed, so this test changed one thing. The 8-seed sweep of the I2C netlist with `ALLOW_UNVERIFIED_CLOCK=1`, the pixel clock's topology having changed from the recorded profile, passed setup and hold in every seed with the pixel clock on global resources only and no SPINE17, and in every seed `clk` took `TRPLL0CLK0` to centre SPINE9, `CBRIDGEOUT_TOP1`, SPINE18 and SPINE25, with another clock on SPINE19; each `pnr.json` routed every select port of a used spine to `$PACKER_GND` and nothing else, each bitstream programmed those ports, and no logic sat in a select tile. Seed 3, `desktop.24a11e81a46c.bin`, was chosen because it exercises SPINE18 and SPINE19 in both halves, with `clk` at 87.68 MHz, the pixel clock at 116.40 MHz and `sys_clk` at 143.88 MHz, and was put on the card as `/root/cores/console138k/desktop-i2c-open-s3.bin`. After the Gowin control `desktop-i2c-pins-gowin.bin` was loaded, read the DS3231 and was confirmed by the user on HDMI and VGA, the seed-3 core was loaded with `tangload`, answered as core 84 with the sockets declared at `0x0160`, `pmodi2c scan` found one device at 0x68 and `pmodi2c rtc` read `2026-10-18 18:35:58, running` with status `08`, and the user accepted HDMI, VGA and the OLED, the first open-flow core whose `clk` runs through a select spine. The card's `desktop.bin` and the build of record, seed 26 against the chipdb pinned in `deps.conf`, are unchanged, and the board was left on the seed-3 core. `docs/clock-tree-inventory.md` records the result and the decode recipe, and `.ai/core-reference.md` gained TOOL-021 with its index line and routing row and a revision note on TOOL-017. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 144 ids, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 94-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+Promote the open-flow I2C core to the card's `desktop.bin` as its own cycle with the user's approval: pin the new apicula and nextpnr commits and the regenerated chipdb's digest in `deps.conf` and TOOL-003, make seed 3 the default in `tools/build_desktop_core_open.sh` and `tools/desktop_open/build.sh`, re-record `tools/desktop_open/clock_profile.json` from it so the topology gate passes without `ALLOW_UNVERIFIED_CLOCK`, rebuild from a cleared directory with nothing overridden and confirm it reproduces `24a11e81a46c`, then install it, power-cycle and have the user confirm the boot, keeping seed 26 beside it for rollback. After that, SPINE17 and the dropped bridge pairs can be re-admitted one at a time, each with a core that uses it and a board test, and the step-2d refusal retired if SPINE17 runs; SPINE20, SPINE21 and SPINE23 still have no board evidence. The select-polarity fault is upstream apicula's as well, which is worth reporting to that project when the user chooses. The false-path constraints for the socket-word crossings into the I2C synchronizers and pull-ups for the Digilent Pmod RTCC remain open.
+
+#### Files Modified:
+
+- docs/clock-tree-inventory.md
+- tools/desktop_open/clock_route_decode.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
