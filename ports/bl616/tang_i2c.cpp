@@ -106,14 +106,18 @@ uint32_t auto_word(uint32_t addr, uint32_t reg, uint32_t len, bool enable)
            (enable ? (1u << 31) : 0u);
 }
 
-bool wait_idle(unsigned prev_seq, uint32_t timeout_ms, status_t *s)
+// A read is done when the sequence number moves (or it was refused); a write
+// or a scan does not move it, so it is done when busy falls.  The core raises
+// busy in the same clock the command register is written and holds it until
+// the result is latched, so the first poll after the command sees it.
+bool wait_idle(unsigned prev_seq, bool want_seq, uint32_t timeout_ms, status_t *s)
 {
     const TickType_t start = xTaskGetTickCount();
     for (;;) {
         if (!get_status(s)) {
             return false;
         }
-        if (!s->busy && (s->seq != prev_seq || s->nack)) {
+        if (!s->busy && (!want_seq || s->seq != prev_seq || s->nack)) {
             return true;
         }
         if ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS >= timeout_ms) {
@@ -190,7 +194,7 @@ bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
         return false;
     }
     status_t after;
-    if (!wait_idle(before.seq, 1000, &after)) {
+    if (!wait_idle(before.seq, op == OP_READ, 1000, &after)) {
         return false;
     }
     if (op == OP_READ && rdata != nullptr) {

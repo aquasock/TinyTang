@@ -18,6 +18,12 @@ mkdir -p "$build"
 source_dir="$(mktemp -d "$build/stage.XXXXXX")"
 mkdir -p "$source_dir/src/desktop"
 cp -r "$root/fpga/desktop/." "$source_dir/src/desktop/"
+# desktop.cst names the PLLs as nextpnr flattens them (pll_27.PLL_inst); Gowin
+# names the same instances with a slash, and refuses the dotted form.
+if (( ! prepare )); then
+    sed -i -E 's/^(INS_LOC "pll_[a-z0-9]+)\.PLL_inst"/\1\/PLL_inst"/' \
+        "$source_dir/src/desktop/desktop.cst"
+fi
 printf '%s\n' "$source_dir" > "$build/source-path.txt"
 (
     cd "$root"

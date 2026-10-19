@@ -1,6 +1,9 @@
 // TinyTang desktop VGA socket driver. SPDX-License-Identifier: GPL-3.0-only
 // Raster timing is 1280x720p60, matching the existing HDMI transmitter.
-module desktop_pmod (
+module desktop_pmod #(
+    // The I2C engine's clock, sys_clk: the board's 50 MHz crystal.
+    parameter integer I2C_CLK_HZ = 50_000_000
+) (
     input logic control_clk, pixel_clk, sys_clk, resetn,
     input logic [10:0] cx,
     input logic [9:0] cy,
@@ -16,8 +19,7 @@ module desktop_pmod (
     output logic socket_ack,
     // Generic I2C register interface.  The command and write data are in the
     // control clock; the engine is on the 50 MHz crystal clock, so the two
-    // sides meet on a command toggle and a result toggle, and the pins cross
-    // into the pixel domain.
+    // sides meet on a command toggle and a result toggle.
     input  logic [31:0] i2c_cmd,
     input  logic        i2c_cmd_toggle,
     input  logic [63:0]  i2c_wdata,
@@ -78,22 +80,26 @@ module desktop_pmod (
     // signal column a pair of pins, so both lanes of a pair carry the same
     // open-drain signal; the `flip` bit then only chooses which pair is SCL
     // and which is SDA.  Driving both lanes of a pair identically also makes
-    // the board's interleaved row mapping irrelevant.  A four-wire cable uses
-    // only the top row (pins 3 and 4), which are lanes 0 and 1.
+    // the board's interleaved row mapping irrelevant.  An I2C Pmod puts SCL on
+    // pin 3 and SDA on pin 4, beside GND on pin 5, which are lanes 2 and 3
+    // (lane n is Digilent pin n+1, as the OLED's CS on lane 0 and SCK on lane
+    // 3 show); the bottom row's pins 9 and 10 are lanes 6 and 7.  SDA is read
+    // back from IO6 (lane 3, pin 4), or from IO4 (lane 2, pin 3) when flipped;
+    // with both rows identical the socket's row swap does not change that.
     wire i2c_on0 = active_word[7:4] == 6;
     wire i2c_on1 = active_word[11:8] == 6;
     wire i2c_enable = i2c_on0 || i2c_on1;
     wire i2c_flip = i2c_on0 ? active_word[12] : active_word[13];
     wire i2c_sda_raw = i2c_on0
-                     ? (i2c_flip ? pmod0_io[2] : pmod0_io[0])
-                     : i2c_on1 ? (i2c_flip ? pmod1_io[2] : pmod1_io[0])
+                     ? (i2c_flip ? pmod0_io[4] : pmod0_io[6])
+                     : i2c_on1 ? (i2c_flip ? pmod1_io[4] : pmod1_io[6])
                      : 1'b1;
     wire i2c_scl_low, i2c_sda_low;
     wire [63:0] i2c_rdata_p;
     wire i2c_busy_p, i2c_done_p, i2c_nack_p, i2c_valid_p, i2c_scan_done_p;
     wire [7:0] i2c_seq_p, i2c_scan_addr_p, i2c_scan_count_p;
 
-    // The command toggle crosses into the pixel domain; its data fields are
+    // The command toggle crosses into the sys_clk domain; its data fields are
     // held stable by desktop_regs, so the engine latches them safely.
     logic [2:0] cmd_sync;
     wire cmd_pulse;
@@ -103,7 +109,7 @@ module desktop_pmod (
     end
     assign cmd_pulse = cmd_sync[1] ^ cmd_sync[2];
 
-    i2c_master #(.CLK_HZ(74_250_000), .I2C_HZ(100_000)) i2c (
+    i2c_master #(.CLK_HZ(I2C_CLK_HZ), .I2C_HZ(100_000)) i2c (
         .clk(sys_clk), .resetn(resetn), .enable(i2c_enable),
         .cmd_op(i2c_cmd[1:0]), .cmd_addr(i2c_cmd[14:8]),
         .cmd_reg(i2c_cmd[23:16]), .cmd_len(i2c_cmd[28:24]),
@@ -129,11 +135,18 @@ module desktop_pmod (
     logic [2:0] res_sync;
     logic [1:0] busy_sync;
 
+    // A command is busy from the control clock it is issued in until its
+    // result is latched here.  The engine's own busy arrives through a
+    // separate synchronizer and can fall a clock before the result toggle
+    // lands, and a scan's done flag would otherwise still be the previous
+    // scan's, so a poller would take the old result as the new one.
     logic i2c_valid_l, i2c_nack_l, i2c_scan_done_l, i2c_busy_s;
     logic [7:0] i2c_seq_l, i2c_scan_addr_l, i2c_scan_count_l;
+    logic cmd_seen, cmd_pending;
     always_ff @(posedge control_clk) begin
         if (!resetn) begin
             res_sync <= 3'b0; busy_sync <= 2'b0; i2c_busy_s <= 1'b0;
+            cmd_seen <= 1'b0; cmd_pending <= 1'b0;
             i2c_valid_l <= 1'b0; i2c_nack_l <= 1'b0;
             i2c_scan_done_l <= 1'b0;
             i2c_seq_l <= 8'd0; i2c_scan_addr_l <= 8'd0;
@@ -142,6 +155,13 @@ module desktop_pmod (
             res_sync <= {res_sync[1:0], res_toggle_p};
             busy_sync <= {busy_sync[0], i2c_busy_p};
             i2c_busy_s <= busy_sync[1];
+            cmd_seen <= i2c_cmd_toggle;
+            if (i2c_cmd_toggle != cmd_seen) begin
+                cmd_pending <= 1'b1;
+                i2c_scan_done_l <= 1'b0;
+            end else if (res_sync[1] ^ res_sync[2]) begin
+                cmd_pending <= 1'b0;
+            end
             if (res_sync[1] ^ res_sync[2]) begin
                 i2c_valid_l <= i2c_valid_p;
                 i2c_nack_l <= i2c_nack_p;
@@ -156,16 +176,17 @@ module desktop_pmod (
     assign i2c_rdata = i2c_rdata_p;
     assign i2c_res_toggle = res_toggle_p;
     assign i2c_status = {i2c_scan_count_l, i2c_scan_addr_l, i2c_seq_l, 4'b0,
-                         i2c_scan_done_l, i2c_nack_l, i2c_busy_s, i2c_valid_l};
+                         i2c_scan_done_l, i2c_nack_l, i2c_busy_s || cmd_pending,
+                         i2c_valid_l};
 
     logic [7:0] i2c_enables;
     always_comb begin
         i2c_enables = 8'b0;
-        // Lanes 0/4 are socket pins 3/9; lanes 1/5 are pins 4/10.
-        i2c_enables[0] = i2c_flip ? i2c_scl_low : i2c_sda_low;
-        i2c_enables[4] = i2c_flip ? i2c_scl_low : i2c_sda_low;
-        i2c_enables[1] = i2c_flip ? i2c_sda_low : i2c_scl_low;
-        i2c_enables[5] = i2c_flip ? i2c_sda_low : i2c_scl_low;
+        // Lanes 2/6 are socket pins 3/9 (SCL); lanes 3/7 are pins 4/10 (SDA).
+        i2c_enables[2] = i2c_flip ? i2c_sda_low : i2c_scl_low;
+        i2c_enables[6] = i2c_flip ? i2c_sda_low : i2c_scl_low;
+        i2c_enables[3] = i2c_flip ? i2c_scl_low : i2c_sda_low;
+        i2c_enables[7] = i2c_flip ? i2c_scl_low : i2c_sda_low;
     end
 
     wire [7:0] oled_lanes, oled_enables;

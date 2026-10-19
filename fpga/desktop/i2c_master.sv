@@ -7,16 +7,16 @@
 // / STOP on the two open-drain pins.  A bus scan is the same machine with an
 // address probe and no data.
 //
-// The engine is clocked by the socket's pixel clock, beside the pins it drives.
-// The register file's side reaches it through a command toggle and a result
+// The engine is clocked by the board's 50 MHz crystal clock (sys_clk).  The
+// register file's side reaches it through a command toggle and a result
 // toggle, so the 21.49 MHz control domain never shares a clock with it.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 
 module i2c_master #(
-    // 74.25 MHz on the desktop core; HALF is one half-period of SCL, about
-    // 100.4 kHz here.
-    parameter integer CLK_HZ = 74_250_000,
+    // 50 MHz on the desktop core; HALF is one half-period of SCL, 100 kHz
+    // there.
+    parameter integer CLK_HZ = 50_000_000,
     parameter integer I2C_HZ = 100_000
 ) (
     input  logic clk,

@@ -3038,3 +3038,37 @@ None.
 - User Test: FAIL
 
 ---
+
+## 92 COMMIT Unreleased 2026-10-18T18:05:21-07:00
+
+#### Coming From:
+
+Unreleased 176283d
+
+#### Purpose:
+
+Find why the desktop core's I2C bus scanned 112 devices and read zeros, fix it in the RTL and firmware, and prove a real RTC read and write on the board with a vendor-built validation core while the open-flow clock route remains unproven.
+
+#### Outcome:
+
+The fault entry 91 left unlocalised was in the RTL, not in the modules or the wiring: `fpga/desktop/desktop_pmod.sv` drove SDA on lanes 0/4 and SCL on lanes 1/5, which by the lane mapping the OLED proves on hardware (CS on lane 0 is Digilent pin 1, SCK on lane 3 is pin 4) are socket pins 1/7 and 2/8, while its own comment and every I2C module use pins 3 and 4; the engine therefore clocked pins nothing was attached to and read SDA from an undriven pin 1 with `PULL_MODE=NONE`, which reads low and gives exactly 112 acknowledges for the 0x08 to 0x77 scan and all-zero reads. SCL now goes on lanes 2/6 (pins 3/9) and SDA on lanes 3/7 (pins 4/10), with SDA read from pin 4 and the flip bit still swapping the two. The engine's clock parameter was 74.25 MHz while it runs on the 50 MHz `sys_clk`, so the bus ran near 67 kHz; it is now `I2C_CLK_HZ`, defaulting to 50 MHz, giving 100 kHz, and `i2c_master.sv`'s comments name that clock. Writing a pin check exposed a second defect in the same module: the status word kept the previous scan's `scan_done` and results until the new result was latched, and the engine's busy, crossing on its own synchronizer, could fall a control clock before that latch, so a second `i2c scan` would have reported the first one's result; a command now sets busy and clears `scan_done` in the control clock it is written in, and busy holds until the result is latched. `tools/tests/sim/tb_desktop_pmod.sv` gained a pulled-up bus on pins 3/4/9/10, pin 1 held low, a device model at 0x68, checks that one device is found, that the flipped bus finds none, that the status is busy the clock after the command and that no pin outside the bus is driven; it failed on the old pin map and, separately, on the old status logic, and `tools/tests/test_desktop_core.sh` passes in full. The board test itself then found a third defect, in `ports/bl616/tang_i2c.cpp`: `wait_idle` waited for the read sequence number to move, which only reads do, so every write timed out after a second and was reported as failed even though the DS3231 read back the written time; a write or scan now completes when busy falls. `tools/build_desktop_core.sh` now renames the CST's dotted PLL instance names to Gowin's slashed form while staging, the edit entry 91 had made by hand; an uncommitted `PULL_MODE=UP` experiment found in entry 91's staging directory was not carried. No open-flow core of this netlist runs, so a Gowin EDA 1.9.11.03 build at placement 4 served as the validation core: `desktop-i2c-pins-gowin.bin`, 4,481,940 bytes, SHA-256 `e72b8898d5931c1d33c0f4b67d5a9bef6ea0a692d24d9f0053a103abd142b18c`, whose timing gate failed at a total of -16.605 ns over 15 endpoints, the worst -1.263 ns, twelve inside the OLED renderer's cell-RAM-to-pixel path on the pixel clock and three unconstrained crossings from the socket word into the I2C engine's synchronizers, none on the engine's own clock, so it was copied out of the build by hand as entry 91's was and is a diagnostic only. It was put on the card as `/root/cores/console138k/desktop-i2c-pins-gowin.bin` and loaded with `tangload`, answering core 84 with the sockets declared at `0x0160`. With the Digilent Pmod RTCC seated the scan still read 112 devices, because that module carries no I2C pull-ups (PMOD-007, from an online source this reference lacked, which the user was told). With the user's Adafruit DS3231 on a STEMMA QT cable to PMOD0, `i2c scan` found one device at 0x68 and `i2c rtc` read a running counter from its power-on default. The firmware with the write fix was built as `176283d-dirty.2e351e2`, 628,208 bytes, SHA-256 `64bde04d10273356196ea94569c2167cfb91b3f252eb5373c331e071957bccf5`, with three pre-existing unused-variable warnings in `tang_i2c.cpp` and none from this change, installed with `tools/tinytang_flash.py --yes`, and confirmed by `platform` after the user's power cycle. On it, after reloading the validation core, `i2c write 68 0f 08` reported `wrote 1 byte` and cleared OSF, and `i2c rtc` read `2026-10-18 18:04:13, day 7, running` with status `08` against the host's 18:04:17, the time written before the power cycle having been kept by the module. The user set the pass condition before the test, that the write test passing would close the cycle for logging, commit and push; the board steps were run by the agent on the user's go. The card's `desktop.bin` is unchanged and `boot.tdsh` still loads it at power-up, so the validation core must be loaded by hand. `.ai/core-reference.md` gained PMOD-007 with its index line and routing row, and PMOD-006 was revised for the i2c personality and the `0x0000004f` bitmap entry 87 added. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 143 ids, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the 92-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The RTL and firmware of the I2C bus are now proven on hardware, so what keeps the RTC out of the core of record is the open-flow clock route alone, which is entry 91's open item: decode the `clk` route through the central clock bridge in the validation core's bitstream with the apicula fork's `gowin_unpack`, which gives the vendor's own bridge-output-to-spine pairing for this netlist, correct `fse_clock_pips_138` in the fork from it, regenerate the chipdb and nextpnr, and require every seed of the 8-seed sweep to avoid all unproven pairs before an open-flow core is packed and board-tested; only a core that answers and passes HDMI, VGA, the OLED and `i2c rtc` replaces `desktop.bin`. Two smaller items stay open: the shell command `i2c` uses a name TinyDesk Shell's STANDARDS.md reserves (TDSH-005), and whether to rename it to a prefixed name is the user's decision; and the vendor timing report's crossings from the socket word into the I2C synchronizers want false-path constraints, while the OLED renderer's -1.263 ns pixel path is a vendor-build limit of the existing renderer. The Digilent Pmod RTCC needs 2.2 kOhm pull-ups to 3.3 V on SCL and SDA before it can be used, or `PULL_MODE=UP` on the PMOD pins as a weaker alternative.
+
+#### Files Modified:
+
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/i2c_master.sv
+- ports/bl616/tang_i2c.cpp
+- tools/build_desktop_core.sh
+- tools/tests/sim/tb_desktop_pmod.sv
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
