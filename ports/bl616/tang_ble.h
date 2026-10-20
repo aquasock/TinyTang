@@ -78,7 +78,7 @@ typedef struct {
     int      enable_error;          /* bt_enable's error while FAILED */
     uint32_t stack_heap;            /* heap the stack took at start, while UP */
     const char *pairings;           /* the card file's state, as `ble` words it */
-    tang_ble_slot_info_t slot[TANG_BOND_SLOTS];   /* 0 keyboard, 1 mouse */
+    tang_ble_slot_info_t slot[TANG_BOND_SLOTS];   /* 0 keyboard, 1 mouse, 2 combo */
     bool     busy;                  /* a command or a job holds Bluetooth */
     tang_ble_job_t job;             /* the window's latest job */
     bool     job_running;

@@ -67,11 +67,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   and `.tdsh` scripts still open in the Editor and run from their menu. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS. In their place, Settings'
   **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
-  and the keyboard and mouse slots with their connection state and latest
-  event. Each slot pairs from an 8-second scan (its own kind listed first),
-  turns reconnecting off and on, and forgets its pairing, asking first before
-  letting go of a connected device; the work runs on the Bluetooth task, so the
-  desktop never waits, and a `blekbd`, `blemouse` or `blescan` started while the
+  and the keyboard, mouse and combo slots with their connection state and
+  latest event. Each slot pairs from an 8-second scan (its own kind listed
+  first), turns reconnecting off and on, and forgets its pairing, asking first
+  before letting go of a connected device; the work runs on the Bluetooth
+  task, so the desktop never waits, and a `blekbd`, `blemouse`, `blecombo` or
+  `blescan` started while the
   window is busy is refused rather than queued. A scan that would start the
   radio needs 32 KB of heap free. The button is TinyTang's, from the carried patch
   `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
@@ -260,9 +261,22 @@ Building and flashing are under *Quick start* and *Building requirements*.
   desktop's pointer. It has the same `off`, `on`, `forget`, `watch`, address
   and status forms. Proven with a Logitech M750. Pair one device at a time: a
   second is refused until the first is ready.
+- **`blecombo pair [name]`** pairs one device that is both, such as a
+  hand-held keyboard with a touchpad, on a third slot and its own connection.
+  It subscribes to both HID boot inputs and gives whatever the device sends to
+  whichever role fits: keys type as `blekbd`'s do, and a touchpad or stick that
+  arrives as a boot mouse moves the pointer as `blemouse`'s does. A dedicated
+  slot that is connected keeps its role, so a keyboard at the desk keeps typing
+  while a combo is also up; the combo fills what is left, and a role that
+  changes hands is released first so no key or button sticks. It has the same
+  `off`, `on`, `forget`, `watch`, address and status forms. Proven with a Rii
+  K06 in its BLE mode: it accepts boot protocol but sends the boot keyboard
+  and mouse reports on its report characteristics rather than its boot inputs,
+  so the two boot formats are routed wherever they arrive. A device that
+  refuses boot protocol is paired and logged, but its reports are not decoded.
 - **`ble`** reports the radio, the heap (free now, the largest free block, any
   allocations refused since boot, and what the stack took when it started), the
-  pairings file and both devices.
+  pairings file and every slot.
 - **`crash`** shows how the previous run ended if it crashed or hung,
   `crash tasks` lists every task's free stack, and
   `crash test trap | spin | hang` causes each kind on purpose. A hardware
@@ -483,9 +497,10 @@ for the register interface and regression commands.
     exception handler and controller exit, and `crash`.
   - `tang_heap.c` — the allocator's entry points, wrapped to return NULL
     instead of freezing, and the heap readout.
-  - `tang_ble.c` — Bluetooth LE: `blescan`, `ble`, and `blekbd` and
-    `blemouse`, the HID-over-GATT client with one keyboard slot and one mouse
-    slot, which saves pairings to the card and reconnects them through the
+  - `tang_ble.c` — Bluetooth LE: `blescan`, `ble`, and `blekbd`, `blemouse`
+    and `blecombo`, the HID-over-GATT client with a slot for each -- one
+    keyboard, one mouse, and one device that is both -- which saves pairings to
+    the card and reconnects them through the
     controller's whitelist; `tang_ble_bonds.c` is the pairing file's format.
     `tang_osd_desk.c` types the keyboard's boot report like the wired link's,
     with left-alt pointer mode applied by `tang_key_pointer()`, and hands the

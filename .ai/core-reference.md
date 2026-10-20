@@ -186,6 +186,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What does the Xbox Wireless Controller expose, and how is it put in pairing mode? | BLE | BLE-015 |
 | What is in the Xbox controller's input report? | BLE | BLE-016 |
 | Why does the Xbox controller not work here, and what has been ruled out? | BLE | BLE-017 |
+| How is a combo keyboard and touchpad used on the board? | BLE | BLE-019, BLE-007 |
 | Why does a Bluetooth connection assert and reset the board? | BLE | BLE-018 |
 | What is the frame format a loaded core expects? | PROT | PROT-001 |
 | Which commands does a loaded core understand? | PROT | PROT-002 |
@@ -390,7 +391,7 @@ BLE-003: "Against the K950, bt_gatt_discover by service UUID (0x1812) and descri
 BLE-004: "With BFLB_BLE_PATCH_NOTIFY_WRITE_CCC_RSP on, the SDK calls a subscription's notify callback with data NULL when the CCC write enabling it succeeds, the same signal gatt.h documents as the subscription being removed; a NULL report there is not an unsubscribe"
 BLE-005: "Issuing many ATT requests at once from host callbacks blocks the host on ATT TX buffer allocation for ever; issue one request at a time, each from the previous one's completion (hid_setup_next() in tang_ble.c)"
 BLE-006: "Logitech K950 in Bluetooth mode is HID over GATT on BLE: a random address that changes each time it enters pairing mode, Just Works pairing, boot protocol supported (Boot Keyboard Input value handle 0x23, CCC 0x24, Protocol Mode 0x4D) and the standard 8-byte boot report"
-BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device such as the Rii K06 (Bluetooth 3.0) cannot connect"
+BLE-007: "Only Bluetooth LE HID over GATT devices can be used: the SDK's Classic profiles are A2DP, AVRCP, HFP hands-free, RFCOMM and SDP, with no HID, so a Classic-only device cannot connect; the Rii K06, recorded here as Classic-only, also has an LE mode that pairs and reports (BLE-019)"
 BLE-008: "A BLE keyboard notifies only when its key state changes, with no heartbeat, so it counts as live while connected and is zeroed on disconnect; its reports bypass the core, so left-alt pointer mode is applied in firmware by tang_key_pointer()"
 BLE-009: "Logitech M750 over BLE: random address that increases by one per pairing, Just Works, Boot Mouse Input at value handle 0x23 (CCC 0x24), Protocol Mode 0x35; its boot report is 4 bytes with the wheel in byte 3, and its 7-byte report-protocol report is 16-bit buttons, 12-bit X and Y packed in 3 bytes, wheel and pan"
 BLE-010: "The SDK host keeps a bonded peer's GATT subscriptions on disconnect unless BT_GATT_SUBSCRIBE_FLAG_VOLATILE is set, and re-sends them on reconnect; reusing those params structs for a new subscription rewrites a node still in its list and returns -EALREADY"
@@ -401,6 +402,7 @@ BLE-015: "Xbox Wireless Controller: BLE HID only, public address, PnP 045E:0B13;
 BLE-016: "Xbox Wireless Controller input Report ID 1 is 16 bytes over GATT: four 16-bit axes 0-65535, Brake and Accelerator 10-bit 0-1023 padded to 16, a 4-bit hat padded to a byte, fifteen buttons padded to 16 and one Consumer bit; its 283-byte Report Map must be read with offsets, 22 bytes at a time"
 BLE-017: "Xbox Wireless Controller on this host: closed as unsupported on this board. No report has ever arrived; with this board's host traffic matching BlueZ's packet for packet it still stops answering as pairing completes, and the newer controller library in Bouffalo SDK 2.3.36 behaves identically, so the fault is the BL616's binary controller library rather than the host, the SDK version or the radio path"
 BLE-018: "2.3.36's bt_conn_unref ends with BT_ASSERT(old > 0) where the fork was only atomic_dec, and bt_conn_create_le() returns a caller reference only for a newly created connection; releasing one that was not taken asserts in recv_thread and resets the board"
+BLE-019: "The Rii K06 over LE exposes boot keyboard and boot mouse inputs that never notify; its keyboard boot report arrives on report characteristic 0x001E and its touchpad's on 0x002C, so the combo slot routes boot formats by length: 8 bytes keyboard, 3 or 4 mouse"
 TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Upstream Bouffalo SDK 2.3.36 (8a3df34c), the fork 7f44f9e kept for rollback; Xuantie V2.6.1 GCC 10.2.0 from Bouffalo's toolchain release archive (its old git repository was rewritten 2026-10-12), oss-cad-suite 20261008 and xPack GCC 15.2.0-1, all three pinned by archive digest in deps.conf; desktop.bin from yosys 0.69+260, nextpnr at 8be8657b and apicula at 04bc3c5, at the script's default seed 3; Gowin EDA 1.9.11.03 for the NES and menu cores"
@@ -1974,13 +1976,14 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   title: "Only Bluetooth LE HID devices can be used; Classic HID has no host in the SDK"
   status: SOURCED
   verified_date: 2026-10-05
-  statement: "The SDK's Bluetooth Classic support is a BR/EDR controller library, libbtblecontroller_bl616_ble1m0s1sbredr1, and the btprofile library, whose headers are a2dp, a2dp-codec, avdtp, avctp, avrcp, hfp_hf, rfcomm and sdp. There is no HID profile, host or device. The Rii K06 (Rii Mini Bluetooth Keyboard with IR learning) is listed as Bluetooth 3.0, which is Classic only."
-  consequence: "The board can use keyboards, mice and controllers that implement HID over GATT on Bluetooth LE, and nothing that speaks only Classic Bluetooth HID; the K06 cannot be used, and the same applies to any other Classic-only device. A Classic HID host would have to be written on L2CAP over the BR/EDR library, and that library has no central role and is a separate build choice from the one this firmware needs (BLE-002)."
+  statement: "The SDK's Bluetooth Classic support is a BR/EDR controller library, libbtblecontroller_bl616_ble1m0s1sbredr1, and the btprofile library, whose headers are a2dp, a2dp-codec, avdtp, avctp, avrcp, hfp_hf, rfcomm and sdp. There is no HID profile, host or device. The Rii K06 was recorded here as Bluetooth 3.0 and therefore Classic only, on the strength of its product listing; the unit used on this board also advertises HID over GATT on Bluetooth LE, pairs and reports (BLE-019)."
+  consequence: "The board can use keyboards, mice and controllers that implement HID over GATT on Bluetooth LE, and nothing that speaks only Classic Bluetooth HID. A Classic HID host would have to be written on L2CAP over the BR/EDR library, and that library has no central role and is a separate build choice from the one this firmware needs (BLE-002). What decides usability is whether the device advertises over LE, not its product class or its listing: a device sold as Classic can still have an LE mode, and the K06 did."
   sources:
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/btprofile/include/bluetooth: the profile headers listed"
     - "Bouffalo SDK 7f44f9e, components/wireless/bluetooth/ble_common.cmake: ble1m0s1sbredr1 with CONFIG_BT_BREDR 1 and CONFIG_BT_CENTRAL 0"
-    - "Amazon product listing for the Rii K06 supplied by the user as a PDF, 2026-10-05"
-  verification: "The SDK tree was read on 2026-10-05. No Classic device has been tried on this board."
+    - "Amazon product listing for the Rii K06 supplied by the user as a PDF, 2026-10-05: the Bluetooth 3.0 claim this record took as Classic-only"
+    - "This board, 2026-10-20: the same K06 advertising over LE and pairing as `blecombo` (BLE-019, core-log entry 5)"
+  verification: "The SDK tree was read on 2026-10-05. No Classic device has been tried on this board. Revised 2026-10-20 (core-log entry 5): the K06 example was wrong -- the unit on this board advertises and pairs over LE with HID over GATT -- while the finding about the SDK's Classic profiles stands."
 
 - record_id: BLE-008
   kind: EXTERNAL
@@ -2121,6 +2124,19 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "nand2mario/bouffalo_sdk 7f44f9e, components/wireless/bluetooth/blestack/src/host/conn.c: bt_conn_unref() with no assert"
     - "core-log entries 28 and 30"
   verification: "Established on the board on 2026-10-11: the crash record's assert was resolved against the ELF to hci_disconn_complete's final bt_conn_unref, and a link-time wrap of bt_conn_ref and bt_conn_unref that read conn->ref (offset 72, from bt_conn_unref's own disassembly) showed two references and three releases; removing this port's two releases closed it, and two pairing attempts then ran the full churn with no reset."
+
+- record_id: BLE-019
+  kind: EXTERNAL
+  topic_id: BLE
+  title: "The Rii K06 over Bluetooth LE: its HID layout, and boot reports on report characteristics"
+  status: VERIFIED
+  verified_date: 2026-10-20
+  statement: "The Rii K06 in its LE mode advertises as \"K06 BLE Keyboard\" with the keyboard appearance (0x03C1) at a random address, and exposes the HID service over handles 0x0011-0x0034: Protocol Mode 0x2A4E at value 0x0013, Boot Keyboard Input 0x2A22 at 0x0015 (CCC 0x0016), Boot Keyboard Output 0x2A32 at 0x0018, Report Input 0x2A4D at 0x001A, 0x001E, 0x0022, 0x0025 and 0x002C, Boot Mouse Input 0x2A33 at 0x0029 (CCC 0x002A), Report Map 0x2A4B at 0x0030, HID Information 0x2A4A at 0x0032 and HID Control Point 0x2A4C at 0x0034. Its report map declares report ID 1 a keyboard (modifier byte, reserved byte and six key bytes, 8 bytes), ID 2 a consumer control (16-bit usage), ID 6 a system control (three buttons plus padding, 1 byte) and ID 3 a mouse (three buttons plus padding, X, Y and wheel, 4 bytes). It accepts a write of 0 to Protocol Mode and reads back as boot protocol, but no report arrives on either boot input: the keyboard's boot report arrives on the report characteristic at 0x001E and the touchpad's on the one at 0x002C, each without a report-ID prefix."
+  consequence: "A combo slot cannot rely on the boot input handles, because this device puts the boot formats on report characteristics. Boot protocol defines exactly two report formats and no others, so an 8-byte input is the keyboard boot report and a 3- or 4-byte input is the mouse boot report wherever in the HID service it arrives, and hid_notify() routes the combo slot by that rule (core-log entry 5). The consumer and system reports (2 and 1 bytes) are not decoded."
+  sources:
+    - "This board, 2026-10-20: `blecombo pair` and two `blecombo watch` runs against the unit, logging the characteristic table, every Report Map chunk and the notifications themselves"
+    - "core-log entry 5"
+  verification: "Observed on the hardware on 2026-10-20 with the keyboard and touchpad both in use: 60 eight-byte keyboard reports on 0x001E and 188 four-byte mouse reports on 0x002C in one 18 s watch, and none on the subscribed boot inputs 0x0015 and 0x0029. The user then accepted keys at the console, the desktop pointer and its buttons, the console's wheel-and-click gesture, and typing into a desktop window."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

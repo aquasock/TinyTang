@@ -26,12 +26,12 @@
 #include "tang_heap.h"
 
 #define WIN_W        72
-#define WIN_H        31
+#define WIN_H        34
 #define TICK_MS      250
 #define HEAP_TICKS   4      /* the heap walk once a second */
 #define COL          11     /* where values start, after the headings */
 #define SLOT_Y(i)    (5 + (i) * 5)
-#define SCAN_Y       16
+#define SCAN_Y       20
 #define LIST_ROWS    8
 
 static td_window_t *s_win;
@@ -58,10 +58,10 @@ static enum { ACT_NONE, ACT_OFF, ACT_FORGET, ACT_PAIR } s_act;
 static int s_act_slot;
 static int s_act_device;
 
-static const char *const s_slot_names[TANG_BOND_SLOTS] = {"Keyboard", "Mouse"};
-static const char *const s_slot_lower[TANG_BOND_SLOTS] = {"keyboard", "mouse"};
+static const char *const s_slot_names[TANG_BOND_SLOTS] = {"Keyboard", "Mouse", "Combo"};
+static const char *const s_slot_lower[TANG_BOND_SLOTS] = {"keyboard", "mouse", "combo"};
 static const tang_ble_kind_t s_slot_kind[TANG_BOND_SLOTS] = {
-    TANG_BLE_KIND_KEYBOARD, TANG_BLE_KIND_MOUSE,
+    TANG_BLE_KIND_KEYBOARD, TANG_BLE_KIND_MOUSE, TANG_BLE_KIND_HID,
 };
 
 static void note(const char *text)

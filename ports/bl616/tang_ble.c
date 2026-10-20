@@ -606,8 +606,9 @@ static const char *const s_state_names[] = {
 };
 
 typedef struct {
-    const char *cmd;              /* "blekbd" or "blemouse": the log prefix */
+    const char *cmd;              /* "blekbd", "blemouse" or "blecombo": the log prefix */
     uint16_t boot_uuid;           /* Boot Keyboard / Boot Mouse Input */
+    bool combo;                   /* one device carrying both roles: both boot inputs */
     const char *ready_hint;
     uint16_t appearance;          /* what `pair` looks for */
 
@@ -641,7 +642,8 @@ typedef struct {
     bool vendor_walked;
     hid_chrc_t chrcs[HID_MAX_CHRCS];
     unsigned nchrcs;
-    uint16_t boot_value_handle;
+    uint16_t kbd_value_handle;    /* where a keyboard report arrives, 0 if none */
+    uint16_t mouse_value_handle;  /* where a mouse report arrives, 0 if none */
 
     struct bt_gatt_discover_params disc_primary;
     struct bt_gatt_discover_params disc_chrc;
@@ -668,7 +670,7 @@ typedef struct {
     const void *setup_pending;
 } hid_dev_t;
 
-enum { HID_KBD, HID_MOUSE, HID_SLOTS };
+enum { HID_KBD, HID_MOUSE, HID_COMBO, HID_SLOTS };
 
 static hid_dev_t s_hid[HID_SLOTS] = {
     [HID_KBD] = { .cmd = "blekbd", .boot_uuid = 0x2A22,
@@ -677,6 +679,14 @@ static hid_dev_t s_hid[HID_SLOTS] = {
     [HID_MOUSE] = { .cmd = "blemouse", .boot_uuid = 0x2A33,
                     .ready_hint = "move the mouse",
                     .appearance = BLE_APPEARANCE_MOUSE },
+    /* One device that is both: a keyboard with a touchpad, a media remote.
+     * It is one connection carrying two roles, which is why it cannot use
+     * either of the slots above -- those are one role each, one connection
+     * each.  Both roles are read from it, and a dedicated slot that is
+     * connected keeps its role: this one fills what is left. */
+    [HID_COMBO] = { .cmd = "blecombo", .boot_uuid = 0x2A22, .combo = true,
+                    .ready_hint = "type or move the touchpad",
+                    .appearance = BLE_APPEARANCE_KEYBOARD },
 };
 
 /* The pairings, one per slot, as kept in /sd/root/ble/bonds.bin.  Written by the
@@ -706,11 +716,12 @@ static void ble_arm_later(const hid_dev_t *d)
     ble_signal(BLE_EV_ARM);
 }
 
-/* The keyboard's current boot report, and the mouse's movement and wheel
- * since the desk layer last asked, with its buttons now.  Written by the
- * notify callback, read by tang_ble_keyboard() and tang_ble_mouse(). */
-static uint8_t s_kbd_report[8];
-static tang_mouse_t s_mouse;
+/* Each slot's keyboard report and mouse state, written by the notify
+ * callback and read by tang_ble_keyboard() and tang_ble_mouse().  Per slot,
+ * because a combo slot carries both roles on one connection while the
+ * dedicated slots carry one each. */
+static uint8_t s_kbd_report[HID_SLOTS][8];
+static tang_mouse_t s_mouse[HID_SLOTS];
 
 /* Each slot's latest line, without the command's name, for the window. */
 static char s_slot_msg[HID_SLOTS][HID_LOG_LEN];
@@ -767,12 +778,10 @@ static void hid_mtu_changed(struct bt_conn *conn, int mtu)
 
 static void hid_clear_input(const hid_dev_t *d)
 {
+    const int i = hid_slot(d);
     taskENTER_CRITICAL();
-    if (d == &s_hid[HID_KBD]) {
-        memset(s_kbd_report, 0, sizeof(s_kbd_report));
-    } else {
-        memset(&s_mouse, 0, sizeof(s_mouse));
-    }
+    memset(s_kbd_report[i], 0, sizeof(s_kbd_report[i]));
+    memset(&s_mouse[i], 0, sizeof(s_mouse[i]));
     taskEXIT_CRITICAL();
 }
 
@@ -862,19 +871,35 @@ static u8_t hid_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *pa
     }
 
     const uint8_t *p = data;
+    const int slot = hid_slot(d);
     d->reports++;
-    if (params->value_handle == d->boot_value_handle && d == &s_hid[HID_KBD] &&
-        length >= 8) {
+
+    /* Where a role's report can arrive.  The boot input's own handle is the
+     * spec's place for it.  A combo slot also accepts the boot *formats* on
+     * its other inputs, because boot protocol defines exactly two report
+     * shapes -- the 8-byte keyboard report and the 3- or 4-byte mouse report
+     * -- and a boot device may not send anything else: a combo that took boot
+     * protocol but puts those reports on a report characteristic instead of
+     * its boot input (the Rii K06 does) is then routed by format, which is
+     * the protocol, not this device's quirk.  Only the combo slot: the
+     * dedicated slots carry one role each and have their boot input. */
+    const bool kbd_report =
+        (d->kbd_value_handle && params->value_handle == d->kbd_value_handle) ||
+        (d->combo && d->boot && length == 8);
+    const bool mouse_report =
+        (d->mouse_value_handle && params->value_handle == d->mouse_value_handle) ||
+        (d->combo && d->boot && (length == 3 || length == 4));
+
+    if (kbd_report && length >= 8) {
         taskENTER_CRITICAL();
-        memcpy(s_kbd_report, p, 8);
+        memcpy(s_kbd_report[slot], p, 8);
         taskEXIT_CRITICAL();
         if (d->watching) {
             kbd_log_boot_report(d, p);
         }
-    } else if (params->value_handle == d->boot_value_handle && d == &s_hid[HID_MOUSE] &&
-               length >= 3) {
+    } else if (mouse_report && length >= 3) {
         taskENTER_CRITICAL();
-        tang_mouse_boot_add(&s_mouse, p, length);
+        tang_mouse_boot_add(&s_mouse[slot], p, length);
         taskEXIT_CRITICAL();
         if (d->watching) {
             mouse_log_boot_report(d, p, length);
@@ -1060,7 +1085,10 @@ static void hid_add_sub(hid_dev_t *d, const hid_chrc_t *c)
  * CCC are then read back to show what the device accepted. */
 static void hid_setup_reports(hid_dev_t *d)
 {
-    hid_chrc_t *boot = hid_find_chrc(d, d->boot_uuid);
+    hid_chrc_t *kbd = hid_find_chrc(d, d->boot_uuid);
+    /* A combo device is one connection carrying both roles, so its second
+     * boot input is looked up beside the first. */
+    hid_chrc_t *mouse = d->combo ? hid_find_chrc(d, 0x2A33) : NULL;
     hid_chrc_t *mode = hid_find_chrc(d, 0x2A4E);
 
     for (unsigned i = 0; i < d->nchrcs; i++) {
@@ -1072,7 +1100,9 @@ static void hid_setup_reports(hid_dev_t *d)
     d->nsubs = 0;
     d->nreads = 0;
     d->boot = false;
-    if (boot && boot->ccc_handle && mode) {
+    d->kbd_value_handle = 0;
+    d->mouse_value_handle = 0;
+    if (mode && ((kbd && kbd->ccc_handle) || (mouse && mouse->ccc_handle))) {
         static const uint8_t boot_protocol = 0;
         int err = bt_gatt_write_without_response(d->conn, mode->value_handle,
                                                  &boot_protocol, 1, false);
@@ -1080,13 +1110,19 @@ static void hid_setup_reports(hid_dev_t *d)
             hid_log(d, "protocol mode write failed (%d)", err);
         } else {
             d->boot = true;
+            if (kbd && kbd->ccc_handle) {
+                d->kbd_value_handle = kbd->value_handle;
+            }
+            if (mouse && mouse->ccc_handle) {
+                d->mouse_value_handle = mouse->value_handle;
+            }
         }
-        d->boot_value_handle = boot->value_handle;
     }
     for (unsigned i = 0; i < d->nchrcs; i++) {
         const hid_chrc_t *c = &d->chrcs[i];
-        if ((c->uuid == d->boot_uuid || c->uuid == 0x2A4D) &&
-            (c->props & BT_GATT_CHRC_NOTIFY) && c->ccc_handle) {
+        const bool role = c->uuid == d->boot_uuid || c->uuid == 0x2A4D ||
+                          (d->combo && c->uuid == 0x2A33);
+        if (role && (c->props & BT_GATT_CHRC_NOTIFY) && c->ccc_handle) {
             hid_add_sub(d, c);
         }
     }
@@ -1487,7 +1523,8 @@ static void hid_disconnected(struct bt_conn *conn, u8_t reason)
     /* Whatever was held is released: the desk layer sees nothing from this
      * slot from here on, and stale input must not come back on a reconnect. */
     hid_clear_input(d);
-    d->boot_value_handle = 0;
+    d->kbd_value_handle = 0;
+    d->mouse_value_handle = 0;
     d->nsubs = 0;
     d->setup_active = false;
     d->setup_pending = NULL;
@@ -2006,36 +2043,71 @@ static void hid_watch(hid_dev_t *d, int secs)
                 (unsigned long)(d->reports - start_reports));
 }
 
+/* Which slot supplies a role now.  A dedicated slot wins: a device paired
+ * for one job beats a device that does both, so a keyboard at the desk keeps
+ * typing while a combo lies on the sofa.  The combo fills what is left. */
+static int kbd_source(void)
+{
+    if (s_hid[HID_KBD].state == HID_READY) {
+        return HID_KBD;
+    }
+    if (s_hid[HID_COMBO].state == HID_READY) {
+        return HID_COMBO;
+    }
+    return -1;
+}
+
+static int mouse_source(void)
+{
+    if (s_hid[HID_MOUSE].state == HID_READY) {
+        return HID_MOUSE;
+    }
+    if (s_hid[HID_COMBO].state == HID_READY) {
+        return HID_COMBO;
+    }
+    return -1;
+}
+
 bool tang_ble_keyboard(uint8_t out[8])
 {
+    static int prev = -1;
     taskENTER_CRITICAL();
-    const bool live = s_hid[HID_KBD].state == HID_READY;
-    if (live) {
-        memcpy(out, s_kbd_report, 8);
-    } else {
-        memset(out, 0, 8);
+    const int src = kbd_source();
+    memset(out, 0, 8);
+    if (src >= 0 && src == prev) {
+        memcpy(out, s_kbd_report[src], 8);
     }
+    /* The poll where the source changes -- or goes away -- is one neutral
+     * report, so a key held on the device being left is released instead of
+     * carried into the new one.  The new source reports from its own state
+     * on the next poll. */
+    prev = src;
     taskEXIT_CRITICAL();
-    return live;
+    return src >= 0;
 }
 
 bool tang_ble_mouse(tang_mouse_t *out)
 {
+    static int prev = -1;
     taskENTER_CRITICAL();
-    const bool live = s_hid[HID_MOUSE].state == HID_READY;
-    if (live) {
-        *out = s_mouse;
-    } else {
-        memset(out, 0, sizeof(*out));
+    const int src = mouse_source();
+    memset(out, 0, sizeof(*out));
+    if (src >= 0 && src == prev) {
+        *out = s_mouse[src];
     }
-    /* Movement, wheel and presses are handed over once; the buttons stay as
-     * they are. */
-    s_mouse.dx = 0;
-    s_mouse.dy = 0;
-    s_mouse.wheel = 0;
-    s_mouse.pressed = 0;
+    if (src >= 0) {
+        /* Movement, wheel and presses are handed over once; the buttons stay
+         * as they are.  A slot that has just become the source is cleared
+         * rather than delivering whatever accumulated before it was chosen: a
+         * pointer that jumps when a device reconnects reads as a fault. */
+        s_mouse[src].dx = 0;
+        s_mouse[src].dy = 0;
+        s_mouse[src].wheel = 0;
+        s_mouse[src].pressed = 0;
+    }
+    prev = src;
     taskEXIT_CRITICAL();
-    return live;
+    return src >= 0;
 }
 
 static int hid_usage(const hid_dev_t *d)
@@ -2128,7 +2200,8 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
 
     d->addr = *addr;
     d->boot = false;
-    d->boot_value_handle = 0;
+    d->kbd_value_handle = 0;
+    d->mouse_value_handle = 0;
     memset(d->name, 0, sizeof(d->name));
     if (name) {
         strncpy(d->name, name, sizeof(d->name) - 1);
@@ -2169,12 +2242,21 @@ static int hid_connect(hid_dev_t *d, const bt_addr_le_t *addr, const char *name,
 #define HID_PAIR_SCAN_SECS 8
 #define HID_PAIR_WATCH_SECS 8
 
+/* What a slot pairs, in words: the combo slot takes one device that is both. */
+static const char *slot_role(const hid_dev_t *d)
+{
+    if (d->combo) {
+        return "keyboard and mouse";
+    }
+    return d->appearance == BLE_APPEARANCE_KEYBOARD ? "keyboard" : "mouse";
+}
+
 static int hid_pair(hid_dev_t *d, const char *part)
 {
     if (ble_start() != 0) {
         return 1;
     }
-    const char *kind = d->appearance == BLE_APPEARANCE_KEYBOARD ? "keyboard" : "mouse";
+    const char *kind = slot_role(d);
     if (part) {
         tdsh_printf("%s: looking for \"%s\" for %d s...\r\n", d->cmd, part, HID_PAIR_SCAN_SECS);
     } else {
@@ -2189,7 +2271,11 @@ static int hid_pair(hid_dev_t *d, const char *part)
     const ble_device_t *pick = NULL;
     for (unsigned i = 0; i < count && !pick; i++) {
         const ble_device_t *c = &s_snap[i];
-        if (part ? !name_has(c->name, part) : c->appearance != d->appearance) {
+        const bool kind_ok = d->combo
+            ? (c->appearance == BLE_APPEARANCE_KEYBOARD ||
+               c->appearance == BLE_APPEARANCE_MOUSE || c->hid)
+            : c->appearance == d->appearance;
+        if (part ? !name_has(c->name, part) : !kind_ok) {
             continue;
         }
         bool taken = false;
@@ -2530,6 +2616,12 @@ static int cmd_blemouse(tdsh_session_t *session, int argc, char **argv)
     return hid_command(&s_hid[HID_MOUSE], argc, argv);
 }
 
+static int cmd_blecombo(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    return hid_command(&s_hid[HID_COMBO], argc, argv);
+}
+
 void tang_ble_info(tang_ble_info_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -2595,7 +2687,7 @@ int tang_ble_trace_cmd(tdsh_session_t *session, int argc, char **argv);
 
 static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
-      "Bluetooth radio, heap, pairings and both devices",
+      "Bluetooth radio, heap, pairings and every slot",
       cmd_ble, 0 },
     { "blescan", "blescan [seconds]",
       "List Bluetooth LE devices by signal strength (dBm)",
@@ -2606,6 +2698,9 @@ static const tdsh_command_t s_ble_commands[] = {
     { "blemouse", "blemouse pair [name] | <addr> | watch | off | on | forget",
       "Pair a Bluetooth LE mouse as the desktop pointer",
       cmd_blemouse, 0 },
+    { "blecombo", "blecombo pair [name] | <addr> | watch | off | on | forget",
+      "Pair one Bluetooth LE device as both keyboard and mouse",
+      cmd_blecombo, 0 },
     { "bletrace", "bletrace [clear | free | dump [from [count]]]",
       "Diagnostic HCI trace; tools/ble_trace_to_btsnoop.py reads a dump",
       tang_ble_trace_cmd, 0 },

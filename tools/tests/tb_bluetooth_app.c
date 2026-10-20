@@ -160,8 +160,10 @@ static td_window_t *s_win;
 static td_rect_t s_c;
 
 /* The window's layout: slot buttons on row 5 + 5 * slot + 3, Pair...,
- * Off/On and Forget at columns 11, 23 and 31; the scan's Pair on row 26. */
+ * Off/On and Forget at columns 11, 23 and 31; the scan's Pair on row 30, which
+ * is SCAN_Y + LIST_ROWS + 2 with three slots above it. */
 static void press_slot(int slot, int column) { click(s_c.x + column + 1, s_c.y + 8 + slot * 5); }
+#define SCAN_PAIR_ROW 30
 #define PAIR_BTN   11
 #define TOGGLE_BTN 23
 #define FORGET_BTN 31
@@ -274,7 +276,7 @@ int main(void)
     assert(!on_screen("(no name)", NULL));
 
     /* Pairing over a different paired device asks to replace it. */
-    click(s_c.x + 2, s_c.y + 26);
+    click(s_c.x + 2, s_c.y + SCAN_PAIR_ROW);
     assert(td_win_focused() != s_win && on_screen("Pairing this one", NULL));
     key(TD_KEY_ENTER);
     assert(s_pairs == 1 && s_last_slot == 1 && s_last_dev.addr[0] == 5);

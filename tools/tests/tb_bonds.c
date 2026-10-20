@@ -52,7 +52,8 @@ int main(void)
     uint8_t file[TANG_BOND_FILE_LEN];
     const size_t n = tang_bonds_encode(in, file);
     check(n == TANG_BOND_FILE_LEN, "encode length");
-    check(memcmp(file, "TTBL", 4) == 0 && file[4] == 1 && file[5] == 2, "header");
+    check(memcmp(file, "TTBL", 4) == 0 && file[4] == TANG_BOND_VERSION &&
+          file[5] == TANG_BOND_SLOTS, "header");
 
     tang_bond_t out[TANG_BOND_SLOTS];
     check(tang_bonds_decode(file, n, out) == 0, "a good file did not decode");
@@ -84,8 +85,31 @@ int main(void)
     check(!out[0].valid && !out[1].valid, "a rejected file left a slot valid");
     tang_bonds_encode(in, file);
     check(tang_bonds_decode(file, n - 1, out) == -1, "a short file was accepted");
-    file[4] = 2;
+    file[4] = TANG_BOND_VERSION + 1;
     check(tang_bonds_decode(file, n, out) == -1, "a newer version was accepted");
+
+    /* Version 1 -- the two-slot file every card had before the combo slot --
+     * still decodes, into slots 0 and 1, and leaves slot 2 empty.  Built from
+     * the current encoder: the record layout did not change, so the first two
+     * records are a version 1 body once the header and CRC say so. */
+    tang_bonds_encode(in, file);
+    file[4] = TANG_BOND_V1_VERSION;
+    file[5] = TANG_BOND_V1_SLOTS;
+    {
+        const size_t body = 8 + (size_t)TANG_BOND_V1_SLOTS * TANG_BOND_RECORD_LEN;
+        check(TANG_BOND_V1_FILE_LEN == body + 4, "the v1 constants disagree");
+        const uint32_t crc = tang_bonds_crc32(file, body);
+        file[body + 0] = (uint8_t)(crc & 0xFF);
+        file[body + 1] = (uint8_t)((crc >> 8) & 0xFF);
+        file[body + 2] = (uint8_t)((crc >> 16) & 0xFF);
+        file[body + 3] = (uint8_t)((crc >> 24) & 0xFF);
+        check(tang_bonds_decode(file, TANG_BOND_V1_FILE_LEN, out) == 0,
+              "a version 1 file did not decode");
+        check(out[0].valid && memcmp(out[0].addr, a0, 6) == 0,
+              "a version 1 file lost the keyboard");
+        check(out[1].valid, "a version 1 file lost the mouse");
+        check(!out[2].valid, "a version 1 file filled the combo slot");
+    }
 
     printf("tb_bonds: %d checks, %d failures\n", checks, fails);
     return fails == 0 ? 0 : 1;

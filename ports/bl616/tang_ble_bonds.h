@@ -13,11 +13,15 @@
 // packing cannot silently change the file:
 //
 //     0   "TTBL"       magic
-//     4   version      1
+//     4   version      2
 //     5   slots        TANG_BOND_SLOTS
 //     6   reserved     0, 0
 //     8   slot records, TANG_BOND_RECORD_LEN bytes each
 //     ..  CRC-32 (IEEE 802.3, as zlib) of every byte before it
+//
+// Version 1 held two slots (keyboard, mouse).  Version 2 adds the combo slot;
+// the decode still accepts a version 1 file and puts its two records in slots
+// 0 and 1, so adding the third slot did not cost anyone the pairings they had.
 //
 // The keys are stored as they are, unencrypted: anyone holding the card could
 // present itself to these devices as the board.
@@ -31,11 +35,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define TANG_BOND_SLOTS      2      /* 0 keyboard, 1 mouse: tang_ble.c's slots */
+#define TANG_BOND_SLOTS      3      /* 0 keyboard, 1 mouse, 2 combo: tang_ble.c's slots */
 #define TANG_BOND_NAME_LEN   24
 #define TANG_BOND_RECORD_LEN 80
 #define TANG_BOND_FILE_LEN   (8 + TANG_BOND_SLOTS * TANG_BOND_RECORD_LEN + 4)
-#define TANG_BOND_VERSION    1
+#define TANG_BOND_VERSION    2
+
+/* The file version that had two slots, still readable: keyboard and mouse. */
+#define TANG_BOND_V1_SLOTS    2
+#define TANG_BOND_V1_VERSION  1
+#define TANG_BOND_V1_FILE_LEN (8 + TANG_BOND_V1_SLOTS * TANG_BOND_RECORD_LEN + 4)
 
 /* One paired device: its address and the parts of the host's struct bt_keys
  * a central needs to encrypt to it again. */
@@ -59,7 +68,8 @@ size_t tang_bonds_encode(const tang_bond_t b[TANG_BOND_SLOTS], uint8_t *out);
 
 /* Read a file image into `b`.  Returns 0, or -1 if the length, magic,
  * version, slot count or CRC is wrong -- in which case every slot is left
- * invalid, so a damaged file means "no pairings", never half of one. */
+ * invalid, so a damaged file means "no pairings", never half of one.  A
+ * version 1 file decodes into slots 0 and 1 and leaves the rest empty. */
 int tang_bonds_decode(const uint8_t *in, size_t len, tang_bond_t b[TANG_BOND_SLOTS]);
 
 /* CRC-32 (IEEE 802.3, reflected, init and final XOR 0xFFFFFFFF). */

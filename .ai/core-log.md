@@ -154,3 +154,40 @@ The console mouse is complete, but its vocabulary is all the shell has: the shel
 - User Test: PASS
 
 ---
+
+## 5 COMMIT Unreleased 2026-10-20T10:40:13-07:00
+
+#### Coming From:
+
+Unreleased 78fa8cc
+
+#### Purpose:
+
+Add a third Bluetooth slot for one device that is both keyboard and mouse, so a combo keyboard with a touchpad can drive the board beside the dedicated slots, as the user approved.
+
+#### Outcome:
+
+The approved cycle added the combo slot. `ports/bl616/tang_ble_bonds.h` moved the pairing file to version 2 with three slots and taught `tang_bonds_decode()` to accept a version 1 file into slots 0 and 1, so the K950 and M750 pairings survived the change; `hid_dev_t` carries a keyboard and a mouse value handle instead of one boot handle, each slot keeps its own keyboard report and mouse state, and `HID_COMBO` (`blecombo pair|watch|off|on|forget`) subscribes to both boot inputs and the report characteristic. `tang_ble_keyboard()` and `tang_ble_mouse()` choose a source per role -- a dedicated slot wins, the combo fills what is left -- and a poll where the source changes emits one neutral report, so a key or button held on the device being left is released rather than carried across. The Bluetooth window grew a third row at the cost of five rows of height, and `tb_bluetooth_app` moved the scan's Pair button to row 30. Pairing the user's Rii K06 then showed the device accepts boot protocol but never notifies on its boot inputs, sending an 8-byte keyboard boot report on report characteristic 0x001E and a 4-byte mouse report on 0x002C; since boot protocol defines exactly those two formats and no others, the plan was reduced with the user's approval to routing the combo slot by format (8 bytes keyboard, 3 or 4 mouse) in boot mode, without the descriptor and report-map parser that was proposed for report-protocol-only devices. `tb_bonds` passed 20 checks including the version 1 migration, `tb_bluetooth_app`, `test_osd_desk.sh` (88), `test_pad.sh` (46), `test_key.sh`, `test_ini.sh`, `test_script_limits.sh`, `test_terminal_lifecycle.sh` and `test_editor_limits.sh` passed, and `tools/check_help_width.py` found no entry over 80 columns. Firmware `78fa8cc-dirty.0e89091`, 636,512 bytes, SHA-256 `c0050893c749e93a363a822de372479a3481107793e43952e22d16e8bbd9d81d`, was installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the user's power cycle; the bond file decoded, the K06 reconnected by itself as `blecombo: ready, ... boot protocol`, and the user accepted the result: keys at the console, the desktop pointer and its buttons, the wheel-and-click history gesture at the prompt, and typing into a desktop window. `.ai/core-reference.md` gained BLE-019 for the device's HID layout and its boot reports on report characteristics, and BLE-007 was revised in place because it had recorded the K06 as Classic-only and unusable while the unit pairs and reports over LE; both were reported to the user. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 146 ids, and validated this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the five-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+The combo slot works for a device that takes boot protocol; a device that refuses it is paired and logged but its reports are not decoded, and the descriptor capture with a streaming report-map parser remains the work to do when such a device appears. The K06's consumer and system reports, 2 and 1 bytes, are also undecoded, so its media keys do nothing. The Bluetooth window is now 34 rows tall and should be checked on a shorter display if one is ever used. The proposed `pmodlora send` and the RYLR998 configuration subcommands remain unapproved, and their documented ranges should be opened from the module's datasheet into `.ai/core-reference.md` before code enforces them. The older items stand: FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, a shell `date` needs upstream or a prefixed command, the MCP79410 waits on external pull-ups, the carried TinyDesk patches keep the firmware identity `-dirty`, the image is not byte-reproducible, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, BL6-002, BL6-004 and BLE-014 are stale, `v0.1.0` remains a pre-release, and `tools/tests/test_fat_rename.sh` lacks the executable bit.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_ble_bonds.c
+- ports/bl616/tang_ble_bonds.h
+- ports/bl616/td_bluetooth_app.c
+- tools/tests/tb_bluetooth_app.c
+- tools/tests/tb_bonds.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

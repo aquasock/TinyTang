@@ -114,13 +114,27 @@ size_t tang_bonds_encode(const tang_bond_t b[TANG_BOND_SLOTS], uint8_t *out)
 int tang_bonds_decode(const uint8_t *in, size_t len, tang_bond_t b[TANG_BOND_SLOTS])
 {
     memset(b, 0, sizeof(tang_bond_t) * TANG_BOND_SLOTS);
-    const size_t body = 8 + TANG_BOND_SLOTS * TANG_BOND_RECORD_LEN;
-    if (len != TANG_BOND_FILE_LEN || memcmp(in, "TTBL", 4) != 0 ||
-        in[4] != TANG_BOND_VERSION || in[5] != TANG_BOND_SLOTS ||
-        get_u32(in + body) != tang_bonds_crc32(in, body)) {
+
+    /* The slot count follows the version, and the length must match what
+     * that many records need: a file is one shape, never a mix. */
+    int slots;
+    if (len >= 8 && memcmp(in, "TTBL", 4) == 0 &&
+        in[4] == TANG_BOND_VERSION && in[5] == TANG_BOND_SLOTS) {
+        slots = TANG_BOND_SLOTS;
+    } else if (len >= 8 && memcmp(in, "TTBL", 4) == 0 &&
+               in[4] == TANG_BOND_V1_VERSION && in[5] == TANG_BOND_V1_SLOTS) {
+        /* Version 1's two slots are slots 0 and 1 here, their records are
+         * the same shape, and the third is left empty. */
+        slots = TANG_BOND_V1_SLOTS;
+    } else {
         return -1;
     }
-    for (int i = 0; i < TANG_BOND_SLOTS; i++) {
+
+    const size_t body = 8 + (size_t)slots * TANG_BOND_RECORD_LEN;
+    if (len != body + 4 || get_u32(in + body) != tang_bonds_crc32(in, body)) {
+        return -1;
+    }
+    for (int i = 0; i < slots; i++) {
         decode_record(in + 8 + i * TANG_BOND_RECORD_LEN, &b[i]);
     }
     return 0;
