@@ -34,6 +34,10 @@ void tang_mouse_boot_add(tang_mouse_t *m, const uint8_t *report, size_t len)
     if (len < 3) {
         return;
     }
+    /* Latch the presses beside the level.  A click is shorter than the 40 ms
+     * poll, so a level sampled afterwards has the button up again and the
+     * click never happened; the press is counted where the report arrives. */
+    m->pressed |= (uint8_t)((report[0] & (uint8_t)~m->buttons) & 0x07u);
     m->buttons = report[0];
     m->dx += (int8_t)report[1];
     m->dy += (int8_t)report[2];

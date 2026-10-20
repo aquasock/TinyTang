@@ -119,6 +119,24 @@ int main(void)
         check_int("boot: a short report is ignored", m.dx, -5);
     }
 
+    /* A click shorter than the poll: the press is latched where the report
+     * arrives, so it survives the button being up again by the time the poll
+     * reads the level.  The level itself is still what the button is now. */
+    {
+        tang_mouse_t m = { 0 };
+        const uint8_t press[3]   = { TANG_MOUSE_LEFT, 0x00, 0x00 };
+        const uint8_t release[3] = { 0x00, 0x00, 0x00 };
+        tang_mouse_boot_add(&m, press, sizeof(press));
+        tang_mouse_boot_add(&m, release, sizeof(release));
+        check_int("boot: a press is latched", m.pressed, TANG_MOUSE_LEFT);
+        check_int("boot: the latch is not the level", m.buttons, 0);
+
+        /* A held button is one press, not one per report. */
+        tang_mouse_boot_add(&m, press, sizeof(press));
+        tang_mouse_boot_add(&m, press, sizeof(press));
+        check_int("boot: a held button is one press", m.pressed, TANG_MOUSE_LEFT);
+    }
+
     /* Counts become cells, 16 to a cell, and the remainder is kept. */
     {
         tang_pad_reset(&p, 80, 45);

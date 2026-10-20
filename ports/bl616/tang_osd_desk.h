@@ -84,7 +84,9 @@ void tang_osd_desk_core_reloaded(void);
  * reporting and draws windows to point at.  At the bare console there is
  * nothing to point at, and the pointer's mouse reports would reach the shell
  * as text, so there it is off -- not drawn, not moved by the pad or by
- * left-alt with the arrows.  The desktop command turns it on for the length
+ * left-alt with the arrows.  The mouse is not idle there, though: the wheel
+ * walks the shell's history and a click is Enter (console_mouse in
+ * tang_osd_desk.c).  The desktop command turns the pointer on for the length
  * of desktop_run(); it starts off. */
 void tang_osd_desk_set_pointer(bool on);
 

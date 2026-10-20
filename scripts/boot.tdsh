@@ -77,6 +77,13 @@ osd desk on
 # starting it from here would take the console before the user asked.
 echo "boot: desktop.bin loaded - type 'desktop' to bring up TinyDesk"
 
+# The mouse works at this prompt too: the wheel scrolls the shell's history and
+# a left click presses Enter.  Wheel up once recalls the last command and a
+# click runs it, which is the shortest way back to the desktop.  The history is
+# the shell's own file, so it starts empty and the wheel has nothing to recall
+# until a command has been run once.
+echo "boot: mouse: wheel scrolls history, click runs the line"
+
 # A fresh card ships no Bluetooth pairings, and this desktop has no other input:
 # there is no wired keyboard port, and the two USB-A sockets belong to the cores
 # rather than to the console.  With nothing paired the user is looking at a

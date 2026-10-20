@@ -41,11 +41,12 @@
 #define TANG_PAD_B     0x001u
 #define TANG_PAD_LB    0x400u
 
-/* A mouse, as the pointer sees it: movement and wheel gathered since the
- * last step, and the buttons as they are now.  HID boot mouse buttons: bit 0
- * left, bit 1 right, bit 2 middle. */
+/* A mouse, as the pointer sees it: movement, wheel and presses gathered
+ * since the last step, and the buttons as they are now.  HID boot mouse
+ * buttons: bit 0 left, bit 1 right, bit 2 middle. */
 typedef struct {
     uint8_t buttons;
+    uint8_t pressed;          /* buttons pressed since the last step */
     int     dx, dy;           /* counts; +x right, +y down */
     int     wheel;            /* detents; + is away from the user (scroll up) */
 } tang_mouse_t;

@@ -11,6 +11,7 @@
 #include "tang_pad.h"
 #include "tang_key.h"
 #include "tang_ble.h"
+#include "tdsh_bl616.h"
 
 /* The console writer matches this string byte for byte to keep the query off
  * the wire, so its length is part of the contract, not a detail. */
@@ -392,6 +393,47 @@ static void pointer_frame(const tang_mouse_t *mouse)
     tang_fpga_unlock();
 }
 
+/* The mouse at the shell prompt, where there is no pointer to move.
+ *
+ * The line editor already knows the two things this hardware can drive: Up
+ * and Down walk the shell's own history, kept in ~/.tdsh_history and appended
+ * for every line that runs, and Enter runs the line on screen.  So the wheel
+ * becomes arrows and a click becomes Enter -- pushed into the ring the
+ * keyboard types into, where the shell cannot tell them apart.  Wheel up once
+ * recalls the last command and draws it, and a click runs it.
+ *
+ * Only at the prompt: while a command runs the ring belongs to that command,
+ * and a click must not become a byte it reads.  A press that arrives then is
+ * dropped, not queued for the next prompt -- the press is handed over once.
+ */
+static void console_mouse(const tang_mouse_t *mouse)
+{
+    if (!s_enabled || tdsh_bl616_console_state() != TDSH_BL616_AT_PROMPT) {
+        return;
+    }
+
+    /* Away from the user is Up, the most recent command first.  Clamped per
+     * poll: a fast spin would otherwise fill the ring with arrows. */
+    int steps = mouse->wheel;
+    if (steps > TANG_MOUSE_WHEEL_MAX) {
+        steps = TANG_MOUSE_WHEEL_MAX;
+    } else if (steps < -TANG_MOUSE_WHEEL_MAX) {
+        steps = -TANG_MOUSE_WHEEL_MAX;
+    }
+    for (; steps > 0; steps--) {
+        desk_in_push("\x1b[A", 3);
+    }
+    for (; steps < 0; steps++) {
+        desk_in_push("\x1b[B", 3);
+    }
+
+    /* A click is Enter, on the line as it stands: a recalled command or one
+     * typed at the prompt.  The press edge, so a held button is one Enter. */
+    if (mouse->pressed & TANG_MOUSE_LEFT) {
+        desk_in_push("\r", 1);
+    }
+}
+
 /* Hand the Bluetooth keyboard to the core as an input frame, so that a program
  * under the desktop layer can read keys.  The payload is the HID boot report's
  * own shape: the modifier byte and then the six usage codes.  A frame goes
@@ -516,10 +558,11 @@ static void desk_poll(void)
                 desk_in_push(seq, n);
             }
         } else {
-            /* Console mode: the pad and the mouse move nothing, and their
-             * mouse reports would reach the shell as text.  Tracking the pad
-             * keeps L's edge. */
+            /* Console mode: the pad moves nothing, and the mouse is the
+             * shell's -- the wheel scrolls its history, a click runs the
+             * line.  Tracking the pad keeps L's edge. */
             s_pad.prev = joy1;
+            console_mouse(&mouse);
         }
 
         /* Then the keyboard, if the core has one.  After the pointer, so that

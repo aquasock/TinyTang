@@ -133,7 +133,17 @@ bool tang_ble_mouse(tang_mouse_t *out)
         memset(out, 0, sizeof(*out));
     }
     g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
+    g_mouse.pressed = 0;
     return g_mouse_live;
+}
+
+/* The console's state, as the input guard reads it: the prompt is where the
+ * mouse may type, and a command running is where it may not. */
+static int g_console_state = TDSH_BL616_AT_PROMPT;
+
+int tdsh_bl616_console_state(void)
+{
+    return g_console_state;
 }
 
 static void ble_report(uint8_t mods, uint8_t key)
@@ -553,16 +563,55 @@ int main(void)
               "a button held when the mouse dropped was not released");
         g_mouse.buttons = 0;
 
-        /* Console mode: the mouse moves nothing and sends nothing. */
+        /* Console mode: the mouse moves nothing and sends no pointer report,
+         * and the wheel and the click belong to the shell instead. */
         g_mouse_live = true;
         tang_osd_desk_set_pointer(false);
         const int x1 = s_pad.x;
         g_mouse.dx = 64;
-        g_mouse.wheel = 1;
         desk_poll();
         read_typed(got, sizeof(got));
         check(got[0] == '\0', "the mouse sent reports in console mode");
         check(s_pad.x == x1, "the mouse moved the pointer in console mode");
+
+        /* At the prompt the wheel is Up and Down over the shell's history:
+         * one detent is one arrow, because the editor steps one entry. */
+        g_mouse.wheel = 1;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "\x1b[A") == 0, "the wheel did not recall a command");
+
+        g_mouse.wheel = -1;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "\x1b[B") == 0, "the wheel did not step forward");
+
+        g_mouse.wheel = 9;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "\x1b[A\x1b[A\x1b[A\x1b[A") == 0,
+              "a fast spin was not clamped to four");
+
+        /* A click is Enter.  The press is what counts, so a click shorter
+         * than the poll arrives latched with the button already up. */
+        g_mouse.buttons = 0;
+        g_mouse.pressed = TANG_MOUSE_LEFT;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(strcmp(got, "\r") == 0, "a click did not press Enter");
+
+        /* While a command runs the ring is that command's: nothing is pushed,
+         * and the press is not queued for the next prompt. */
+        g_console_state = TDSH_BL616_BUSY;
+        g_mouse.wheel = 1;
+        g_mouse.pressed = TANG_MOUSE_LEFT;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "the mouse typed while a command ran");
+        g_console_state = TDSH_BL616_AT_PROMPT;
+        desk_poll();
+        read_typed(got, sizeof(got));
+        check(got[0] == '\0', "a click made during a command ran afterwards");
 
         /* Movement made in console mode is not saved up for the desktop. */
         tang_osd_desk_set_pointer(true);

@@ -2028,10 +2028,12 @@ bool tang_ble_mouse(tang_mouse_t *out)
     } else {
         memset(out, 0, sizeof(*out));
     }
-    /* Movement and wheel are handed over once; the buttons stay as they are. */
+    /* Movement, wheel and presses are handed over once; the buttons stay as
+     * they are. */
     s_mouse.dx = 0;
     s_mouse.dy = 0;
     s_mouse.wheel = 0;
+    s_mouse.pressed = 0;
     taskEXIT_CRITICAL();
     return live;
 }

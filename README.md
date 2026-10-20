@@ -99,7 +99,17 @@ Building and flashing are under *Quick start* and *Building requirements*.
   moves it; the mouse's buttons, A or Enter are the left button, B or Esc the
   right, and holding the left button while moving drags. The mouse's middle
   button and wheel are passed on too. All of them drive the same pointer. The pointer exists only while
-  the desktop runs: at the bare console nothing is drawn and nothing moves.
+  the desktop runs: at the bare console it is not drawn and does not move,
+  and the mouse is the shell's instead (next bullet).
+- **The mouse at the console prompt.** With the desktop not running the wheel
+  scrolls the shell's own history -- one detent is one Up or Down, so wheel up
+  once recalls the last command -- and a left click presses Enter on the line
+  as it stands, recalled or typed. So `desktop` is two gestures away: wheel up
+  once, click. Both are only sent while the shell is waiting at its prompt;
+  while a command runs the mouse is ignored and a press is not saved for
+  later. The history is the shell's, kept in `~/.tdsh_history` on the card, so
+  the first command has to be typed once before the wheel has anything to
+  recall.
 - **The SD card** mounted read/write over FatFS, so `ls`, `cat`, `echo >`,
   `rm`, `mkdir`, `cp`, `mv` all work on the card. FatFS is built reentrant
   (`FF_FS_REENTRANT`), so the shell, the desktop and the playback task can use
