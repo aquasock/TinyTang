@@ -77,8 +77,10 @@ else()
     file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
 
     # TinyDesk, the desktop environment.  Its core and apps are compiled here
-    # against the shell we already have -- TinyDesk pins the same revision
-    # (8456dd1, v0.1.5), so there is no second copy to keep in step.  The filesystem
+    # against the shell we already have -- TinyDesk pins the shell at 8456dd1
+    # (v0.1.5) and this tree moved to v0.1.6 on 2026-10-21, so the two are no
+    # longer the same revision; TinyDesk carries no copy of the shell core, so
+    # there is still no second copy to keep in step.  The filesystem
     # comes from its own ports/common/td_fs_stdio.c, which is written against
     # stdio, <dirent.h> and <sys/stat.h> and therefore lands on this port's
     # FatFS shim unmodified.

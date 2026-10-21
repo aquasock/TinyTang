@@ -251,3 +251,40 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 8 COMMIT Unreleased 2026-10-21T06:16:16-07:00
+
+#### Coming From:
+
+Unreleased bc65b09
+
+#### Purpose:
+
+Make the Phosphor window a two-tab player whose Load button loads the core from the desktop, and give the XY scope the controls only a shell `phosphor poke` could reach.
+
+#### Outcome:
+
+`ports/bl616/phosphor/td_phosphor_app.cpp` was rebuilt on the TinyNES Control Deck's page arrangement, since TinyDesk has no tab widget: a tab row at the top, two pages toggled with `td_widget_set_visible`, and bookkeeping reset per window so a reopened window cannot exhaust the page arrays. The Player tab keeps the library, transport, progress, auto-advance and status line, and adds a Load button; the Scope tab carries an Enable checkbox, four Trail buttons (Short, Medium, Long, Brief, mapped to `0xac` bits 2:1 as 0, 1, 2 and 3), a Glow checkbox at bit 3, a status line decoded from `0xb4` (bits 0 enabled, 1 initialised, 2 drawing, 3 loading, 4 cache ready, 16:8 FIFO level, 23:20 active settings) and the sweep and dropped-sample counters from `0xb8` and `0xb0`. Every write is read back through `0xac` so the page shows what the core took, and the counters are polled only while the Scope tab is visible, leaving the Player tab's link traffic unchanged. The first board build exposed the Load failure the user had reported: with the desktop open, `tdsh run /root/scripts/phosphor.tdsh` refused to load the script and printed nothing at all. Updating the carried shell from v0.1.5 (`a067fa7`) to v0.1.6 (`e85ad85`) made the failure say so -- v0.1.6's `load_script()` prints `uscript: <file>:<line>: not enough memory to load the script`, upstream issue #2, where v0.1.5 returned status 2 in silence -- and the user reproduced exactly that message, confirming the desktop's heap cannot always supply a 16 KB worker task or the script's line table even with the `tang_heap.c` fallbacks. Load therefore no longer goes through the shell: `ports/bl616/tang_core_load.h` declares `tang_core_load()`, implemented in `ports/bl616/tdsh_tang_flash.c` beside `cmd_tangload`, which now calls it, so the whole sequence -- busy guard, `tang_phosphor_core_replacing`, `tang_oled_core_replacing`, `tang_ini_core_replacing`, `fpga_program`, then `tang_osd_desk_core_reloaded`, `tang_ini_core_loaded` and `tang_oled_core_loaded` -- exists once and the shell keeps its distinct "another tangload is running" message through a three-value result. The button calls it in-process on `/sd/root/cores/console138k/tinyphosphor.bin`, then calls `tang_osd_set(false)` to hand the screen to the scope as the script's `osd off` did, and reports the core's answer. `scripts/phosphor.tdsh` now loads the stable `/root/cores/console138k/tinyphosphor.bin` instead of the retired Tang-Phosphor image, keeping its `0xac 0xb` default look for the icon and shell paths, which the Scope tab reads back. Firmware `bc65b09-dirty.af91058`, 640,656 bytes, SHA-256 `dd580d4b3fc8fdeb8f8f4fd0ff9549fbc845c53b84221ad13f9e16027dad7610`, built with no warning in the changed files, was installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the user's power cycle; `tools/tests/test_tang_flash.sh` passed, so the refactored `tangload` still clears the socket state before every load. The user pressed Load from the open desktop, watched it load with no Terminal hop, switched tabs, changed trails and glow, and reported PASS. `.ai/core-reference.md` revised TDSH-004's pin to v0.1.6 with the new message and BL6-010 with the recurrence and the in-process path, and corrected TDESK-013's claim that both projects pin the same shell revision; the README describes the two tabs and the Load path. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 8 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+The Scope tab's Trail and Glow settings are written but not yet exercised on the hardware as a distinct check; the user changed them during the acceptance, so that stands as one observation rather than three. Trails and glow are still unreachable from TinyDesk outside this app. The desktop's heap can still refuse a script, so any other desktop-launched `.tdsh` -- the Phosphor icon included -- can fail the same way; either those paths move in-process as Load did, or the heap accounting gets a record of what the desktop holds. The carried TinyDesk patches still keep the firmware identity `-dirty`, and the older open items stand: FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- deps.conf
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tang_core_load.h
+- ports/bl616/tdsh_tang_flash.c
+- scripts/phosphor.tdsh
+- third_party/tinydesk-shell
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

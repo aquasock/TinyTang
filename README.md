@@ -166,7 +166,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   program and serves the byte ranges of `file` that it requests through its
   result-word mailbox (Tang-Phosphor `ae350_request.h`), printing each request
   with its CRC and then the program's result words. The core,
-  `/root/cores/console138k/phosphortang.bin`, carries the desktop layer, the
+  `/root/cores/console138k/tinyphosphor.bin`, carries the desktop layer, the
   keyboard link and F12 the way the NES core does, so it runs under TinyDesk
   with the layer left on. The merged core has no WAV or FLAC decoder in the
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
@@ -177,20 +177,28 @@ Building and flashing are under *Quick start* and *Building requirements*.
   Phosphor app. Setting `FILE` in the session before running the script starts
   that track without waiting; no default music file is required. F12 switches
   between the oscilloscope and TinyDesk during playback and after it ends.
-  This is the single Phosphor launcher: the canonical `phosphortang.bin` is
-  the qualified ABI 1.10 merged image with audio and the oscilloscope. The
+  This is the single Phosphor launcher: the canonical `tinyphosphor.bin` is
+  the qualified TinyPhosphor image (register ABI 1.12) with audio and the
+  oscilloscope. The
   earlier `oscope.tdsh`, `i2s2-play.tdsh` and `i2s2-tone.tdsh` scripts are
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tang.ini`.
-- **The Phosphor app** in the desktop's start menu is a player for `/root/media/music`:
-  a sorted list of the playable files, the title and status of the current
-  track, a progress bar (WAV and FLAC, whose length is read from the file's
-  header; the others show elapsed time only), Prev, Play, Pause/Resume, Stop
-  and Next, and an auto-advance checkbox that plays the folder through. It
-  drives the same playback task as the `phosphor` command, so closing the
-  window leaves the track playing and reopening it picks the track back up.
-  Without the Phosphor core loaded it says so and its buttons are disabled.
+- **The Phosphor app** in the desktop's start menu is a player for `/root/media/music`,
+  with two tabs. **Player** holds a sorted list of the playable files, the
+  title and status of the current track, a progress bar (WAV and FLAC, whose
+  length is read from the file's header; the others show elapsed time only),
+  Prev, Play, Pause/Resume, Stop, Next, an auto-advance checkbox that plays the
+  folder through, and **Load**, which programs `tinyphosphor.bin` without the
+  shell: a `tdsh run` from the desktop runs in a worker task and needs the
+  script's line table, and with the desktop's heap spent that failed with
+  "not enough memory to load the script" and no other sign. **Scope** holds the
+  XY scope's controls -- enable, the trail ramp, glow -- and its status, sweep
+  and dropped-sample counters, read back from the core so the page shows what
+  the FPGA took. It drives the same playback task as the `phosphor` command, so
+  closing the window leaves the track playing and reopening it picks the track
+  back up. Without the Phosphor core loaded it says so and its buttons are
+  disabled.
 - **`/tang.ini` declares the PMOD sockets.** PMOD modules cannot be detected,
   so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
   and the desktop core) drives only what the file says is seated.  The desktop

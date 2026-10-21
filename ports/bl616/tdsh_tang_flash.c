@@ -10,6 +10,7 @@
 //   tangflash <path>        validate, stage, commit and reset
 
 #include "tang_fw_update.h"
+#include "tang_core_load.h"
 #include "tdsh_bl616.h"
 #include "tang_oled.h"
 #include "tang_osd_desk.h"
@@ -172,24 +173,14 @@ void tang_phosphor_core_replacing(void);
  * is refused. */
 static bool s_programming;
 
-static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
+tang_load_result_t tang_core_load(const char *real)
 {
-    if (argc < 2) {
-        tdsh_printf("usage: tangload <path>\r\n");
-        return 1;
-    }
-    char real[TDSH_MAX_REAL_PATH];
-    if (!resolve_path(session, argv[1], real, sizeof(real))) {
-        tdsh_printf("tangload: bad path %s\r\n", argv[1]);
-        return 1;
-    }
     taskENTER_CRITICAL();
     const bool busy = s_programming;
     s_programming = true;
     taskEXIT_CRITICAL();
     if (busy) {
-        tdsh_printf("tangload: another tangload is running\r\n");
-        return 1;
+        return TANG_LOAD_BUSY;
     }
 
     /* A track playing on a Phosphor core is stopped while that core can still
@@ -198,9 +189,7 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
     tang_oled_core_replacing();
     tang_ini_core_replacing();
 
-    tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
     const bool ok = fpga_program(real);
-    tdsh_printf("tangload: %s\r\n", ok ? "core loaded" : "failed");
     if (ok) {
         /* Reconfiguring the FPGA wipes anything the core was holding, the
          * desktop layer included.  Tell it, or the layer stays gone with no
@@ -212,7 +201,34 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
         tang_oled_core_loaded();
     }
     s_programming = false;
-    return ok ? 0 : 1;
+    return ok ? TANG_LOAD_OK : TANG_LOAD_FAILED;
+}
+
+static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: tangload <path>\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("tangload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+
+    tdsh_printf("tangload: programming the FPGA from %s\r\n", argv[1]);
+    switch (tang_core_load(real)) {
+    case TANG_LOAD_OK:
+        tdsh_printf("tangload: core loaded\r\n");
+        return 0;
+    case TANG_LOAD_BUSY:
+        tdsh_printf("tangload: another tangload is running\r\n");
+        return 1;
+    case TANG_LOAD_FAILED:
+    default:
+        tdsh_printf("tangload: failed\r\n");
+        return 1;
+    }
 }
 
 /* ------------------------------------------------------------ registration */
