@@ -221,3 +221,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 7 COMMIT Unreleased 2026-10-20T22:17:50-07:00
+
+#### Coming From:
+
+Unreleased f44aeca
+
+#### Purpose:
+
+Begin an open-flow battery-voltage query path by measuring and adding the GW5AST-138C ADC voltage-mode configuration, stopping before any board deployment as the user directed.
+
+#### Outcome:
+
+The Tang Console schematic and package data put the divided battery voltage on the dedicated ADCV pair, FPGA balls L10 and M9, and the existing aquasock Apicula and nextpnr forks already model the 138C's lower-right `ADCLRC` block, its fabric ports, placement and routing, but Apicula deliberately refused `ADC_MODE=1` because only `DIV_CTL` had a complete measured fuse attribution. Two otherwise identical Gowin EDA 1.9.11.03 reference builds swept the full binary `ADC_MODE` axis with `VSENCTL=0`: voltage mode set exactly two additional fuses in tile R109C182, local coordinates `(20,14)` and `(20,45)`, which are code 56 in the die's `unknown_138` and `unknown_137` tables; temperature mode set neither. The aquasock Apicula fork now attributes that field, continues to refuse every unswept parameter, carries both sweep points and regression coverage, and passed 35 focused ADC and shape tests; commit `8918f14` (`GW5AST-138C: pack ADC voltage mode`) was pushed to `aquasock/apicula` branch `epic/gw5ast138c`. A regenerated local device database had SHA-256 `4b257561ac40e82524bfe27fb4d25ab3edaeb95b21f252295a7c88e0f5558f`, but it is generated and uncommitted. TinyTang's dependency pin, nextpnr database, FPGA RTL, register ABI and BL616 firmware were not changed, no TinyTang desktop core or firmware was built, and nothing was copied to, flashed on or loaded by the board.
+
+#### Next Steps:
+
+Resume from Apicula `8918f14`: update TinyTang's dependency pin, regenerate the GW5AST-138C database and rebuild nextpnr against it, prove a minimal `ADCLRC` voltage-mode design completes synthesis, place-and-route and packing entirely through the open flow, then add a conversion controller to the desktop core, expose raw value and status through an unused register such as `0x138`, add a calibrated `battery` firmware command and regressions, and build a candidate open-flow desktop core; do not deploy or load that candidate until the user explicitly authorizes board deployment.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: NOT RUN
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---
