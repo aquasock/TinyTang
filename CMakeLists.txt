@@ -129,10 +129,9 @@ else()
         COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/ports/bl616/tdsh_stdio_redirect.h")
 
     target_sources(app PRIVATE ${TINYTANG_SOURCES} ${TINYTANG_PHOSPHOR_SOURCES}
-                               # TinyNES Control Deck, the settings app.
+                               # TinyNES: the library browser and the settings,
+                               # one window with a tab each.
                                ports/bl616/tinynes_app.cpp
-                               # TinyNES Launcher, the cartridge browser.
-                               ports/bl616/tinynes_launcher.cpp
                                # Generic I2C bus client and `pmodi2c` command.
                                ports/bl616/tang_i2c.cpp
                                # PMOD UART client and `pmodlora` command.

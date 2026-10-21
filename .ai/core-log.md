@@ -320,3 +320,36 @@ Colour is deferred in TinyPhosphor until its palette multiplexer stops moving th
 - User Test: PASS
 
 ---
+
+## 10 COMMIT Unreleased 2026-10-21T15:23:04-07:00
+
+#### Coming From:
+
+Unreleased ca48302
+
+#### Purpose:
+
+Fold the cartridge browser and the settings window into one TinyNES app, with the browser as its first tab.
+
+#### Outcome:
+
+`ports/bl616/tinynes_app.cpp` now holds the cartridge browser as its **Library** page and the settings as Input, Video and Saves, so the desktop has one TinyNES entry instead of two. `TABS` went from 3 to 4 and `PAGE_WIDGETS` from 12 to 16, the window from 66x22 to 66x26 with a 18-row minimum, and the title from "TinyNES Control Deck" to "TinyNES"; the tab row is spaced by caption width because "Library" is wider than the three tabs after it and the old nine-column pitch would have run the labels together. The browser is the launcher's code moved rather than rewritten -- the same path label, list, Launch, Up and Refresh, the same 128-byte guard before handing a path to the shell, and the same `FILE=...; tdsh run /root/scripts/open/nes.tdsh` handler, so a launch still reloads the core, which the window survives because it lives on the BL616. Its symbols carry a `lib_` prefix so they cannot be confused with the pages beside it, its list is freed in the shared `on_close`, and it reports through the Library page's own status label rather than a second message line; the existing pages shifted one place right and the status row moved from 16 to 17 to sit under the new buttons. `ports/bl616/tinynes_launcher.cpp` is deleted, along with its registration in `td_desktop_bl616.c` and its entry in `CMakeLists.txt`. The user's choices fixed the shape: the tab is called Library, the window opens on it, and both the second window and its menu entry are gone. Firmware `ca48302-dirty.b44b9d4` was installed with `tools/tinytang_flash.py --yes`, and after a power cycle the user opened the window and reported PASS for all of it: four tabs opening on Library, the list browsing `/root/media/nes` with folders, `..` and Refresh, Launch starting the highlighted game, the status line following each tab, Input, Video and Saves still behaving, Save still writing `/nes.ini`, and one TinyNES entry in the start menu. TinyNES's README, which documents the window, was updated to name the Library tab rather than a separate launcher. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 10 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+The merged window is the place the TinyNES desktop work continues, so anything that used to say "the Launcher" in this project's records now means its Library tab. The library's ceiling is 256 entries and 56-byte names, which TinyNES's reference records as this project's own limits rather than FAT's; a folder past it says so instead of hiding files. Nothing else in the merge is open: the pages, the settings file and the launch path are unchanged.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinynes_app.cpp
+- ports/bl616/tinynes_launcher.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

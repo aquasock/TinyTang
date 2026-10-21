@@ -31,8 +31,27 @@ extern "C" {
 namespace {
 
 const int TICK_MS = 400;
-const int TABS = 3;
-const int PAGE_WIDGETS = 12;
+const int LIB_MAX_ENTRIES = 256;
+const int LIB_NAME_BYTES = 56;
+constexpr char ROOT_SHOWN[] = "/root/media/nes";
+constexpr char ROOT_REAL[] = "/sd/root/media/nes";
+
+/* This SDK's FatFS declares AM_RDO, AM_HID, AM_SYS, AM_DIR and AM_ARC but not
+ * the volume label's bit, which FatFS gives as 0x08; a card's own label entry
+ * is skipped with the other attributes a browser has no use for. */
+constexpr BYTE AM_VOLUME_LABEL = 0x08;
+
+/* The shell gives a variable 128 bytes (TDSH-008) and the path this page hands
+ * over rides in FILE, so it must fit that and must survive being quoted into
+ * the command typed at the Terminal's prompt. */
+constexpr int SHELL_VALUE_MAX = 128;
+constexpr int CMD_BYTES = 256;
+
+/* The handler a launch runs, so that what starts a game here is exactly what
+ * starts one from the Files app. */
+constexpr char LIB_HANDLER[] = "tdsh run /root/scripts/open/nes.tdsh";
+const int TABS = 4;
+const int PAGE_WIDGETS = 16;
 const int PLAYERS = 2;
 
 /* There is no named accent, only TD_COLOR_DEFAULT and raw palette indices. */
@@ -48,13 +67,30 @@ const char BAK_PATH[] = "/sd/nes.ini.bak";
 
 /* No Audio tab: the I2S2's Line Out is a fixed level for the amplifier, and
  * the NES is mono, so volume, mute and channels had nothing to set. */
-const char *const TAB_NAMES[TABS] = { "Input", "Video", "Saves" };
+const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Saves" };
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
 td_widget_t *s_page[TABS][PAGE_WIDGETS];
 int s_page_count[TABS];
 int s_tab_shown = -1;
+
+/* The Library page.  This was the TinyNES Launcher window, now a page, so its
+ * names carry a prefix that keeps them apart from the pages beside it. */
+struct lib_entry
+{
+    char name[LIB_NAME_BYTES];
+    bool is_dir;
+};
+
+td_widget_t *s_lib_list;
+td_widget_t *s_lib_path;
+td_widget_t *s_lib_message;   /* the Library page's status label */
+lib_entry *s_lib_entries;
+int s_lib_count;
+bool s_lib_truncated;
+char s_lib_shown[TD_PATH_MAX];
+char s_lib_real[TD_PATH_MAX + 4];
 
 td_widget_t *s_list;             /* the Input page's rows */
 td_widget_t *s_video_list;       /* the Video page's rows: aspect, palette */
@@ -436,7 +472,278 @@ void on_close(td_window_t *)
     s_video_list = nullptr;
     s_player_button = nullptr;
     memset(s_status, 0, sizeof s_status);
+    s_lib_list = nullptr;
+    s_lib_path = nullptr;
+    s_lib_message = nullptr;
+    /* The library list is freed on close: the heap is shared with the shell
+     * workers and the Bluetooth stack, and a folder's names are not worth
+     * keeping while the window is not open. */
+    free(s_lib_entries);
+    s_lib_entries = nullptr;
+    s_lib_count = 0;
     s_tab_shown = -1;
+}
+
+/* ---------------------------------------------------------------- helpers */
+
+bool lib_at_root(void) { return strcmp(s_lib_shown, ROOT_SHOWN) == 0; }
+
+void lib_set_path(const char *shown)
+{
+    snprintf(s_lib_shown, sizeof s_lib_shown, "%s", shown);
+    snprintf(s_lib_real, sizeof s_lib_real, "/sd%s", shown);
+}
+
+void lib_say(const char *text)
+{
+    if (s_lib_message != nullptr && strcmp(td_widget_text(s_lib_message), text) != 0) {
+        td_widget_set_text(s_lib_message, text);
+    }
+}
+
+/* True for a name that can be handed to the shell unchanged.  A quote would
+ * end FILE's own quoting and a '$' or a backtick could be read as one, and a
+ * name that did would lib_start a game at the wrong path -- silently, which is
+ * how a mangled path read once already.  The library carries none of these;
+ * one that did is left out of the list rather than listed and then refused. */
+bool lib_handable(const char *name)
+{
+    if (name[0] == '\0' || name[0] == '.') {
+        return false;
+    }
+    if (strpbrk(name, "\"$`") != nullptr) {
+        return false;
+    }
+    for (const char *p = name; *p != '\0'; ++p) {
+        if (static_cast<unsigned char>(*p) < 0x20) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool lib_is_cartridge(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    return dot != nullptr && (strcasecmp(dot, ".nes") == 0 || strcasecmp(dot, ".zip") == 0);
+}
+
+bool lib_listable(const FILINFO &info)
+{
+    if ((info.fattrib & (AM_HID | AM_SYS | AM_VOLUME_LABEL)) != 0) {
+        return false;
+    }
+    if (!lib_handable(info.fname)) {
+        return false;
+    }
+    if (strlen(info.fname) >= LIB_NAME_BYTES) {
+        s_lib_truncated = true;
+        return false;
+    }
+    if ((info.fattrib & AM_DIR) != 0) {
+        return true;
+    }
+    return lib_is_cartridge(info.fname);
+}
+
+/* Folders first, then cartridges, each by name without case. */
+int lib_compare(const void *a, const void *b)
+{
+    const lib_entry *x = static_cast<const lib_entry *>(a);
+    const lib_entry *y = static_cast<const lib_entry *>(b);
+    if (x->is_dir != y->is_dir) {
+        return x->is_dir ? -1 : 1;
+    }
+    return strcasecmp(x->name, y->name);
+}
+
+/* Read the current folder.  The folder is counted before anything is
+ * allocated, so a folder of a few files costs a few hundred bytes and not
+ * the ceiling: the script worker a launch starts wants 16 KB of stack on the
+ * same heap (BL6-010), and reserving the ceiling for every folder is what
+ * the Phosphor catalog was rewritten to stop doing. */
+void lib_load(void)
+{
+    free(s_lib_entries);
+    s_lib_entries = nullptr;
+    s_lib_count = 0;
+    s_lib_truncated = false;
+    if (s_lib_list != nullptr) {
+        td_list_set_count(s_lib_list, 0);
+    }
+    if (s_lib_path != nullptr) {
+        td_widget_set_text(s_lib_path, s_lib_shown);
+    }
+
+    DIR dir;
+    FILINFO info;
+    if (f_opendir(&dir, s_lib_real) != FR_OK) {
+        lib_say("No folder here on the card");
+        return;
+    }
+
+    const int parent = lib_at_root() ? 0 : 1;
+    int capacity = parent;
+    FRESULT result;
+    while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
+        if (!lib_listable(info)) {
+            continue;
+        }
+        if (capacity < LIB_MAX_ENTRIES) {
+            ++capacity;
+        } else {
+            s_lib_truncated = true;
+        }
+    }
+    if (result != FR_OK || f_rewinddir(&dir) != FR_OK) {
+        (void)f_closedir(&dir);
+        lib_say("The card refused that folder");
+        return;
+    }
+
+    if (capacity > 0) {
+        s_lib_entries = static_cast<lib_entry *>(calloc(static_cast<size_t>(capacity), sizeof(lib_entry)));
+        if (s_lib_entries == nullptr) {
+            (void)f_closedir(&dir);
+            lib_say("Not enough memory for the list");
+            return;
+        }
+    }
+
+    int n = 0;
+    if (parent != 0) {
+        snprintf(s_lib_entries[n].name, LIB_NAME_BYTES, "..");
+        s_lib_entries[n].is_dir = true;
+        ++n;
+    }
+    while (n < capacity && (result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
+        if (!lib_listable(info)) {
+            continue;
+        }
+        snprintf(s_lib_entries[n].name, LIB_NAME_BYTES, "%s", info.fname);
+        s_lib_entries[n].is_dir = (info.fattrib & AM_DIR) != 0;
+        ++n;
+    }
+    (void)f_closedir(&dir);
+    s_lib_count = n;
+    if (s_lib_count > 1) {
+        qsort(s_lib_entries, static_cast<size_t>(s_lib_count), sizeof(lib_entry), lib_compare);
+    }
+    if (s_lib_list != nullptr) {
+        td_list_set_count(s_lib_list, s_lib_count);
+    }
+
+    char text[TD_TEXT_MAX];
+    if (s_lib_truncated) {
+        snprintf(text, sizeof text, "%d shown, more not listed", s_lib_count);
+    } else {
+        snprintf(text, sizeof text, "%d entr%s", s_lib_count, s_lib_count == 1 ? "y" : "ies");
+    }
+    lib_say(text);
+}
+
+/* ---------------------------------------------------------------- actions */
+
+void lib_descend_to(const char *name);
+
+/* Hand the chosen cartridge to the handler the way the desktop would, by
+ * typing the same line into the Terminal: the path is set as FILE and the
+ * script runs, waits for the game to end and puts the desktop core back. */
+void lib_start(int index)
+{
+    if (index < 0 || index >= s_lib_count) {
+        return;
+    }
+    char shown[TD_PATH_MAX];
+    const int written = snprintf(shown, sizeof shown, "%s/%s", s_lib_shown, s_lib_entries[index].name);
+    if (written <= 0 || written >= static_cast<int>(sizeof shown)) {
+        lib_say("That path is too long");
+        return;
+    }
+    if (written >= SHELL_VALUE_MAX) {
+        lib_say("That path is too long for the shell");
+        return;
+    }
+    char cmd[CMD_BYTES];
+    snprintf(cmd, sizeof cmd, "FILE=\"%s\"; %s", shown, LIB_HANDLER);
+    lib_say("Starting ...");
+    if (!td_terminal_run(cmd)) {
+        lib_say("This build has no shell");
+    }
+}
+
+void lib_descend_to(const char *name)
+{
+    char next[TD_PATH_MAX];
+    if (strcmp(name, "..") == 0) {
+        if (lib_at_root()) {
+            lib_say("This is the top of the library");
+            return;
+        }
+        snprintf(next, sizeof next, "%s", s_lib_shown);
+        char *slash = strrchr(next, '/');
+        if (slash == nullptr || slash <= next + strlen(ROOT_SHOWN)) {
+            snprintf(next, sizeof next, "%s", ROOT_SHOWN);
+        } else {
+            *slash = '\0';
+        }
+    } else {
+        const int written = snprintf(next, sizeof next, "%s/%s", s_lib_shown, name);
+        if (written <= 0 || written >= static_cast<int>(sizeof next)) {
+            lib_say("That folder's path is too long");
+            return;
+        }
+    }
+    lib_set_path(next);
+    lib_load();
+    if (s_lib_list != nullptr) {
+        td_list_select(s_lib_list, 0);
+        td_widget_focus(s_lib_list);
+    }
+}
+
+void lib_on_activate(td_widget_t *, void *)
+{
+    const int index = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
+    if (index < 0 || index >= s_lib_count) {
+        return;
+    }
+    if (s_lib_entries[index].is_dir) {
+        lib_descend_to(s_lib_entries[index].name);
+    } else {
+        lib_start(index);
+    }
+}
+
+/* The button activates the row the way Enter and a double-click do, so a
+ * folder opens and a cartridge starts from the same key or click. */
+void lib_on_launch(td_widget_t *, void *) { lib_on_activate(nullptr, nullptr); }
+
+void lib_on_up(td_widget_t *, void *) { lib_descend_to(".."); }
+
+void lib_on_refresh(td_widget_t *, void *) { lib_load(); }
+
+/* Free the list on close: the heap is shared with the shell workers and the
+ * Bluetooth stack, and nothing here is worth keeping while the window is not
+ * open. */
+const char *lib_get_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[LIB_NAME_BYTES + 2];
+    if (index < 0 || index >= s_lib_count) {
+        return "";
+    }
+    const lib_entry &e = s_lib_entries[index];
+    if (strcmp(e.name, "..") == 0) {
+        *fg = td_theme()->accent;
+        return "..";
+    }
+    if (e.is_dir) {
+        *fg = td_theme()->accent;
+        snprintf(text, sizeof text, "%s/", e.name);
+    } else {
+        snprintf(text, sizeof text, "%s", e.name);
+    }
+    return text;
 }
 
 void launch(void)
@@ -448,11 +755,11 @@ void launch(void)
     load_settings();
 
     td_window_desc_t d = {};
-    d.title = "TinyNES Control Deck";
-    d.rect = td_rect(-1, -1, 66, 22);
+    d.title = "TinyNES";
+    d.rect = td_rect(-1, -1, 66, 26);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 50;
-    d.min_h = 14;
+    d.min_h = 18;
     d.on_close = on_close;
     d.tick_ms = TICK_MS;
     d.icon = "NES";
@@ -462,25 +769,50 @@ void launch(void)
     }
     memset(s_page_count, 0, sizeof s_page_count);
 
+    /* The tab row is spaced by caption, because "Library" is wider than the
+     * three that follow it and a fixed pitch would run the labels together. */
+    int tab_x = 1;
     for (int t = 0; t < TABS; t++) {
-        s_tab[t] = td_button(s_win, 1 + t * 9, 0, TAB_NAMES[t], on_tab,
+        s_tab[t] = td_button(s_win, tab_x, 0, TAB_NAMES[t], on_tab,
                              (void *)(uintptr_t)t);
+        tab_x += static_cast<int>(strlen(TAB_NAMES[t])) + 5;
+    }
+
+    /* Library: the cartridge browser.  Launch hands the path to the same
+     * handler the Files app uses, so what starts a game here is what starts
+     * one there; the handler reloads the core, and this window survives that
+     * because it lives on the BL616. */
+    lib_set_path(ROOT_SHOWN);
+    s_lib_path = td_label(s_win, 1, 2, 0, "");
+    s_lib_list = td_list(s_win, td_rect(1, 3, -1, -11), lib_get_item, lib_on_activate,
+                         nullptr);
+    td_scrollbar(s_win, -1, 3, -11, s_lib_list);
+    page_add(0, s_lib_path);
+    page_add(0, s_lib_list);
+    page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
+    page_add(0, td_button(s_win, 12, 16, "Up", lib_on_up, nullptr));
+    page_add(0, td_button(s_win, 19, 16, "Refresh", lib_on_refresh, nullptr));
+    lib_load();
+    if (s_lib_list != nullptr) {
+        td_list_select(s_lib_list, 0);
+    } else {
+        lib_say("Not enough memory for the list");
     }
 
     /* Input: whose mapping is shown, the eight rows, and the actions. */
     s_player_button = td_button(s_win, 1, 2, "Player 1", on_player, nullptr);
-    page_add(0, s_player_button);
+    page_add(1, s_player_button);
     s_list = td_list(s_win, td_rect(1, 4, 34, TANG_NES_BUTTONS), input_item,
                      on_row, nullptr);
     if (s_list != nullptr) {
         td_list_set_count(s_list, TANG_NES_BUTTONS);
     }
-    page_add(0, s_list);
-    page_add(0, td_button(s_win, 38, 4, "Change", on_row, nullptr));
-    page_add(0, td_button(s_win, 38, 6, "Restore defaults", on_restore, nullptr));
-    page_add(0, td_button(s_win, 38, 8, "Save", on_save, nullptr));
-    page_add(0, td_label(s_win, 38, 10, 0, "Change steps the"));
-    page_add(0, td_label(s_win, 38, 11, 0, "selected row."));
+    page_add(1, s_list);
+    page_add(1, td_button(s_win, 38, 4, "Change", on_row, nullptr));
+    page_add(1, td_button(s_win, 38, 6, "Restore defaults", on_restore, nullptr));
+    page_add(1, td_button(s_win, 38, 8, "Save", on_save, nullptr));
+    page_add(1, td_label(s_win, 38, 10, 0, "Change steps the"));
+    page_add(1, td_label(s_win, 38, 11, 0, "selected row."));
 
     /* Video: two rows, the pixel aspect and the palette, and the Save that
      * writes them.  Scale, scanlines and overscan were dropped, so the page
@@ -490,24 +822,27 @@ void launch(void)
     if (s_video_list != nullptr) {
         td_list_set_count(s_video_list, VIDEO_ROWS);
     }
-    page_add(1, s_video_list);
-    page_add(1, td_button(s_win, 38, 2, "Change", on_video_row, nullptr));
-    page_add(1, td_button(s_win, 38, 4, "Save", on_save, nullptr));
-    page_add(1, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
-    page_add(1, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
+    page_add(2, s_video_list);
+    page_add(2, td_button(s_win, 38, 2, "Change", on_video_row, nullptr));
+    page_add(2, td_button(s_win, 38, 4, "Save", on_save, nullptr));
+    page_add(2, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
+    page_add(2, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
-    page_add(2, td_label(s_win, 1, 2, 0, "Battery saves are in /root/saves/nes"));
-    page_add(2, td_label(s_win, 1, 3, 0, "and written when the game ends."));
-    page_add(2, td_label(s_win, 1, 5, 0, "Save states are not implemented,"));
-    page_add(2, td_label(s_win, 1, 6, 0, "so this page is a placeholder."));
+    page_add(3, td_label(s_win, 1, 2, 0, "Battery saves are in /root/saves/nes"));
+    page_add(3, td_label(s_win, 1, 3, 0, "and written when the game ends."));
+    page_add(3, td_label(s_win, 1, 5, 0, "Save states are not implemented,"));
+    page_add(3, td_label(s_win, 1, 6, 0, "so this page is a placeholder."));
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is
      * shown last -- which hid this on the Input tab, where Save is. */
     for (int t = 0; t < TABS; t++) {
-        s_status[t] = td_label(s_win, 1, 16, 0, "");
+        s_status[t] = td_label(s_win, 1, 17, 0, "");
         page_add(t, s_status[t]);
     }
+    /* The Library page reports through the same per-page status label, so it
+     * does not carry a second message line. */
+    s_lib_message = s_status[0];
     status_from_file();
 
     show_tab(0);
