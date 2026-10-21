@@ -881,14 +881,19 @@ static u8_t hid_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *pa
      * -- and a boot device may not send anything else: a combo that took boot
      * protocol but puts those reports on a report characteristic instead of
      * its boot input (the Rii K06 does) is then routed by format, which is
-     * the protocol, not this device's quirk.  Only the combo slot: the
-     * dedicated slots carry one role each and have their boot input. */
+     * the protocol, not this device's quirk.  This applies to every slot, not
+     * just the combo: a Logitech mouse paired into the mouse slot reports on
+     * its report characteristic and never on the boot input, so a strict
+     * handle match left its movement unread while `watch` showed the reports
+     * arriving.  The role each slot carries keeps the two shapes apart. */
+    const bool kbd_slot = (slot == HID_KBD || slot == HID_COMBO);
+    const bool mouse_slot = (slot == HID_MOUSE || slot == HID_COMBO);
     const bool kbd_report =
         (d->kbd_value_handle && params->value_handle == d->kbd_value_handle) ||
-        (d->combo && d->boot && length == 8);
+        (kbd_slot && length == 8);
     const bool mouse_report =
         (d->mouse_value_handle && params->value_handle == d->mouse_value_handle) ||
-        (d->combo && d->boot && (length == 3 || length == 4));
+        (mouse_slot && (length == 3 || length == 4));
 
     if (kbd_report && length >= 8) {
         taskENTER_CRITICAL();
@@ -2043,71 +2048,90 @@ static void hid_watch(hid_dev_t *d, int secs)
                 (unsigned long)(d->reports - start_reports));
 }
 
-/* Which slot supplies a role now.  A dedicated slot wins: a device paired
- * for one job beats a device that does both, so a keyboard at the desk keeps
- * typing while a combo lies on the sofa.  The combo fills what is left. */
-static int kbd_source(void)
+/* Every connected device acts; none outranks another and none switches the
+ * others off.  A keyboard and a mouse are separate roles, so they never
+ * competed, but two keyboards used to: a dedicated slot beat the combo and
+ * took the role over, and the device it displaced stopped typing.  The roles
+ * are now merged across slots instead of chosen.
+ *
+ * Merging is safe because each slot keeps its own input state and
+ * hid_clear_input() zeroes it when that device goes away, so a key held on a
+ * device that disconnects leaves the union on the next poll rather than
+ * sticking. */
+static bool slot_has_keyboard(int slot)
 {
-    if (s_hid[HID_KBD].state == HID_READY) {
-        return HID_KBD;
-    }
-    if (s_hid[HID_COMBO].state == HID_READY) {
-        return HID_COMBO;
-    }
-    return -1;
+    return slot == HID_KBD || slot == HID_COMBO;
 }
 
-static int mouse_source(void)
+static bool slot_has_mouse(int slot)
 {
-    if (s_hid[HID_MOUSE].state == HID_READY) {
-        return HID_MOUSE;
-    }
-    if (s_hid[HID_COMBO].state == HID_READY) {
-        return HID_COMBO;
-    }
-    return -1;
+    return slot == HID_MOUSE || slot == HID_COMBO;
 }
 
 bool tang_ble_keyboard(uint8_t out[8])
 {
-    static int prev = -1;
     taskENTER_CRITICAL();
-    const int src = kbd_source();
     memset(out, 0, 8);
-    if (src >= 0 && src == prev) {
-        memcpy(out, s_kbd_report[src], 8);
+    bool any = false;
+    for (int slot = 0; slot < HID_SLOTS; ++slot) {
+        if (!slot_has_keyboard(slot) || s_hid[slot].state != HID_READY) {
+            continue;
+        }
+        any = true;
+        /* Modifiers add up; the six key slots are a union, first come. */
+        out[0] |= s_kbd_report[slot][0];
+        for (int i = 2; i < 8; ++i) {
+            const uint8_t key = s_kbd_report[slot][i];
+            if (key == 0) {
+                continue;
+            }
+            bool seen = false;
+            for (int j = 2; j < 8; ++j) {
+                if (out[j] == key) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            for (int j = 2; j < 8; ++j) {
+                if (out[j] == 0) {
+                    out[j] = key;
+                    break;
+                }
+            }
+        }
     }
-    /* The poll where the source changes -- or goes away -- is one neutral
-     * report, so a key held on the device being left is released instead of
-     * carried into the new one.  The new source reports from its own state
-     * on the next poll. */
-    prev = src;
     taskEXIT_CRITICAL();
-    return src >= 0;
+    return any;
 }
 
 bool tang_ble_mouse(tang_mouse_t *out)
 {
-    static int prev = -1;
     taskENTER_CRITICAL();
-    const int src = mouse_source();
     memset(out, 0, sizeof(*out));
-    if (src >= 0 && src == prev) {
-        *out = s_mouse[src];
+    bool any = false;
+    for (int slot = 0; slot < HID_SLOTS; ++slot) {
+        if (!slot_has_mouse(slot) || s_hid[slot].state != HID_READY) {
+            continue;
+        }
+        any = true;
+        /* Motion, wheel and new presses are gathered once and then cleared
+         * per device, so a movement counted from two mice arrives once each;
+         * the buttons are the union of what is held now. */
+        out->dx += s_mouse[slot].dx;
+        out->dy += s_mouse[slot].dy;
+        out->wheel += s_mouse[slot].wheel;
+        out->buttons |= s_mouse[slot].buttons;
+        out->pressed |= s_mouse[slot].pressed;
+        s_mouse[slot].dx = 0;
+        s_mouse[slot].dy = 0;
+        s_mouse[slot].wheel = 0;
+        s_mouse[slot].pressed = 0;
     }
-    if (src >= 0) {
-        /* Movement, wheel and presses are handed over once; the buttons stay
-         * as they are.  A slot that has just become the source is cleared
-         * rather than delivering whatever accumulated before it was chosen: a
-         * pointer that jumps when a device reconnects reads as a fault. */
-        s_mouse[src].dx = 0;
-        s_mouse[src].dy = 0;
-        s_mouse[src].wheel = 0;
-        s_mouse[src].pressed = 0;
-    }
-    prev = src;
     taskEXIT_CRITICAL();
-    return src >= 0;
+    return any;
 }
 
 static int hid_usage(const hid_dev_t *d)

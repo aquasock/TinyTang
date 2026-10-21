@@ -393,3 +393,34 @@ The reader is unqualified in three ways the user is better placed to judge than 
 - User Test: PASS
 
 ---
+
+## 12 COMMIT Unreleased 2026-10-21T16:05:26-07:00
+
+#### Coming From:
+
+Unreleased 60728f1
+
+#### Purpose:
+
+Make every connected Bluetooth HID device act at once, as several keyboards and mice do on a PC, instead of one slot per role outranking the others.
+
+#### Outcome:
+
+The slots no longer compete. `kbd_source()` and `mouse_source()` are gone, and with them the rule that a dedicated slot beat the combo for its role and the poll of neutral reports that released a key when a role changed hands. `tang_ble_keyboard()` now merges every ready keyboard slot, modifiers OR-ed and the six key slots a union, and `tang_ble_mouse()` sums the motion and wheel of every ready mouse slot and takes the union of the buttons and presses, clearing each slot's deltas as it takes them. Two keyboards therefore type together and two pointing devices move one pointer, with no device disabled and nothing to choose. The merge is safe because each slot already owns its input state and `hid_clear_input()` zeroes it on disconnect, on pairing and on `off`, so a key held on a device that goes away leaves the union on the next poll rather than sticking -- the release logic the old arbitration needed has no work left to do. Testing on the board found a second, older fault behind it: the Logitech mouse moved nothing while `blemouse watch` showed its reports arriving. The device reports on its report characteristic rather than its boot input, and the format routing that covered that case was conditioned on `d->combo`, so a mouse paired into the mouse slot was silently ignored by strict handle matching. Routing by length now applies to every slot that carries the role -- 8 bytes a keyboard, 3 or 4 a mouse -- which is the protocol's own rule rather than one device's quirk, and the role each slot carries keeps the two shapes apart. The user's ask fixed the shape: no priority, nothing disabling anything, "like old windows". Firmware `60728f1-dirty.531f750` was installed with `tools/tinytang_flash.py --yes`, and the user reported PASS for the K950 and the Rii K06 combo typing together, the Logitech mouse and the combo's touchpad both moving the pointer, and clicks from either registering. The README's `blecombo` bullet lost the arbitration paragraph and gained "Every connected device acts." describing the merge and why the formats are routed by length. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 12 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+Three slots is still the ceiling, so a fourth device needs one freed with `off` or `forget`. A device that refuses boot protocol is still paired and logged without its reports decoded, and the length routing assumes the boot shapes of 8 bytes for a keyboard and 3 or 4 for a mouse, so a device that sends its reports in another size is counted as a report and not read. Accelerated pointer reports are not looked at: motion is the boot deltas as sent, which is why two mice simply add.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

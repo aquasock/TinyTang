@@ -283,15 +283,25 @@ Building and flashing are under *Quick start* and *Building requirements*.
   hand-held keyboard with a touchpad, on a third slot and its own connection.
   It subscribes to both HID boot inputs and gives whatever the device sends to
   whichever role fits: keys type as `blekbd`'s do, and a touchpad or stick that
-  arrives as a boot mouse moves the pointer as `blemouse`'s does. A dedicated
-  slot that is connected keeps its role, so a keyboard at the desk keeps typing
-  while a combo is also up; the combo fills what is left, and a role that
-  changes hands is released first so no key or button sticks. It has the same
+  arrives as a boot mouse moves the pointer as `blemouse`'s does. It has the same
   `off`, `on`, `forget`, `watch`, address and status forms. Proven with a Rii
   K06 in its BLE mode: it accepts boot protocol but sends the boot keyboard
   and mouse reports on its report characteristics rather than its boot inputs,
   so the two boot formats are routed wherever they arrive. A device that
   refuses boot protocol is paired and logged, but its reports are not decoded.
+
+  **Every connected device acts.** The slots do not compete for a role: a
+  keyboard and a mouse never did, but two keyboards used to, because a
+  dedicated slot outranked the combo and took the role over. Keyboards are now
+  merged -- modifiers OR-ed, the six key slots a union -- and mice are merged
+  with their motion summed and their buttons OR-ed, so two keyboards type at
+  once and two pointing devices move the same pointer, as several devices do
+  on a PC. Each slot keeps its own input state and it is cleared when that
+  device disconnects, so a key held on a device that goes away does not stick.
+  The two boot formats are routed by length on every slot for the same reason
+  the combo slot routes them: a Logitech mouse paired into the mouse slot
+  reports on its report characteristic and never on its boot input, which
+  strict handle matching silently ignored.
 - **`ble`** reports the radio, the heap (free now, the largest free block, any
   allocations refused since boot, and what the stack took when it started), the
   pairings file and every slot.
