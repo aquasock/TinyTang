@@ -137,6 +137,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Where do the two USB-A controller ports go? | BRD | BRD-003 |
 | What is the onboard USB debug bridge? | BRD | BRD-004 |
 | Does the board need a particular power input? | BRD | BRD-005 |
+| How is a 1S 18650 connected to J5 and charged? | BRD | BRD-010 |
 | What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
 | Can one-wire and two-wire run together? | BRD | BRD-007 |
 | Can a Raspberry Pi HAT go on the dock's 40-pin headers? | BRD | BRD-008 |
@@ -629,6 +630,21 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "Bouffalo SDK tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu --help (read, write, start, len, file); tools/bflb_tools/project_flash.build command_flash"
     - "core-log entries 22 to 25: ROM bootloader enumeration as 349b:6160, a 4 KiB --read at 0x40000 recorded as Tang-Console-138K-backups/rom_read_20261011_0x40000_len0x1000.bin, and --write of the application at 0x40000 verified by the device's SHA-256"
   verification: "Not exercised when first written: the user declined a recovery test as unnecessary, the console being awkward to open (core-log entry 21). Revised 2026-10-14 (core-log entry 63): status raised to VERIFIED, since core-log entries 22 to 25 used the path repeatedly on 2026-10-11 -- with BOOT held the BL616 enumerated as 349b:6160 on /dev/ttyACM0, a 4 KiB --read at 0x40000 came back byte-identical to the saved image, every --write of the application at 0x40000 was verified by the device's own SHA-256 (f8cb3455 for the restored 32299f4-dirty.17f81b2 image), and after a power cycle platform reported the written identity; chip UID e8ca50f49d69, flash c86016, 4 MiB. The full command lines those entries ran were not recorded, so the README's form is the SDK flash rule's arguments plus --write --start --file, not a line copied from a run; the record now also names this as the first-install path."
+
+- record_id: BRD-010
+  kind: BOARD
+  topic_id: BRD
+  title: "J5 combines the 1S battery and differential speaker connections"
+  status: VERIFIED
+  verified_date: 2026-10-20
+  statement: "On Tang Console PCB 32001C, J5 is a right-angle 2x2 2.00 mm socket shared by the battery and speaker. Looking directly into the socket with its two contacts per row, the face is GND at top left, +BATT at top right, AUDIO_OUTP/AUDIO_OUTN across the bottom row; the speaker pair is differential and neither bottom contact is a battery connection. The schematic assigns J5 pin 1 GND, pin 2 AUDIO_OUTP, pin 3 +BATT and pin 4 AUDIO_OUTN, calls for a 3.7 V one-series Li-ion battery and marks +BATT 4.2 V maximum. Its TP4057 charger has a 1.8 kOhm PROG resistor and receives either 5V_USB or 5V_USB_S through separate Schottky diodes and the LP5300 protection stage. Sipeed's errata says the bottom-side GND and BAT silkscreen markings are swapped on PCB revisions 32001, 32001B and 32001C; the top-side markings are correct."
+  consequence: "A single 3.6/3.7 V nominal, 4.2 V maximum Li-ion cell connects negative to J5 face top-left and positive to face top-right; a 2S pack must never be used. With the cell fitted, applying ordinary 5 V USB power to either board USB power rail automatically powers the board and charges the cell. Use the connector-face map rather than transferring the PCB pad layout or the erroneous bottom silkscreen to the socket, and verify a harness at the socket contacts before attaching a cell."
+  sources:
+    - "Sipeed Tang Console schematic Tang_Mega_138K_Console_32001C__Schematics.pdf, Rev 1.3, sheets PWR_MAIN and AUDIO, https://dl.sipeed.com/fileList/TANG/Console/02_Schematic/Tang_Mega_138K_Console_32001C__Schematics.pdf"
+    - "Sipeed Tang Console 32001C interactive BOM, J5 value Conn_02x02_Odd_Even and footprint PinSocket_2x02_P2.00mm_Horizontal, https://dl.sipeed.com/fileList/TANG/Console/03_Designator_drawing/Tang_Console_32001C_ibom.html"
+    - "Sipeed Tang Console errata, all three listed PCB revisions: bottom-side BAT and GND labels must be swapped, https://en.wiki.sipeed.com/hardware/en/tang/tang-console/errata-console.html"
+    - "User bench measurements on this Tang Console 138K, 2026-10-20"
+  verification: "With all four socket contacts mapped individually, USB power placed charger voltage on the top-right contact relative to top-left ground and the known speaker contacts occupied the bottom row. A current-limited bench supply applied correctly at 4.00 V booted the board immediately into two-wire mode and measured 0.343 A at idle; the earlier wrong-contact test drew only 0.037 A and left the PMOD power contacts at 1.28 V. The board then booted and ran from a 3.6 V 18650, and with that cell still connected the user applied USB power and confirmed that the onboard charger charged it. With no cell fitted, a handheld meter read 4.37 V on the internal BAT pad; that open-terminal reading is an observation, not the cell charge limit, for which the schematic's 4.2 V maximum remains authoritative."
 
 - record_id: PMOD-001
   kind: BOARD
@@ -2446,7 +2462,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-11
+last_reviewed: 2026-10-20
 ```
 
 ---

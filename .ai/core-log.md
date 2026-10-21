@@ -191,3 +191,33 @@ The combo slot works for a device that takes boot protocol; a device that refuse
 - User Test: PASS
 
 ---
+
+## 6 COMMIT Unreleased 2026-10-20T21:21:38-07:00
+
+#### Coming From:
+
+Unreleased 2d4a872
+
+#### Purpose:
+
+Record the verified Tang Console J5 battery pinout and onboard 1S charging path after the user's bench and battery tests.
+
+#### Outcome:
+
+BRD-010 now records the 32001C schematic's J5 nets, one-series 3.7 V Li-ion and 4.2 V maximum, TP4057 charger path, the official bottom-silkscreen erratum, and the connector-face mapping established on this board: looking into J5, GND is top-left, +BATT top-right and the two differential speaker contacts occupy the bottom row. The user first demonstrated why the footprint cannot be transferred directly to the right-angle socket face: 4.00 V on the wrong contact pair drew only 0.037 A, left PMOD power at 1.28 V and did not configure the FPGA, while the corrected pair booted immediately into two-wire mode at 0.343 A idle. A partly discharged 3.6 V 18650 then ran the Tang, and ordinary USB power with the cell attached engaged the onboard charger. The no-cell 4.37 V handheld-meter reading at the internal BAT pad is retained only as an open-terminal observation; the schematic's 4.2 V maximum remains the recorded limit, and the consequence explicitly forbids a 2S pack. The routing table points battery questions to BRD-010 and the reference review date is current. No firmware build or deployment applied to this documentation-only cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled log entry was rewritten, and validated BRD-010's schema plus this entry's sequential number, six sections, one-sentence Purpose, prose, Status values and the six-entry count against the 100-entry limit.
+
+#### Next Steps:
+
+Use a protected 1S harness keyed to the verified socket face, retain the 4.2 V maximum at J5, and monitor the first complete charge for actual cell voltage and temperature; no project implementation work remains from this reference update.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
