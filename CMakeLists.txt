@@ -132,6 +132,8 @@ else()
                                # TinyNES: the library browser and the settings,
                                # one window with a tab each.
                                ports/bl616/tinynes_app.cpp
+                               # The manual reader: Markdown chapters on the card.
+                               ports/bl616/td_manual_app.cpp
                                # Generic I2C bus client and `pmodi2c` command.
                                ports/bl616/tang_i2c.cpp
                                # PMOD UART client and `pmodlora` command.

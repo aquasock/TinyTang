@@ -353,3 +353,43 @@ The merged window is the place the TinyNES desktop work continues, so anything t
 - User Test: PASS
 
 ---
+
+## 11 COMMIT Unreleased 2026-10-21T15:53:37-07:00
+
+#### Coming From:
+
+Unreleased b744811
+
+#### Purpose:
+
+Add a Manual app to the desktop, so the board's own documentation can be read on the board.
+
+#### Outcome:
+
+`ports/bl616/td_manual_app.cpp` is a reader for Markdown chapters on the card: `index.md` lists them one per line as `- [Title](file.md)`, the window opens on that contents list, and choosing an entry opens the chapter one line per desktop row with `#` and `##` headings in the accent colour and the `**bold**`, backtick and `[text](link)` markers stripped. A chapter is read whole into a 12 KB buffer and split into lines there, so a chapter costs a few kilobytes rather than the editor's 16 KB ceiling, and drawing only copies from memory. The Markdown is a subset on purpose: the desktop draws 80x45 character cells and has no pixel path, so headings are colour, diagrams are ASCII, and links are live only in the contents list. `manual/` holds the first six chapters -- getting started, the desktop, Phosphor, TinyNES, files and firmware, and troubleshooting -- written to the reader's rules, the longest line 70 columns against the 78 the reader shows. The app is registered in `td_desktop_bl616.c` and `CMakeLists.txt`, and the README describes it beside the Phosphor app. Two faults were found on the board and fixed. The first build hard-reset the board when the window opened: `read_line` answered the line length, which is 0 both for an empty line and at end of file, so `load_index` looped while the answer was `>= 0` and spun at the end of `index.md` until the watchdog fired -- `crash` recorded "a task that never yielded", which named the fault exactly where the stack theory had been wrong. `read_line` now answers -1 at end of file. The other was a design fault rather than a bug: `Contents` and `Reload` both returned to the same list, since only the second re-read the index, so they were folded into one `Contents` button that re-reads `index.md` every time, which is also how a chapter added while the window is open gets picked up. The first version also read each line back from the card inside the widget draw callback; that was not the fault, but it moved to the preload shape regardless, keeping FatFS out of the draw path. Firmware `b744811-dirty.d9e3cf8` was installed with `tools/tinytang_flash.py --yes`, the six chapters were put at `/root/manual` with `tools/tinytang_put.py` (the shell's `mkdir` takes no `-p`, which cost one round), and after a power cycle the user reported PASS for the reader: contents listing all six chapters, chapters opening and reading, and one Contents button behaving as intended. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 11 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+The reader is unqualified in three ways the user is better placed to judge than any test: whether a page at 80x45 reads comfortably, whether one heading colour is enough, and whether paging keys would suit a manual better than arrow scrolling. Growing the manual is now content work and needs no code; a chapter over 12 KB or 512 lines says so in the footer rather than truncating silently, and the reader truncates lines past 78 columns rather than wrapping them, so chapters must keep their paragraphs short. Pictures would need the separate viewer core this cycle deliberately avoided.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- manual/files.md
+- manual/getting-started.md
+- manual/index.md
+- manual/phosphor.md
+- manual/tinynes.md
+- manual/troubleshooting.md
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_manual_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

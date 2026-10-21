@@ -184,6 +184,13 @@ Building and flashing are under *Quick start* and *Building requirements*.
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tang.ini`.
+- **The Manual app** in the desktop's start menu reads the board's manual from
+  `/root/manual`: `index.md` lists the chapters as `- [Title](file.md)` and
+  each chapter is a Markdown file shown one line per desktop row. It has a
+  Contents page, coloured headings, and nothing is held but one chapter at a
+  time, so a chapter of any size costs a few kilobytes. It exists because the
+  editor's buffer is 16 KB and a manual outgrows it, and because a reader can
+  have a contents page where an editor cannot.
 - **The Phosphor app** in the desktop's start menu is a player for `/root/media/music`,
   with two tabs. **Player** holds a sorted list of the playable files, the
   title and status of the current track, a progress bar (WAV and FLAC, whose
