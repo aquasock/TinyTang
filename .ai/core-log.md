@@ -288,3 +288,35 @@ The Scope tab's Trail and Glow settings are written but not yet exercised on the
 - User Test: PASS
 
 ---
+
+## 9 COMMIT Unreleased 2026-10-21T10:06:37-07:00
+
+#### Coming From:
+
+Unreleased 6843692
+
+#### Purpose:
+
+Turn the Scope tab into a working control surface for the core's ABI 1.14 register and fix the three faults the first board test exposed.
+
+#### Outcome:
+
+The Scope tab now writes and reads the 16-bit control word at `0xac`: the **Persistence (Afterglow)** row offers 67, 133, 267 and 533 ms (assigned to codes 3, 0, 1 and 2, since the codes are a fade-rate class and not in duration order), plus **Swap X/Y**, **Dots**, a **Channels** row of XY, X and Y, and **Bloom**; the fade that the core calls instant was dropped on the user's direction after the first test, because with no plane brightness the picture is blank, and a **freeze** control was built, tested, blanked the screen on every tick, and was removed at the user's direction. Three faults from that test are fixed. The readback mask in `sync_scope()` was `control &= 0xf`, so freeze, swap, dots, bloom and the channel select always read as off; every four-second sync unticked them and the next write cleared them in the core, which is why the effects applied and the boxes never showed it -- the mask is now `0xffff`, and the page invalidates after a sync so the glyphs redraw. The `Freeze` and `Swap X/Y` captions were clipped because the checkboxes sat nine columns apart while the widgets are wider, so the row is now spaced by caption width. `scripts/phosphor.tdsh` writes `0x13` (enable, 267 ms, bloom) instead of the old `0xb`, which in ABI 1.14 would have meant instant, and the README describes the tab as it now is. Firmware `6843692-dirty.34f401b`, 640,656 bytes, was installed with `tools/tinytang_flash.py --yes`; the first board image of the cycle exposed the readback mask and the clipped captions, and the user reported PASS for the rebuilt one: persistence, swap, dots, channels and bloom all take effect and their controls hold their state, with no freeze control left. The core deployed beside it is TinyPhosphor seed 7 of entry 19, `e9460424…`, which is the image these controls were accepted against. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 9 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+Colour is deferred in TinyPhosphor until its palette multiplexer stops moving the bus clock, and bit 5 of `0xac` stays reserved, so the app has no control for either and needs none. The tab's rows are not exercised at the window's minimum height, which is now 20 rows, and Swap, Dots and the two single-channel views were accepted as one observation rather than as separate checks. The older items stand: the desktop's heap can still refuse a script launched from the desktop, the carried TinyDesk patches keep the firmware identity `-dirty`, FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- scripts/phosphor.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

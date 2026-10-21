@@ -193,9 +193,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   shell: a `tdsh run` from the desktop runs in a worker task and needs the
   script's line table, and with the desktop's heap spent that failed with
   "not enough memory to load the script" and no other sign. **Scope** holds the
-  XY scope's controls -- enable, the trail ramp, glow -- and its status, sweep
-  and dropped-sample counters, read back from the core so the page shows what
-  the FPGA took. It drives the same playback task as the `phosphor` command, so
+  XY scope's controls: enable, **Persistence (Afterglow)** in four durations
+  (67, 133, 267 and 533 ms), **Swap X/Y**, **Dots** for points instead of
+  joined pairs, **Channels** for the stereo XY or either channel alone, and
+  **Bloom** for a pale fringe around the trace. Every setting is read back from
+  the core, so the page shows what the FPGA actually took, and the status line
+  carries the scope's own state with the sweep and dropped-sample counters. It drives the same playback task as the `phosphor` command, so
   closing the window leaves the track playing and reopening it picks the track
   back up. Without the Phosphor core loaded it says so and its buttons are
   disabled.

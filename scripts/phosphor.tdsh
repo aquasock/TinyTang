@@ -63,10 +63,12 @@ endif
 # what it says); the core powers up with both released.
 
 # The core comes up with the stereo XY oscilloscope already enabled.  Set the
-# look this script has always used -- medium trails with glow -- which the
-# desktop app's Scope tab reads back and can then change; this does not change
-# the socket declaration.
-phosphor poke 0xac 0xb
+# look this script has always used -- medium persistence with a bloom around
+# the trace -- which the desktop app's Scope tab reads back and can then
+# change; this does not change the socket declaration.  Register ABI 1.14 puts
+# enable at bit 0, persistence at 2:1 (1 is 267 ms), instant at 3 and bloom at
+# 4, so 0x13 is enable, 267 ms, bloom.
+phosphor poke 0xac 0x13
 if $? != 0
     echo "phosphor: the oscilloscope could not be enabled"
     return 1
