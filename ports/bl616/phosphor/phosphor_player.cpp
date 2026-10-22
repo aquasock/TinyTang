@@ -375,6 +375,13 @@ void player_task(void *)
 
 bool request(command c, const char *real, const char *shown, uint32_t *track_out)
 {
+    /* The task exists only once something asks it to play. Registering the
+     * shell command used to create it at boot, which held its 8 KiB stack from
+     * power-up until the end of time with no track to play; `play` now starts
+     * it, and a stop or a pause with no task is simply nothing to do. */
+    if (c == command::PLAY && s_task == nullptr && !phosphor_player_init()) {
+        return false;
+    }
     if (s_task == nullptr) {
         return false;
     }

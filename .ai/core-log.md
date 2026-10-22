@@ -528,3 +528,34 @@ A `.zip` double-clicked in Files or on the desktop still opens in the Editor, un
 - User Test: PASS
 
 ---
+
+## 16 COMMIT Unreleased 2026-10-22T15:26:10-07:00
+
+#### Coming From:
+
+Unreleased 0b0685a
+
+#### Purpose:
+
+Stop the Phosphor player from holding a task and its 8 KiB stack from power-up, by creating it the first time something asks to play.
+
+#### Outcome:
+
+The two edits entry 15 named as uncommitted are now a cycle of their own, and they are the ones the user asked for: `phosphor_player_init()` creates the player's task and 8 KiB stack, and `tang_phosphor_register()` used to call it at boot from the shell-command registration, so a board that never played a track held that stack from power-up until the end of time. `ports/bl616/phosphor/phosphor_cmd.cpp` now only registers the commands, and `ports/bl616/phosphor/phosphor_player.cpp` creates the task on the first `PLAY` in `request()` before its existing `s_task == nullptr` check, so a stop or a pause with no task is still nothing to do and the commands' other subcommands behave as before. The change was compiled and flashed as part of the TinyGBC launcher cycle's firmware, `0b0685a-dirty.45da5d7`, 648,960 bytes, SHA-256 `24cd6eb9eee4308d8ce127f5aec89117abd21024a48f90950cab0973f8075671`, which built with no warning in the two files; it was installed with `tools/tinytang_flash.py`, the user power-cycled, `platform` reported the new identity, and the user reported PASS for this cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 16 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The TinyGBC launcher's four files in this tree — `ports/bl616/tinygbc_app.cpp`, `ports/bl616/tang_fpga_uart.c`, `ports/bl616/td_desktop_bl616.c` and `CMakeLists.txt` — are still uncommitted and belong to a cycle of their own, which would also record the token change that let the deck run this tree's player as well as TinyNES's. The older items stand: a `.zip` double-clicked in Files or on the desktop still opens in the Editor, the launch task's stack margin has not been captured, FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/phosphor_cmd.cpp
+- ports/bl616/phosphor/phosphor_player.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

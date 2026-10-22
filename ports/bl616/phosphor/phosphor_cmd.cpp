@@ -454,7 +454,7 @@ const tdsh_command_t s_commands[] = {
 
 int tang_phosphor_register(void)
 {
-    // Without the task `play` says so; the other subcommands still work.
-    (void)phosphor_player_init();
+    /* No player task here: it is created when `play` first needs it, so a
+     * board that never plays a track never pays for its stack. */
     return tdsh_register_commands(s_commands, sizeof(s_commands) / sizeof(s_commands[0]));
 }
