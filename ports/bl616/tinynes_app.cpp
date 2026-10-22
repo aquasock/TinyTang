@@ -51,16 +51,17 @@ constexpr char ROOT_REAL[] = "/sd/root/media/nes";
  * is skipped with the other attributes a browser has no use for. */
 constexpr BYTE AM_VOLUME_LABEL = 0x08;
 
-/* A launch no longer goes through /root/scripts/open/nes.tdsh, which the
- * desktop's open handler and the shell still use.  A shell command runs in a
+/* A launch does not go through the shell at all.  A shell command runs in a
  * worker task and a script needs its line table on top of that; with the
  * desktop up the heap cannot give either one, so picking a game here used to
  * fail with "not enough memory to load the script" and nothing else (BL6-010).
- * The Library loads and runs in a task of its own instead, through the same
- * routines `tangload` and `ae350run` call, so no script and no worker sit in
- * the path.
+ * The Library loads and runs in a task of its own, through the same routines
+ * `tangload` and `ae350run` call, so no script and no worker sit in the path.
+ * Nothing else starts TinyNES: a cartridge opened from the Files app or the
+ * desktop is refused with a pointer to this window instead of being launched
+ * or opened as text (third_party/patches/tinydesk/0002).
  *
- * These are the three files nes.tdsh names, as FatFS mounts them. */
+ * These are the three files a launch needs, as FatFS mounts them. */
 constexpr char CORE_REAL[] = "/sd/root/cores/console138k/tinynes.bin";
 constexpr char PLAYER_REAL[] = "/sd/root/ae350/tinynes-play.elf";
 constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
@@ -676,7 +677,7 @@ void lib_descend_to(const char *name);
 
 /* Start the chosen cartridge in a task of this app's own: load the TinyNES
  * core, run the player with the cartridge, then put the desktop core back --
- * the sequence nes.tdsh performs, without the shell. */
+ * the sequence a shell launch used to perform. */
 void launch_task(void *)
 {
     const tang_load_result_t loaded = tang_core_load(CORE_REAL);

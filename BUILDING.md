@@ -130,8 +130,8 @@ not.
     the same whatever patches are applied:
     `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`
     `070b58c505e5c600187b96456f3a7904ac74f2cfe29746d2759512de347f77a3` and
-    `third_party/patches/tinydesk/0002-open-with-handler-script.patch`
-    `601ef5c77c26fabe2a1e3466920692798bdf8a2129593bf7f58c856d8977cc6a`.
+    `third_party/patches/tinydesk/0002-cartridge-is-not-text.patch`
+    `c985f1d9bac1b0332cf8b897e83d0532516cd07b23c464037fad0f0e2e4aeec6`.
     `third_party/tinydesk-shell` shows how it ends: its patch went upstream, the
     pin now names an `origin/main` commit, and `scripts/apply-tdsh-patches.sh`
     recognises that and applies nothing.

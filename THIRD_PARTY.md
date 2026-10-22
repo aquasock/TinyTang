@@ -107,10 +107,10 @@ commit, applied in order and idempotently by `scripts/apply-tinydesk-patches.sh`
 during CMake configuration. `0001-settings-bluetooth-button.patch` changes Settings' Network button, whose app this
 port leaves out, into a Bluetooth button that launches TinyTang's own Bluetooth
 window (`ports/bl616/td_bluetooth_app.c`), and moves the Date & time button
-two columns right to make room. `0002-open-with-handler-script.patch` adds
-`td_open_with_handler()`: opening a file `x.<ext>` in the Files app or on the
-desktop runs `<home>/scripts/open/<ext>.tdsh` in the Terminal with `FILE` set
-to its path when that script exists, and opens the Editor otherwise. Both
+two columns right to make room. `0002-cartridge-is-not-text.patch` makes the
+Editor refuse a cartridge: `td_editor_open()` answers a `.nes` with a message
+pointing at the TinyNES app's Library instead of reading a binary file it
+cannot render and could save over. Both
 patches are MIT, as is the upstream code they modify.
 
 ## nestang core UART protocol (read as a specification, no code copied)

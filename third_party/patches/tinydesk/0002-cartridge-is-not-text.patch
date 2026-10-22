@@ -1,0 +1,32 @@
+diff --git a/apps/editor.c b/apps/editor.c
+index 6d8d227..56b4b20 100644
+--- a/apps/editor.c
++++ b/apps/editor.c
+@@ -1229,8 +1229,27 @@ static void on_close(td_window_t *win)
+ 
+ /* -------------------------------------------------------------- api */
+ 
++/* A cartridge, by extension.  It is binary, so the Editor is never the right
++ * thing to open one with: it would show a file it cannot render and save over
++ * it.  Cartridges are started from the TinyNES app's Library. */
++static bool is_cartridge(const char *path)
++{
++    const char *dot = path ? strrchr(path, '.') : NULL;
++    if (!dot || dot == path)
++        return false;
++    ++dot;
++    return (dot[0] == 'n' || dot[0] == 'N') && (dot[1] == 'e' || dot[1] == 'E') &&
++           (dot[2] == 's' || dot[2] == 'S') && dot[3] == '\0';
++}
++
+ void td_editor_open(const char *path)
+ {
++    if (path && is_cartridge(path))
++    {
++        td_msgbox("Open", "Cartridges start from the TinyNES app's Library.",
++                  "OK", NULL, NULL);
++        return;
++    }
+     if (!fs() || !fs()->read || !fs()->write)
+     {
+         td_msgbox("Editor", "No filesystem on this platform.", "OK", NULL, NULL);

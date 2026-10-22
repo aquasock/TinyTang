@@ -492,3 +492,39 @@ The stack margin is the one number this cycle did not take, so the next board se
 - User Test: PASS
 
 ---
+
+## 15 COMMIT Unreleased 2026-10-22T06:46:12-07:00
+
+#### Coming From:
+
+Unreleased d399c9b
+
+#### Purpose:
+
+Remove the .nes launch capability from TinyDesk's Files app and the desktop, at the user's direction, so TinyNES starts only from its own Library tab.
+
+#### Outcome:
+
+The user asked why a patch was being added rather than the old one removed, and the answer changed the work: carried patch 0002 was not .nes support but a generic rule that ran `<home>/scripts/open/<ext>.tdsh` for any opened file, and `nes.tdsh` was its only consumer in this project and on the release card. Deleting it alone would not have removed the launcher cleanly -- `td_open_with_handler()` returning false sends Files and the desktop to `td_editor_open()`, so a cartridge would have opened in the Editor as binary text and could have been saved over. The mechanism is therefore gone and one small patch replaces it: `0002-open-with-handler-script.patch` (90 lines, `td_open_with_handler`, and the call-site changes in `files.c` and `desktop.c`) is deleted, and `0002-cartridge-is-not-text.patch` (32 lines) makes `td_editor_open()` answer a `.nes` with "Cartridges start from the TinyNES app's Library", which covers Files, the desktop, the Editor's own File/Open and the Run path from the one place they all pass through. The series again came to the failure TOOL-010 records, a later patch editing lines an earlier one added so that the applier's reverse check refuses it, which is why the change lives in 0002 rather than in a third file. A fresh clone at `feaf841` with both patches reproduces the working tree byte for byte in all six touched files, and `BUILDING.md`'s digest for 0002 is now `c985f1d9bac1b0332cf8b897e83d0532516cd07b23c464037fad0f0e2e4aeec6`. `README.md` lost the handler paragraph and the `/root/scripts/open/` row and gains what a double-clicked cartridge now does, `THIRD_PARTY.md` and the v0.1.0 release notes describe the new patch, and the comment in `ports/bl616/tinynes_app.cpp` names it. Firmware `d399c9b-dirty.a6c8ba4`, 644,800 bytes, SHA-256 `12d7ef98d20af2bec5820770e1f08a389aaa4b32b6e9811f9577d8d4f87ac6c6`, 16 bytes smaller than entry 14's, was built with no warning in the changed files and `test_tinydesk_patches.sh`, `test_terminal_lifecycle.sh` and `test_editor_limits.sh` passed; it was installed with `tools/tinytang_flash.py --yes`, the user power-cycled, `platform` reported the new identity, and the user reported PASS for the cycle, including a double-clicked cartridge that is refused rather than opened. The card's `/root/scripts/open/nes.tdsh` and its folder were removed with `rm -r`, leaving `boot.tdsh`, `phosphor.tdsh` and `cheatsheet.txt` under `/root/scripts`. `.ai/core-reference.md`'s BL6-010 gained the removal and its fast-index line no longer claims a desktop script can be refused. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 15 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+A `.zip` double-clicked in Files or on the desktop still opens in the Editor, unchanged by this cycle, and the same refusal would cover it if the user wants that. The launch task's stack margin was still not read: the run completed, so 8 KiB served the whole start-play-exit-reload path, but the `nes: done (0), N bytes of stack left` line has not been captured and the headroom is unknown. The two Phosphor lazy-task edits and the `third_party/tinydesk` working tree (now only patch 0001 applied) are still uncommitted and belong to a cycle of their own, and the older items stand: FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- THIRD_PARTY.md
+- docs/releases/v0.1.0.md
+- ports/bl616/tinynes_app.cpp
+- third_party/patches/tinydesk/0002-cartridge-is-not-text.patch
+- third_party/patches/tinydesk/0002-open-with-handler-script.patch (removed)
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

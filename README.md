@@ -61,10 +61,10 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor and About. Quitting returns to
-  the prompt. Opening a file (double-click or Enter) whose extension has a
-  handler script, `/root/scripts/open/<ext>.tdsh`, runs that script in the
-  Terminal with `FILE` set to the file's path; other files open in the Editor,
-  and `.tdsh` scripts still open in the Editor and run from their menu. The network apps (Network, MQTT, Modbus, OTA) are left out because
+  the prompt. Opening a text file (double-click or Enter) shows it in the
+  Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
+  cartridge is not opened at all, because cartridges start from the TinyNES
+  app's Library. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS. In their place, Settings'
   **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
   and the keyboard, mouse and combo slots with their connection state and
@@ -391,36 +391,30 @@ firmware's own files stay at the top of the card.
 | `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
-| `/root/scripts/open/` | `<ext>.tdsh` handlers: opening a file `x.<ext>` on the desktop or in Files runs one with `FILE` set |
 | `/tang.ini`, `/crash.log`, `/tinydesk_tz` | PMOD declarations, the crash record and the time zone |
 | `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
 
 ### Cartridges
 
 Cartridges play on the TinyNES core.  Put `.nes` files under `/root/media/nes/`,
-or anywhere on the card, and open one: double-click it on the desktop or in
-Files.  TinyDesk runs `/root/scripts/open/nes.tdsh` with `FILE` set to it,
-which loads `tinynes.bin`, has `ae350run` send the player
-`/root/ae350/tinynes-play.elf` to the core's AE350 and the cartridge when the
-player asks for it, and loads the desktop core again when the game ends.  The
+or anywhere on the card, and start one from the **TinyNES** app's Library tab,
+which browses that folder's subfolders and the cartridges in them.  A launch
+loads `tinynes.bin`, runs the player `/root/ae350/tinynes-play.elf` with the
+cartridge, and loads the desktop core again when the game ends.  The
 controllers are Wii Classic Controllers on PMOD0, and sound needs a Pmod I2S2
-on PMOD1, declared in `/tang.ini`.  From the console or the Terminal:
+on PMOD1, declared in `/tang.ini`.
 
-```
-FILE="/root/media/nes/nova.nes"; tdsh run /root/scripts/open/nes.tdsh
-```
+That is the only way to start TinyNES.  A cartridge double-clicked in the
+Files app or on the desktop is not opened at all: the desktop would have to
+run a script for it, from a heap that cannot always supply a worker task and a
+script's line table (BL6-010), so it says where cartridges start instead.  The
+Library does that same work in-process, in a task of its own, through the same
+routines `tangload` and `ae350run` call.
 
 While a game runs, a tap of HOME on the controller, or F12, swaps between the
-game and TinyDesk; HOME and `-` held together end it.  The core, the player and
-the handler come from the TinyNES repository, whose `tools/deploy_tinytang.sh`
-puts them on the card.
-
-The TinyNES app's Library tab starts a game without the shell: picking a
-cartridge there loads the core, runs the player and puts the desktop core back
-in a task of the app's own, through the same routines `tangload` and
-`ae350run` call.  It is the same sequence `nes.tdsh` performs, and it does not
-need the script's 16 KB worker or its line table, which the desktop's heap
-could not always supply (BL6-010).
+game and TinyDesk; HOME and `-` held together end it.  The core and the player
+come from the TinyNES repository, whose `tools/deploy_tinytang.sh` puts them on
+the card.
 
 A cartridge with a battery saves under `/root/saves/nes/`, named after the
 cartridge: `Zelda II - The Adventure of Link (USA).nes` saves to the same name
