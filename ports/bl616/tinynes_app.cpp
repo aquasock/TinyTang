@@ -24,7 +24,17 @@ extern "C" {
 #include "td_apps.h"
 #include "tinydesk/td.h"
 #include "tdsh.h"
+#include "tang_ae350_run.h"
+#include "tang_core_load.h"
+
+/* The USB console writer.  It is declared for the shell's own sources in
+ * ports/bl616/tdsh_stdio_redirect.h, which also renames printf here; only the
+ * function is wanted, as ports/bl616/tang_jtag_glue.h declares it. */
+int tdsh_printf(const char *fmt, ...);
 }
+
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include "tang_nes_ini.h"
 
@@ -41,15 +51,24 @@ constexpr char ROOT_REAL[] = "/sd/root/media/nes";
  * is skipped with the other attributes a browser has no use for. */
 constexpr BYTE AM_VOLUME_LABEL = 0x08;
 
-/* The shell gives a variable 128 bytes (TDSH-008) and the path this page hands
- * over rides in FILE, so it must fit that and must survive being quoted into
- * the command typed at the Terminal's prompt. */
-constexpr int SHELL_VALUE_MAX = 128;
-constexpr int CMD_BYTES = 256;
+/* A launch no longer goes through /root/scripts/open/nes.tdsh, which the
+ * desktop's open handler and the shell still use.  A shell command runs in a
+ * worker task and a script needs its line table on top of that; with the
+ * desktop up the heap cannot give either one, so picking a game here used to
+ * fail with "not enough memory to load the script" and nothing else (BL6-010).
+ * The Library loads and runs in a task of its own instead, through the same
+ * routines `tangload` and `ae350run` call, so no script and no worker sit in
+ * the path.
+ *
+ * These are the three files nes.tdsh names, as FatFS mounts them. */
+constexpr char CORE_REAL[] = "/sd/root/cores/console138k/tinynes.bin";
+constexpr char PLAYER_REAL[] = "/sd/root/ae350/tinynes-play.elf";
+constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
 
-/* The handler a launch runs, so that what starts a game here is exactly what
- * starts one from the Files app. */
-constexpr char LIB_HANDLER[] = "tdsh run /root/scripts/open/nes.tdsh";
+/* 8 KiB is what the Phosphor player gives its task, and half what a shell
+ * worker gave this run: no interpreter, no script, no line table.  The margin
+ * left over is printed when the game ends so the size stays visible. */
+constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 4;
 const int PAGE_WIDGETS = 16;
 const int PLAYERS = 2;
@@ -91,6 +110,14 @@ int s_lib_count;
 bool s_lib_truncated;
 char s_lib_shown[TD_PATH_MAX];
 char s_lib_real[TD_PATH_MAX + 4];
+
+/* A launch owns the core and the link until the game ends, so a second one is
+ * refused rather than reloading the core under the first.  The launch frees
+ * the list before it starts, so s_lib_reload asks the window's tick to put the
+ * page back once the task has finished. */
+volatile bool s_launching;
+volatile bool s_lib_reload;
+char s_launch_cart[TD_PATH_MAX + 4];   /* real path handed to the launch task */
 
 td_widget_t *s_list;             /* the Input page's rows */
 td_widget_t *s_video_list;       /* the Video page's rows: aspect, palette */
@@ -481,6 +508,7 @@ void on_close(td_window_t *)
     free(s_lib_entries);
     s_lib_entries = nullptr;
     s_lib_count = 0;
+    s_lib_reload = false;
     s_tab_shown = -1;
 }
 
@@ -646,29 +674,76 @@ void lib_load(void)
 
 void lib_descend_to(const char *name);
 
-/* Hand the chosen cartridge to the handler the way the desktop would, by
- * typing the same line into the Terminal: the path is set as FILE and the
- * script runs, waits for the game to end and puts the desktop core back. */
+/* Start the chosen cartridge in a task of this app's own: load the TinyNES
+ * core, run the player with the cartridge, then put the desktop core back --
+ * the sequence nes.tdsh performs, without the shell. */
+void launch_task(void *)
+{
+    const tang_load_result_t loaded = tang_core_load(CORE_REAL);
+    int code = 1;
+    if (loaded == TANG_LOAD_OK) {
+        code = tang_ae350_run(PLAYER_REAL, s_launch_cart);
+        /* Back to the desktop core whatever the run did: its desk layer is
+         * what the screen returns to, and the script reloaded it here too. */
+        (void)tang_core_load(DESKTOP_REAL);
+    } else if (loaded == TANG_LOAD_BUSY) {
+        tdsh_printf("nes: another core load is already running\r\n");
+    } else {
+        tdsh_printf("nes: the core did not load\r\n");
+    }
+    tdsh_printf("nes: done (%d), %u bytes of stack left\r\n", code,
+                (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
+    s_launching = false;
+    s_lib_reload = true;
+    vTaskDelete(NULL);
+}
+
 void lib_start(int index)
 {
+    if (s_launching) {
+        lib_say("A game is already starting");
+        return;
+    }
     if (index < 0 || index >= s_lib_count) {
         return;
     }
-    char shown[TD_PATH_MAX];
-    const int written = snprintf(shown, sizeof shown, "%s/%s", s_lib_shown, s_lib_entries[index].name);
-    if (written <= 0 || written >= static_cast<int>(sizeof shown)) {
+    /* The task has no shell session, so nothing maps /root onto /sd for it. */
+    const int written = snprintf(s_launch_cart, sizeof s_launch_cart, "%s/%s",
+                                 s_lib_real, s_lib_entries[index].name);
+    if (written <= 0 || written >= static_cast<int>(sizeof s_launch_cart)) {
         lib_say("That path is too long");
         return;
     }
-    if (written >= SHELL_VALUE_MAX) {
-        lib_say("That path is too long for the shell");
+    /* The names are not needed while a game runs, and the task that loads the
+     * core and serves the AE350 wants the heap more than this page does.  The
+     * tick puts the list back when the game ends. */
+    free(s_lib_entries);
+    s_lib_entries = nullptr;
+    s_lib_count = 0;
+    s_lib_truncated = false;
+    if (s_lib_list != nullptr) {
+        td_list_set_count(s_lib_list, 0);
+    }
+    lib_say("Starting ...");
+    s_launching = true;
+    if (xTaskCreate(launch_task, "neslaunch", LAUNCH_STACK_WORDS, nullptr,
+                    tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
+        s_launching = false;
+        s_lib_reload = true;
+        lib_say("Not enough memory to start the game");
+    }
+}
+
+/* The launch empties the page before it starts, so put the list back once the
+ * game has ended; the tick is where the desktop's own task can touch widgets. */
+void on_tick(td_window_t *)
+{
+    if (s_launching || !s_lib_reload) {
         return;
     }
-    char cmd[CMD_BYTES];
-    snprintf(cmd, sizeof cmd, "FILE=\"%s\"; %s", shown, LIB_HANDLER);
-    lib_say("Starting ...");
-    if (!td_terminal_run(cmd)) {
-        lib_say("This build has no shell");
+    s_lib_reload = false;
+    if (td_win_is_open(s_win)) {
+        lib_load();
     }
 }
 
@@ -761,6 +836,7 @@ void launch(void)
     d.min_w = 50;
     d.min_h = 18;
     d.on_close = on_close;
+    d.on_tick = on_tick;
     d.tick_ms = TICK_MS;
     d.icon = "NES";
     s_win = td_win_create(&d);

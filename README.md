@@ -415,6 +415,13 @@ game and TinyDesk; HOME and `-` held together end it.  The core, the player and
 the handler come from the TinyNES repository, whose `tools/deploy_tinytang.sh`
 puts them on the card.
 
+The TinyNES app's Library tab starts a game without the shell: picking a
+cartridge there loads the core, runs the player and puts the desktop core back
+in a task of the app's own, through the same routines `tangload` and
+`ae350run` call.  It is the same sequence `nes.tdsh` performs, and it does not
+need the script's 16 KB worker or its line table, which the desktop's heap
+could not always supply (BL6-010).
+
 A cartridge with a battery saves under `/root/saves/nes/`, named after the
 cartridge: `Zelda II - The Adventure of Link (USA).nes` saves to the same name
 with a `.sav` extension.  `ae350run` sends that file to the player when it

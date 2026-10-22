@@ -94,6 +94,7 @@
 
 #include "tdsh.h"
 #include "ae350_load.h"
+#include "tang_ae350_run.h"
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
 #include "tang_osd_desk.h"
@@ -1455,18 +1456,20 @@ static uint8_t s_ae350_block[AE350_LOAD_BLOCK];
 static FIL s_ae350_elf_file;
 static FIL s_ae350_data_file;
 
-/* Load <program.elf> into a TinyNES core's AE350 and run it, sending <file>
- * when it asks; follow its output until it exits and return its code. */
-static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
+/* Load <player> into a TinyNES core's AE350 and run it, sending <data> (a
+ * cartridge, or NULL) when it asks; follow its output until it exits and
+ * return its code.  Both paths are FatFS paths the port mounts, already
+ * resolved, so this reads no shell session and maps no /root onto /sd:
+ * `cmd_ae350run` below resolves the shell's names and calls it, and so does a
+ * launch from the desktop's Library page (tang_ae350_run.h). */
+int tang_ae350_run(const char *player, const char *data)
 {
-    if (argc < 2) {
+    if (player == NULL || player[0] == '\0') {
         tdsh_printf("usage: ae350run <program.elf> [<file>]\r\n");
         return 1;
     }
-    char real[TDSH_MAX_REAL_PATH];
-    if (!resolve_path(session, argv[1], real, sizeof(real)) ||
-        f_open(&s_ae350_elf_file, real, FA_READ) != FR_OK) {
-        tdsh_printf("ae350run: cannot open %s\r\n", argv[1]);
+    if (f_open(&s_ae350_elf_file, player, FA_READ) != FR_OK) {
+        tdsh_printf("ae350run: cannot open %s\r\n", player);
         return 1;
     }
     ae350_run_t run = { .elf_file = &s_ae350_elf_file };
@@ -1477,21 +1480,20 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
     /* No cartridge last time does not mean one now: the path must not
      * survive from a previous run. */
     s_ae350_save_path[0] = '\0';
-    if (argc > 2) {
-        if (!resolve_path(session, argv[2], real, sizeof(real)) ||
-            f_open(&s_ae350_data_file, real, FA_READ) != FR_OK) {
+    if (data != NULL) {
+        if (f_open(&s_ae350_data_file, data, FA_READ) != FR_OK) {
             f_close(&s_ae350_elf_file);
-            tdsh_printf("ae350run: cannot open %s\r\n", argv[2]);
+            tdsh_printf("ae350run: cannot open %s\r\n", data);
             return 1;
         }
         run.data_file = &s_ae350_data_file;
         run.data_length = (uint32_t)f_size(&s_ae350_data_file);
-        (void)ae350_save_path(real, s_ae350_save_path, sizeof(s_ae350_save_path));
+        (void)ae350_save_path(data, s_ae350_save_path, sizeof(s_ae350_save_path));
     }
     static ae350_elf_t elf;
     int rc = ae350_elf_parse(&elf, ae350_file_read, &s_ae350_elf_file);
     if (rc != AE350_OK) {
-        tdsh_printf("ae350run: %s: %s\r\n", argv[1], ae350_error(rc));
+        tdsh_printf("ae350run: %s: %s\r\n", player, ae350_error(rc));
         goto close_files;
     }
     run.elf = &elf;
@@ -1522,12 +1524,12 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         tdsh_printf("ae350run: no TinyNES boot ROM waiting on UART1 (is tinynes.bin loaded?)\r\n");
         goto release;
     }
-    tdsh_printf("ae350run: %s, %lu bytes at 0x%08lx\r\n", argv[1],
+    tdsh_printf("ae350run: %s, %lu bytes at 0x%08lx\r\n", player,
                 (unsigned long)(elf.end - elf.base), (unsigned long)elf.base);
     rc = ae350_send_image(&link, elf.base, elf.end - elf.base, elf.entry, 5,
                           s_ae350_block, &reason);
     if (rc != AE350_OK) {
-        tdsh_printf("ae350run: loading %s: %s%s%c\r\n", argv[1], ae350_error(rc),
+        tdsh_printf("ae350run: loading %s: %s%s%c\r\n", player, ae350_error(rc),
                     reason ? ", reason " : "", reason ? reason : ' ');
         goto release;
     }
@@ -1558,7 +1560,7 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
                                   run.data_length + AE350_FILE_HEADER,
                                   (uint32_t)address, 5, s_ae350_block, &reason);
             if (rc != AE350_OK) {
-                tdsh_printf("ae350run: sending %s: %s\r\n", argv[2], ae350_error(rc));
+                tdsh_printf("ae350run: sending %s: %s\r\n", data, ae350_error(rc));
             }
             continue;
         }
@@ -1664,6 +1666,30 @@ close_files:
         f_close(&s_ae350_data_file);
     }
     return 1;
+}
+
+/* The shell's half: turn the names the shell takes into real paths and hand
+ * them to tang_ae350_run(), which is the whole of the work. */
+static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: ae350run <program.elf> [<file>]\r\n");
+        return 1;
+    }
+    char player[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], player, sizeof(player))) {
+        tdsh_printf("ae350run: cannot open %s\r\n", argv[1]);
+        return 1;
+    }
+    char data[TDSH_MAX_REAL_PATH];
+    if (argc > 2) {
+        if (!resolve_path(session, argv[2], data, sizeof(data))) {
+            tdsh_printf("ae350run: cannot open %s\r\n", argv[2]);
+            return 1;
+        }
+        return tang_ae350_run(player, data);
+    }
+    return tang_ae350_run(player, NULL);
 }
 
 /* ------------------------------------------------------------ registration */

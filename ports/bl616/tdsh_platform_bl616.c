@@ -148,7 +148,6 @@ static int bl616_worker_run(void *context,
     if (!background) {
         s_worker_stack_bytes = stack_bytes;
     }
-    UBaseType_t words = (UBaseType_t)(stack_bytes / sizeof(StackType_t));
     UBaseType_t prio = (UBaseType_t)(priority > 0 ? priority : (int)tskIDLE_PRIORITY + 1);
 
     if (!background) {
@@ -156,12 +155,30 @@ static int bl616_worker_run(void *context,
         if (!w->done) { free(w); return -1; }
     }
 
+    /* A 16 KiB stack is one contiguous block, and the desktop fragments the
+     * heap: on 2026-10-21 the desktop's nes.tdsh died with "16384 bytes for
+     * task tdsh" refused while the same script from the shell ran, and the
+     * job it had already allocated (8,584 bytes) proves the heap had room in
+     * total but not in one piece. Asking for less before giving up is what
+     * turns that into a slow script rather than no script; 12,288 is the
+     * floor because ordinary scripts have used 10,728 to 11,092 bytes
+     * (docs/phosphor-memory-budget.md and `crash`). The size a run actually
+     * got is reported, so the margin stays visible. */
     TaskHandle_t handle = NULL;
-    if (xTaskCreate(bl616_worker_trampoline, name ? name : "tdsh", words, w, prio, &handle) != pdPASS) {
-        if (w->done) vSemaphoreDelete(w->done);
-        free(w);
-        return -1;
+    size_t got_bytes = stack_bytes;
+    for (;;) {
+        UBaseType_t try_words = (UBaseType_t)(got_bytes / sizeof(StackType_t));
+        if (xTaskCreate(bl616_worker_trampoline, name ? name : "tdsh",
+                        try_words, w, prio, &handle) == pdPASS)
+            break;
+        if (background || got_bytes <= 12288u) {
+            if (w->done) vSemaphoreDelete(w->done);
+            free(w);
+            return -1;
+        }
+        got_bytes = got_bytes > 14336u ? 14336u : 12288u;
     }
+    if (!background) s_worker_stack_bytes = got_bytes;
 
     if (background) return 0;
 

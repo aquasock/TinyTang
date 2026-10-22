@@ -458,3 +458,37 @@ The manual's content still says "TinyTang manual" in `index.md` and the folder i
 - User Test: PASS
 
 ---
+
+## 14 COMMIT Unreleased 2026-10-22T06:30:11-07:00
+
+#### Coming From:
+
+Unreleased 5edea0c
+
+#### Purpose:
+
+Start a cartridge from the TinyNES app's Library tab without the shell, so a launch from the open desktop stops failing with "not enough memory to load the script", as the user approved after the fault was traced.
+
+#### Outcome:
+
+The Library started a game by typing `FILE=...; tdsh run /root/scripts/open/nes.tdsh` into the Terminal, so a launch paid for a script worker's 16 KB stack, the shell's job and the script's line table on a heap the desktop had already spent: `tang` on firmware `5edea0c-dirty.ee27253` reported one refused allocation of 109 bytes for task `tdsh_script`, and the shell's `load_script()` printed the v0.1.6 message at `third_party/tinydesk-shell/src/core/tdsh_script.c:228`. The adaptive fallback in `ports/bl616/tdsh_platform_bl616.c`, which was found uncommitted on the tree as the previous attempt at this same fault, had turned a refused stack into a refused line table rather than removing either, so it is carried into history here with its now-dead `words` variable removed. The launch no longer uses the shell. `ports/bl616/tang_ae350_run.h` declares `tang_ae350_run()`, the whole of `ae350run` taking resolved FatFS paths and no session, implemented in `ports/bl616/tang_fpga_uart.c` where `cmd_ae350run` was split into that work and a shell half that resolves `argv` and calls it, so the two cannot drift apart; the one visible consequence for the shell is that its `ae350run:` messages now name the resolved path rather than the typed one. `ports/bl616/tinynes_app.cpp` starts the sequence -- `tang_core_load()` of `tinynes.bin`, `tang_ae350_run()` of the player with the cartridge, then `tang_core_load()` of `desktop.bin` -- in a task of the app's own, 8 KiB at `tskIDLE_PRIORITY + 1`, the priority and half the stack a shell worker gave it, and prints the stack left when the game ends. The Library's name array is freed before the handoff because a game does not need it, the window's tick puts the page back afterwards, and a second launch while one runs is refused instead of reloading the core under the first. Firmware `5edea0c-dirty.2b7105b`, 644,816 bytes, SHA-256 `cd9eecc64df71b0aefbd8adf74aa11dc87bd6e526fd0cf7df36e58208acc2e05`, built with no warning in the changed files, and `tools/tests/test_ae350_load.sh`, `test_tang_flash.sh` and `test_nes_ini.sh` passed; it was installed with `tools/tinytang_flash.py --yes` and the user power-cycled and reported PASS, opening a game from the Library with the desktop up and returning to the desktop core afterwards. Two things are recorded rather than smoothed over: the printed stack margin was not captured, so 8 KiB rests on the Phosphor player's precedent and not on a measurement of this path, and the image also carried two uncommitted Phosphor edits that lazily create the player task, plus working-tree edits inside `third_party/tinydesk`, all of which stay uncommitted and outside this cycle. The README says the Library starts a game without the shell. `.ai/core-reference.md`'s BL6-010 gained the recurrence and the in-process path and moved its verified date. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 14 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+The stack margin is the one number this cycle did not take, so the next board session should read the `nes: done (0), N bytes of stack left` line and raise `LAUNCH_STACK_WORDS` if 8 KiB leaves little. A `.tdsh` started from the desktop's open handler still goes through `tdsh run` and can be refused exactly as this was, so the Files-app double-click and the Phosphor icon are the remaining exposure of BL6-010 until they move in-process the same way; the two Phosphor lazy-task edits and the `third_party/tinydesk` working tree are still uncommitted and belong to a cycle of their own. The older items stand: FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ae350_run.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
