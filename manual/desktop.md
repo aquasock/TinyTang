@@ -19,14 +19,14 @@ F12 toggles the desktop layer on the HDMI output. It does not stop
 anything: a game keeps running, music keeps playing, and the desktop
 comes back where it was.
 
-That is how you get from a game to the Manual while the game is
+That is how you get from a game to TinyHelp while the game is
 playing, and back again.
 
 ## The apps you will use
 
      Files      browse the card, open and rename
      Terminal   a shell inside a window
-     Manual     this manual
+     TinyHelp   this manual
      Phosphor   music
      TinyNES    games, and their settings
      Settings   display, Bluetooth, time

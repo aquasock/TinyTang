@@ -424,3 +424,37 @@ Three slots is still the ceiling, so a fourth device needs one freed with `off` 
 - User Test: PASS
 
 ---
+
+## 13 COMMIT Unreleased 2026-10-21T17:47:24-07:00
+
+#### Coming From:
+
+Unreleased a797a17
+
+#### Purpose:
+
+Rename the desktop's manual reader to TinyHelp.
+
+#### Outcome:
+
+The app is TinyHelp everywhere it is named: `ports/bl616/td_manual_app.cpp` is `ports/bl616/td_help_app.cpp` by `git mv` so its history follows, `td_manual_register()` is `td_help_register()`, and the start-menu name and window title are both "TinyHelp", with the `?` icon kept because it still reads as help where "T" is now Terminal's letter too. The declaration and the call in `td_desktop_bl616.c`, the source entry and comment in `CMakeLists.txt`, the app bullet in the README and the desktop chapter's app table and F12 paragraph were updated with them. The rename is the app, not the document: the card folder stays `/root/manual`, so no chapter moved and `files.md`'s `/root/manual this manual` line stays true, and the reader's own comments still call the content a manual for the same reason. Firmware `a797a17-dirty.0fe5190` was built with `make CHIP=bl616 BOARD=bl616dk`, installed with `tools/tinytang_flash.py --yes` and confirmed by `platform` after the power cycle, the changed chapter was sent with `tools/tinytang_put.py` to `/root/manual/desktop.md` (1,096 bytes), and the user reported PASS for the start-menu entry, the window title and the contents list and chapters still opening. `strings` on the image shows `TinyHelp` and no `Manual` title or `td_manual_register` symbol left behind. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 13 of 100 with exactly six sections and allowed Status values.
+
+#### Next Steps:
+
+The manual's content still says "TinyTang manual" in `index.md` and the folder is still `/root/manual`; both are the document rather than the app, so they were left, and moving them would mean re-putting every chapter and editing the two chapters that name the path. The reader's three open questions from entry 11 remain unanswered: page density at 80x45, whether one heading colour is enough, and whether paging keys suit a manual better than arrow scrolling. The uncommitted edits inside `third_party/tinydesk` are still there and still outside any cycle.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_help_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

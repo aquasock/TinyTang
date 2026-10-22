@@ -184,7 +184,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tang.ini`.
-- **The Manual app** in the desktop's start menu reads the board's manual from
+- **The TinyHelp app** in the desktop's start menu reads the board's manual from
   `/root/manual`: `index.md` lists the chapters as `- [Title](file.md)` and
   each chapter is a Markdown file shown one line per desktop row. It has a
   Contents page, coloured headings, and nothing is held but one chapter at a

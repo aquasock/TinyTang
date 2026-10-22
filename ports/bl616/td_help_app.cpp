@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// A reader for the board's manual, in the desktop.
+// TinyHelp: a reader for the board's manual, in the desktop.
 //
 // The manual is a folder of Markdown chapters on the card; `index.md` lists
 // them one per line as `- [Title](file.md)`.  The window shows either that
@@ -319,7 +319,7 @@ void launch(void)
         return;
     }
     td_window_desc_t d = {};
-    d.title = "Manual";
+    d.title = "TinyHelp";
     d.rect = td_rect(-1, -1, 80, 32);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 46;
@@ -344,11 +344,11 @@ void launch(void)
     }
 }
 
-const td_app_t s_app = {"Manual", launch, "?"};
+const td_app_t s_app = {"TinyHelp", launch, "?"};
 
 } // namespace
 
-extern "C" void td_manual_register(void)
+extern "C" void td_help_register(void)
 {
     (void)td_app_register(&s_app);
 }
