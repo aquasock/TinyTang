@@ -559,3 +559,36 @@ The TinyGBC launcher's four files in this tree — `ports/bl616/tinygbc_app.cpp`
 - User Test: PASS
 
 ---
+
+## 17 COMMIT Unreleased 2026-10-22T16:03:40-07:00
+
+#### Coming From:
+
+Unreleased 6b080b4
+
+#### Purpose:
+
+Give the desktop a window that starts a Game Boy cartridge from the card, the way TinyNES's window starts a NES one.
+
+#### Outcome:
+
+The window is `ports/bl616/tinygbc_app.cpp`, built from `tinynes_app.cpp` and reduced to what the Game Boy player can serve: a Library page that lists the card's `.gbc`, `.gb` and `.zip` files from the first of `/root/media/gb`, `/root/media/gbc`, `/root/media/gbcolor` and `/root/media` that exists, and launches one by loading `/root/cores/console138k/tinygbc.bin`, running `/root/ae350/tinygbc-play.elf` through `tang_ae350_run()` with the file as its data, and putting `/root/cores/console138k/desktop.bin` back afterwards; Input, Video and Saves are labelled placeholders. The deck could not have run that player at all as it stood: `tang_ae350_run()` matched only `TinyNES LOAD`, `TinyNES WANT`, `TinyNES LINK` and `TinyNES EXIT`, and TinyGBC's boot ROM and player say `TinyGBC`, so a new `ae350_says()` matches either product name and hands back the fields past it, with the NVRAM and settings requests left TinyNES-only until the player has saves. The window was registered in `td_desktop_bl616.c` and `CMakeLists.txt`. Two firmwares were built from this tree while the files were still uncommitted: `0b0685a-dirty.45da5d7`, 648,960 bytes, installed with `tools/tinytang_flash.py` and power-cycled, on which the user launched `ucity.gbc` from the window, played it and came back to the console; and `6b080b4-dirty.4c13dc7`, 648,960 bytes, SHA-256 `ede0f0732eca09a44b6e5d38b127c7cf978b69a2a15a1555b73aa5da501d8a06`, which added `.zip` to the Library's extensions and on which the user launched `zelda-ladx.zip` and passed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 17 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The window's three other pages stay placeholders until the TinyGBC player has something to set, which needs a save and a savestate on the A25 and the NVRAM and settings requests this deck still answers only in TinyNES's names. A `.zip` is listed and sent here but unpacked by the player, so the deck never needs an inflater; a `.zip` holding no `.gb` or `.gbc`, two of them, or a wrong CRC is refused on the AE350 and reported as a failed cartridge. The older items stand: the launch task's stack margin has not been captured, FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

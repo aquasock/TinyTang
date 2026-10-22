@@ -132,6 +132,8 @@ else()
                                # TinyNES: the library browser and the settings,
                                # one window with a tab each.
                                ports/bl616/tinynes_app.cpp
+                               # TinyGBC: the cartridge library and its core.
+                               ports/bl616/tinygbc_app.cpp
                                # TinyHelp: the manual's Markdown chapters, on the card.
                                ports/bl616/td_help_app.cpp
                                # Generic I2C bus client and `pmodi2c` command.

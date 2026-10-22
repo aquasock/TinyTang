@@ -994,6 +994,38 @@ static bool starts_with(const char *s, const char *prefix)
     return strncmp(s, prefix, strlen(prefix)) == 0;
 }
 
+/* The program this deck runs names itself in what it prints: TinyNES's player
+ * says "TinyNES WANT ...", TinyGBC's "TinyGBC WANT ...".  One set of parsers
+ * serves both, so a line is matched against the name it carries and then past
+ * it, and the caller reads the same fields either way.  The NVRAM and settings
+ * requests below are TinyNES's alone until the TinyGBC player has them. */
+static const char *ae350_past_name(const char *line)
+{
+    static const char *const names[] = { "TinyNES ", "TinyGBC " };
+
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        if (starts_with(line, names[i])) {
+            return line + strlen(names[i]);
+        }
+    }
+    return NULL;
+}
+
+/* True when the line is "<name><what>"; *rest, when given, is what follows. */
+static bool ae350_says(const char *line, const char *what, const char **rest)
+{
+    const char *tail = ae350_past_name(line);
+    const size_t n = strlen(what);
+
+    if (tail == NULL || strncmp(tail, what, n) != 0) {
+        return false;
+    }
+    if (rest != NULL) {
+        *rest = tail + n;
+    }
+    return true;
+}
+
 static const char *ae350_error(int rc)
 {
     switch (rc) {
@@ -1010,8 +1042,10 @@ static const char *ae350_error(int rc)
  * stop with the code in *code. */
 static bool ae350_line_ends(const ae350_run_t *run, int *code)
 {
-    if (starts_with(run->line, "TinyNES EXIT ")) {
-        *code = atoi(run->line + 13);
+    const char *rest = NULL;
+
+    if (ae350_says(run->line, "EXIT ", &rest)) {
+        *code = atoi(rest);
         return true;
     }
     if (starts_with(run->line, "BAD ")) {
@@ -1512,7 +1546,7 @@ int tang_ae350_run(const char *player, const char *data)
     /* The boot ROM says it is waiting about once a second. */
     bool waiting = false;
     for (int i = 0; i < 5 && !waiting; i++) {
-        waiting = ae350_next_line(&run, 1500) && starts_with(run.line, "TinyNES LOAD");
+        waiting = ae350_next_line(&run, 1500) && ae350_says(run.line, "LOAD", NULL);
     }
     int code = 1;
     const ae350_link_t link = {
@@ -1521,7 +1555,7 @@ int tang_ae350_run(const char *player, const char *data)
     };
     char reason = 0;
     if (!waiting) {
-        tdsh_printf("ae350run: no TinyNES boot ROM waiting on UART1 (is tinynes.bin loaded?)\r\n");
+        tdsh_printf("ae350run: no boot ROM is waiting on UART1 (is the core loaded?)\r\n");
         goto release;
     }
     tdsh_printf("ae350run: %s, %lu bytes at 0x%08lx\r\n", player,
@@ -1537,6 +1571,7 @@ int tang_ae350_run(const char *player, const char *data)
     /* Follow the program: send the file when asked, stop at its exit, or
      * give up on one silent for AE350_SILENT_S, which has hung. */
     for (unsigned silent = 0;;) {
+        const char *rest = NULL;
         if (!ae350_next_line(&run, 1000)) {
             if (++silent >= AE350_SILENT_S) {
                 tdsh_printf("ae350run: nothing from the program for %u s; leaving it\r\n",
@@ -1546,10 +1581,10 @@ int tang_ae350_run(const char *player, const char *data)
             continue;
         }
         silent = 0;
-        if (starts_with(run.line, "TinyNES WANT ")) {
+        if (ae350_says(run.line, "WANT ", &rest)) {
             unsigned long address = 0, room = 0;
             if (run.data_file == NULL ||
-                sscanf(run.line + 13, "%lx %lx", &address, &room) != 2 ||
+                sscanf(rest, "%lx %lx", &address, &room) != 2 ||
                 run.data_length + AE350_FILE_HEADER > room) {
                 tdsh_printf("ae350run: the program wants a file it cannot have\r\n");
                 continue;
@@ -1634,15 +1669,15 @@ int tang_ae350_run(const char *player, const char *data)
             }
             continue;
         }
-        if (starts_with(run.line, "TinyNES LINK")) {
+        if (ae350_says(run.line, "LINK", NULL)) {
             code = ae350_follow_link(&run);
             break;
         }
-        if (starts_with(run.line, "TinyNES EXIT ")) {
-            code = atoi(run.line + 13);
+        if (ae350_says(run.line, "EXIT ", &rest)) {
+            code = atoi(rest);
             break;
         }
-        if (starts_with(run.line, "TinyNES LOAD")) {
+        if (ae350_says(run.line, "LOAD", NULL)) {
             tdsh_printf("ae350run: the program stopped without exiting\r\n");
             break;
         }
