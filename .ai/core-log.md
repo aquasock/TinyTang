@@ -956,3 +956,33 @@ What only nestang used remains for a cleanup cycle of its own: `nesload` and the
 - User Test: PASS
 
 ---
+
+## 26 COMMIT Unreleased 2026-10-23T14:47:14-07:00
+
+#### Coming From:
+
+Unreleased 7b67c34
+
+#### Purpose:
+
+Hand off the questions examined after entry 25, the 8BitDo receiver, field file transfer and a console over Bluetooth, because the user's session was ending.
+
+#### Outcome:
+
+No file in this repository changed. With `tangi2c` on the desktop core (ABI 1.5) the 8BitDo Retro Receiver for the NES/SNES Classic, plugged into Adafruit's adapter on USB-A and paired to a Wii Remote with a Classic Controller, identified as `00 00 a4 20 01 01` and sent only data format 3; TinyNES's entry 52 changed its pad unit to read format 3 and the user passed both setups there, recorded as TinyNES WII-004, and TinyGBC's entry 22 carries the same change, built but not yet deployed. The receiver's manual excludes the Xbox Series X|S controller, which BLE-017 already closes on this board, and the user's Joy-Cons were flat. For moving files in the field the user asked about a USB SD reader or thumb drive on the OTG port and Sipeed's PMOD TF card: the OTG connector does not source VBUS (USB-003), so a drive needs a powered OTG adapter or self-powered hub, untested here, while the software exists in the SDK (CherryUSB's EHCI host and `usbh_msc.c`, FatFs's `fatfs/port/fatfs_usbh.c` and its `usb` volume, `tang_usb_role.c`'s role switch, the shell's `cp`); the PMOD TF card would need an SD controller in the core, a free socket and a FatFs driver over the 2 Mbaud link, and was advised against. A plan was proposed and not approved: a `usbdisk mount | eject | status` command that hosts the drive at `/usb`, logs to the card because the console is gone while hosting, and shows `/usb` in Files. The user also asked whether the console could run over Bluetooth to the PC; BLE-002 and the controller record show `ble1m10s1bredr0` includes the peripheral role, but nothing was designed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 26 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+Finish TinyGBC's entry 22 first: its seed-6 build was left running, and its next steps give the deploy and the test. The USB drive plan waits on the user's answers: whether a powered OTG adapter or self-powered hub is on hand, and whether the drive or reader is USB-A or USB-C. A console over Bluetooth would need a GATT serial service on the BL616 as a peripheral beside its central links, a console route like the desktop Terminal's bridge and a host-side bridge, none of it tried; whether the controller library keeps a peripheral link and the keyboard and mouse links together is untested. The fresh card at `/run/media/vash/TEST_DRIVE` holds only `test_1.txt`. Entry 25's open items stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
