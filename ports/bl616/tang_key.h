@@ -1,8 +1,8 @@
 // TinyTang — the keyboard as the desktop's typing input.
 //
-// The core's keyboard link carries the HID boot keyboard report: one modifier
-// byte and six usage codes, which is what a boot-protocol keyboard sends and
-// what the keyboard end already builds for itself.  The desktop does not want
+// The Bluetooth keyboard delivers the HID boot keyboard report (tang_ble.h):
+// one modifier byte and six usage codes, which is what a boot-protocol
+// keyboard sends.  The desktop does not want
 // usages, though.  It wants the byte stream an ANSI terminal sends, because
 // that is what its input parser reads, so this is the translation: usage codes
 // in, terminal input bytes out.
@@ -19,8 +19,7 @@
 // Auto-repeat is generated here rather than expected from the keyboard.  A USB
 // boot keyboard has no repeat of its own: the host decides, from its own
 // settings, that a held key should repeat, and the device goes on reporting
-// the key as held.  The keyboard link behaves the same way -- it reports state,
-// not events -- so without this a held Backspace would delete exactly one
+// the key as held.  The boot report is state, not events, so without this a held Backspace would delete exactly one
 // character, which is not what anyone means by holding Backspace.
 
 #ifndef TANG_KEY_H
@@ -48,19 +47,18 @@
 #    define TANG_KEY_REPEAT_RATE_MS 50u
 #endif
 
-/* How long the link may go without delivering a report before repeat stops.
+/* How long a keyboard may go without a fresh report before repeat stops.
  *
  * This exists because a boot keyboard reports *state*: a key held down sends
  * one report and then nothing, so repeat has to be generated here, and
- * therefore here cannot tell "still held" from "the link has stopped" by the
- * report alone.  That ambiguity was not theoretical -- when the link died
- * mid-type the last key repeated forever, flooding the desktop with input and
- * repaints until nothing recovered.
+ * therefore here cannot tell "still held" from "the keyboard has gone" by the
+ * report alone.  That ambiguity was not theoretical -- when the wired link
+ * this replaced died mid-type the last key repeated forever, flooding the
+ * desktop with input and repaints until nothing recovered.
  *
- * The core sends a heartbeat when the report has not changed, so silence now
- * means something.  Three missed heartbeats is the threshold: generous enough
- * that a busy link cannot cut a keystroke short, short enough that a dead one
- * goes quiet rather than repeating. */
+ * The caller says whether the report is fresh; the Bluetooth keyboard's is
+ * fresh for as long as it is connected (tang_ble.h), so a dropped connection
+ * stops the repeat within this time rather than leaving a key held. */
 #ifndef TANG_KEY_REPORT_TIMEOUT_MS
 #    define TANG_KEY_REPORT_TIMEOUT_MS 300u
 #endif
@@ -71,7 +69,7 @@ typedef struct {
     bool     held;          /* a key is down and repeating */
     uint32_t hold_start;    /* when the repeating key went down */
     uint32_t last_repeat;   /* when it last repeated */
-    uint32_t last_report;   /* when a report last arrived from the core */
+    uint32_t last_report;   /* when a fresh report last arrived */
 } tang_key_t;
 
 /* The key reserved for switching the screen between TinyDesk and the running
@@ -94,13 +92,13 @@ void tang_key_absorb(tang_key_t *k, uint8_t mods, const uint8_t keys[6]);
 /* Whether the reserved toggle key is down in this report. */
 bool tang_key_toggle_down(const uint8_t keys[6]);
 
-/* Pointer mode, for a keyboard whose reports do not pass through the core.
+/* Pointer mode.
  *
- * The wired link's pointer mode is decided in the core (nestang patch 0006):
- * with left-alt held, the arrows, Enter and Esc become the pad's D-pad, A and
+ * With left-alt held, the arrows, Enter and Esc become the pad's D-pad, A and
  * B -- the desktop's pointer and its two buttons -- and are withheld from the
- * report, so they move the pointer without also typing.  A Bluetooth keyboard
- * reaches the BL616 directly, so the same rule is applied here.
+ * report, so they move the pointer without also typing.  The rule was the
+ * retired wired link's, decided in its core; the Bluetooth keyboard reaches
+ * the BL616 directly, so it is applied here.
  *
  * With left-alt down in `mods`, returns the pad bits (tang_pad.h) for those
  * six usages and zeroes them in `keys`, which in a boot report is the same as

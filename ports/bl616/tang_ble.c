@@ -19,9 +19,8 @@
 // `blekbd` and `blemouse` connect one BLE keyboard and one BLE mouse (HID over
 // GATT), each on its own connection: pair with Just Works and put the device
 // in boot protocol.  The keyboard's boot report (modifiers, reserved, six
-// keycodes) is the one the wired keyboard link already carries, and
-// tang_ble_keyboard() hands it to the desktop layer's poll, which types it
-// exactly as it types the wired link's.  The mouse's boot report (buttons, X,
+// keycodes) is what tang_ble_keyboard() hands to the desktop layer's poll,
+// which types it (tang_key.h).  The mouse's boot report (buttons, X,
 // Y, and a wheel byte if the mouse adds one) is gathered by tang_ble_mouse()
 // and drives the desktop's pointer.  `watch` prints the reports as well.  Keys
 // are held in RAM only (CONFIG_BT_SETTINGS is 0), so after a reset each

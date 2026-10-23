@@ -127,29 +127,20 @@ No nestang code is copied into this repository. The protocol was read as a
 specification and the BL616 side written independently against it. The readings
 are recorded as `PROT-001` and `PROT-002`.
 
-## nestang core patch set (vendored modifications, carried as patches)
+## nestang (the desktop core's origin)
 
-The FPGA core this project runs is nand2mario's nestang, modified in place and
-carried as patches rather than as a fork, so the checkout underneath stays
-reconstructible from upstream:
+The desktop core below began as nand2mario's nestang:
 
 - Project: https://github.com/nand2mario/nestang
 - Base commit: `c2450818e1f0c858e13c5dd16746ee5221a5c760` ("upgrade iosys")
 - License: GPL-3.0 (`COPYING` at that commit)
-- Patches: `third_party/patches/0001` through `0007`, applied by
-  `scripts/apply-nestang-patches.sh`
 
-The patches are modifications to GPL-3.0 sources, so the patch files reproduce
-lines of GPL-3.0 code and that licence governs those lines. Two files they add
-are this project's own work and say so in their headers: `src/keylink_rx.sv`
-(the keyboard-link receiver) is marked `SPDX-License-Identifier: GPL-3.0-only`,
-which is the licence a addition to a GPL-3.0 core should carry. `0004` also
-removes `src/usb_hid_host.v` and its ROM image from the build: the low-speed USB
-hosts they implemented are displaced on both front ports by the keyboard link,
-so the module is no longer instantiated anywhere.
-
-The menu variant is carried in `third_party/patches/menu/`. It is also a
-modification to GPL-3.0 sources.
+Until core-log entry 25 this project also carried a patch set against that
+commit (`third_party/patches/0001`–`0007`, and a menu-core patch on top) that
+built nestang's NES core with the desktop layer and a keyboard link, and an
+emulator-free menu core. Both cores were retired, TinyNES and the desktop core
+having replaced them, and the patches with them; they remain in git history,
+under GPL-3.0 as modifications to GPL-3.0 sources.
 
 ## Desktop core (`fpga/desktop/`)
 

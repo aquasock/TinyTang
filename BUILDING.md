@@ -154,10 +154,10 @@ them.
   build this from scratch, so the classroom goal is not met yet.  Shipping the
   database is the next release's question, and it is a licensing decision before
   it is an engineering one.
-- **The NES and menu cores.**  Not covered here: they come from nestang, which
-  the manifest pins at `c2450818`, and need Gowin EDA to build.  Only the desktop
-  core and the TinyNES core use the open toolchain; both still need Gowin's
-  device files to generate the database.
+- **Gowin's device files.**  The desktop core and the TinyNES core use the open
+  toolchain, but both still need them to generate the database.  (The
+  nestang-derived NES and menu cores, which needed Gowin EDA itself, were
+  retired in core-log entry 25.)
 
 ## Licences
 

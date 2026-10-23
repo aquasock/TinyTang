@@ -12,10 +12,10 @@
 #
 #   FILE="/root/media/music/test.mp3"; tdsh run /root/scripts/phosphor.tdsh
 #
-# The core carries the TinyDesk layer, so this works the way castlevania.tdsh
-# does: the desktop stays up across the load, the screen is handed to the
-# oscilloscope, and F12 switches between it and TinyDesk. An optional track is
-# started without waiting, so the shell comes straight back and the core stays
+# The core carries the TinyDesk layer, so the desktop stays up across the
+# load, the screen is handed to the oscilloscope, and F12 switches between it
+# and TinyDesk. An optional track is started without waiting, so the shell
+# comes straight back and the core stays
 # loaded after the track ends -- loading another core is what replaces it.
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
 # PMOD selection comes only from /tang.ini, applied automatically by tangload.

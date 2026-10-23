@@ -175,7 +175,7 @@ bool tang_key_toggle_down(const uint8_t keys[6])
     return key_in(keys, TANG_KEY_USAGE_TOGGLE);
 }
 
-/* The same six usages and the same bits as the core's link_key_to_pad(). */
+/* The six usages and pad bits the retired wired link's core used. */
 static uint16_t pointer_bit(uint8_t usage)
 {
     switch (usage) {
@@ -246,10 +246,10 @@ int tang_key_step(tang_key_t *k, uint8_t mods, const uint8_t keys[6],
                 break;
             }
         }
-        /* Silence means the link, not the key.  Without this the last report
-         * would repeat forever once the core stopped reporting, and a repeated
-         * key is not a passive stall -- it drives the desktop to repaint, which
-         * keeps the very link that failed busy. */
+        /* Silence means the keyboard has gone, not the key.  Without this the
+         * last report would repeat forever once it stopped reporting, and a
+         * repeated key is not a passive stall -- it drives the desktop to
+         * repaint. */
         const bool alive =
             (uint32_t)(now_ms - k->last_report) < TANG_KEY_REPORT_TIMEOUT_MS;
         if (still == 0 || !alive) {

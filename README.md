@@ -21,7 +21,7 @@ TinyTang stands on nand2mario's work. Its lineage runs through his TangCore
 firmware for this same BL616 (`firmware-bl616`), by way of Tang-Control, a fork
 of it: the board knowledge TinyTang rests on was learned there, its Gowin JTAG
 programmer is his, the UART protocol between the BL616 and the FPGA cores is his
-design, and the NES core it runs is his nestang. What was written for TinyTang
+design, and the desktop core began as his nestang. What was written for TinyTang
 is the rest -- the TinyDesk Shell port, the desktop on HDMI, Bluetooth input,
 the crash recorder -- and `THIRD_PARTY.md` says exactly what came from where.
 For a dedicated game launcher with his full library of cores, see
@@ -77,10 +77,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
   radio needs 32 KB of heap free. The button is TinyTang's, from the carried patch
   `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
 - **The Terminal window runs the shell.** It is the same session as the
-  console, reached through a bridge over two ring buffers, so
-  `tdsh run /root/scripts/boot-cart.tdsh` typed into a desktop window boots a core
-  and starts a cartridge without leaving the desktop. One user and one session
-  by design.
+  console, reached through a bridge over two ring buffers, so a command typed
+  into a desktop window runs as it would at the console. One user and one
+  session by design.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
   core keeps running underneath, and while TinyDesk is up the controllers are
   gated away from the game. It works at the console, in the desktop and during
@@ -165,9 +164,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
   program and serves the byte ranges of `file` that it requests through its
   result-word mailbox (Tang-Phosphor `ae350_request.h`), printing each request
   with its CRC and then the program's result words. The core,
-  `/root/cores/console138k/tinyphosphor.bin`, carries the desktop layer, the
-  keyboard link and F12 the way the NES core does, so it runs under TinyDesk
-  with the layer left on. The merged core has no WAV or FLAC decoder in the
+  `/root/cores/console138k/tinyphosphor.bin`, carries the desktop layer, so it
+  runs under TinyDesk with the layer left on. The merged core has no WAV or FLAC decoder in the
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
   the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
   desktop up, probes it, enables the stereo XY oscilloscope with medium trails
@@ -251,8 +249,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
-- **`osd on | off | clear | at | menu`** draw on the NES core's own 32x28 text
-  page, the one nand2mario's menu uses. The menu core does not build that page.
+- **`osd on | off | clear | at | menu`** draw on nestang's own 32x28 text
+  page, the one nand2mario's menu uses, on a core that has it.
 - **`blescan [seconds]`** starts the BL616's own Bluetooth LE radio and lists
   the devices advertising nearby, strongest first, with address, address type,
   signal (dBm), kind (`kbd` or `mouse` from the advertised appearance, `hid`
@@ -361,8 +359,6 @@ tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 # (tools/deploy_tinytang.sh).
 tools/build_desktop_core_open.sh # build/desktop/open-s3/desktop.bin, open toolchain: HDMI + VGA
 # tools/build_desktop_core.sh   # the same core through Gowin, kept as an HDMI reference only
-# tools/build_nestang_core.sh   # nestang's NES core with the desktop layer: Gowin EDA, not released
-# tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
 
 # Put the core and the scripts on the card (at a plain shell prompt -- fact 15)
 tools/tinytang_put.py build/desktop/open-s3/desktop.bin                /root/cores/console138k/tinytang.bin   # fe5289f5e446
@@ -441,10 +437,9 @@ survives a power cycle.  The save crosses the link as hex text, because in link
 mode the FPGA turns the AE350's bytes into TinyDesk's text frames and a
 receiver that drops CR and ends lines on LF cannot carry binary.
 
-Earlier builds played cartridges on nand2mario's nestang through
-`scripts/boot-cart.tdsh` and `nesload`.  Those scripts stay in the repository,
-but the core they load, `nestang-desk.bin`, needs Gowin EDA to build
-(`tools/build_nestang_core.sh`) and is not part of the release.
+Earlier builds played cartridges on nand2mario's nestang with `nesload`.  That
+core, its keyboard link and its scripts were retired in core-log entry 25;
+`nesload` itself remains until a later cleanup.
 
 ### What the board boots
 
@@ -457,25 +452,9 @@ the screen shows a TangCore splash (fact 14).
 ## The FPGA cores
 
 The default host, `desktop.bin` (`tinytang.bin` on the card), is TinyTang's own core in `fpga/desktop/`
-(below). The NES and menu cores derive from nand2mario's nestang, carried as
-patches against upstream rather than as a fork; they need Gowin EDA and are
-not part of the release, whose NES core is TinyNES's. The checkout stays pristine at commit `c2450818`, and
-`scripts/apply-nestang-patches.sh` applies `third_party/patches/0001` through
-`0007` before a build:
-
-| Patch | What it adds |
-|---|---|
-| 0001 | Gates the physical pads away from the game while the overlay is up |
-| 0002 | `textdisp_wide`: the 80x45 cell layer, per-cell 15-bit colour |
-| 0003 | Wires the layer into iosys (commands `0x13`-`0x15`) and the HDMI mixer |
-| 0004 | The keyboard link receiver on both front USB D+ pins |
-| 0005 | The keyboard report sent up to the BL616 as response `0x08` |
-| 0006 | Left-alt pointer mode: arrows, Enter and Esc become pad bits |
-| 0007 | Aligns the layer with the raster (fact 16) |
-
-`third_party/patches/menu/0001-menu-core.patch` applies on top to make the
-menu core: the NES machine, its loader and SDRAM are not instantiated, and the
-legacy text page is removed. It remains the legacy HDMI-only rollback host.
+(below). The nestang-derived NES and menu cores, built from a patch set
+against nand2mario's nestang with Gowin EDA, were retired in core-log entry
+25: TinyNES is the NES core, and the desktop core is the host.
 
 The default host is `desktop.bin`, built with the open toolchain by
 `tools/build_desktop_core_open.sh`. Its sources all live in `fpga/desktop/`:
@@ -549,7 +528,7 @@ for the register interface and regression commands.
     keyboard, one mouse, and one device that is both -- which saves pairings to
     the card and reconnects them through the
     controller's whitelist; `tang_ble_bonds.c` is the pairing file's format.
-    `tang_osd_desk.c` types the keyboard's boot report like the wired link's,
+    `tang_osd_desk.c` types the keyboard's boot report,
     with left-alt pointer mode applied by `tang_key_pointer()`, and hands the
     mouse's movement, buttons and wheel to `tang_pad_pointer()`.
   - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
@@ -560,12 +539,10 @@ for the register interface and regression commands.
   desktop, as submodules.
 - `fpga/desktop/` — the desktop core, TinyTang's own HDL; `fpga/hdmi_test/` —
   the minimal HDMI colour-bar core.
-- `third_party/patches/` — the nestang patch series (NES core) and the
-  menu-core patch.
-- `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up),
-  `boot-cart.tdsh` (core, probe, ROM), `castlevania.tdsh` and `phosphor.tdsh`
-  (start one track on the Phosphor core under TinyDesk); plus the two
-  patch appliers, which run on the host.
+- `third_party/patches/` — the TinyDesk and TinyDesk Shell patches.
+- `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up) and
+  `phosphor.tdsh` (start one track on the Phosphor core under TinyDesk); plus
+  the patch appliers, which run on the host.
 - `tools/` — host tools:
   - `make_test_wav.py` — writes a deterministic 4-second test tone for the
     Phosphor player.
@@ -581,8 +558,6 @@ for the register interface and regression commands.
     open toolchain or Gowin reference) to isolate the HDMI hardware path.
   - `build_desktop_core.sh` — stage `fpga/desktop/` and build it with Gowin as a reference
     (`--prepare-only` stages it for the open toolchain).
-  - `build_nestang_core.sh`, `build_menu_core.sh` — apply the patches and build the NES and menu
-    cores with Gowin.
   - `test_textdisp_wide.sh` — simulates the layer against a free-running
     1650x750 raster and checks every visible pixel (Verilator).
   - `tests/` — host tests for the frame cache, the key translation, the pad,
@@ -693,8 +668,7 @@ SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
 - **RISC-V toolchain** (`riscv64-unknown-elf-*`, Xuantie-900 V2.6.1, GCC
   10.2.0), default `~/.cache/tangcore-dev/toolchain/bin`.
 - For `desktop.bin`: yosys, the nextpnr-himbaechel fork and the apicula fork
-  (see "The FPGA cores"). For the NES and menu cores: **Gowin EDA 1.9.11.03**
-  and a nestang checkout at `../tangcore/nestang` (or `NESTANG_DIR`).
+  (see "The FPGA cores").
 - **Verilator** for `tools/test_textdisp_wide.sh`, and a C compiler for
   `tools/tests/`.
 - Python with `pyserial` for the tools in `tools/`.
@@ -714,9 +688,8 @@ SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
 - **Phosphor host transport** — Apache-2.0 — the `fpga_*`, `flac_stream_prefix`
   and `ae350_play` files in `ports/bl616/phosphor/` and two host tests, written
   in Tang-Control and keeping its licence here.
-- **nestang** — GPL-3.0 — the NES and menu cores, modified by the patches in
-  `third_party/patches/`; the patch files carry GPL-3.0 lines. The desktop
-  core in `fpga/desktop/` is GPL-3.0-only, derived in part from nestang. The BL616 end of
+- **nestang** — GPL-3.0 — the desktop core in `fpga/desktop/` is
+  GPL-3.0-only, derived in part from nestang. The BL616 end of
   the core's UART protocol was written from nestang's documentation of it, and
   no nestang code is copied into the firmware.
 - **Bouffalo SDK** — the vendor SDK, for the chip support and FatFS.

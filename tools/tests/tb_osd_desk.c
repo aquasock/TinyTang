@@ -98,15 +98,6 @@ int tang_osd_toggle(void)
     return tang_osd_set(!g_osd_last);
 }
 
-/* The keyboard link: no keyboard here, so an empty report, never fresh. */
-bool tang_fpga_keyboard(uint8_t out[8])
-{
-    for (int i = 0; i < 8; i++) {
-        out[i] = 0;
-    }
-    return false;
-}
-
 /* The Bluetooth keyboard: a report the test sets, live while "connected". */
 static uint8_t g_ble_rep[8];
 static bool    g_ble_live;
@@ -444,7 +435,7 @@ int main(void)
     g_joy = 0;
     while (tang_osd_desk_read_byte() >= 0) { }
 
-    /* ---- the Bluetooth keyboard types like the wired one ----------------- */
+    /* ---- the Bluetooth keyboard types ------------------------------------ */
     {
         char got[64];
 
@@ -456,7 +447,7 @@ int main(void)
         check(strcmp(got, "a") == 0, "a Bluetooth key did not type");
 
         /* A BLE keyboard sends nothing while a key is held, so repeat must
-         * outlive the wired link's 300 ms heartbeat timeout while connected. */
+         * outlive the 300 ms report timeout while connected. */
         g_tick = 1600;
         desk_poll();
         read_typed(got, sizeof(got));
@@ -475,8 +466,9 @@ int main(void)
         read_typed(got, sizeof(got));
         check(got[0] == '\0', "a key held when the link dropped kept repeating");
 
-        /* Console mode: left-alt with an arrow types nothing and moves nothing,
-         * as the core's pointer mode does for the wired keyboard. */
+        /* Console mode: left-alt with an arrow types nothing and moves nothing:
+         * pointer mode takes the arrow, and the pointer moves only on the
+         * desktop. */
         g_ble_live = true;
         ble_report(TANG_KEY_LALT, 0x4F);         /* left-alt + Right */
         g_tick = 2600;

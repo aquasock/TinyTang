@@ -28,7 +28,6 @@
 # /tang.ini automatically, just as Phosphor does. The first version supports
 # none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
 # Build it with tools/build_desktop_core_open.sh, as BUILDING.md describes.
-# Cartridge launching uses boot-cart.tdsh.
 CORE=/root/cores/console138k/tinytang.bin
 
 # The core is named at the "loaded" line below, not up here.  Until tangload has

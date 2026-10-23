@@ -55,17 +55,7 @@ At the console after the earlier swaps, 75,044 bytes were free with a
 the last ordinary script used 10,728 of its 16,384 stack bytes.
 
 Run `tools/tests/test_phosphor_catalog.sh` for catalog sizing, filtering,
-sorting, boundaries, failure handling and cleanup. Generate and upload the
-script probe while the USB console is at its prompt:
-
-```sh
-python3 tools/make_script_heap_probe.py /tmp/castlevania-heap.tdsh
-python3 tools/tinytang_put.py /tmp/castlevania-heap.tdsh /root/scripts/castlevania-heap.tdsh
-```
-
-In TinyDesk, load Phosphor, play a song and keep the Phosphor window open.
-Run `tdsh run /root/scripts/castlevania-heap.tdsh` in its Terminal. The readouts
-include the active script's session copy, stack and interpreter before the
-core load, before the ROM load and after it. Check free bytes, largest free
-block and refused allocations, then read `crash` after returning to the
-console. Those sampled readings do not measure an all-time heap minimum.
+sorting, boundaries, failure handling and cleanup. The script-worker heap
+readings above came from a probe that wrapped the Castlevania launcher on the
+nestang core; it was retired with that core in core-log entry 25, and `crash`
+at the console is what reads the heap now.

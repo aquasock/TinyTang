@@ -57,16 +57,13 @@ static char         s_in[DESK_IN_MAX];
 static volatile int s_in_head, s_in_tail;
 static tang_pad_t   s_pad;
 
-/* One per keyboard: the wired link's report, relayed by the core, and the
- * Bluetooth keyboard's, which reaches the BL616 directly.  Each keeps its own
- * held key and F12 edge, so two keyboards cannot steal each other's repeat or
- * make each other's F12 look held. */
+/* The Bluetooth keyboard, the only keyboard: its held key, for repeat, and
+ * its F12 edge. */
 typedef struct {
     tang_key_t kbd;
     bool       toggle_prev;    /* F12 was down at the last poll */
 } desk_kbd_t;
 
-static desk_kbd_t   s_wired;
 static desk_kbd_t   s_ble;
 
 static td_vterm_t  s_vt;
@@ -337,9 +334,9 @@ void tang_osd_desk_core_reloaded(void)
     if (s_enabled) {
         s_rearm = DESK_REARM_POLLS;
     }
-    /* A core that carries the keyboard link may have just arrived, and F12
-     * has to work from then on whether or not anyone has turned the layer
-     * on -- so the task that watches for it starts here at the latest. */
+    /* F12 has to work from the first core load whether or not anyone has
+     * turned the layer on -- so the task that watches for it starts here at
+     * the latest. */
     ensure_task();
 }
 
@@ -439,8 +436,7 @@ static void console_mouse(const tang_mouse_t *mouse)
  * only when the report changes, because a boot keyboard reports state rather
  * than events -- a key held down sends one report and then nothing -- so a core
  * that wants auto-repeat generates it itself, the way tang_key_step() does for
- * the desktop.  Only the Bluetooth keyboard is sent; the wired report comes
- * *from* a core (see FPGA_CMD_KEYBOARD). */
+ * the desktop. */
 static void keyboard_frame(const uint8_t mods, const uint8_t keys[6])
 {
     static uint8_t last[7];
@@ -500,20 +496,13 @@ static void desk_poll(void)
     uint16_t joy1 = 0, joy2 = 0;
     tang_fpga_joypad(&joy1, &joy2);
 
-    /* The keyboard, read once per poll whatever is on screen: the freshness
-     * flag is read-and-clear, so the toggle and the typing must share it.
-     *
-     * The report is the HID boot layout: byte 0 is the modifier, byte 1 is
-     * the reserved byte a boot report carries, and bytes 2..7 are the usage
-     * codes. */
-    uint8_t rep[8];
-    const bool fresh = tang_fpga_keyboard(rep);
-
-    /* The Bluetooth keyboard, read the same way.  Its reports never pass
-     * through the core, so the core's pointer mode (patch 0006) is applied
-     * here instead: with left-alt held its arrows, Enter and Esc join the pad
-     * word and leave the report.  It sends only on change, so it counts as
-     * fresh for as long as it is connected (tang_ble.h). */
+    /* The Bluetooth keyboard, read once per poll whatever is on screen, so
+     * the toggle and the typing share one report.  It is the HID boot
+     * layout: byte 0 the modifier, byte 1 reserved, bytes 2..7 the usage
+     * codes.  The pointer mode is applied here: with left-alt held its
+     * arrows, Enter and Esc join the pad word and leave the report.  It sends
+     * only on change, so it counts as fresh for as long as it is connected
+     * (tang_ble.h). */
     uint8_t brep[8];
     const bool bfresh = tang_ble_keyboard(brep);
     joy1 |= tang_key_pointer(brep[0], &brep[2]);
@@ -543,9 +532,7 @@ static void desk_poll(void)
      * is exactly the case where the desktop is hidden. */
     const bool pad_toggle =
         ((uint16_t)(joy1 & (uint16_t)~s_pad.prev) & TANG_PAD_LB) != 0;
-    const bool wired_toggle = toggle_pressed(&s_wired, rep);
-    const bool ble_toggle = toggle_pressed(&s_ble, brep);
-    const bool key_toggle = wired_toggle || ble_toggle;
+    const bool key_toggle = toggle_pressed(&s_ble, brep);
 
     if (tang_osd_shown()) {
         if (s_pointer) {
@@ -571,13 +558,8 @@ static void desk_poll(void)
         char typed[32];
         const uint32_t now_ms =
             (uint32_t)xTaskGetTickCount() * (1000u / (uint32_t)configTICK_RATE_HZ);
-        int tn = tang_key_step(&s_wired.kbd, rep[0], &rep[2], fresh, now_ms,
-                               typed, sizeof(typed));
-        if (tn > 0) {
-            desk_in_push(typed, tn);
-        }
-        tn = tang_key_step(&s_ble.kbd, brep[0], &brep[2], bfresh, now_ms,
-                           typed, sizeof(typed));
+        const int tn = tang_key_step(&s_ble.kbd, brep[0], &brep[2], bfresh, now_ms,
+                                     typed, sizeof(typed));
         if (tn > 0) {
             desk_in_push(typed, tn);
         }
@@ -590,7 +572,6 @@ static void desk_poll(void)
         /* The keys belong to the game too.  Absorbing them means a key still
          * held when TinyDesk comes back -- an arrow mid-jump -- is neither a
          * fresh press nor a repeat into the shell. */
-        tang_key_absorb(&s_wired.kbd, rep[0], &rep[2]);
         tang_key_absorb(&s_ble.kbd, brep[0], &brep[2]);
     }
 
@@ -608,13 +589,9 @@ static void desk_watch_toggle(void)
     if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open()) {
         return;
     }
-    uint8_t rep[8];
     uint8_t brep[8];
-    (void)tang_fpga_keyboard(rep);
     (void)tang_ble_keyboard(brep);
-    const bool wired_toggle = toggle_pressed(&s_wired, rep);
-    const bool ble_toggle = toggle_pressed(&s_ble, brep);
-    if (wired_toggle || ble_toggle) {
+    if (toggle_pressed(&s_ble, brep)) {
         (void)tang_osd_desk_set(true);
     }
 }
@@ -715,7 +692,6 @@ int tang_osd_desk_set(bool on)
     palette_init();
     s_in_head = s_in_tail = 0;
     tang_pad_reset(&s_pad, TANG_DESK_COLS, TANG_DESK_ROWS);
-    tang_key_reset(&s_wired.kbd);
     tang_key_reset(&s_ble.kbd);
     td_vterm_init(&s_vt, TANG_DESK_COLS, TANG_DESK_ROWS);
     s_vt.reply = desk_reply;

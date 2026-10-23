@@ -300,7 +300,7 @@ int tdsh_bl616_input_read_byte(void)
     /* Three sources, in the only order that keeps a single reader on the
      * stream.  The desktop's Terminal takes it while the desktop is up.
      * Otherwise, if the layer is up, take the layer's ring -- that is
-     * console mode, and the ring is where the keyboard link's typing
+     * console mode, and the ring is where the keyboard's typing
      * lands, through the same path the desktop reads, so the keyboard
      * types at the prompt without the desktop running.  Otherwise the CDC,
      * so a host can still type.

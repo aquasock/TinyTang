@@ -892,3 +892,67 @@ The panel is dark at boot and shows only what `oled print` writes, which a core 
 - User Test: PASS
 
 ---
+
+## 25 COMMIT Unreleased 2026-10-23T13:00:43-07:00
+
+#### Coming From:
+
+Unreleased 966da0d
+
+#### Purpose:
+
+Retire the legacy keyboard link together with the nestang NES and menu cores that carried it, as the user chose over removing the link alone, leaving the Bluetooth keyboard as the only keyboard.
+
+#### Outcome:
+
+The user was offered retiring only nestang patches `0004` to `0006`, which would have meant regenerating `0007` and the menu patch and rebuilding both cores with Gowin EDA without a board test, or retiring the two cores outright, since neither is on the rebuilt card and TinyNES and the desktop core replaced them; the user chose the second. The nestang series `0001` to `0007`, the menu-core patch and its README, `scripts/apply-nestang-patches.sh`, `scripts/boot-cart.tdsh`, `scripts/castlevania.tdsh`, `tools/build_nestang_core.sh`, `tools/build_menu_core.sh`, `tools/tinytang_desk_deploy.sh`, `tools/make_script_heap_probe.py` and the nestang line in `deps.conf` were removed; `third_party/patches/README.md` now covers the TinyDesk and shell series, and `THIRD_PARTY.md` keeps nestang's project, commit and licence as the desktop core's origin. In the firmware the core-to-BL616 keyboard report `0x08` is no longer decoded: `fpga_frames.c` lost its keyboard cache and `fpga_frames_keyboard()`, `tang_fpga_uart.c` lost `tang_fpga_keyboard()`, and `tang_osd_desk.c` types, repeats, watches F12 and absorbs keys from the Bluetooth keyboard alone; `tang_key.c`'s translation, its repeat timeout, now judged by the Bluetooth connection, and the firmware's left-alt pointer mode stay, as do the `0x17` keyboard command to programs under the layer and the joypad report `0x03` TinyNES sends. A core that still sends `0x08`, which no current core is known to, would have it queued as an unnamed frame and ignored. `nesload` and the legacy 32x28 `osd` page commands remain for a later cleanup, as planned. `test_osd_desk.sh` (88), `test_key.sh` (53), `test_frames.sh` (24), `test_tang_flash.sh`, `test_terminal_lifecycle.sh` and `tools/check_help_width.py` (137 entries) passed; `tools/fetch-deps.sh --check` still reports the unsatisfied entries recorded since entry 22. Firmware `966da0d-dirty.1704dab`, 644,848 bytes, SHA-256 `1ae0abf41d6a163756e2b316ba89b4fc2274287dfa14d0c6699860538f11a943`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in project files beyond the existing ones in `tang_jtag_programmer.c`, was flashed with `tools/tinytang_flash.py --yes`, the first attempt finding no `/dev/ttyACM0` until the user reconnected the cable; after the user's reboot with the Classic Controller attached, `platform` read `966da0d-dirty.1704dab` and `crash` 47,864 bytes free with a largest block of 29,504 bytes. The user reported Bluetooth typing with repeat in the desktop, F12, the left-alt pointer and a TinyNES game with F12 over it all working, and passed the cycle. `.ai/core-reference.md` revises DEV-005, PROT-007, PROT-008, PROT-009, TDSH-004, TOOL-003, TOOL-010, TOOL-012, TOOL-019, BLE-006 and BLE-008 and the index lines of DEV-005, TOOL-003, TOOL-010 and TOOL-019 for the retirement. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 25 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+What only nestang used remains for a cleanup cycle of its own: `nesload` and the ROM-streaming commands, the legacy 32x28 `osd` page and `tang_osd.c`'s and `tang_usbstat.c`'s references to it and to the menu core, and the reference records that describe them. Entry 23's and 24's open items stand: `tangi2c scan` missing the Wii controller, the unmeasured pin voltage with both pull-ups to 5 V, the DS3231's backup cell, TinyNES's freeze on leaving a game, `i2s2_oled` on Phosphor and `vga` under the new key untested, TinyNES and TinyGBC driving PMOD0 where the OLED sits, `/root/ble/bonds.bin`, the console-only lost state send, `.zip` files opening in the Editor, TinyGBC's waiting pages, `tools/fetch-deps.sh --check`'s fork paths, and `v0.1.0` as a pre-release.
+
+#### Files Modified:
+
+- BUILDING.md
+- deps.conf
+- docs/phosphor-memory-budget.md
+- ports/bl616/fpga_frames.c
+- ports/bl616/fpga_frames.h
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_ble.h
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_key.c
+- ports/bl616/tang_key.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tdsh_platform_bl616.c
+- README.md
+- scripts/apply-nestang-patches.sh
+- scripts/boot-cart.tdsh
+- scripts/boot.tdsh
+- scripts/castlevania.tdsh
+- scripts/phosphor.tdsh
+- THIRD_PARTY.md
+- third_party/patches/0001-controller-gate.patch
+- third_party/patches/0002-desktop-text-layer.patch
+- third_party/patches/0003-desktop-layer-wiring.patch
+- third_party/patches/0004-keyboard-link.patch
+- third_party/patches/0005-keyboard-typing.patch
+- third_party/patches/0006-pointer-mode.patch
+- third_party/patches/0007-wide-layer-alignment.patch
+- third_party/patches/menu/0001-menu-core.patch
+- third_party/patches/menu/README.md
+- third_party/patches/README.md
+- tools/build_menu_core.sh
+- tools/build_nestang_core.sh
+- tools/make_script_heap_probe.py
+- tools/tests/tb_osd_desk.c
+- tools/tinytang_desk_deploy.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -12,8 +12,7 @@
 #include "tang_pad.h"
 
 /* The connected keyboard's current HID boot report: byte 0 the modifiers,
- * byte 1 reserved, bytes 2..7 the usages -- the layout the wired link's 0x08
- * report has, so tang_key.c takes either.
+ * byte 1 reserved, bytes 2..7 the usages, which tang_key.c types.
  *
  * Returns true while a keyboard is connected and set up, and the report is
  * then live.  A BLE keyboard sends only when its state changes, so liveness
