@@ -51,7 +51,7 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "usage: gen_desktop_block_frames <dir>\n");
         return 2;
     }
-    // oled_link.cpp's full repaint: six 64-cell blocks.
+    // An `oled print` (phosphor/oled_cmd.cpp): six 64-cell blocks.
     for (unsigned first = 0; first < 384; first += 64) block(first, 64, 0x4000 + frames, 0);
     // Then a short block in the middle and the last cell alone.
     block(100, 3, 0x4000 + frames, 11);

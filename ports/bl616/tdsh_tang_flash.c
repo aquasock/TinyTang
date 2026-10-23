@@ -12,7 +12,6 @@
 #include "tang_fw_update.h"
 #include "tang_core_load.h"
 #include "tdsh_bl616.h"
-#include "tang_oled.h"
 #include "tang_osd_desk.h"
 
 #include <stdint.h>
@@ -168,7 +167,7 @@ void tang_ini_core_replacing(void);
 /* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
 void tang_phosphor_core_replacing(void);
 
-/* Two shells can now run at once (the OLED terminal's and the console's), and
+/* Two shells can run at once (the desktop Terminal's and the console's), and
  * the JTAG programmer has one set of pins: a second load waits for nothing and
  * is refused. */
 static bool s_programming;
@@ -186,7 +185,6 @@ tang_load_result_t tang_core_load(const char *real)
     /* A track playing on a Phosphor core is stopped while that core can still
      * be told, so the playback task never talks to the core that replaces it. */
     tang_phosphor_core_replacing();
-    tang_oled_core_replacing();
     tang_ini_core_replacing();
 
     const bool ok = fpga_program(real);
@@ -198,7 +196,6 @@ tang_load_result_t tang_core_load(const char *real)
         /* A core with the PMOD sockets brings them up released; declare
          * what /tang.ini says is seated (phosphor/pmod_sockets.cpp). */
         tang_ini_core_loaded();
-        tang_oled_core_loaded();
     }
     s_programming = false;
     return ok ? TANG_LOAD_OK : TANG_LOAD_FAILED;

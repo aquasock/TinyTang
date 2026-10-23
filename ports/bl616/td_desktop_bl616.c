@@ -53,7 +53,6 @@
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
-#include "tang_oled.h"
 #include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -215,7 +214,6 @@ static td_sysinfo_t s_info;
 void td_apps_register_all(void)
 {
     td_terminal_register();
-    td_oled_terminal_register();
     td_files_register();
     td_editor_register();
     td_sysmon_register();

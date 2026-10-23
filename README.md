@@ -498,10 +498,11 @@ together and carries the PMOD I2C bus (apicula `04bc3c5` and nextpnr
 `8be8657b` or later, whose spine select ports hold VSS; TOOL-021). Seed 26 of
 ABI 1.2 was the core that stayed clean when the board was hot (`pll_nes` at `PLL_R[0]`; see
 `fpga/desktop/desktop.cst` and [BUILDING.md](BUILDING.md)). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
-`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED terminal
+`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED text display
 alongside released sockets and the complete VGA pair, and ABI 1.2 gives it
 three font sets -- Standard 8×8 (12×8), Compact 6×8 (16×8) and Graphics 4×4
-(24×16); the desktop's **OLED Terminal** app runs an independent shell on it.
+(24×16); `oled print "line" ["line"...]` writes text to it once, from the USB
+console or the desktop's Terminal, and `oled clear` darkens it again.
 Encoder and I2S remain features of Phosphor. The old menu image and build tool
 remain available for rollback. See [fpga/desktop/README.md](fpga/desktop/README.md)
 for the register interface and regression commands.

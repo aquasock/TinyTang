@@ -10,7 +10,7 @@ link are removed; the keyboard and mouse are Bluetooth, on the BL616.
 Every source is in this directory: `desktop_top.sv`, the UART link
 (`desktop_link.v`), the compositor and HDMI output (`desktop_hdmi.sv`, `hdmi/`),
 the 80×45 layer (`textdisp_wide.sv`), the register endpoint, PMOD sockets and
-the I2C engine (`desktop_pmod.sv`, `i2c_master.sv`), OLED terminal and PLL
+the I2C engine (`desktop_pmod.sv`, `i2c_master.sv`), the OLED text display and PLL
 wrappers. The top, link and compositor
 began as nestang's `nestang_top.sv`, `iosys_bl616.v` and `nes2hdmi.sv`
 (nand2mario, GPL-3.0); the NES machine, cartridge loader, controllers, frame
@@ -156,9 +156,9 @@ output is black otherwise. A streamed compositor regression independently
 checks the physical VGA color/sync pins over a full raster and all HDMI visible
 pixels against a reference glyph image, including line and frame wraps.
 
-## OLED terminal
+## The OLED
 
-The OLED is a separate shell display filling its 96×64 pixels in one of three
+The OLED is a separate text display filling its 96×64 pixels in one of three
 font sets, chosen by register `0x118` (desktop ABI 1.2):
 
 | Set | Value | Cell | Grid | Glyphs |
@@ -182,47 +182,30 @@ Cursor updates use the same vertical-blank handshake as socket declarations.
 The panel clocks SPI at a 161.6 ns period and latches both pixel bytes before
 sending them. Its frame signature covers the serialized pixels.
 
-The BL616 app **OLED Terminal** owns an independent TinyDesk Shell session
-and compact terminal emulator, sized to the font set's grid, Standard by
-default at every boot; `oledterm font standard|compact|graphics` changes it
-at once, keeping the text and the cursor's line. The link poller sends the
-set to `0x118` before any cell, and on a desktop core older than ABI 1.2 it
-holds the terminal at Graphics, the only set that core can draw. The graphics
-demos (`tools/make_oled_demo.py`) select Graphics while they play and return
-to Standard.
-Keyboard and paste input go there only when its window has focus; output
-continues while unfocused or closed. The shell task and script workers use
-a task-local terminal route, separate from TinyConsole and the existing
-Terminal app. Starting it allocates a session, a 16 KB task stack and the
-emulator, input ring and link buffers, about 31 KB of heap on hardware and
-nothing before it starts; it is held until reboot, which leaves too little
-for a desktop script launch alongside it. `crash tasks` lists every task's
-stack margin. The background desktop poll task sends changed cell blocks and
-cursor state. After each core load it asks the core's ID once with the
-legacy command and sends extended frames only to this desktop core, so a
-game core is never sent them. It pauses for core replacement and checks
-desktop identity, ABI and OLED configuration once a second. Starting
-another desktop, or `tangput`, from the OLED shell is refused, and a second
-`tangload` is refused while one is programming. Both root sessions share
-`~/.tdsh_history`, so commands entered in both at the same instant can lose
-a history line.
+The firmware draws on it only when told to: `oled print "line" ["line"...]`
+lays its arguments out one per line from the top-left, wrapping at the font
+set's width, in grey on black, and writes the set to `0x118`, all 384 cells
+to `0x200` in six 64-word blocks and a hidden cursor to `0x114`. Nothing is
+sent after that, so the panel holds the text until the next print,
+`oled clear` (every cell the reset cell `0x0720`, dark as at boot) or a core
+load, which resets the cells. `oled font standard|compact|graphics` picks the
+set for the next print, Standard by default. Text that does not fit is cut
+and the command says so. The command holds no task and no heap (its cells are
+on the calling shell's stack), so it runs from the USB console and from the
+desktop's Terminal alike; every register access holds the FPGA link lock
+across its reply, the lock the desktop layer's own traffic takes. It asks the
+core's ID with the legacy command first and refuses unless the loaded core
+is this one at ABI 1.2 or later with the OLEDrgb declared, so a game core is
+never sent extended frames. The shell keeps only the character after a
+backslash, so a line break is a new argument. The card's `i2s2_oled` layout
+gives this core the OLED in PMOD0 with PMOD1 released, `0xc0 = 0x0010`.
 
-Diagnostic shell commands are `oledterm start`, `oledterm status`,
-`oledterm font [standard|compact|graphics]` and `oledterm run "echo hello"`.
-The last submits a command to the independent session. Run
-`tools/make_oled_font.py` to regenerate the three font files and a native
+Run `tools/make_oled_font.py` to regenerate the three font files and a native
 96×64 specimen of each set under `build/oled-terminal/`. Additional regressions:
 
 ```bash
-bash tools/tests/test_oled_vterm.sh
 bash tools/tests/test_desktop_oled.sh
+bash tools/tests/test_oled_text.sh
 bash tools/tests/test_osd_desk.sh
-bash tools/tests/test_oled_link.sh
-bash tools/tests/test_oled_session.sh
 bash tools/tests/test_tang_flash.sh
 ```
-
-`test_oled_session.sh` runs the real app, terminal routes, script workers and
-printf layer on POSIX threads (`tools/tests/stubs/rtos_threads/`) inside
-TinyDesk's window manager. The card's `i2s2_oled` layout gives this core the
-OLED in PMOD0 with PMOD1 released, `0xc0 = 0x0010`.

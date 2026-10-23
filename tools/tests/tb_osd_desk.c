@@ -17,8 +17,6 @@
 /* The real driver, not a copy. */
 #include "tang_osd_desk.c"
 
-void tang_oled_poll(void) { }
-
 /* ------------------------------------------------------- the stand-ins */
 
 /* A frame recorder.  Everything the driver sends lands here, so the test can

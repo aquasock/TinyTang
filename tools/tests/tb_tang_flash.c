@@ -104,11 +104,9 @@ bool fpga_program(const char *fname)
     return g_program_ok;
 }
 void tang_phosphor_core_replacing(void) { hook("phos-replacing"); }
-void tang_oled_core_replacing(void) { hook("oled-replacing"); }
 void tang_ini_core_replacing(void) { hook("ini-replacing"); }
 void tang_osd_desk_core_reloaded(void) { hook("osd-reloaded"); }
 void tang_ini_core_loaded(void) { hook("ini-loaded"); }
-void tang_oled_core_loaded(void) { hook("oled-loaded"); }
 
 static void clear(void)
 {
@@ -130,8 +128,8 @@ static void *first_load(void *arg)
 int main(void)
 {
     /* tangput from a shell with its own route: refused before any read. */
-    tdsh_bl616_route_t oled = {0};
-    g_route = &oled;
+    tdsh_bl616_route_t other = {0};
+    g_route = &other;
     g_console = "abc";
     char *put[] = {"tangput", "3", "/x.bin"};
     clear();
@@ -149,7 +147,7 @@ int main(void)
     g_release = true;
     clear();
     CHECK(tangload() == 0);
-    CHECK(strcmp(g_hooks, "phos-replacing oled-replacing ini-replacing program osd-reloaded ini-loaded oled-loaded ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program osd-reloaded ini-loaded ") == 0);
 
     /* A second load while the first programs is refused and touches nothing. */
     g_release = false;
@@ -161,7 +159,7 @@ int main(void)
     pthread_mutex_unlock(&g_prog_lock);
     CHECK(tangload() == 1);
     CHECK(strstr(g_out, "another tangload is running") != NULL);
-    CHECK(strcmp(g_hooks, "phos-replacing oled-replacing ini-replacing program ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program ") == 0);
     pthread_mutex_lock(&g_prog_lock);
     g_release = true;
     pthread_cond_broadcast(&g_prog_cond);
@@ -173,11 +171,11 @@ int main(void)
     g_program_ok = false;
     clear();
     CHECK(tangload() == 1);
-    CHECK(strcmp(g_hooks, "phos-replacing oled-replacing ini-replacing program ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program ") == 0);
     g_program_ok = true;
     clear();
     CHECK(tangload() == 0);
-    CHECK(strstr(g_hooks, "oled-loaded") != NULL);
+    CHECK(strstr(g_hooks, "ini-loaded") != NULL);
 
     if (failures) {
         printf("test_tang_flash: %d failure(s)\n", failures);

@@ -836,3 +836,59 @@ The legacy nestang and menu keyboard link, nestang patches 0004 to 0006, `boot-c
 - User Test: PASS
 
 ---
+
+## 24 COMMIT Unreleased 2026-10-23T12:18:15-07:00
+
+#### Coming From:
+
+Unreleased 800d11b
+
+#### Purpose:
+
+Replace the OLED Terminal's live shell session with a console command that prints text to the OLED once and then leaves it idle, as the user directed after the panel stayed dark and the session's memory kept the desktop from restarting.
+
+#### Outcome:
+
+The user reported the OLED dark on the desktop core after entry 23's deploy. With the panel dark the core read `0xc0 = 0x0010`, counted frames at `0x108` and, in one boot, carried the text frame `0xeda1179a` at `0x10c`, the frame entry 22's lit panel had, while in another the OLED terminal was stopped and the frame was the blank `0x8a258aec`; nothing at boot started the terminal, only `oledterm start` or the desktop app, and `oledterm start` lit the panel, which is the likely explanation of entry 22's dark `tangini apply`, though how the terminal came to be running in the first boot was not established. The user then asked for the panel to be dark until the OLED Terminal app opened, mirror it while open and go dark on close, choosing the window alone and no console override. Firmware `800d11b-dirty.2f58567` blanked the link's cells while the window was closed; on the board the app opened but the panel never lit, the heap stood at 16,680 bytes free of 98,296 with a largest block of 14,684 bytes after 761 refused allocations, the last 16,384 bytes for the desktop Terminal's shell task, and the desktop would not start again, because the session's roughly 31 KB is held until reboot; the link poller allocating its buffers on first use and returning silently when that failed is the probable reason the panel never lit, not confirmed. The user scrapped the desktop app and the live update and approved a console command instead. `ports/bl616/phosphor/oled_cmd.cpp` adds `oled print <line> [line...]`, `oled clear` and `oled font [standard|compact|graphics]`: after the legacy ID command finds core 0x54, it checks the identity, ABI 1.2 or later and an OLEDrgb in `0xc0`, then writes the font to `0x118`, all 384 cells to `0x200` in six 64-word blocks and a hidden cursor to `0x114`, and sends nothing after; each argument is a line, because the shell keeps only the character after a backslash, and `ports/bl616/oled_text.c` lays the lines out at the font's width with a stride of 24, grey on black, the boxed fallback for anything outside printable ASCII, and the reset cell `0x0720` everywhere else, cutting text that does not fit. It holds no task and no heap, and each register access holds the FPGA link lock across its reply. `tang_oled.c`, `oled_vterm.c`, `phosphor/oled_link.cpp`, their hooks in `tdsh_tang_flash.c`, `tang_osd_desk.c` and `td_desktop_bl616.c`, their tests, `tools/make_oled_demo.py` and `tools/check_stdout_isolation.py` were removed. `tools/tests/test_oled_text.sh` passed and failed on each of three planted faults (no blanking, a late wrap, rows at the font's width instead of the stride), and `test_tang_flash.sh`, `test_osd_desk.sh` (88), `test_terminal_lifecycle.sh`, `test_script_limits.sh`, `test_frames.sh`, `test_clock.sh`, `test_ini.sh` and `tools/check_help_width.py` (137 entries) passed. Firmware `800d11b-dirty.87aa9f4`, 644,864 bytes, SHA-256 `0fe1c5b4f8fbe13e21b3e4aa2fafeb410335c941ab604cd1708ef158f8cf8a96`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in project files beyond the existing ones in `tang_jtag_programmer.c`, was flashed with `tools/tinytang_flash.py --yes` and power-cycled. At boot the panel was dark at `0x8a258aec` with 47,812 bytes of heap free and a largest block of 29,504 bytes; `oled print "Hello" "TinyTang"` from the USB console gave frame `0xd0322a95` and the user saw both lines, `oled clear` returned `0x8a258aec`, the user printed from the desktop's Terminal (`0x93f46320`), the heap read the same 47,812 and 29,504 bytes afterwards with no refused allocation, and the desktop started again with the text still on the panel; the user passed the cycle. `.ai/core-reference.md` PMOD-006 records `oled print` as what now draws on the panel. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 24 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The panel is dark at boot and shows only what `oled print` writes, which a core load clears; nothing redraws it after a game returns to the desktop core, which is expected under this design. The legacy nestang and menu keyboard link remains to be retired in its own cycle, and entry 23's open items stand: `tangi2c scan` missing the Wii controller, the unmeasured pin voltage with both pull-ups to 5 V, the DS3231's backup cell, TinyNES's window launch and its freeze on leaving a game, `i2s2_oled` on Phosphor and `vga` under the new key untested, TinyNES and TinyGBC driving PMOD0 where the OLED sits, `/root/ble/bonds.bin`, the console-only lost state send, `.zip` files opening in the Editor, TinyGBC's waiting pages, `tools/fetch-deps.sh --check`'s fork paths, and `v0.1.0` as a pre-release.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/README.md
+- ports/bl616/oled_text.c
+- ports/bl616/oled_text.h
+- ports/bl616/oled_vterm.c
+- ports/bl616/oled_vterm.h
+- ports/bl616/phosphor/oled_cmd.cpp
+- ports/bl616/phosphor/oled_link.cpp
+- ports/bl616/tang_oled.c
+- ports/bl616/tang_oled.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- tools/check_stdout_isolation.py
+- tools/make_oled_demo.py
+- tools/tests/oled/test_oled_vterm.c
+- tools/tests/sim/gen_desktop_block_frames.cpp
+- tools/tests/tb_oled_link.cpp
+- tools/tests/tb_oled_session.c
+- tools/tests/tb_oled_text.c
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_oled_link.sh
+- tools/tests/test_oled_session.sh
+- tools/tests/test_oled_text.sh
+- tools/tests/test_oled_vterm.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

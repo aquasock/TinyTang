@@ -352,7 +352,3 @@ The source was taken from the committed files, leaving that repository's
 working changes untouched. The compact font and desktop text renderer are
 original TinyTang work under GPL-3.0-only.
 
-`ports/bl616/oled_vterm.c` separately compiles TinyDesk's MIT `src/vterm.c`
-with private 24×16 geometry and distinct symbols; its UTF-8 display adapter
-substitutes the OLED fallback glyph without altering shell input or files.
-The existing TinyDesk MIT attribution above also covers this instance.
