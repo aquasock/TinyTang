@@ -6,9 +6,11 @@
 // AE350 player with the cartridge as the file it asks for, then puts the
 // desktop core back.
 //
-// Only the Library page does anything yet.  Input, Video and Saves are
-// placeholders: they name what the player will grow, so the window does not
-// have to change shape when they arrive.
+// The Library page starts games, and the Audio page sets one master volume and
+// a mute for HDMI and the Line Out together, kept in /gbc.ini at the card root
+// (ports/bl616/tang_gbc_ini.c) and sent to the player when a game starts.
+// Input, Video and Saves are placeholders: they name what the player will
+// grow, so the window does not have to change shape when they arrive.
 //
 // SPDX-License-Identifier: MIT
 
@@ -26,6 +28,7 @@ extern "C" {
 #include "tdsh.h"
 #include "tang_ae350_run.h"
 #include "tang_core_load.h"
+#include "tang_gbc_ini.h"
 
 /* The USB console writer.  It is declared for the shell's own sources in
  * ports/bl616/tdsh_stdio_redirect.h, which also renames printf here; only the
@@ -65,21 +68,29 @@ const char *const LIB_ROOTS[] = {
  * worker gave this run: no interpreter, no script, no line table. */
 /* The window's fixed size, frame included, and the Library rows it shows:
  * rows 3 to 14 of the client area, above the buttons on row 16 and the status
- * line on row 17. */
-constexpr int WIN_W = 50;
+ * line on row 17.  54 columns is the narrowest the five tabs fit in with a
+ * column between them: 52 inside the frame, from column 1. */
+constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
 
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
-const int TABS = 4;
+const int TABS = 5;
 const int PAGE_WIDGETS = 16;
 
 /* There is no named accent, only TD_COLOR_DEFAULT and raw palette indices. */
 const int ACCENT = 14;
 
-/* The tabs exist from the start so the window keeps its shape; only the first
- * one is built. */
-const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Saves" };
+/* The tabs exist from the start so the window keeps its shape; Library and
+ * Audio are built, the others are placeholders. */
+const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Audio", "Saves" };
+const int AUDIO_TAB = 3;
+
+/* Where a save is built before it replaces the real file, and where the file
+ * being replaced is set aside meanwhile, as the TinyNES app does it: FatFS's
+ * f_rename refuses a name already in use, so FAT has no atomic replace. */
+const char TMP_PATH[] = "/sd/gbc.ini.tmp";
+const char BAK_PATH[] = "/sd/gbc.ini.bak";
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -105,6 +116,12 @@ char s_root[TD_PATH_MAX];        /* where the library starts, shown form */
 char s_launch_cart[TD_PATH_MAX + 4];
 
 td_widget_t *s_status[TABS];
+
+/* The Audio page: what Save writes, and its widgets. */
+tang_gbc_settings_t s_set;
+bool s_dirty;                    /* edited here and not yet saved */
+td_widget_t *s_volume;
+td_widget_t *s_volume_label;
 
 /* A launch owns the core and the link until the game ends, so a second one is
  * refused rather than reloading the core under the first. */
@@ -138,6 +155,188 @@ void show_tab(int tab)
 void on_tab(td_widget_t *, void *user)
 {
     show_tab((int)(uintptr_t)user);
+}
+
+/* --------------------------------------------------------------- the file */
+
+void audio_status(void)
+{
+    static char text[64];
+
+    if (s_status[AUDIO_TAB] == nullptr) {
+        return;
+    }
+    snprintf(text, sizeof text, "%s %s, %u key(s)%s", TANG_GBC_INI_SHOWN,
+             s_set.found ? "read" : "absent", (unsigned)s_set.keys,
+             s_dirty ? "  edited" : "");
+    td_widget_set_text(s_status[AUDIO_TAB], text);
+}
+
+bool put(FIL *file, const char *text)
+{
+    const size_t length = strlen(text);
+    UINT wrote = 0;
+
+    return f_write(file, text, (UINT)length, &wrote) == FR_OK && wrote == length;
+}
+
+bool put_audio(FIL *file)
+{
+    char line[48];
+
+    snprintf(line, sizeof line, "volume = %u\nmute = %s\n",
+             (unsigned)s_set.audio.volume, s_set.audio.mute ? "yes" : "no");
+    return put(file, line);
+}
+
+bool is_named_line(const char *line, const char *key)
+{
+    const size_t n = strlen(key);
+
+    return strncmp(line, key, n) == 0 &&
+           (line[n] == ' ' || line[n] == '\t' || line[n] == '=');
+}
+
+bool is_audio_line(const char *line)
+{
+    return is_named_line(line, "volume") || is_named_line(line, "mute");
+}
+
+/* Write the volume and the mute where the file's [audio] section is, keeping
+ * every other line, so a hand-written comment or a key for a later firmware
+ * survives a save.  A card with no /gbc.ini yet gets one.  NULL when it wrote,
+ * else a short reason. */
+const char *save_settings(void)
+{
+    FIL in, out;
+    char chunk[64];
+    char line[200];
+    size_t len = 0;
+    bool in_audio = false;
+    bool done = false;          /* the volume and mute have been put out */
+    bool ok = true;
+    UINT got = 0;
+    const char *reason = NULL;
+    const bool existed = f_open(&in, TANG_GBC_INI_REAL, FA_READ) == FR_OK;
+
+    if (f_open(&out, TMP_PATH, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+        if (existed) {
+            (void)f_close(&in);
+        }
+        return "cannot create the temporary";
+    }
+    if (!existed) {
+        ok = put(&out, "# TinyGBC settings, written by the TinyGBC window.\n");
+    }
+    while (existed && ok && f_read(&in, chunk, sizeof chunk, &got) == FR_OK && got != 0) {
+        for (UINT i = 0; i < got && ok; i++) {
+            if (chunk[i] != '\n') {
+                if (len + 1 < sizeof line) {
+                    line[len++] = chunk[i];
+                }
+                continue;
+            }
+            line[len] = '\0';
+            len = 0;
+            if (line[0] == '[') {
+                in_audio = strncmp(line, "[audio]", 7) == 0;
+                ok = put(&out, line) && put(&out, "\n");
+                if (in_audio && !done) {
+                    ok = ok && put_audio(&out);
+                    done = true;
+                }
+                continue;
+            }
+            if (in_audio && is_audio_line(line)) {
+                continue;       /* ours, and already out under the header */
+            }
+            ok = put(&out, line) && put(&out, "\n");
+        }
+    }
+    /* A last line with no newline after it. */
+    if (ok && len != 0) {
+        line[len] = '\0';
+        if (!(in_audio && is_audio_line(line))) {
+            ok = put(&out, line) && put(&out, "\n");
+        }
+    }
+    if (ok && !done) {
+        ok = put(&out, "\n[audio]\n") && put_audio(&out);
+    }
+    if (!ok) {
+        reason = "a write to the temporary failed";
+    }
+    if (f_close(&out) != FR_OK && reason == NULL) {
+        reason = "the temporary did not close";
+    }
+    if (existed) {
+        (void)f_close(&in);
+    }
+    if (reason != NULL) {
+        (void)f_unlink(TMP_PATH);
+        return reason;
+    }
+
+    /* Through the backup name, so a whole file sits under one of the three
+     * names at every point and an interruption never leaves half of one. */
+    (void)f_unlink(BAK_PATH);
+    if (existed && f_rename(TANG_GBC_INI_REAL, BAK_PATH) != FR_OK) {
+        (void)f_unlink(TMP_PATH);
+        return "cannot set the settings file aside";
+    }
+    if (f_rename(TMP_PATH, TANG_GBC_INI_REAL) != FR_OK) {
+        if (existed) {
+            (void)f_rename(BAK_PATH, TANG_GBC_INI_REAL);
+        }
+        return "cannot rename over the settings file";
+    }
+    (void)f_unlink(BAK_PATH);
+    return NULL;
+}
+
+/* ------------------------------------------------------------------ audio */
+
+/* The percentage beside the slider, because the bar alone cannot say whether
+ * it is at 45 or 50. */
+void show_volume(void)
+{
+    if (s_volume_label != nullptr) {
+        td_widget_printf(s_volume_label, "%3u%%%s", (unsigned)s_set.audio.volume,
+                         s_set.audio.mute ? "  muted" : "");
+    }
+}
+
+void on_volume(td_widget_t *w, void *)
+{
+    s_set.audio.volume = (uint8_t)w->value;
+    s_dirty = true;
+    show_volume();
+    audio_status();
+}
+
+void on_mute(td_widget_t *w, void *)
+{
+    s_set.audio.mute = td_checkbox_get(w) ? 1 : 0;
+    s_dirty = true;
+    show_volume();
+    audio_status();
+}
+
+void on_save(td_widget_t *, void *)
+{
+    if (!s_dirty) {
+        td_widget_set_text(s_status[AUDIO_TAB], "Nothing to save.");
+        return;
+    }
+    const char *why = save_settings();
+    if (why == NULL) {
+        s_dirty = false;
+        (void)tang_gbc_load(&s_set, TANG_GBC_INI_REAL);
+        td_widget_set_text(s_status[AUDIO_TAB],
+                           "Saved.  It applies from the next game start.");
+    } else {
+        td_widget_set_text(s_status[AUDIO_TAB], why);
+    }
 }
 
 /* ----------------------------------------------------------------- the list */
@@ -463,6 +662,8 @@ const char *lib_get_item(td_widget_t *, int index, int *fg, void *)
 void on_close(td_window_t *)
 {
     s_win = nullptr;
+    s_volume = nullptr;
+    s_volume_label = nullptr;
     memset(s_status, 0, sizeof s_status);
     s_lib_list = nullptr;
     s_lib_path = nullptr;
@@ -484,11 +685,16 @@ void launch(void)
         return;
     }
 
+    /* The file is read every time the window opens, so a hand edit shows
+     * without a power cycle. */
+    (void)tang_gbc_load(&s_set, TANG_GBC_INI_REAL);
+    s_dirty = false;
+
     td_window_desc_t d = {};
     d.title = "TinyGBC";
-    /* A fixed size, the same for TinyNES and TinyGBC: 50 columns, the
-     * narrowest the pages fit in, and 20 rows, which gives the Library list
-     * twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
+    /* A fixed size, the same for TinyNES and TinyGBC: 54 columns, the
+     * narrowest the five tabs fit in, and 20 rows, which gives the Library
+     * list twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
      * maximise and no F11, and the minimum pins the size as well. */
     d.rect = td_rect(-1, -1, WIN_W, WIN_H);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE;
@@ -534,7 +740,7 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* The other three pages: named like TinyNES's, and saying plainly that
+    /* Input, Video and Saves: named like TinyNES's, and saying plainly that
      * nothing is behind them yet. */
     page_add(1, td_label(s_win, 1, 2, 0, "Input is not implemented yet."));
     page_add(1, td_label(s_win, 1, 4, 0, "The pad is read by the player"));
@@ -544,9 +750,26 @@ void launch(void)
     page_add(2, td_label(s_win, 1, 4, 0, "The picture is five columns a"));
     page_add(2, td_label(s_win, 1, 5, 0, "pixel and five rows a line."));
 
-    page_add(3, td_label(s_win, 1, 2, 0, "Saves are not implemented yet."));
-    page_add(3, td_label(s_win, 1, 4, 0, "The player keeps no battery save"));
-    page_add(3, td_label(s_win, 1, 5, 0, "and no save state on the card."));
+    /* Audio: the master volume, its percentage, the mute, and the Save, laid
+     * out as the TinyNES app's page is. */
+    page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
+    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    if (s_volume != nullptr) {
+        td_slider_set(s_volume, s_set.audio.volume);
+    }
+    page_add(AUDIO_TAB, s_volume);
+    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    page_add(AUDIO_TAB, s_volume_label);
+    show_volume();
+    page_add(AUDIO_TAB, td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0,
+                                    on_mute, nullptr));
+    page_add(AUDIO_TAB, td_button(s_win, 1, 8, "Save", on_save, nullptr));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+
+    page_add(4, td_label(s_win, 1, 2, 0, "Saves are not implemented yet."));
+    page_add(4, td_label(s_win, 1, 4, 0, "The player keeps no battery save"));
+    page_add(4, td_label(s_win, 1, 5, 0, "and no save state on the card."));
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */
@@ -555,6 +778,7 @@ void launch(void)
         page_add(t, s_status[t]);
     }
     s_lib_message = s_status[0];
+    audio_status();
 
     show_tab(0);
 }

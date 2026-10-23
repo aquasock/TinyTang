@@ -1,0 +1,271 @@
+diff --git a/include/tinydesk/td_widgets.h b/include/tinydesk/td_widgets.h
+index e6fcf7b..d5b1657 100644
+--- a/include/tinydesk/td_widgets.h
++++ b/include/tinydesk/td_widgets.h
+@@ -1,6 +1,6 @@
+ /*
+  * td_widgets.h - the v1 widget set: label, button, checkbox, textbox, list,
+- * progress bar, scrollbar, and the message box helper.
++ * progress bar, scrollbar, slider, and the message box helper.
+  *
+  * Widget positions are relative to the window's client area. A negative x
+  * or y is measured from the right / bottom edge (y = -1 is the last row).
+@@ -25,6 +25,7 @@ typedef enum
+     TD_WT_LIST,
+     TD_WT_PROGRESS,
+     TD_WT_SCROLLBAR,
++    TD_WT_SLIDER,
+ } td_widget_type_t;
+ 
+ typedef enum
+@@ -98,6 +99,12 @@ td_widget_t *td_list(td_window_t *win, td_rect_t rect, td_list_item_fn get_item,
+ /* Horizontal bar, 0..100 %. */
+ td_widget_t *td_progress(td_window_t *win, int x, int y, int width);
+ 
++/* Horizontal slider, 0..100 % in steps of `step`, drawn as a progress bar.
++ * Left and Right move it one step, Home and End to the ends, and a click or a
++ * drag sets it to the cell under the pointer; fn runs after every change. */
++td_widget_t *td_slider(td_window_t *win, int x, int y, int width, int step,
++                       td_widget_fn fn, void *user);
++
+ /* Vertical scrollbar that follows and controls `target` (a list). */
+ td_widget_t *td_scrollbar(td_window_t *win, int x, int y, int height, td_widget_t *target);
+ 
+@@ -128,6 +135,9 @@ void td_checkbox_set(td_widget_t *w, bool checked);
+ /* Progress bar. */
+ void td_progress_set(td_widget_t *w, int percent);
+ 
++/* Slider: the value is w->value.  Setting it does not run fn. */
++void td_slider_set(td_widget_t *w, int percent);
++
+ /* List. */
+ void td_list_set_count(td_widget_t *w, int count);
+ int td_list_selected(const td_widget_t *w);
+diff --git a/src/widgets.c b/src/widgets.c
+index b6b0dee..2cd2019 100644
+--- a/src/widgets.c
++++ b/src/widgets.c
+@@ -1,5 +1,5 @@
+ /*
+- * widgets.c - label, button, checkbox, textbox, list, progress bar,
++ * widgets.c - label, button, checkbox, textbox, list, progress bar, slider,
+  * scrollbar and the modal message box.
+  *
+  * Widgets come from one static pool and are linked into their window.
+@@ -196,6 +196,18 @@ td_widget_t *td_progress(td_window_t *win, int x, int y, int width)
+     return alloc_widget(win, TD_WT_PROGRESS, td_rect(x, y, width, 1), false);
+ }
+ 
++td_widget_t *td_slider(td_window_t *win, int x, int y, int width, int step,
++                       td_widget_fn fn, void *user)
++{
++    td_widget_t *w = alloc_widget(win, TD_WT_SLIDER, td_rect(x, y, width, 1), true);
++    if (!w)
++        return NULL;
++    w->maxlen = clamp(step, 1, 100);   /* the step, in percent */
++    w->on_activate = fn;
++    w->user = user;
++    return w;
++}
++
+ td_widget_t *td_scrollbar(td_window_t *win, int x, int y, int height, td_widget_t *target)
+ {
+     td_widget_t *w = alloc_widget(win, TD_WT_SCROLLBAR, td_rect(x, y, 1, height), false);
+@@ -399,6 +411,11 @@ static void draw_button(const td_widget_t *w, td_rect_t r, bool focused, const t
+     td_putc(r.x + r.w - 1, r.y, ']', fg, bg, attr);
+ }
+ 
++void td_slider_set(td_widget_t *w, int percent)
++{
++    td_progress_set(w, percent);
++}
++
+ static void draw_checkbox(const td_widget_t *w, td_rect_t r, bool focused, const td_theme_t *t)
+ {
+     uint8_t fg = pick(w->fg, t->win_fg);
+@@ -466,6 +483,16 @@ static void draw_progress(const td_widget_t *w, td_rect_t r, const td_theme_t *t
+         td_putc(r.x + x, r.y, x < filled ? 0x2588 : 0x2591, fg, bg, 0);
+ }
+ 
++/* A progress bar that shows when it has the focus. */
++static void draw_slider(const td_widget_t *w, td_rect_t r, bool focused, const td_theme_t *t)
++{
++    int filled = r.w * w->value / 100;
++    uint8_t fg = focused ? t->focus_bg : pick(w->fg, t->accent);
++    uint8_t bg = pick(w->bg, t->win_bg);
++    for (int x = 0; x < r.w; x++)
++        td_putc(r.x + x, r.y, x < filled ? 0x2588 : 0x2591, fg, bg, 0);
++}
++
+ static void draw_scrollbar(const td_widget_t *w, td_rect_t r, const td_theme_t *t)
+ {
+     const td_widget_t *list = w->target;
+@@ -512,6 +539,9 @@ void td_widgets_draw(td_window_t *win)
+         case TD_WT_SCROLLBAR:
+             draw_scrollbar(w, r, t);
+             break;
++        case TD_WT_SLIDER:
++            draw_slider(w, r, focused, t);
++            break;
+         default:
+             break;
+         }
+@@ -557,6 +587,50 @@ static void checkbox_toggle(td_widget_t *w)
+     activate(w);
+ }
+ 
++/* Move a slider to `percent`, on its step, and tell the app if it moved. */
++static void slider_move(td_widget_t *w, int percent)
++{
++    int step = w->maxlen > 0 ? w->maxlen : 1;
++    percent = clamp((percent + step / 2) / step * step, 0, 100);
++    if (percent == w->value)
++        return;
++    w->value = percent;
++    activate(w);
++}
++
++/* The value of the cell under x: the first cell is one cell's worth, the
++ * last is 100, so the bar drawn afterwards ends at the cell clicked. */
++static void slider_track(td_widget_t *w, int x)
++{
++    td_rect_t r = local_rect(w);
++    if (r.w <= 0)
++        return;
++    int cell = clamp(x - r.x, 0, r.w - 1);
++    slider_move(w, (cell + 1) * 100 / r.w);
++}
++
++static bool slider_key(td_widget_t *w, const td_event_t *ev)
++{
++    int step = w->maxlen > 0 ? w->maxlen : 1;
++    switch (ev->key)
++    {
++    case TD_KEY_LEFT:
++        slider_move(w, w->value - step);
++        return true;
++    case TD_KEY_RIGHT:
++        slider_move(w, w->value + step);
++        return true;
++    case TD_KEY_HOME:
++        slider_move(w, 0);
++        return true;
++    case TD_KEY_END:
++        slider_move(w, 100);
++        return true;
++    default:
++        return false;
++    }
++}
++
+ static bool textbox_key(td_widget_t *w, const td_event_t *ev)
+ {
+     int len = (int)strlen(TXT(w));
+@@ -702,6 +776,8 @@ static bool widget_key(td_widget_t *w, const td_event_t *ev)
+         return textbox_key(w, ev);
+     case TD_WT_LIST:
+         return list_key(w, ev);
++    case TD_WT_SLIDER:
++        return slider_key(w, ev);
+     default:
+         return false;
+     }
+@@ -782,6 +858,10 @@ static void widget_press(td_widget_t *w, const td_event_t *ev, td_rect_t r)
+         (void)page;
+         break;
+     }
++    case TD_WT_SLIDER:
++        slider_track(w, ev->x);
++        s_pressed = w;   /* keep following the pointer */
++        break;
+     default:
+         break;
+     }
+@@ -799,6 +879,8 @@ static bool widgets_mouse(td_window_t *win, const td_event_t *ev)
+         {
+             if (w->type == TD_WT_SCROLLBAR)
+                 scrollbar_track(w, ev->y);
++            else if (w->type == TD_WT_SLIDER)
++                slider_track(w, ev->x);
+             else
+                 w->pressed = td_rect_contains(r, ev->x, ev->y);
+             td_wm_invalidate();
+diff --git a/tests/test_widgets.c b/tests/test_widgets.c
+index 94890a0..0a60b2c 100644
+--- a/tests/test_widgets.c
++++ b/tests/test_widgets.c
+@@ -1,6 +1,6 @@
+ /*
+- * test_widgets.c - text boxes, lists, scrollbars, checkboxes, buttons,
+- * focus, the message box and the input box, driven by synthetic events.
++ * test_widgets.c - text boxes, lists, scrollbars, sliders, checkboxes,
++ * buttons, focus, the message box and the input box, driven by synthetic events.
+  */
+ #include "td_test.h"
+ #include "tinydesk/td.h"
+@@ -313,6 +313,57 @@ static void test_list(void)
+     CHECK_EQ(cell(r.x + 1, r.y)->ch, 'i');
+ }
+ 
++static int s_slider_calls;
++static void on_slider(td_widget_t *w, void *user)
++{
++    (void)w;
++    (void)user;
++    s_slider_calls++;
++}
++
++static void test_slider(void)
++{
++    td_window_t *w = new_window();
++    td_widget_t *s = td_slider(w, 0, 0, 20, 5, on_slider, NULL);
++    td_rect_t r = td_widget_rect(s);
++    s_slider_calls = 0;
++
++    CHECK(s->focusable);
++    td_slider_set(s, 100);
++    CHECK_EQ(s->value, 100);
++    CHECK_EQ(s_slider_calls, 0);               /* setting is not a change */
++    td_slider_set(s, 250);
++    CHECK_EQ(s->value, 100);                   /* clamped */
++
++    td_widget_focus(s);
++    key(TD_KEY_LEFT, 0);
++    CHECK_EQ(s->value, 95);
++    CHECK_EQ(s_slider_calls, 1);
++    key(TD_KEY_RIGHT, 0);
++    key(TD_KEY_RIGHT, 0);                      /* already at the end */
++    CHECK_EQ(s->value, 100);
++    CHECK_EQ(s_slider_calls, 2);
++    key(TD_KEY_HOME, 0);
++    CHECK_EQ(s->value, 0);
++    key(TD_KEY_LEFT, 0);
++    CHECK_EQ(s->value, 0);
++    CHECK_EQ(s_slider_calls, 3);
++    key(TD_KEY_END, 0);
++    CHECK_EQ(s->value, 100);
++
++    /* A click takes the cell under the pointer: of twenty, the first is 5
++     * and the tenth 50, and a drag follows the pointer. */
++    click(r.x, r.y);
++    CHECK_EQ(s->value, 5);
++    click(r.x + 9, r.y);
++    CHECK_EQ(s->value, 50);
++    mouse(TD_MOUSE_PRESS, TD_BUTTON_LEFT, r.x + 9, r.y);
++    mouse(TD_MOUSE_DRAG, TD_BUTTON_LEFT, r.x + 19, r.y);
++    CHECK_EQ(s->value, 100);
++    mouse(TD_MOUSE_RELEASE, TD_BUTTON_LEFT, r.x + 19, r.y);
++    td_win_close(w);
++}
++
+ static void test_scrollbar(void)
+ {
+     td_window_t *w = new_window();
+@@ -592,6 +643,7 @@ int main(void)
+     test_textbox_paste();
+     test_list();
+     test_scrollbar();
++    test_slider();
+     test_checkbox_button_progress();
+     test_focus();
+     test_msgbox();

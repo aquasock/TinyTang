@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Enough of FatFS for tang_nes_ini.c to compile on the host.  The calls are
+ * Enough of FatFS for tang_settings_ini.c to compile on the host.  The calls are
  * defined in tools/tests/tb_nes_ini.c, over a string rather than a card, so the
  * parser's real load path is what runs.  Only what that file uses is here.
  */

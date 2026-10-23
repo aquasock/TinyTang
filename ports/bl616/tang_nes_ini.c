@@ -1,7 +1,7 @@
 // TinyNES — reading /nes.ini, the settings file at the card root.
 //
-// The same shape as /tang.ini: section headers, `key = value`, `#` comments.
-// A missing file, or a key missing from it, is the default -- which is the
+// The same shape as /tang.ini, read by ports/bl616/tang_settings_ini.c.  A
+// missing file, or a key missing from it, is the default -- which is the
 // behaviour the firmware had before this file existed, so dropping one on the
 // card is safe and an old card keeps working.
 //
@@ -15,11 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ff.h"
-
-/* The line buffer: the longest line the file may carry. */
-#define LINE_MAX 192
-#define SECTION_MAX 24
+#include "tang_settings_ini.h"
 
 static const char *const s_pad_names[NES_CTL_COUNT] = {
     "b", "y", "up", "down", "left", "right", "select", "start",
@@ -97,6 +93,7 @@ void tang_nes_defaults(tang_nes_settings_t *s)
     s->scanlines = 0;
     s->palette = 0;
     s->overscan = 1;
+    tang_audio_defaults(&s->audio);
     s->version = 1;
 }
 
@@ -120,25 +117,13 @@ static int nes_index(const char *name)
     return -1;
 }
 
-/* Trim the whitespace off both ends, in place. */
-static char *trim(char *text)
-{
-    while (*text == ' ' || *text == '\t') {
-        text++;
-    }
-    char *end = text + strlen(text);
-    while (end > text && (end[-1] == ' ' || end[-1] == '\t' ||
-                          end[-1] == '\r' || end[-1] == '\n')) {
-        *--end = '\0';
-    }
-    return text;
-}
-
 /* One key of one section.  Returns false for anything unrecognised, so the
  * caller's count reports how much of the file this firmware understood. */
-static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
+static bool apply(void *ctx, const char *section, const char *key,
                   const char *value)
 {
+    tang_nes_settings_t *s = ctx;
+
     if (strcmp(section, "input") == 0) {
         uint8_t *map;
         int nes, pad;
@@ -194,11 +179,11 @@ static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
         }
         return false;
     }
-    /* There is no [audio] section any more: the I2S2's Line Out is a fixed
-     * level for the amplifier to set, the NES is mono, and mute is the
-     * amplifier's too, so volume, mute and channels were dropped rather than
-     * wired up.  An old file's [audio] keys are ignored, like any unknown key,
-     * and simply not counted. */
+    /* [audio] came back as one master volume and a mute (core-log entry 20);
+     * an old file's `channels` is not one of them and is not counted. */
+    if (strcmp(section, "audio") == 0) {
+        return tang_audio_apply(&s->audio, key, value);
+    }
     if (strcmp(section, "tinynes") == 0) {
         if (strcmp(key, "version") == 0) {
             s->version = (uint8_t)atoi(value);
@@ -209,96 +194,9 @@ static bool apply(tang_nes_settings_t *s, const char *section, const char *key,
     return false;
 }
 
-/* One line: one or more `key = value` pairs, because /nes.ini is laid out
- * with several to a line.  A value ends at the first whitespace, which is
- * what lets the next key follow on the same line; a value with a space in it
- * would need its own line and a different rule, and none has one. */
-static void handle_line(tang_nes_settings_t *s, char *section, char *line)
-{
-    char *text = trim(line);
-
-    if (*text == '\0' || *text == '#' || *text == ';') {
-        return;
-    }
-    if (*text == '[') {
-        char *end = strchr(text, ']');
-        if (end == NULL) {
-            return;
-        }
-        *end = '\0';
-        snprintf(section, SECTION_MAX, "%s", trim(text + 1));
-        return;
-    }
-
-    while (*text != '\0') {
-        char *equals = strchr(text, '=');
-        if (equals == NULL) {
-            return;
-        }
-        char *key = text;
-        char *key_end = equals;
-        while (key_end > key && (key_end[-1] == ' ' || key_end[-1] == '\t')) {
-            key_end--;
-        }
-        *key_end = '\0';
-
-        char *value = trim(equals + 1);
-        char *value_end = value;
-        while (*value_end != '\0' && *value_end != ' ' && *value_end != '\t') {
-            value_end++;
-        }
-        const char after = *value_end;
-        *value_end = '\0';
-        if (*key != '\0' && apply(s, section, key, value)) {
-            s->keys++;
-        }
-        if (after == '\0') {
-            return;
-        }
-        /* Past the whitespace, and stop at a comment to the end of the line. */
-        text = value_end + 1;
-        while (*text == ' ' || *text == '\t') {
-            text++;
-        }
-        if (*text == '#' || *text == ';') {
-            return;
-        }
-    }
-}
-
 bool tang_nes_load(tang_nes_settings_t *s, const char *path)
 {
-    char chunk[256];
-    char line[LINE_MAX];
-    char section[SECTION_MAX] = "";
-    size_t len = 0;
-    UINT got = 0;
-    FIL file;
-
     tang_nes_defaults(s);
-    if (f_open(&file, path, FA_READ) != FR_OK) {
-        return false;
-    }
-    s->found = true;
-
-    /* f_gets is not in this FatFS build (FF_USE_STRFUNC is off), so the
-     * lines are split here.  A line longer than the buffer is truncated,
-     * which for this file means the key is ignored rather than misread. */
-    while (f_read(&file, chunk, sizeof chunk, &got) == FR_OK && got != 0) {
-        for (UINT i = 0; i < got; i++) {
-            if (chunk[i] == '\n') {
-                line[len] = '\0';
-                handle_line(s, section, line);
-                len = 0;
-            } else if (len + 1 < sizeof line) {
-                line[len++] = chunk[i];
-            }
-        }
-    }
-    if (len != 0) {
-        line[len] = '\0';
-        handle_line(s, section, line);
-    }
-    (void)f_close(&file);
-    return true;
+    s->found = tang_settings_walk(path, apply, s, &s->keys);
+    return s->found;
 }

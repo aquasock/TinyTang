@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
  *
- * The /nes.ini parser on the host, as tools/tests/test_ini.sh does for
- * /tang.ini.  tang_nes_ini.c reads its file through FatFS, so this supplies
+ * The /nes.ini and /gbc.ini parsers on the host, as tools/tests/test_ini.sh
+ * does for /tang.ini.  tang_nes_ini.c reads its file through FatFS, so this supplies
  * the four calls it makes and drives the real load path -- including the chunk
  * boundary, which is the part a buffer-only test would not reach.
  *
@@ -54,6 +54,7 @@ FRESULT f_close(FIL *fp)
     return FR_OK;
 }
 
+#include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
 
 static int s_checks;
@@ -88,6 +89,7 @@ int main(int argc, char **argv)
     check(s.p1[TANG_NES_A] == NES_CTL_B, "default: NES A answers to B");
     check(s.p1[TANG_NES_B] == NES_CTL_Y, "default: NES B answers to Y");
     check(s.aspect == TANG_ASPECT_8_7, "default: aspect is 8:7");
+    check(s.audio.volume == 100 && !s.audio.mute, "default: volume 100, not muted");
 
     /* The regression: four keys on one line, as the shipped file has them. */
     load(&s, "[input]\n"
@@ -121,7 +123,9 @@ int main(int argc, char **argv)
     /* The rest of the file. */
     load(&s, "[video]\naspect = 1:1\nscale = 2\noverscan = show\n"
              "[audio]\nvolume = 40\nmute = yes\nchannels = mono\n");
-    check(s.keys == 3, "video counted, the dropped [audio] keys not");
+    check(s.keys == 5, "video and audio counted, the dropped channels not");
+    check(s.audio.volume == 40, "volume 40");
+    check(s.audio.mute == 1, "mute yes");
     check(s.aspect == TANG_ASPECT_1_1, "aspect 1:1");
     check(s.scale == 2, "scale 2");
     check(s.overscan == 0, "overscan show");
@@ -143,6 +147,27 @@ int main(int argc, char **argv)
     /* Out-of-range values are clamped, not taken. */
     load(&s, "[video]\nscale = 0\n");
     check(s.scale == 1, "scale clamps at 1");
+    load(&s, "[audio]\nvolume = 150\nmute = no\n");
+    check(s.audio.volume == 100 && !s.audio.mute, "volume clamps at 100");
+    load(&s, "[audio]\nvolume = -3\n");
+    check(s.audio.volume == 0, "volume clamps at 0");
+    load(&s, "[video]\nvolume = 10\n");
+    check(s.keys == 0 && s.audio.volume == 100, "volume outside [audio] counts nothing");
+
+    /* /gbc.ini: the same reader, [audio] only. */
+    {
+        static tang_gbc_settings_t g;
+        tang_gbc_defaults(&g);
+        check(g.audio.volume == 100 && !g.audio.mute, "gbc default: volume 100, not muted");
+        s_text = "# TinyGBC\n[audio]\nvolume = 25   mute = yes\n[input]\np1_a = y\n";
+        check(tang_gbc_load(&g, "/gbc.ini") && g.found, "gbc: the file is found");
+        check(g.keys == 2, "gbc: both audio keys counted, the NES key not");
+        check(g.audio.volume == 25 && g.audio.mute, "gbc: volume 25, muted");
+        s_open_fails = true;
+        check(!tang_gbc_load(&g, "/gbc.ini") && !g.found, "gbc: an absent file reports false");
+        check(g.audio.volume == 100 && !g.audio.mute, "gbc: an absent file leaves the defaults");
+        s_open_fails = false;
+    }
 
     /* No file at all: the defaults, and no error. */
     s_text = "";
@@ -158,7 +183,24 @@ int main(int argc, char **argv)
     (void)tang_nes_load(&s, "/nes.ini");
     check(s.p1[TANG_NES_A] == NES_CTL_B, "a failed read leaves the defaults");
 
-    /* The shipped file, if the caller named one. */
+    /* The shipped files, if the caller named them: /nes.ini first, then
+     * /gbc.ini, which must parse to its two keys. */
+    if (argc > 2) {
+        FILE *f = fopen(argv[2], "rb");
+        static char gtext[4096];
+        size_t got = f ? fread(gtext, 1, sizeof gtext - 1, f) : 0;
+        static tang_gbc_settings_t g;
+        if (f != NULL) {
+            (void)fclose(f);
+        }
+        gtext[got] = '\0';
+        s_open_fails = false;
+        s_read_fails = false;
+        s_text = gtext;
+        (void)tang_gbc_load(&g, "/gbc.ini");
+        check(f != NULL && g.keys == 2 && g.audio.volume == 100 && !g.audio.mute,
+              "the shipped gbc.ini parses to volume 100, not muted");
+    }
     if (argc > 1) {
         s_open_fails = false;
         s_read_fails = false;

@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "tang_settings_ini.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,6 +55,7 @@ typedef struct {
     uint8_t  scanlines;
     uint8_t  palette;                /* index into the palette names */
     uint8_t  overscan;               /* 1 = hide the top and bottom lines */
+    tang_audio_t audio;              /* [audio]: the master volume and mute */
     uint8_t  version;
     bool     found;                  /* the file was there to be read */
     uint16_t keys;                   /* how many of its keys were understood */

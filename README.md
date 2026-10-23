@@ -404,7 +404,12 @@ cartridge, and loads the desktop core again when the game ends.  The
 controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
 PMOD1, declared in `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
-fixed size of 50 by 20 cells that shows twelve Library entries at a time.
+fixed size of 54 by 20 cells that shows twelve Library entries at a time and
+five tabs: Library, Input, Video, Audio and Saves.  Audio is one master volume
+for HDMI and the Line Out together, a slider from 0 to 100 percent in 5 percent
+steps with a mute beside it; it is kept in `[audio]` of `/nes.ini`, or of
+`/gbc.ini` for TinyGBC, and sent to the player when the next game starts, which
+scales every sample by it.
 Each cartridge has one save state, as on the NES Classic: in the game HOME
 with L saves it and HOME with R loads it, and the player sends a save here,
 where it is written to `/root/states/nes/<cartridge>.state` through a `.part`

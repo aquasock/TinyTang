@@ -656,3 +656,49 @@ A state that does not arrive whole leaves the previous one and says so only on t
 - User Test: PASS
 
 ---
+
+## 20 COMMIT Unreleased 2026-10-22T21:34:13-07:00
+
+#### Coming From:
+
+Unreleased f035e73
+
+#### Purpose:
+
+Add an Audio tab after Video to the TinyNES and TinyGBC windows with one master volume slider from 0 to 100 percent and a mute, for HDMI and the I2S2 together, kept in each player's settings file and sent to the player at launch, as the user approved, the players' halves being TinyNES core-log entry 50 and TinyGBC core-log entry 20.
+
+#### Outcome:
+
+The user first named two controls, HDMI and the I2S2, then settled on one master volume for both, which the players apply to the one stream both outputs play, so no core changed. TinyDesk has no slider, so carried patch `third_party/patches/tinydesk/0003-slider-widget.patch` adds `td_slider` and `td_slider_set` to `td_widgets.h` and `widgets.c`: a focusable bar drawn like the progress bar, in the focus colour when focused, that Left and Right move one step, Home and End take to the ends, and a click or a drag sets to the cell under the pointer, running its callback only on a change; `scripts/apply-tinydesk-patches.sh` applied 0001 to 0003 to a fresh TinyDesk v0.1.5 worktree and every touched file matched the submodule byte for byte, and the patch's new `test_slider` case brought TinyDesk's `test_widgets` to 126 checks with no failure, with `test_wm` and `test_render` also passing. The settings readers were split: `ports/bl616/tang_settings_ini.c` now holds the line walker `tang_nes_ini.c` had, as `tang_settings_walk`, and the shared `[audio]` keys, `volume` 0 to 100 clamped and `mute` yes or no, defaulting to 100 and no; `tang_nes_ini.c` reads `[audio]` again, which entry 78 had dropped, and the new `tang_gbc_ini.c` reads `/gbc.ini`, holding only `[audio]`. `tools/tests/test_nes_ini.sh` builds all three and passed 45 checks, among them the clamps, a `volume` outside `[audio]` counting nothing, `/gbc.ini` ignoring a NES key, an absent `/gbc.ini` keeping the defaults, and the shipped `docs/nes.ini`, now with `[audio]`, and the new `docs/gbc.ini` parsing. `ports/bl616/tang_fpga_uart.c` sends the volume and mute as bytes 19 and 20 of TinyNES's settings blob and answers the new `TinyGBC SETTINGS WANT` with those two bytes from `/gbc.ini`, both through a shared `ae350_send_blob`, never sending more than was asked; the `tang` command prints both files' audio. Both windows went from 50 to 54 columns, the narrowest that fits five tabs a column apart, and gained the Audio page at tab 3, Saves moving to 4: a label, a twenty-cell slider in 5 percent steps, the percentage and "muted" beside it, a Mute checkbox, Save and a note that it is taken at the next game start. TinyNES's Save rewrites `[audio]` in place as it does `[input]` and `[video]`; TinyGBC's has its own writer that keeps every other line, creates the file when the card has none, and goes through `/gbc.ini.tmp` and `/gbc.ini.bak` as TinyNES's does. The firmware `f035e73-dirty.70177ad`, 653,232 bytes, SHA-256 `bf8d59ad508f15752b025df12f1b20fd823b9dd67be8ecea2fde92874e49cda1`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in the changed files, was installed with `tools/tinytang_flash.py --yes` beside the two new players. Before the flash the card's `/nes.ini` still held entry 78's dropped `[audio]` with `volume = 75`, which the new reader takes, so the TinyNES tab opened at 75 percent and the user set it to 100 and saved as part of the test; the user power-cycled and reported PASS for both windows. The board was off USB when this entry was written, so `platform`, `/nes.ini` and `/gbc.ini` were not read back. `README.md` describes the tab and the window size. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 20 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The volume reaches the player only at launch; changing it over a running game would need a frame type in the cores' `desk_link` that the player can read, a fabric change and a seed sweep in both projects, to be proposed only if the user asks. A `/nes.ini` written before entry 78 keeps its old `channels` key, which is preserved and not counted. The older items stand: a lost state send shows only on this console, the Saves page's creation time waits on the RTC, `tang.ini: the core did not take the socket declaration` after the desktop core reloads, a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- docs/gbc.ini
+- docs/nes.ini
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gbc_ini.c
+- ports/bl616/tang_gbc_ini.h
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/tang_settings_ini.c
+- ports/bl616/tang_settings_ini.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tinygbc_app.cpp
+- ports/bl616/tinynes_app.cpp
+- third_party/patches/tinydesk/0003-slider-widget.patch
+- tools/tests/stubs/ff.h
+- tools/tests/tb_nes_ini.c
+- tools/tests/test_nes_ini.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

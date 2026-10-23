@@ -6,9 +6,9 @@
 // a launch reads the same file the same way, so what is saved here is what the
 // next game start uses.
 //
-// Only the Input tab does anything yet: it rebinds which controller button
-// answers to each NES button.  Video and Audio show what the file says and
-// reach nothing.
+// Input rebinds which controller button answers to each NES button, Video
+// picks the pixel aspect and the palette, and Audio sets one master volume and
+// a mute for HDMI and the Line Out together.
 //
 // SPDX-License-Identifier: MIT
 
@@ -71,13 +71,14 @@ constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
  * left over is printed when the game ends so the size stays visible. */
 /* The window's fixed size, frame included, and the Library rows it shows:
  * rows 3 to 14 of the client area, above the buttons on row 16 and the status
- * line on row 17. */
-constexpr int WIN_W = 50;
+ * line on row 17.  54 columns is the narrowest the five tabs fit in with a
+ * column between them: 52 inside the frame, from column 1. */
+constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
 
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
-const int TABS = 4;
+const int TABS = 5;
 const int PAGE_WIDGETS = 16;
 const int PLAYERS = 2;
 
@@ -92,9 +93,10 @@ const int ACCENT = 14;
 const char TMP_PATH[] = "/sd/nes.ini.tmp";
 const char BAK_PATH[] = "/sd/nes.ini.bak";
 
-/* No Audio tab: the I2S2's Line Out is a fixed level for the amplifier, and
- * the NES is mono, so volume, mute and channels had nothing to set. */
-const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Saves" };
+/* Audio is one master volume, not one per output: HDMI and the I2S2's Line
+ * Out play the same stream, and the player scales it before either sees it. */
+const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Audio", "Saves" };
+const int SAVES_TAB = 4;
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -130,6 +132,9 @@ char s_launch_cart[TD_PATH_MAX + 4];   /* real path handed to the launch task */
 td_widget_t *s_list;             /* the Input page's rows */
 td_widget_t *s_video_list;       /* the Video page's rows: aspect, palette */
 td_widget_t *s_player_button;    /* which player the rows are showing */
+td_widget_t *s_volume;           /* the Audio page's slider */
+td_widget_t *s_volume_label;     /* ...the percentage beside it */
+td_widget_t *s_mute;             /* ...and the mute */
 td_widget_t *s_status[TABS];     /* one per page: a shared widget cannot be
                                   * shown on one page and hidden on another */
 
@@ -177,7 +182,7 @@ void on_tab(td_widget_t *, void *user)
 {
     const int tab = (int)(uintptr_t)user;
     show_tab(tab);
-    if (tab == 3) {
+    if (tab == SAVES_TAB) {
         state_show();
     }
 }
@@ -275,6 +280,21 @@ bool is_video_line(const char *line)
     return is_named_line(line, "aspect") || is_named_line(line, "palette");
 }
 
+/* The [audio] keys: the master volume and the mute. */
+bool put_audio(FIL *file)
+{
+    char line[48];
+
+    snprintf(line, sizeof line, "volume = %u\nmute = %s\n",
+             (unsigned)s_set.audio.volume, s_set.audio.mute ? "yes" : "no");
+    return put(file, line);
+}
+
+bool is_audio_line(const char *line)
+{
+    return is_named_line(line, "volume") || is_named_line(line, "mute");
+}
+
 /* Write the mapping where the file's [input] section is, keeping every other
  * byte of it -- a hand-written comment survives a save from here, and a key
  * this build does not know is not thrown away.  Built beside the real file and
@@ -291,8 +311,10 @@ const char *save_settings(void)
     size_t len = 0;
     bool in_input = false;
     bool in_video = false;
+    bool in_audio = false;
     bool done = false;          /* the mapping has been put out */
     bool video_done = false;    /* ...and the aspect and palette */
+    bool audio_done = false;    /* ...and the volume and mute */
     bool ok = true;
     UINT got = 0;
     const char *reason = NULL;
@@ -326,8 +348,13 @@ const char *save_settings(void)
                     ok = ok && put_video(&out);
                     video_done = true;
                 }
+                if (in_audio && !audio_done) {
+                    ok = ok && put_audio(&out);
+                    audio_done = true;
+                }
                 in_input = strncmp(line, "[input]", 7) == 0;
                 in_video = strncmp(line, "[video]", 7) == 0;
+                in_audio = strncmp(line, "[audio]", 7) == 0;
                 ok = ok && put(&out, line) && put(&out, "\n");
                 if (in_input) {
                     ok = ok && put_mapping(&out);
@@ -337,6 +364,10 @@ const char *save_settings(void)
                     ok = ok && put_video(&out);
                     video_done = true;
                 }
+                if (in_audio) {
+                    ok = ok && put_audio(&out);
+                    audio_done = true;
+                }
                 continue;
             }
             if (in_input && is_key_line(line)) {
@@ -345,6 +376,9 @@ const char *save_settings(void)
             if (in_video && is_video_line(line)) {
                 continue;       /* likewise */
             }
+            if (in_audio && is_audio_line(line)) {
+                continue;
+            }
             ok = ok && put(&out, line) && put(&out, "\n");
         }
     }
@@ -352,7 +386,8 @@ const char *save_settings(void)
     if (ok && len != 0) {
         line[len] = '\0';
         if (!(in_input && is_key_line(line)) &&
-            !(in_video && is_video_line(line))) {
+            !(in_video && is_video_line(line)) &&
+            !(in_audio && is_audio_line(line))) {
             ok = put(&out, line) && put(&out, "\n");
         }
     }
@@ -363,6 +398,9 @@ const char *save_settings(void)
     }
     if (ok && !video_done) {
         ok = put(&out, "\n[video]\n") && put_video(&out);
+    }
+    if (ok && !audio_done) {
+        ok = put(&out, "\n[audio]\n") && put_audio(&out);
     }
     if (reason == NULL && !ok) {
         reason = "a write to the temporary failed";
@@ -471,6 +509,33 @@ void on_video_row(td_widget_t *, void *)
     }
 }
 
+/* The Audio page.  The slider and the mute change what Save writes; the
+ * percentage is shown beside the slider because the bar alone cannot say
+ * whether it is at 45 or 50. */
+void show_volume(void)
+{
+    if (s_volume_label != nullptr) {
+        td_widget_printf(s_volume_label, "%3u%%%s", (unsigned)s_set.audio.volume,
+                         s_set.audio.mute ? "  muted" : "");
+    }
+}
+
+void on_volume(td_widget_t *w, void *)
+{
+    s_set.audio.volume = (uint8_t)w->value;
+    s_dirty = true;
+    show_volume();
+    status_from_file();
+}
+
+void on_mute(td_widget_t *w, void *)
+{
+    s_set.audio.mute = td_checkbox_get(w) ? 1 : 0;
+    s_dirty = true;
+    show_volume();
+    status_from_file();
+}
+
 void on_player(td_widget_t *, void *)
 {
     s_player = (s_player + 1) % PLAYERS;
@@ -520,6 +585,9 @@ void on_close(td_window_t *)
     s_list = nullptr;
     s_video_list = nullptr;
     s_player_button = nullptr;
+    s_volume = nullptr;
+    s_volume_label = nullptr;
+    s_mute = nullptr;
     memset(s_status, 0, sizeof s_status);
     s_lib_list = nullptr;
     s_lib_path = nullptr;
@@ -967,9 +1035,9 @@ void launch(void)
 
     td_window_desc_t d = {};
     d.title = "TinyNES";
-    /* A fixed size, the same for TinyNES and TinyGBC: 50 columns, the
-     * narrowest the pages fit in, and 20 rows, which gives the Library list
-     * twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
+    /* A fixed size, the same for TinyNES and TinyGBC: 54 columns, the
+     * narrowest the five tabs fit in, and 20 rows, which gives the Library
+     * list twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
      * maximise and no F11, and the minimum pins the size as well. */
     d.rect = td_rect(-1, -1, WIN_W, WIN_H);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE;
@@ -1045,15 +1113,31 @@ void launch(void)
     page_add(2, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
     page_add(2, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
+    /* Audio: the master volume, its percentage, the mute, and the Save. */
+    page_add(3, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
+    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    if (s_volume != nullptr) {
+        td_slider_set(s_volume, s_set.audio.volume);
+    }
+    page_add(3, s_volume);
+    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    page_add(3, s_volume_label);
+    show_volume();
+    s_mute = td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0, on_mute, nullptr);
+    page_add(3, s_mute);
+    page_add(3, td_button(s_win, 1, 8, "Save", on_save, nullptr));
+    page_add(3, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
+    page_add(3, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+
     /* Saves: the selected cartridge's save state, then where battery saves
      * go.  L saves and R loads in the game; there is one state a cartridge. */
-    page_add(3, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
     for (int i = 0; i < STATE_LINES; i++) {
         s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
-        page_add(3, s_state_line[i]);
+        page_add(SAVES_TAB, s_state_line[i]);
     }
-    page_add(3, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/nes"));
-    page_add(3, td_label(s_win, 1, 11, 0, "and written when the game ends."));
+    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/nes"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 11, 0, "and written when the game ends."));
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is

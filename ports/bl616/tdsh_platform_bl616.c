@@ -9,6 +9,7 @@
 #include "tang_ble.h"
 #include "tang_crash.h"
 #include "tang_heap.h"
+#include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
 
 #include <stdio.h>
@@ -452,7 +453,20 @@ static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
                         tang_nes_palette_name(nes.palette), (unsigned)nes.scale,
                         nes.scanlines ? "on" : "off",
                         nes.overscan ? "hide" : "show");
+            tdsh_printf("  audio volume=%u mute=%s\r\n", (unsigned)nes.audio.volume,
+                        nes.audio.mute ? "yes" : "no");
         }
+    }
+    {
+        static tang_gbc_settings_t gbc;
+        const bool ok = tang_gbc_load(&gbc, TANG_GBC_INI_REAL);
+
+        tdsh_printf("tang: %s %s", TANG_GBC_INI_SHOWN, ok ? "read," : "absent,");
+        if (ok) {
+            tdsh_printf(" %u key(s) understood", (unsigned)gbc.keys);
+        }
+        tdsh_printf("\r\n  audio volume=%u mute=%s\r\n", (unsigned)gbc.audio.volume,
+                    gbc.audio.mute ? "yes" : "no");
     }
     return 0;
 }

@@ -79,6 +79,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
 
 #include "FreeRTOS.h"
@@ -1558,6 +1559,20 @@ static void ae350_send_named(ae350_run_t *run, const ae350_link_t *link,
     run->save_file = NULL;
 }
 
+/* Send a settings blob to the address the program asked for, in the boot
+ * ROM's load protocol, as a cartridge is sent. */
+static int ae350_send_blob(ae350_run_t *run, const ae350_link_t *link,
+                           unsigned long address, const uint8_t *blob,
+                           size_t length, char *reason)
+{
+    run->blob = blob;
+    run->blob_length = length;
+    ae350_link_t set_link = *link;
+    set_link.image = ae350_blob_bytes;
+    return ae350_send_image(&set_link, (uint32_t)address, length,
+                            (uint32_t)address, 5, s_ae350_block, reason);
+}
+
 /* Load <player> into a TinyNES core's AE350 and run it, sending <data> (a
  * cartridge, or NULL) when it asks; follow its output until it exits and
  * return its code.  Both paths are FatFS paths the port mounts, already
@@ -1682,11 +1697,11 @@ int tang_ae350_run(const char *player, const char *data)
         if (starts_with(run.line, "TinyNES SETTINGS WANT ")) {
             /* The blob's bytes are the ABI with the core (TinyNES
              * firmware/apps/nes_bench/main.cpp): player 1's mapping, player
-             * 2's, the picture's pixel aspect, then its palette.  The core
-             * prints the length it wants, and an older core wants only the
-             * first sixteen or seventeen of these, so nothing beyond what was
-             * asked for is ever sent. */
-            static uint8_t blob[2 * TANG_NES_BUTTONS + 2];
+             * 2's, the picture's pixel aspect, its palette, then the master
+             * volume and the mute.  The core prints the length it wants, and
+             * an older core wants only the first sixteen to eighteen of these,
+             * so nothing beyond what was asked for is ever sent. */
+            static uint8_t blob[2 * TANG_NES_BUTTONS + 4];
             unsigned long address = 0, room = 0;
             if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 ||
                 room < 2 * TANG_NES_BUTTONS) {
@@ -1697,22 +1712,44 @@ int tang_ae350_run(const char *player, const char *data)
             memcpy(blob + TANG_NES_BUTTONS, nes.p2, TANG_NES_BUTTONS);
             blob[2 * TANG_NES_BUTTONS] = nes.aspect;
             blob[2 * TANG_NES_BUTTONS + 1] = nes.palette;
+            blob[2 * TANG_NES_BUTTONS + 2] = nes.audio.volume;
+            blob[2 * TANG_NES_BUTTONS + 3] = nes.audio.mute;
             const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
-            run.blob = blob;
-            run.blob_length = sending;
-            ae350_link_t set_link = link;
-            set_link.image = ae350_blob_bytes;
-            rc = ae350_send_image(&set_link, (uint32_t)address, sending,
-                                  (uint32_t)address, 5, s_ae350_block, &reason);
+            rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
             tdsh_printf("ae350run: settings %s, p1:",
                         nes.found ? TANG_NES_INI_SHOWN : "(defaults)");
             for (int i = 0; i < TANG_NES_BUTTONS; i++) {
                 tdsh_printf(" %s=%s", tang_nes_button_name(i),
                             tang_nes_pad_name(nes.p1[i]));
             }
-            tdsh_printf(" aspect=%s palette=%s%s\r\n", tang_nes_aspect_name(nes.aspect),
+            tdsh_printf(" aspect=%s palette=%s volume=%u%s%s\r\n",
+                        tang_nes_aspect_name(nes.aspect),
                         tang_nes_palette_name(nes.palette),
-                        sending < sizeof blob ? " (not asked for)" : "");
+                        (unsigned)nes.audio.volume, nes.audio.mute ? " muted" : "",
+                        sending < sizeof blob ? " (not all asked for)" : "");
+            if (rc != AE350_OK) {
+                tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
+            }
+            continue;
+        }
+        if (starts_with(run.line, "TinyGBC SETTINGS WANT ")) {
+            /* TinyGBC's blob (TinyGBC firmware/apps/gb_bench/main.cpp): the
+             * master volume and the mute, from /gbc.ini. */
+            static tang_gbc_settings_t gbc;
+            static uint8_t blob[2];
+            unsigned long address = 0, room = 0;
+            if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 || room < 1) {
+                tdsh_printf("ae350run: the settings request is malformed\r\n");
+                continue;
+            }
+            (void)tang_gbc_load(&gbc, TANG_GBC_INI_REAL);
+            blob[0] = gbc.audio.volume;
+            blob[1] = gbc.audio.mute;
+            const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
+            rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
+            tdsh_printf("ae350run: settings %s, volume=%u%s\r\n",
+                        gbc.found ? TANG_GBC_INI_SHOWN : "(defaults)",
+                        (unsigned)gbc.audio.volume, gbc.audio.mute ? " muted" : "");
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }
