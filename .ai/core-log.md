@@ -737,3 +737,41 @@ The new `DESKTOP_REAL` is exercised only when a game exits, which waits on the T
 - User Test: PASS
 
 ---
+
+## 22 COMMIT Unreleased 2026-10-23T05:38:33-07:00
+
+#### Coming From:
+
+Unreleased a4b6faf
+
+#### Purpose:
+
+Make `/tang.ini` name one of the only two PMOD layouts the user now supports, the I2S2 beside HDMI with the OLEDrgb beside USB-A, or the PmodVGA across both, every module right side up with no flip or socket swap, as the user approved.
+
+#### Outcome:
+
+The user fixed the hardware to two layouts and chose, of the options offered, the key `layout = i2s2_oled | vga` and leaving the I2C and UART code dormant rather than removing it. `ports/bl616/tang_ini.c` and `tang_ini.h` now read only `layout` under `[tang]`; a missing file or no layout line releases both sockets, and so do an unknown layout and any `pmod0`, `pmod1`, `pmod0_flip` or `pmod1_flip` line, each refused by name with a note saying what to write instead. The new `tang_ini_word()` turns the layout into each core's own word, because the desktop core refuses a word naming the I2S2 and would release the OLED with it (PMOD-006): `vga` is `0x0230` on both cores, PMOD0 `vga_j2` and PMOD1 `vga_j1` as qualified, and `i2s2_oled` is `0x0510` on Phosphor and `0x0010`, the OLED alone, on the desktop core; no word sets a flip bit. `ports/bl616/phosphor/pmod_sockets.cpp` sends and reads back that word and `tangini` prints the layout and what each socket gets; neither layout has an I2C socket, so `pmodi2c`, `pmodlora` and the PMOD RTC stay in the image unreachable, saying so when used, and the desktop clock stays unset. `tools/tests/tb_ini.c` was rewritten for the new contract and the per-core words, and failed on each of two planted faults, the desktop core sent the I2S2 and old keys not releasing; `test_ini.sh`, `test_tang_flash.sh` and `tools/check_help_width.py` passed. `docs/tang.ini` declares `i2s2_oled`, and `README.md`, `fpga/desktop/README.md`, `manual/files.md` and `manual/troubleshooting.md` describe the layouts. Firmware `a4b6faf-dirty.2622c8b`, 653,232 bytes, SHA-256 `00c417a38a54e5a8a3075dcd2361846b80b72a46e9954b9b2ac2b2b6f076c64c`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in the changed files, was installed with `tools/tinytang_flash.py --yes`; the commit left the board as the FT2232 until the user's power cycle, so `docs/tang.ini` was put as `/tang.ini`, 1,073 bytes, with `tools/tinytang_put.py` afterwards, and `platform` read `tinytang a4b6faf-dirty.2622c8b`. `tangini apply` then declared `0xc0 = 0x0010: pmod0 oledrgb, pmod1 none` to the desktop core, but the user reported the panel dark and the desktop's OLED Terminal not drawing, and the cause of that first failure was not established. After a power cycle the boot path declared the same word by itself, `oledterm start` was run from the console, and `0x118` read Standard, `0x108` counted frames from `0x0dd5` to `0x0e9c` and `0x10c` held `0xeda1179a`; the user then reported the panel lit with text, and passed the cycle. `.ai/core-reference.md` revised PMOD-002, whose per-socket contract TinyTang no longer follows, and PMOD-006 with the layouts, the per-core words and what is qualified, and gained the fast-index line BRD-010 had lacked since entry 6. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 22 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Whether a `tangini apply` to a running desktop core lights the panel is open: the one attempt did not, the reboot did, and nothing distinguished a firmware cause from an OLED Terminal that was not running, so the next reseat or layout change should be applied with `tangini apply` and the panel checked before rebooting. `i2s2_oled` on Phosphor, `0x0510` with the I2S2 in PMOD1, has never run on the board and waits on Phosphor being put back on the card, and `vga` under the new key is untested though its word is the qualified one. TinyNES and TinyGBC read a Wii controller on PMOD0's pins, which the OLED now holds, and drive both sockets whichever layout is seated, which is for those projects to settle. The dormant `pmodi2c`, `pmodlora` and RTC paths, and the desktop core's personalities 6 and 7, can be removed in a cycle of their own if the user confirms. The older items stand: the game-exit path to `tinytang.bin`, whether the pairings reached `/root/ble/bonds.bin`, a lost state send shows only on this console, a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- docs/tang.ini
+- fpga/desktop/README.md
+- manual/files.md
+- manual/troubleshooting.md
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- tools/tests/tb_ini.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

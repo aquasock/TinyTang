@@ -48,18 +48,18 @@ designed independently after reviewing colibri conventions.
 ## Configuration
 
 TinyTang firmware recognizes UART core ID `0x54` and applies `/tang.ini`
-after each successful `tangload`. The tested normal VGA seating is **J1 on
-PMOD1 (nearest HDMI), J2 on PMOD0**, face up:
+after each successful `tangload`. The file names one of two layouts, each
+module seated right side up. The VGA seating is **J1 on PMOD1 (nearest
+HDMI), J2 on PMOD0**:
 
 ```ini
 [tang]
-pmod0 = vga_j2
-pmod0_flip = no
-pmod1 = vga_j1
-pmod1_flip = no
+layout = vga
 ```
 
-This produces `0xc0 = 0x0230`. The first desktop ABI supports both sockets
+This produces `0xc0 = 0x0230`. `layout = i2s2_oled` seats the I2S2 in PMOD1
+and the OLEDrgb in PMOD0; this core has no I2S2, so the firmware sends it the
+OLED alone, `0xc0 = 0x0010`, rather than a word it would refuse. The first desktop ABI supports both sockets
 released or a complete VGA pair, in either order, with independent row flips.
 Unsupported module words are rejected without changing the active word.
 Sockets start released after reset. ABI 1.1 additionally supports OLEDrgb
@@ -194,5 +194,5 @@ bash tools/tests/test_tang_flash.sh
 
 `test_oled_session.sh` runs the real app, terminal routes, script workers and
 printf layer on POSIX threads (`tools/tests/stubs/rtos_threads/`) inside
-TinyDesk's window manager. The OLED-and-encoder card layout uses
-`pmod0 = oledrgb` with PMOD1 released, giving `0xc0 = 0x0010`.
+TinyDesk's window manager. The card's `i2s2_oled` layout gives this core the
+OLED in PMOD0 with PMOD1 released, `0xc0 = 0x0010`.

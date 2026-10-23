@@ -1,26 +1,29 @@
 // TinyTang — /tang.ini, the declaration of what is seated in the PMOD sockets.
 //
 // PMOD modules carry no identification pins, so the core can only be told
-// what is attached (PMOD-002).  The file is Tang-Phosphor's contract:
+// what is attached (PMOD-002).  Two layouts are supported, each with its
+// modules in fixed sockets and seated right side up, so the file names one:
 //
 //     [tang]
-//     pmod0 = oledrgb
-//     pmod0_flip = no
-//     pmod1 = encoder
-//     pmod1_flip = yes
+//     layout = i2s2_oled    ; I2S2 in PMOD1 beside HDMI, OLEDrgb in PMOD0
+//     layout = vga          ; the PmodVGA across both, J1 in PMOD1, J2 in PMOD0
 //
-// A missing file, or a socket with no entry, leaves that socket released,
-// which is the safe state.  A module name this firmware does not know, a
-// flip that is not yes or no, and a vga_j1 without vga_j2 in the other socket
-// (or the reverse) release that socket and say why.  Keys and sections it
-// does not know are warned about and ignored, so the file can carry settings
-// for a later firmware.  Comments start with ';' or '#', at the start of a
-// line or after a value.  Names and yes/no are not case-sensitive.
+// There is no flip and no choice of socket.  A missing file, or a file with
+// no layout line, leaves both sockets released, which is the safe state; so
+// do an unknown layout and the per-socket keys of the old contract (pmod0,
+// pmod1, pmod0_flip, pmod1_flip), which are refused with a note saying what
+// to write instead.  Other keys and sections are warned about and ignored.
+// Comments start with ';' or '#', at the start of a line or after a value.
+// Names are not case-sensitive.
 //
-// This file is only the parser: bytes in, the socket control word and the
-// problems out, with nothing from the card or the core in it, so it can be
-// checked on the host.  ports/bl616/phosphor/pmod_sockets.cpp reads the file
-// and writes the word to a core that has the sockets.
+// Each core gets the layout as the socket control word it can take:
+// tang_ini_word() says which.  The desktop core has no I2S2, so for
+// i2s2_oled it is sent the OLED alone and PMOD1 stays released.
+//
+// This file is only the parser: bytes in, the layout and the problems out,
+// with nothing from the card or the core in it, so it can be checked on the
+// host.  ports/bl616/phosphor/pmod_sockets.cpp reads the file and writes the
+// word to a core that has the sockets.
 //
 // SPDX-License-Identifier: MIT
 
@@ -39,7 +42,9 @@ extern "C" {
 #define TANG_INI_LINE_MAX  128   /* longer lines are ignored with a warning */
 #define TANG_INI_NOTES     8     /* problems kept; more are counted */
 
-/* Socket personalities: Tang-Phosphor's socket control numbering (PMOD-005). */
+/* Socket personalities: Tang-Phosphor's socket control numbering (PMOD-004).
+ * Only the ones a layout uses are written; the desktop core's I2C bus (6)
+ * and its I2C-plus-UART socket (7) are in no layout. */
 enum {
     TANG_PMOD_NONE    = 0,
     TANG_PMOD_OLEDRGB = 1,
@@ -47,21 +52,30 @@ enum {
     TANG_PMOD_VGA_J2  = 3,
     TANG_PMOD_ENCODER = 4,
     TANG_PMOD_I2S2    = 5,
-    TANG_PMOD_I2C     = 6,   /* the desktop core's generic I2C bus */
-    TANG_PMOD_I2C_UART = 7,  /* that bus on the upper row, UART on the lower */
+    TANG_PMOD_I2C     = 6,
+    TANG_PMOD_I2C_UART = 7,
 };
+
+/* The supported layouts; NONE is both sockets released. */
+enum {
+    TANG_LAYOUT_NONE      = 0,
+    TANG_LAYOUT_I2S2_OLED = 1,
+    TANG_LAYOUT_VGA       = 2,
+};
+
+/* Core IDs that have the sockets (pmod_sockets.cpp matches their ABI). */
+#define TANG_INI_CORE_PHOSPHOR 0x50
+#define TANG_INI_CORE_DESKTOP  0x54
 
 typedef struct {
     uint16_t line;               /* 0 for a problem of the whole file */
-    bool     error;              /* a socket was released because of it */
+    bool     error;              /* the sockets were released because of it */
     char     text[80];
 } tang_ini_note_t;
 
 typedef struct {
     /* The result, after tang_ini_end(). */
-    uint8_t  module[TANG_INI_SOCKETS];   /* TANG_PMOD_*, NONE when released */
-    bool     flip[TANG_INI_SOCKETS];     /* seated upside down */
-    uint32_t word;                       /* socket control: [7:4] [11:8] [12] [13] */
+    uint8_t  layout;                     /* TANG_LAYOUT_*, NONE when released */
     tang_ini_note_t notes[TANG_INI_NOTES];
     unsigned nnotes;
     unsigned more_notes;                 /* problems past the table */
@@ -72,19 +86,24 @@ typedef struct {
     bool     overlong;
     unsigned lineno;
     int      section;                    /* -1 none yet, 0 [tang], 1 another */
-    uint16_t module_line[TANG_INI_SOCKETS];
-    uint16_t flip_line[TANG_INI_SOCKETS];
-    bool     module_bad[TANG_INI_SOCKETS];   /* the latest pmodN line was refused */
-    bool     flip_bad[TANG_INI_SOCKETS];     /* the latest pmodN_flip line was */
-    bool     refused[TANG_INI_SOCKETS];      /* released for any reason, after end */
+    uint16_t layout_line;
+    bool     layout_bad;                 /* the latest layout line was refused */
+    bool     old_key;                    /* a pmodN or pmodN_flip line was seen */
 } tang_ini_t;
 
 void tang_ini_begin(tang_ini_t *ini);
 /* Any number of bytes at a time; a line may span calls. */
 void tang_ini_feed(tang_ini_t *ini, const char *bytes, size_t n);
-/* Finish the last line, check the VGA pairing and compute the word. */
+/* Finish the last line and settle the layout. */
 void tang_ini_end(tang_ini_t *ini);
 
+/* The socket control word for `layout` on core `core_id`: personalities
+ * [7:4] PMOD0 and [11:8] PMOD1, never a flip.  0 for a core without the
+ * sockets. */
+uint32_t tang_ini_word(uint8_t layout, uint8_t core_id);
+
+/* "none", "i2s2_oled", "vga"; "?" for a number with no name. */
+const char *tang_ini_layout_name(uint8_t layout);
 /* "none", "oledrgb", ...; "?" for a number with no name. */
 const char *tang_ini_module_name(uint8_t module);
 

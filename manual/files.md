@@ -24,8 +24,13 @@ first: bytes sent then are typed into whichever window has focus.
 ## PMODs
 
 A core drives a socket only if /tang.ini says what is seated there,
-because PMOD modules carry no identification. A missing file leaves
-both sockets released, which is the safe state.
+because PMOD modules carry no identification. It names one layout:
+
+     layout = i2s2_oled    I2S2 beside HDMI, OLED beside USB-A
+     layout = vga          the PmodVGA across both sockets
+
+Every module is seated right side up. A missing file leaves both
+sockets released, which is the safe state.
 
 ## Firmware
 

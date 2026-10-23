@@ -209,25 +209,28 @@ Building and flashing are under *Quick start* and *Building requirements*.
   closing the window leaves the track playing and reopening it picks the track
   back up. Without the Phosphor core loaded it says so and its buttons are
   disabled.
-- **`/tang.ini` declares the PMOD sockets.** PMOD modules cannot be detected,
+- **`/tang.ini` names the PMOD layout.** PMOD modules cannot be detected,
   so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
-  and the desktop core) drives only what the file says is seated.  The desktop
-  core takes `none` or `oledrgb` in each socket, `i2c` or `i2c_uart` in one
-  socket beside `none` or `oledrgb`, or the PmodVGA pair; any other
-  combination makes it refuse the whole declaration, leaving
-  both sockets released, and `tangload` then prints `the core did not take the
-  socket declaration`. `tangload` sends it after every
-  core load, whichever way the core arrives, and leaves cores without sockets
-  alone. Under `[tang]`, `pmod0` and `pmod1` take `none`, `oledrgb`,
-  `encoder`, `i2s2`, `i2c`, `i2c_uart`, `vga_j1` or `vga_j2`, and
-  `pmod0_flip`/`pmod1_flip` take
-  `yes` for a module seated upside down; `docs/tang.ini` is a commented
-  example. No file, or no entry, leaves a socket released. An unknown module,
-  a flip that is not yes or no, or one half of the PmodVGA without the other
-  releases that socket and says why on the console; unknown keys and sections
-  are reported and ignored. `tangini` shows the declaration, its problems and
-  the loaded core's sockets, and `tangini apply` sends it again without
+  and the desktop core) drives only what the file says is seated.  Two layouts
+  are supported, each module in a fixed socket and seated right side up, with
+  nothing flipped or swapped: `layout = i2s2_oled` is the Pmod I2S2 in PMOD1,
+  beside the HDMI port, and the Pmod OLEDrgb in PMOD0, beside the USB-A ports;
+  `layout = vga` is the PmodVGA across both, J1 in PMOD1 and J2 in PMOD0.
+  `docs/tang.ini` is a commented example.  Each core is sent the layout as the
+  socket word it can take: Phosphor gets `0x0510` or `0x0230`, and the desktop
+  core, which has no I2S2, gets the OLED alone (`0x0010`) for `i2s2_oled` and
+  `0x0230` for `vga`.  `tangload` sends it after every core load, whichever
+  way the core arrives, and leaves cores without sockets alone.  No file, or
+  no layout line, leaves both sockets released; so do an unknown layout and
+  the old `pmod0`, `pmod1`, `pmod0_flip` and `pmod1_flip` keys, which are
+  refused with a line saying what to write instead.  Unknown keys and sections
+  are reported and ignored.  `tangini` shows the layout, its problems, the word
+  and what the loaded core holds, and `tangini apply` sends it again without
   reloading the core.
+- **The I2C and UART sockets are dormant.** Neither layout has an I2C socket,
+  so the three items below -- `pmodi2c`, `pmodlora` and the desktop clock's
+  RTC -- stay in the firmware but cannot be reached: their commands say no
+  socket is declared, and the clock stays unset.
 - **`pmodi2c scan | read | write | rtc | auto`** drives the desktop core's I2C
   bus on whichever socket `/tang.ini` declares `i2c` (or `i2c_uart`): SCL on
   pins 3 and 9, SDA on 4 and 10, 100 kHz, register-addressed transfers of 1 to
@@ -393,7 +396,7 @@ firmware's own files stay at the top of the card.
 | `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
-| `/tang.ini`, `/crash.log`, `/tinydesk_tz` | PMOD declarations, the crash record and the time zone |
+| `/tang.ini`, `/crash.log`, `/tinydesk_tz` | the PMOD layout, the crash record and the time zone |
 | `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
 
 ### Cartridges
@@ -405,7 +408,7 @@ loads `tinynes.bin`, runs the player `/root/ae350/tinynes-play.elf` with the
 cartridge, and loads the desktop core again when the game ends.  The
 controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
-PMOD1, declared in `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
+PMOD1, the `i2s2_oled` layout of `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
 fixed size of 54 by 20 cells that shows twelve Library entries at a time and
 five tabs: Library, Input, Video, Audio and Saves.  Audio is one master volume
 for HDMI and the Line Out together, a slider from 0 to 100 percent in 5 percent

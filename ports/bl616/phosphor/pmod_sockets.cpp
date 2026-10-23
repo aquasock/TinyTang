@@ -2,8 +2,8 @@
 //
 // After every successful tangload the loaded core is asked for its ID; a core
 // in s_socket_cores, at a register ABI new enough for that register to mean
-// socket control, is sent the word tang_ini.c makes from /tang.ini, and the
-// word is read back.  Every core load goes through tangload -- the boot
+// socket control, is sent the word tang_ini.c makes from /tang.ini's layout
+// for that core, and the word is read back.  Every core load goes through tangload -- the boot
 // script, phosphor.tdsh, the Phosphor app, a tangload typed in the Terminal --
 // so the sockets follow the file whichever way a core arrives.  Other cores
 // are left alone: nothing is written to a core without the sockets.
@@ -51,10 +51,11 @@ struct socket_core {
 
 // Tang-Phosphor's merged core: 0xc0 from ABI 1.8 (PHOS-011, PMOD-004).  Its
 // bring-up core also reports 0x50 but has no ABI word, so it is not matched.
-// TinyTang desktop: 0xc0 from its own ABI 1.0, supporting none and VGA pairs.
+// TinyTang desktop: 0xc0 from its own ABI 1.0.  tang_ini_word() gives each its
+// word for the layout.
 const socket_core s_socket_cores[] = {
-    {0x50, 0x00010008u, 0x00c0u},
-    {0x54, 0x00010000u, 0x00c0u},
+    {TANG_INI_CORE_PHOSPHOR, 0x00010008u, 0x00c0u},
+    {TANG_INI_CORE_DESKTOP, 0x00010000u, 0x00c0u},
 };
 
 // Kept off the stack: the parser holds a line and its notes.
@@ -174,32 +175,40 @@ void print_declaration(bool present)
     if (s_ini.more_notes != 0) {
         tdsh_printf("tang.ini: (%u more)\r\n", s_ini.more_notes);
     }
-    tdsh_printf("tang.ini: pmod0 %s%s, pmod1 %s%s; word 0x%04lx\r\n",
-                tang_ini_module_name(s_ini.module[0]), s_ini.flip[0] ? " (flipped)" : "",
-                tang_ini_module_name(s_ini.module[1]), s_ini.flip[1] ? " (flipped)" : "",
-                static_cast<unsigned long>(s_ini.word));
+    tdsh_printf("tang.ini: layout %s\r\n", tang_ini_layout_name(s_ini.layout));
 }
 
-// Send s_ini.word to `core` and read it back.
+// What `word` puts in each socket, for the console.
+void print_word(const char *what, uint32_t reg, uint32_t word)
+{
+    tdsh_printf("tang.ini: %s 0x%02lx = 0x%04lx: pmod0 %s, pmod1 %s\r\n", what,
+                static_cast<unsigned long>(reg), static_cast<unsigned long>(word),
+                tang_ini_module_name((word >> 4) & 0xfu),
+                tang_ini_module_name((word >> 8) & 0xfu));
+}
+
+// Send the layout's word for `core` and read it back.
 bool send(const socket_core &core)
 {
+    const uint32_t word = tang_ini_word(s_ini.layout, core.id);
     uint32_t back = 0;
     s_i2c_declared = false;
     s_uart_declared = false;
-    if (!write_reg(core.reg, s_ini.word) || !read_reg(core.reg, &back)) {
+    if (!write_reg(core.reg, word) || !read_reg(core.reg, &back)) {
         tdsh_printf("tang.ini: the core did not take the socket declaration\r\n");
         return false;
     }
-    if ((back & SOCKET_BITS) != s_ini.word) {
+    if ((back & SOCKET_BITS) != word) {
         tdsh_printf("tang.ini: wrote 0x%04lx to 0x%02lx, read back 0x%08lx\r\n",
-                    static_cast<unsigned long>(s_ini.word),
+                    static_cast<unsigned long>(word),
                     static_cast<unsigned long>(core.reg), static_cast<unsigned long>(back));
         return false;
     }
-    tdsh_printf("tang.ini: sockets declared (0x%02lx = 0x%04lx)\r\n",
-                static_cast<unsigned long>(core.reg), static_cast<unsigned long>(s_ini.word));
-    const uint32_t p0 = (s_ini.word >> 4) & 0xfu;
-    const uint32_t p1 = (s_ini.word >> 8) & 0xfu;
+    print_word("sockets declared,", core.reg, word);
+    // No layout has an I2C socket, so these stay false: pmodi2c, pmodlora and
+    // the PMOD RTC are dormant until one does.
+    const uint32_t p0 = (word >> 4) & 0xfu;
+    const uint32_t p1 = (word >> 8) & 0xfu;
     s_i2c_declared = core.id == 0x54 &&
                      (p0 == TANG_PMOD_I2C || p1 == TANG_PMOD_I2C ||
                       p0 == TANG_PMOD_I2C_UART || p1 == TANG_PMOD_I2C_UART);
@@ -238,13 +247,17 @@ int cmd_tangini(tdsh_session_t *session, int argc, char **argv)
     }
     uint32_t now = 0;
     if (read_reg(core->reg, &now)) {
+        const uint32_t word = tang_ini_word(s_ini.layout, core->id);
         tdsh_printf("tang.ini: core 0x%02x (ABI %lu.%lu) has 0x%02lx = 0x%04lx%s\r\n",
                     (unsigned)id, static_cast<unsigned long>(abi >> 16),
                     static_cast<unsigned long>(abi & 0xffffu),
                     static_cast<unsigned long>(core->reg),
                     static_cast<unsigned long>(now & SOCKET_BITS),
-                    (now & SOCKET_BITS) == s_ini.word ? ", as declared"
-                                                      : "; `tangini apply` sends the file's");
+                    (now & SOCKET_BITS) == word ? ", as declared"
+                                                : "; `tangini apply` sends the file's");
+        if ((now & SOCKET_BITS) != word) {
+            print_word("the layout's word is", core->reg, word);
+        }
     }
     return 0;
 }

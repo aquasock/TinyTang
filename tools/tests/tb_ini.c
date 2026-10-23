@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
  * The /tang.ini parser (ports/bl616/tang_ini.c) against the contract in
- * tang_ini.h: the socket control word it produces, which sockets it releases
- * and why, and what it only warns about.
+ * tang_ini.h: the layout it settles on, when it releases the sockets and why,
+ * what it only warns about, and the word each core is sent for a layout.
  */
 #include <assert.h>
 #include <stdio.h>
@@ -27,7 +27,7 @@ static void parse(const char *text)
     parse_in(text, 1);
     const tang_ini_t bytewise = ini;
     parse_in(text, strlen(text) + 1);
-    assert(bytewise.word == ini.word && bytewise.nnotes == ini.nnotes);
+    assert(bytewise.layout == ini.layout && bytewise.nnotes == ini.nnotes);
 }
 
 static int errors(void)
@@ -52,8 +52,8 @@ static bool says(unsigned line, const char *part)
     return false;
 }
 
-/* A file given on the command line -- docs/tang.ini -- must be the standard
- * pair with nothing to say about it. */
+/* A file given on the command line -- docs/tang.ini -- must declare the
+ * i2s2_oled layout with nothing to say about it. */
 static void example(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -63,7 +63,7 @@ static void example(const char *path)
     fclose(f);
     text[n] = '\0';
     parse(text);
-    assert(ini.word == 0x2410 && ini.nnotes == 0);
+    assert(ini.layout == TANG_LAYOUT_I2S2_OLED && ini.nnotes == 0);
 }
 
 int main(int argc, char **argv)
@@ -71,100 +71,95 @@ int main(int argc, char **argv)
     if (argc > 1) {
         example(argv[1]);
     }
-    /* The contract's own example is the standard pair, 0x2410. */
-    parse("[tang]\npmod0 = oledrgb\npmod0_flip = no\npmod1 = encoder\npmod1_flip = yes\n");
-    assert(ini.word == 0x2410 && ini.nnotes == 0);
-    assert(ini.module[0] == TANG_PMOD_OLEDRGB && ini.module[1] == TANG_PMOD_ENCODER);
-    assert(!ini.flip[0] && ini.flip[1]);
 
-    /* No file content: both released, nothing to say. */
+    /* The two layouts. */
+    parse("[tang]\nlayout = i2s2_oled\n");
+    assert(ini.layout == TANG_LAYOUT_I2S2_OLED && ini.nnotes == 0);
+    parse("[tang]\nlayout = vga\n");
+    assert(ini.layout == TANG_LAYOUT_VGA && ini.nnotes == 0);
+
+    /* The word each core is sent.  VGA right side up is J2 in PMOD0 and J1 in
+     * PMOD1, 0x0230, on both cores (PMOD-006). */
+    assert(tang_ini_word(TANG_LAYOUT_VGA, TANG_INI_CORE_PHOSPHOR) == 0x0230);
+    assert(tang_ini_word(TANG_LAYOUT_VGA, TANG_INI_CORE_DESKTOP) == 0x0230);
+    /* OLED in PMOD0 and I2S2 in PMOD1 on Phosphor; the desktop core has no
+     * I2S2 and refuses a word naming it, so it gets the OLED alone. */
+    assert(tang_ini_word(TANG_LAYOUT_I2S2_OLED, TANG_INI_CORE_PHOSPHOR) == 0x0510);
+    assert(tang_ini_word(TANG_LAYOUT_I2S2_OLED, TANG_INI_CORE_DESKTOP) == 0x0010);
+    /* Released, or a core without the sockets: nothing. */
+    assert(tang_ini_word(TANG_LAYOUT_NONE, TANG_INI_CORE_PHOSPHOR) == 0);
+    assert(tang_ini_word(TANG_LAYOUT_NONE, TANG_INI_CORE_DESKTOP) == 0);
+    assert(tang_ini_word(TANG_LAYOUT_VGA, 0x4e) == 0);
+    assert(tang_ini_word(7, TANG_INI_CORE_DESKTOP) == 0);
+    /* No layout ever sets a flip bit. */
+    for (uint8_t l = 0; l < 3; l++) {
+        assert((tang_ini_word(l, TANG_INI_CORE_PHOSPHOR) & 0x3000u) == 0);
+        assert((tang_ini_word(l, TANG_INI_CORE_DESKTOP) & 0x3000u) == 0);
+    }
+
+    /* No file content, or no layout line: released, and said so. */
     parse("");
-    assert(ini.word == 0 && ini.nnotes == 0);
+    assert(ini.layout == TANG_LAYOUT_NONE && errors() == 0 && says(0, "no layout line"));
+    parse("[tang]\n; nothing seated\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && errors() == 0 && says(0, "no layout line"));
 
     /* CRLF, spacing, case, comments on their own line and after a value, and
      * a last line with no newline. */
-    parse("; my Tang\r\n[ TANG ]\r\n  PMOD0 =  OLEDRGB   ; the panel\r\n# encoder\r\n"
-          "pmod1=Encoder\r\npmod1_flip=YES");
-    assert(ini.word == 0x2410 && ini.nnotes == 0);
+    parse("; my Tang\r\n[ TANG ]\r\n# audio\r\n  LAYOUT =  I2S2_Oled   ; beside HDMI");
+    assert(ini.layout == TANG_LAYOUT_I2S2_OLED && ini.nnotes == 0);
 
-    /* Every personality, either socket. */
-    parse("[tang]\npmod0 = i2s2\n");
-    assert(ini.word == 0x0050 && ini.nnotes == 0);
-    parse("[tang]\npmod1 = i2s2\npmod0 = encoder\npmod0_flip = yes\n");
-    assert(ini.word == 0x1540);
-    parse("[tang]\npmod0 = none\npmod1 = oledrgb\n");
-    assert(ini.word == 0x0100 && ini.nnotes == 0);
-    /* The desktop's I2C bus, beside the OLED. */
-    parse("[tang]\npmod0 = i2c\npmod1 = oledrgb\n");
-    assert(ini.word == 0x0160 && ini.nnotes == 0);
-    assert(ini.module[0] == TANG_PMOD_I2C && ini.module[1] == TANG_PMOD_OLEDRGB);
-    parse("[tang]\npmod0 = i2c\npmod0_flip = yes\n");
-    assert(ini.word == 0x1060 && ini.nnotes == 0);
-    /* i2c_uart is personality 7: the same bus plus the lower row's UART. */
-    parse("[tang]\npmod0 = i2c_uart\npmod1 = oledrgb\n");
-    assert(ini.word == 0x0170 && ini.nnotes == 0);
-    assert(ini.module[0] == TANG_PMOD_I2C_UART);
-    assert(strcmp(tang_ini_module_name(TANG_PMOD_I2C_UART), "i2c_uart") == 0);
-    parse("[tang]\npmod1 = i2c_uart\npmod1_flip = yes\n");
-    assert(ini.word == 0x2700 && ini.nnotes == 0);
+    /* An unknown layout releases both, naming the two that exist. */
+    parse("[tang]\nlayout = audio\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && errors() == 2);
+    assert(says(2, "unknown layout 'audio'; use i2s2_oled or vga"));
+    assert(says(0, "both sockets released"));
+    /* "none" is not a layout: leave the line out instead. */
+    parse("[tang]\nlayout = none\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && says(2, "unknown layout 'none'"));
 
-    /* The PmodVGA takes both halves. */
-    parse("[tang]\npmod0 = vga_j1\npmod1 = vga_j2\n");
-    assert(ini.word == 0x0320 && ini.nnotes == 0);
-    parse("[tang]\npmod0 = vga_j2\npmod1 = vga_j1\npmod1_flip = yes\n");
-    assert(ini.word == 0x2230);
-    /* A half without its partner is released; the other socket stays. */
-    parse("[tang]\npmod0 = vga_j1\npmod1 = oledrgb\n");
-    assert(ini.word == 0x0100 && errors() == 1 && says(2, "vga_j1 needs vga_j2 in pmod1"));
-    parse("[tang]\npmod0 = vga_j1\npmod1 = vga_j1\n");
-    assert(ini.word == 0 && errors() == 2);
-    /* A refused partner counts as none. */
-    parse("[tang]\npmod0 = vga_j1\npmod1 = vga_j3\n");
-    assert(ini.word == 0 && errors() == 2 && says(3, "unknown module 'vga_j3'"));
+    /* The old per-socket keys are refused, and release both even beside a good
+     * layout, since the file was written for the old contract. */
+    parse("[tang]\npmod0 = oledrgb\npmod1 = i2s2\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && errors() == 3);
+    assert(says(2, "pmod0 is no longer read; write layout = i2s2_oled or vga"));
+    assert(says(3, "pmod1 is no longer read"));
+    parse("[tang]\nlayout = vga\npmod1_flip = yes\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && says(3, "pmod1_flip is no longer read"));
+    parse("[tang]\nPMOD0_FLIP = no\nlayout = vga\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && says(2, "PMOD0_FLIP is no longer read"));
 
-    /* An unknown module releases its socket only. */
-    parse("[tang]\npmod0 = oled\npmod1 = encoder\n");
-    assert(ini.word == 0x0400 && errors() == 1 && says(2, "pmod0 released"));
-    /* So does a flip that is not yes or no, even with a good module... */
-    parse("[tang]\npmod0 = oledrgb\npmod0_flip = maybe\n");
-    assert(ini.word == 0 && errors() == 1 && says(3, "is not yes or no"));
-    /* ...and a later module line does not undo the bad flip. */
-    parse("[tang]\npmod0_flip = 1\npmod0 = oledrgb\n");
-    assert(ini.word == 0 && errors() == 1);
-    /* A later good flip does. */
-    parse("[tang]\npmod0_flip = 1\npmod0 = oledrgb\npmod0_flip = no\n");
-    assert(ini.word == 0x0010 && errors() == 1 && says(4, "given again"));
-
-    /* Given twice: the last wins, with a warning. */
-    parse("[tang]\npmod1 = oledrgb\npmod1 = encoder\n");
-    assert(ini.word == 0x0400 && errors() == 0 && says(3, "this line wins"));
-    parse("[tang]\npmod1 = bogus\npmod1 = encoder\n");
-    assert(ini.word == 0x0400 && errors() == 1);
+    /* Given twice: the last wins, with a warning; a later good line undoes an
+     * earlier bad one. */
+    parse("[tang]\nlayout = vga\nlayout = i2s2_oled\n");
+    assert(ini.layout == TANG_LAYOUT_I2S2_OLED && errors() == 0 && says(3, "this line wins"));
+    parse("[tang]\nlayout = bogus\nlayout = vga\n");
+    assert(ini.layout == TANG_LAYOUT_VGA && errors() == 1);
+    parse("[tang]\nlayout = vga\nlayout = bogus\n");
+    assert(ini.layout == TANG_LAYOUT_NONE && errors() == 2);
 
     /* Unknown keys and sections: warned and ignored, nothing released. */
-    parse("[tang]\nvideo = 720p\npmod0 = oledrgb\n[later]\npmod1 = encoder\nx = 1\n");
-    assert(ini.word == 0x0010 && errors() == 0);
+    parse("[tang]\nvideo = 720p\nlayout = vga\n[later]\nlayout = i2s2_oled\nx = 1\n");
+    assert(ini.layout == TANG_LAYOUT_VGA && errors() == 0);
     assert(says(2, "unknown key video") && says(4, "section [later] is not used"));
     assert(ini.nnotes == 2);              /* the section is warned about once */
-    parse("pmod0 = oledrgb\n[tang]\npmod1 = encoder\n");
-    assert(ini.word == 0x0400 && says(1, "outside [tang]"));
-    parse("[tang]\nthis is not a setting\npmod0 = oledrgb\n[broken\npmod1 = encoder\n");
-    assert(ini.word == 0x0010 && says(2, "not a key = value") && says(4, "without ']'"));
-
-    /* A flip with no module has nothing to flip. */
-    parse("[tang]\npmod1_flip = yes\n");
-    assert(ini.word == 0 && errors() == 0 && says(2, "no module to apply to"));
+    parse("layout = vga\n[tang]\nlayout = i2s2_oled\n");
+    assert(ini.layout == TANG_LAYOUT_I2S2_OLED && says(1, "outside [tang]"));
+    parse("[tang]\nthis is not a setting\nlayout = vga\n[broken\nlayout = i2s2_oled\n");
+    assert(ini.layout == TANG_LAYOUT_VGA && says(2, "not a key = value") && says(4, "without ']'"));
 
     /* An overlong line is ignored and the next one still parses. */
     char longline[400];
-    snprintf(longline, sizeof(longline), "[tang]\n; %0300d\npmod0 = encoder\n", 0);
+    snprintf(longline, sizeof(longline), "[tang]\n; %0300d\nlayout = vga\n", 0);
     parse(longline);
-    assert(ini.word == 0x0040 && says(2, "longer than 127"));
+    assert(ini.layout == TANG_LAYOUT_VGA && says(2, "longer than 127"));
 
     /* Past the note table, problems are counted, not lost. */
-    parse("[tang]\na=1\nb=1\nc=1\nd=1\ne=1\nf=1\ng=1\nh=1\ni=1\nj=1\npmod0 = i2s2\n");
-    assert(ini.nnotes == TANG_INI_NOTES && ini.more_notes == 2 && ini.word == 0x0050);
+    parse("[tang]\na=1\nb=1\nc=1\nd=1\ne=1\nf=1\ng=1\nh=1\ni=1\nj=1\nlayout = vga\n");
+    assert(ini.nnotes == TANG_INI_NOTES && ini.more_notes == 2 && ini.layout == TANG_LAYOUT_VGA);
 
+    assert(strcmp(tang_ini_layout_name(TANG_LAYOUT_I2S2_OLED), "i2s2_oled") == 0);
+    assert(strcmp(tang_ini_layout_name(TANG_LAYOUT_VGA), "vga") == 0);
+    assert(strcmp(tang_ini_layout_name(3), "?") == 0);
     assert(strcmp(tang_ini_module_name(TANG_PMOD_I2S2), "i2s2") == 0);
     assert(strcmp(tang_ini_module_name(9), "?") == 0);
 

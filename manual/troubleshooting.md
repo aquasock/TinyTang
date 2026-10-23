@@ -25,7 +25,8 @@ the app.
 
 ## No sound
 
-- The Pmod I2S2 has to be in the socket /tang.ini declares.
+- The Pmod I2S2 goes in the socket beside HDMI, right side up, and
+  /tang.ini must say layout = i2s2_oled.
 - Audio to HDMI and to the Pmod come from the same stream, so if one
   works and the other does not, the socket is the suspect.
 

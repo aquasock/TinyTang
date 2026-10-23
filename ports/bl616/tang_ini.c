@@ -20,9 +20,21 @@ static const char *const s_names[] = {
 };
 #define NAMES (sizeof(s_names) / sizeof(s_names[0]))
 
+static const char *const s_layouts[] = {
+    [TANG_LAYOUT_NONE]      = "none",
+    [TANG_LAYOUT_I2S2_OLED] = "i2s2_oled",
+    [TANG_LAYOUT_VGA]       = "vga",
+};
+#define LAYOUTS (sizeof(s_layouts) / sizeof(s_layouts[0]))
+
 const char *tang_ini_module_name(uint8_t module)
 {
     return module < NAMES ? s_names[module] : "?";
+}
+
+const char *tang_ini_layout_name(uint8_t layout)
+{
+    return layout < LAYOUTS ? s_layouts[layout] : "?";
 }
 
 static char lower(char c)
@@ -78,18 +90,11 @@ void tang_ini_begin(tang_ini_t *ini)
     ini->section = -1;
 }
 
-/* "pmod0" -> 0, "pmod1_flip" -> 1 with *flip; -1 for any other key. */
-static int socket_key(const char *key, bool *flip)
+/* The keys of the old per-socket contract, refused by name. */
+static bool old_socket_key(const char *key)
 {
-    static const char *const modules[TANG_INI_SOCKETS] = {"pmod0", "pmod1"};
-    static const char *const flips[TANG_INI_SOCKETS] = {"pmod0_flip", "pmod1_flip"};
-    for (int s = 0; s < TANG_INI_SOCKETS; s++) {
-        if (same(key, modules[s]) || same(key, flips[s])) {
-            *flip = same(key, flips[s]);
-            return s;
-        }
-    }
-    return -1;
+    return same(key, "pmod0") || same(key, "pmod1") || same(key, "pmod0_flip") ||
+           same(key, "pmod1_flip");
 }
 
 static void line_done(tang_ini_t *ini)
@@ -132,7 +137,7 @@ static void line_done(tang_ini_t *ini)
     *eq = '\0';
     const char *key = trim(s);
     char *value = eq + 1;
-    /* A comment after the value: no name or yes/no contains these. */
+    /* A comment after the value: no layout name contains these. */
     value[strcspn(value, ";#")] = '\0';
     value = trim(value);
 
@@ -143,46 +148,30 @@ static void line_done(tang_ini_t *ini)
         return;                            /* another section: warned once */
     }
 
-    bool flip = false;
-    const int sock = socket_key(key, &flip);
-    if (sock < 0) {
+    if (old_socket_key(key)) {
+        ini->old_key = true;
+        note(ini, no, true, "%.12s is no longer read; write layout = i2s2_oled or vga", key);
+        return;
+    }
+    if (!same(key, "layout")) {
         note(ini, no, false, "unknown key %.24s; ignored", key);
         return;
     }
 
-    if (!flip) {
-        if (ini->module_line[sock] != 0) {
-            note(ini, no, false, "pmod%d given again; this line wins", sock);
+    if (ini->layout_line != 0) {
+        note(ini, no, false, "layout given again; this line wins");
+    }
+    ini->layout_line = (uint16_t)no;
+    ini->layout_bad = false;
+    for (unsigned l = TANG_LAYOUT_NONE + 1; l < LAYOUTS; l++) {
+        if (same(value, s_layouts[l])) {
+            ini->layout = (uint8_t)l;
+            return;
         }
-        ini->module_line[sock] = (uint16_t)no;
-        ini->module_bad[sock] = false;
-        for (unsigned m = 0; m < NAMES; m++) {
-            if (same(value, s_names[m])) {
-                ini->module[sock] = (uint8_t)m;
-                return;
-            }
-        }
-        ini->module[sock] = TANG_PMOD_NONE;
-        ini->module_bad[sock] = true;
-        note(ini, no, true, "pmod%d: unknown module '%.20s'; pmod%d released", sock, value, sock);
-        return;
     }
-
-    if (ini->flip_line[sock] != 0) {
-        note(ini, no, false, "pmod%d_flip given again; this line wins", sock);
-    }
-    ini->flip_line[sock] = (uint16_t)no;
-    ini->flip_bad[sock] = false;
-    if (same(value, "yes")) {
-        ini->flip[sock] = true;
-    } else if (same(value, "no")) {
-        ini->flip[sock] = false;
-    } else {
-        ini->flip[sock] = false;
-        ini->flip_bad[sock] = true;
-        note(ini, no, true, "pmod%d_flip: '%.20s' is not yes or no; pmod%d released",
-             sock, value, sock);
-    }
+    ini->layout = TANG_LAYOUT_NONE;
+    ini->layout_bad = true;
+    note(ini, no, true, "unknown layout '%.20s'; use i2s2_oled or vga", value);
 }
 
 void tang_ini_feed(tang_ini_t *ini, const char *bytes, size_t n)
@@ -205,37 +194,35 @@ void tang_ini_end(tang_ini_t *ini)
         line_done(ini);                    /* a last line without '\n' */
     }
 
-    for (int s = 0; s < TANG_INI_SOCKETS; s++) {
-        ini->refused[s] = ini->module_bad[s] || ini->flip_bad[s];
-        if (ini->refused[s]) {
-            ini->module[s] = TANG_PMOD_NONE;
-            ini->flip[s] = false;
-        }
+    if (ini->old_key || ini->layout_bad) {
+        ini->layout = TANG_LAYOUT_NONE;
+        note(ini, 0, true, "both sockets released");
+    } else if (ini->layout_line == 0) {
+        note(ini, 0, false, "no layout line; both sockets released");
     }
+}
 
-    /* The PmodVGA is one module across both sockets: each half needs the
-     * other.  Checked on what survived, so a refused partner counts as none. */
-    uint8_t m[TANG_INI_SOCKETS];
-    memcpy(m, ini->module, sizeof(m));
-    for (int s = 0; s < TANG_INI_SOCKETS; s++) {
-        const int o = 1 - s;
-        const bool j1 = m[s] == TANG_PMOD_VGA_J1, j2 = m[s] == TANG_PMOD_VGA_J2;
-        if ((j1 && m[o] != TANG_PMOD_VGA_J2) || (j2 && m[o] != TANG_PMOD_VGA_J1)) {
-            note(ini, ini->module_line[s], true, "pmod%d: %s needs %s in pmod%d; pmod%d released",
-                 s, j1 ? "vga_j1" : "vga_j2", j1 ? "vga_j2" : "vga_j1", o, s);
-            ini->module[s] = TANG_PMOD_NONE;
-            ini->flip[s] = false;
-            ini->refused[s] = true;
-        }
+uint32_t tang_ini_word(uint8_t layout, uint8_t core_id)
+{
+    uint8_t pmod0 = TANG_PMOD_NONE, pmod1 = TANG_PMOD_NONE;
+    if (core_id != TANG_INI_CORE_PHOSPHOR && core_id != TANG_INI_CORE_DESKTOP) {
+        return 0;
     }
-
-    for (int s = 0; s < TANG_INI_SOCKETS; s++) {
-        if (ini->flip[s] && ini->module[s] == TANG_PMOD_NONE && !ini->refused[s]) {
-            note(ini, ini->flip_line[s], false, "pmod%d_flip has no module to apply to", s);
-            ini->flip[s] = false;
-        }
+    switch (layout) {
+    case TANG_LAYOUT_I2S2_OLED:
+        pmod0 = TANG_PMOD_OLEDRGB;
+        /* The desktop core refuses a word that names the I2S2, and would
+         * release the OLED with it (PMOD-006); its PMOD1 stays released. */
+        pmod1 = core_id == TANG_INI_CORE_DESKTOP ? TANG_PMOD_NONE : TANG_PMOD_I2S2;
+        break;
+    case TANG_LAYOUT_VGA:
+        /* Right side up, J1 (red, blue) is in PMOD1 and J2 (green, sync) in
+         * PMOD0. */
+        pmod0 = TANG_PMOD_VGA_J2;
+        pmod1 = TANG_PMOD_VGA_J1;
+        break;
+    default:
+        break;
     }
-
-    ini->word = ((uint32_t)ini->module[0] << 4) | ((uint32_t)ini->module[1] << 8) |
-                (ini->flip[0] ? 1u << 12 : 0u) | (ini->flip[1] ? 1u << 13 : 0u);
+    return ((uint32_t)pmod0 << 4) | ((uint32_t)pmod1 << 8);
 }
