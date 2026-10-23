@@ -1048,3 +1048,33 @@ The card still holds the previous firmware at `/bl616-firmware.bin`, so the Soft
 - User Test: PASS
 
 ---
+
+## 28 COMMIT Unreleased 2026-10-23T16:34:50-07:00
+
+#### Coming From:
+
+Unreleased 8471d51
+
+#### Purpose:
+
+Replace the card's stale firmware image at `/bl616-firmware.bin` with the build running on the board, so the Software Update window installs the current firmware rather than the previous one.
+
+#### Outcome:
+
+Entry 27 left the card's `/bl616-firmware.bin` holding the image built from `966da0d-dirty.1704dab` while the board ran `ff1ccd4-dirty.9db4a4e`, so the Software Update window would have staged and committed the older build over the newer one. With the user's approval the image that is actually running, `build/build_out/tinytang_bl616.bin`, SHA-256 `2c947cb737ac50df4ed552cf24ad33417339e91b2b9c8e9fe02212758ac7b4b2` at 644,848 bytes, was written over `/bl616-firmware.bin` with `tools/tinytang_put.py` through the board's own console; `tangput` reported 644,848 bytes written and the shell's `ls -l` read back 644,848. Nothing was rebuilt: the running image is the tested one, and a fresh build would have carried a different identity and a different byte stream, since the image is not reproducible. The card is in the board and was not mounted on the host during the write. No stronger check was available on the board: the shell has no hash command, `tangflash` only stages and commits with no verify-only mode, and reading 644 KB back over the console is not practical, so the card's copy is evidenced by the byte count and by the image's identity on the host; the Software Update window re-verifies the header and CRC when it stages the file. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 27 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 28 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The card's update slot now matches the running firmware; installing it would re-commit the same build, which is useful as recovery rather than as an upgrade. The open items of entry 27 stand unchanged: the Game Boy save and state folders wait on TinyGBC's own cycle, the card's manual chapters and `boot.tdsh` are older or empty, and `tools/check_manual.py` remains proposed and unapproved.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
