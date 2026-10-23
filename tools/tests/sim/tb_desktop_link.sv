@@ -24,7 +24,6 @@ module tb_desktop_link;
     reg resetn = 0;
 
     // link inputs this test does not drive.
-    reg  [11:0] joy1 = 0, joy2 = 0;
     reg  [15:0] mgmt_readdata = 0;
     reg  [1:0]  fdd_request = 0;
     reg  [7:0]  kbd_data = 0;
@@ -57,7 +56,7 @@ module tb_desktop_link;
         .overlay(overlay),
         .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
         .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
-        .joy1(joy1), .joy2(joy2), .hid1(), .hid2(),
+        .hid1(), .hid2(),
         .rom_loading(rom_loading), .rom_do(rom_do), .rom_do_valid(rom_do_valid),
         .mgmt_address(mgmt_address), .mgmt_read(mgmt_read),
         .mgmt_readdata(mgmt_readdata), .mgmt_write(mgmt_write),

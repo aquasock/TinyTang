@@ -8,7 +8,7 @@ shell; the desktop is a program you launch from it.
 The board is two things working together:
 
 - the BL616, a small microcontroller that runs the console, the
-  desktop, the keyboard link and the card
+  desktop, Bluetooth and the card
 - the FPGA, which is empty until something loads a core into it
 
 The desktop runs on the BL616, so it stays up when a core is

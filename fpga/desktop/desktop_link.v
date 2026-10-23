@@ -1,7 +1,8 @@
 // TinyTang desktop link: the UART to the BL616 and the desktop's command decode.
 //
 // Frames from the BL616 write the desktop text layer, the PMOD socket and OLED
-// registers (through desktop_regs), and the pad/keyboard state goes back up.
+// registers (through desktop_regs), and their replies go back up.  This core
+// has no pads and no keyboard of its own, so it sends nothing unprompted.
 //
 // Derived from iosys_bl616.v in nestang by nand2mario (GPL-3.0), 2/2025.  The
 // frame protocol is TangCore's, so commands this core does not use (ROM
@@ -51,25 +52,6 @@ module desktop_link #(
     output wire         desktop_i2c_cmd_toggle,
     output wire [63:0]  desktop_i2c_wdata,
     output wire [31:0]  desktop_i2c_auto,
-    // PMOD UART (personality 7): the register file's side of it.
-    output wire [7:0]  desktop_uart_tx_data,
-    output wire        desktop_uart_tx_push,
-    output wire        desktop_uart_flush,
-    output wire        desktop_uart_hold,
-    output wire        desktop_uart_nrst_low,
-    output wire        desktop_uart_loopback,
-    output wire        desktop_uart_rx_pop,
-    input  wire [7:0]  desktop_uart_rx_data,
-    input  wire [31:0] desktop_uart_status,
-    input [11:0] joy1,              // pad 1, SNES layout: (R L X A RT LT DN UP START SELECT Y B)
-    input [11:0] joy2,              // pad 2
-    // The keyboard link's report, straight from keylink_rx.  It is
-    // relayed upward as its own response type because the joypad word has
-    // twelve bits per player and a typing keyboard needs forty-eight -- there
-    // is no room in the pad word for anything but the six keys already mapped
-    // into it.
-    input [7:0]  link_mods,         // HID modifier byte
-    input [47:0] link_keys,         // six usage codes, key 0 in the low byte
     output reg [15:0] hid1,         // USB HID joystick 1
     output reg [15:0] hid2,         // USB HID joystick 2
 
@@ -226,10 +208,8 @@ reg fdd_read_start, fdd_read_finish, fdd_write_finish;
 // Response payloads from FPGA to BL616:
 // 0x01 core_id[7:0]          core ID
 // 0x02 <string>              core config string (len specified by frame header)
-// 0x03 joy1[15:0] joy2[15:0] every 20ms, send the pad state to BL616
-// 0x08 link_mods[7:0] link_keys[47:0]  on change, send the keyboard link's
-//      report to BL616 so the desktop can type.  Same shape as the joypad: the
-//      core sends it when it changes, and the BL616 keeps the newest one.
+// 0x03 joy1[15:0] joy2[15:0] every 20ms, send the pad state to BL616 (not sent
+//      by this core, which has no pads)
 // 0x04 lba[15:0] <data_512>  write a sector to disk
 // 0x05 lba[15:0]             read a sector from disk (followed by command 0x0a)
 
@@ -254,12 +234,7 @@ desktop_regs desktop_endpoint (
     .i2c_rdata(desktop_i2c_rdata), .i2c_res_toggle(desktop_i2c_res_toggle),
     .i2c_status(desktop_i2c_status),
     .i2c_cmd(desktop_i2c_cmd), .i2c_cmd_toggle(desktop_i2c_cmd_toggle),
-    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto),
-    .uart_tx_data(desktop_uart_tx_data), .uart_tx_push(desktop_uart_tx_push),
-    .uart_flush(desktop_uart_flush), .uart_hold(desktop_uart_hold),
-    .uart_nrst_low(desktop_uart_nrst_low),
-    .uart_loopback(desktop_uart_loopback), .uart_rx_pop(desktop_uart_rx_pop),
-    .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status)
+    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto)
 );
 
 // UART RX: command processing
@@ -474,86 +449,38 @@ localparam SEND_IDLE = 0;
 
 localparam SEND_CORE_ID = 1;        // doubles as response type in message header
 localparam SEND_CONFIG_STRING = 2;
-localparam SEND_JOYPAD = 3;
 localparam SEND_FDD_WRITE = 4;
 localparam SEND_FDD_READ = 5;
 
 localparam SEND_HEADER = 6;
 localparam SEND_DONE = 7;
-// The keyboard link's report.  The state value doubles as the response type,
-// as it does for the others, so this is response 0x08 -- past the five
-// responses the protocol already defines.
-localparam SEND_KEYBOARD = 8;
 
 localparam SEND_DESKTOP_REGS = 16;
 reg [4:0] send_state, send_state_next;
 reg [$clog2(STR_LEN+1)-1:0] send_idx;
-localparam JOY_UPDATE_INTERVAL = 50_000_000 / 50; // 20ms interval for 50Hz
-reg [$clog2(JOY_UPDATE_INTERVAL+1)-1:0] joy_timer;
-// Same interval, separate counter: the pad and the keyboard must not be able to
-// reset each other's pacing.  The keyboard also has a slow heartbeat below.
-reg [$clog2(JOY_UPDATE_INTERVAL+1)-1:0] kbd_timer;
-
-// How long the keyboard report may go unsent before being resent anyway.
-//
-// The report is state, and the keyboard end only sends when something changes,
-// so a key held down produces no new frames at all.  That is fine for typing
-// and fatal for the reader, which cannot then tell "this key is still held"
-// from "this link has stopped" -- and got it wrong by repeating the last key
-// forever, which floods the desktop with input and repaints until nothing
-// recovers.  Resending the unchanged report costs thirteen bytes at 2 Mbaud
-// and makes liveness something the reader can measure.
-localparam KBD_HEARTBEAT_INTERVAL = 50_000_000 / 10; // 100ms
-reg [$clog2(KBD_HEARTBEAT_INTERVAL+1)-1:0] kbd_heartbeat;
-reg [15:0] joy1_reg;
-reg [15:0] joy2_reg;
 reg [15:0] resp_frame_len;
 
-// The newest keyboard report, kept the same way the joypad is: the report is
-// state, and the BL616 wants the newest state rather than a queue of every
-// keystroke transition.  Comparing these against the live inputs is itself the
-// "has anything changed" test, so there is no separate pending flag to keep
-// in step with them.
-reg [7:0]  link_mods_reg;
-reg [47:0] link_keys_reg;
-
-// UART TX: command responses, joystick updates and FDD requests
+// UART TX: command responses and FDD requests
 always @(posedge clk) begin
     if (!resetn) begin
-        joy_timer <= 0;
         send_state <= 0;
         send_state_next <= 0;
         send_idx <= 0;
         response_ack <= 0;
         tx_valid <= 0;
-        kbd_timer <= 0;
-        kbd_heartbeat <= 0;
-        link_mods_reg <= 0;
-        link_keys_reg <= 0;
-        joy1_reg <= 0;
-        joy2_reg <= 0;
     end else begin
         tx_valid <= 0;
         mgmt_read <= 0;
         fdd_read_start <= 0;
         fdd_write_finish <= 0;
         
-        // Joypad state transmission logic
-        joy_timer <= joy_timer == 0 ? 0 : joy_timer - 1;
-        kbd_timer <= kbd_timer == 0 ? 0 : kbd_timer - 1;
-        kbd_heartbeat <= kbd_heartbeat == 0 ? 0 : kbd_heartbeat - 1;
-
         // UART transmission state machine
         case (send_state)
             SEND_IDLE: begin
                 send_idx <= 0;
-                // Order matters here, and it is not first-come.  A reply that
-                // somebody is *waiting* for goes first, ahead of every kind of
-                // unprompted traffic: the core-ID and config replies are what
-                // the BL616 blocks on, and if the pad or the keyboard can jump
-                // that queue then a burst of input starves them and whatever
-                // was waiting times out.  Unprompted traffic has no waiter, so
-                // delaying it costs nothing but latency it can absorb.
+                // A reply that somebody is *waiting* for goes first, ahead of
+                // the disk requests: the core-ID and config replies are what
+                // the BL616 blocks on.
                 if (response_req != response_ack) begin
                     if (response_type == 2) begin
                         send_state_next <= SEND_CONFIG_STRING;
@@ -569,9 +496,6 @@ always @(posedge clk) begin
                         resp_frame_len <= 16;
                     end
                 end else if (fdd_request[1] && fdd_state == FDD_READY) begin
-                    // Disk requests are waited on as well, so they belong on
-                    // this side of the line rather than behind the pad and the
-                    // keyboard.
                     send_state_next <= SEND_FDD_WRITE;
                     send_state <= SEND_HEADER;
                     mgmt_address_tx <= 16'hf200;    // read {drive, sector}
@@ -581,31 +505,6 @@ always @(posedge clk) begin
                     send_state <= SEND_HEADER;
                     mgmt_address_tx <= 16'hf200;    // read {drive, sector}
                     resp_frame_len <= 3;
-                end else if (kbd_timer == 0 &&
-                             ((link_mods != link_mods_reg || link_keys != link_keys_reg) ||
-                              kbd_heartbeat == 0)) begin
-                    // Unprompted, and rate-capped like the pad: the report is
-                    // state, so sending the current state up to 50 times a
-                    // second loses nothing next to sending it on every
-                    // transition, and the cap keeps a jittery line from
-                    // monopolising the transmitter.  The slow heartbeat is
-                    // what lets the reader tell a held key from a dead link;
-                    // without it an unchanged report is indistinguishable
-                    // from silence.
-                    kbd_timer <= JOY_UPDATE_INTERVAL;
-                    kbd_heartbeat <= KBD_HEARTBEAT_INTERVAL;
-                    link_mods_reg <= link_mods;
-                    link_keys_reg <= link_keys;
-                    send_state_next <= SEND_KEYBOARD;
-                    send_state <= SEND_HEADER;
-                    resp_frame_len <= 9;    // type byte + 8 report bytes
-                end else if (joy_timer == 0 && (joy1 != joy1_reg || joy2 != joy2_reg)) begin
-                    joy_timer <= JOY_UPDATE_INTERVAL;
-                    joy1_reg <= joy1;
-                    joy2_reg <= joy2;
-                    send_state_next <= SEND_JOYPAD;
-                    send_state <= SEND_HEADER;
-                    resp_frame_len <= 5;
                 end
             end
 
@@ -655,57 +554,6 @@ always @(posedge clk) begin
                     if (send_idx == STR_LEN-1) begin
                         send_state <= SEND_IDLE;
                         response_ack <= response_req;
-                    end
-                end
-            end
-
-            SEND_JOYPAD: begin
-                if (tx_ready && ~tx_valid) begin
-                    case (send_idx)
-                        0: tx_data <= joy1_reg[15:8]; // Joy1 high byte
-                        1: tx_data <= joy1_reg[7:0];  // Joy1 low byte
-                        2: tx_data <= joy2_reg[15:8]; // Joy2 high byte
-                        3: tx_data <= joy2_reg[7:0];  // Joy2 low byte
-                        default: ;
-                    endcase
-                    tx_valid <= 1;
-                    send_idx <= send_idx + 1;
-                    if (send_idx == 3) begin
-                        send_state <= SEND_IDLE;
-                        // No response_ack here.  This frame answers nobody's
-                        // request, and acking one would mark it served without
-                        // ever sending it -- which is how a command reply goes
-                        // missing while unprompted traffic keeps flowing.
-                    end
-                end
-            end
-
-            // The keyboard link's report: the modifier byte, the reserved byte a
-            // boot report always carries, then the six usage codes in the order
-            // the keyboard sent them.  This is the HID boot protocol layout
-            // byte for byte, so the BL616 can hand it to the same translation it
-            // would use for a real boot report rather than unpacking something
-            // of this core's own invention.
-            SEND_KEYBOARD: begin
-                if (tx_ready && ~tx_valid) begin
-                    case (send_idx)
-                        0: tx_data <= link_mods_reg;
-                        1: tx_data <= 8'h00;
-                        2: tx_data <= link_keys_reg[7:0];
-                        3: tx_data <= link_keys_reg[15:8];
-                        4: tx_data <= link_keys_reg[23:16];
-                        5: tx_data <= link_keys_reg[31:24];
-                        6: tx_data <= link_keys_reg[39:32];
-                        7: tx_data <= link_keys_reg[47:40];
-                        default: ;
-                    endcase
-                    tx_valid <= 1;
-                    send_idx <= send_idx + 1;
-                    if (send_idx == 7) begin
-                        send_state <= SEND_IDLE;
-                        // No response_ack, for the same reason as the pad: this
-                        // frame is not an answer, so it must not retire a
-                        // request that is still waiting for one.
                     end
                 end
             end

@@ -136,10 +136,8 @@ else()
                                ports/bl616/tinygbc_app.cpp
                                # TinyHelp: the manual's Markdown chapters, on the card.
                                ports/bl616/td_help_app.cpp
-                               # Generic I2C bus client and `pmodi2c` command.
+                               # The USB-A I2C bus client and `tangi2c` command.
                                ports/bl616/tang_i2c.cpp
-                               # PMOD UART client and `pmodlora` command.
-                               ports/bl616/tang_lora.cpp
                                ${TDSH_CORE_SOURCES}
                                ${TINYDESK_CORE_SOURCES} ${TINYDESK_APP_SOURCES}
                                third_party/tinydesk/ports/common/td_fs_stdio.c)

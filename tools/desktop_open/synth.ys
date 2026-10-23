@@ -71,7 +71,6 @@ read_slang --std 1800-2017 -U SYNTHESIS \
     src/desktop/pll/gowin_pll_27.v \
     src/desktop/pll/gowin_pll_hdmi.v \
     src/desktop/pll/gowin_pll_nes.v \
-    src/desktop/keylink_rx.sv \
     src/desktop/desktop_link.v \
     src/desktop/uart_fixed.v \
     src/desktop/textdisp_wide.sv \
@@ -80,7 +79,6 @@ read_slang --std 1800-2017 -U SYNTHESIS \
     src/desktop/clock_monitor.sv \
     src/desktop/desktop_regs.sv \
     src/desktop/desktop_pmod.sv \
-    src/desktop/pmod_uart.sv \
     src/desktop/i2c_master.sv \
     src/desktop/desktop_oled.sv \
     src/desktop/oled_panel.sv \

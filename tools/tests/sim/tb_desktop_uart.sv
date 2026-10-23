@@ -31,10 +31,6 @@ module tb_desktop_uart;
     wire [15:0] cell_word;
     logic [15:0] cells[0:383];
     integer writes=0;
-    logic [7:0] uart_rx_data=8'h5a;
-    logic [31:0] uart_status=32'h12345678;
-    wire [7:0] uart_tx_data;
-    wire uart_tx_push,uart_flush,uart_hold,uart_nrst_low,uart_loopback,uart_rx_pop;
     always @(posedge clk) if(cell_we) begin
         if(cell_index>=384) $fatal(1,"out-of-range cell write");
         cells[cell_index]=cell_word;writes++;
@@ -44,7 +40,6 @@ module tb_desktop_uart;
         .overlay(),
         .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
         .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
-        .joy1(12'd0), .joy2(12'd0), .link_mods(8'd0), .link_keys(48'd0),
         .hid1(), .hid2(), .rom_loading(), .rom_do(), .rom_do_valid(),
         .mgmt_address(), .mgmt_read(), .mgmt_readdata(16'd0),
         .mgmt_write(), .mgmt_writedata(), .fdd_request(2'd0),
@@ -54,11 +49,7 @@ module tb_desktop_uart;
         .desktop_socket_ack(socket_ack),
         .desktop_oled_cell_we(cell_we),.desktop_oled_cell_index(cell_index),
         .desktop_oled_cell_word(cell_word),.desktop_oled_font(oled_font),
-        .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0),
-        .desktop_uart_tx_data(uart_tx_data),.desktop_uart_tx_push(uart_tx_push),
-        .desktop_uart_flush(uart_flush),.desktop_uart_hold(uart_hold),.desktop_uart_nrst_low(uart_nrst_low),
-        .desktop_uart_loopback(uart_loopback),.desktop_uart_rx_pop(uart_rx_pop),
-        .desktop_uart_rx_data(uart_rx_data),.desktop_uart_status(uart_status)
+        .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0)
     );
     function automatic [15:0] crc_byte(input [15:0] old, input [7:0] b);
         reg [15:0] c;
@@ -73,7 +64,7 @@ module tb_desktop_uart;
         for (integer bitno=0;bitno<8;bitno=bitno+1) begin uart_rx=b[bitno]; #500; end
         uart_rx=1; #1000;
     endtask
-    integer reply_count=0, core_count=0, keyboard_count=0;
+    integer reply_count=0, core_count=0, unprompted_count=0;
     logic [119:0] reply;
     integer trace;
     logic [7:0] captured;
@@ -107,7 +98,9 @@ module tb_desktop_uart;
                             reply=assembly; reply_count=reply_count+1;
                             $fdisplay(trace,"%030h",reply);
                         end else if (frame_type==1) core_count=core_count+1;
-                        else if (frame_type==8) keyboard_count=keyboard_count+1;
+                        // This core has no pads or keyboard: no joypad (3)
+                        // or keyboard (8) frame may ever arrive.
+                        else if (frame_type==3 || frame_type==8) unprompted_count=unprompted_count+1;
                         parse_phase=0;
                     end
                 end
@@ -246,23 +239,16 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        request(1,4,0,0,0,32'h00010004);
-        request(1,8,0,0,0,32'hcf);
+        request(1,4,0,0,0,32'h00010005);
+        request(1,8,0,0,0,32'hf);
         request(1,32'hc0,0,0,0,0);
-        // ABI 1.4's UART window: status and receive reads, a transmit write,
-        // the control register's stored bits, and refusals above the fields.
-        request(1,32'h178,0,0,0,32'h12345678);
-        request(1,32'h174,0,0,0,32'h5a);
-        request(2,32'h170,32'ha5,0,0,32'ha5);
-        if(uart_tx_data!==8'ha5)$fatal(1,"UART transmit register is %02h",uart_tx_data);
-        request(2,32'h17c,32'h5,0,0,32'h5);
-        request(1,32'h17c,0,0,0,32'h5);
-        if(!uart_nrst_low || !uart_loopback)$fatal(1,"UART control bits did not latch");
-        request(2,32'h17c,32'h8,0,0,32'h8);
-        request(1,32'h17c,0,0,0,32'h8);
-        if(!uart_hold)$fatal(1,"UART hold bit did not latch");
-        request(2,32'h17c,32'h10,0,6,0);
-        request(2,32'h170,32'h1a5,0,6,0);
+        // ABI 1.5 removed the PMOD UART: its window is unknown addresses now,
+        // and the I2C and I2C-plus-UART personalities are refused.
+        request(1,32'h178,0,0,4,0);
+        request(2,32'h170,32'ha5,0,4,0);
+        request(2,32'h17c,32'h5,0,4,0);
+        request(2,32'hc0,32'h0160,0,6,0);
+        request(2,32'hc0,32'h0710,0,6,0);
         request(2,32'hc0,32'h0230,0,0,32'h0230);
         request(1,32'hc0,0,0,0,32'h0230);
         request(2,32'hc0,32'h0320,1,3,0);
@@ -363,10 +349,10 @@ module tb_desktop_uart;
         // The original desktop commands still work alongside register replies.
         send_byte(8'haa); send_byte(0); send_byte(2); send_byte(8'h15); send_byte(1);
         #1000;
-        if (!wide_on || socket_word!=0 || core_count!=1 || keyboard_count<1)
-            $fatal(1,"legacy desktop/keyboard traffic failed");
+        if (!wide_on || socket_word!=0 || core_count!=1 || unprompted_count!=0)
+            $fatal(1,"legacy desktop traffic failed (%0d unprompted frames)",unprompted_count);
         $fclose(trace);
-        $display("desktop UART: %0d register responses, ID, keyboard traffic and layer enable PASS",reply_count);
+        $display("desktop UART: %0d register responses, ID, no unprompted frames and layer enable PASS",reply_count);
         $finish;
     end
     initial begin #200_000_000; $fatal(1,"desktop UART test timeout"); end

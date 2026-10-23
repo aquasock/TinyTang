@@ -43,8 +43,9 @@ extern "C" {
 #define TANG_INI_NOTES     8     /* problems kept; more are counted */
 
 /* Socket personalities: Tang-Phosphor's socket control numbering (PMOD-004).
- * Only the ones a layout uses are written; the desktop core's I2C bus (6)
- * and its I2C-plus-UART socket (7) are in no layout. */
+ * Only the ones a layout uses are written.  6 and 7 were the desktop core's
+ * I2C and I2C-plus-UART sockets until desktop ABI 1.5 moved its I2C bus to
+ * the USB-A port; they are kept here only to name them. */
 enum {
     TANG_PMOD_NONE    = 0,
     TANG_PMOD_OLEDRGB = 1,

@@ -1,4 +1,4 @@
-/* TinyTang -- the desktop's wall clock, kept from the PMOD I2C RTC.
+/* TinyTang -- the desktop's wall clock, kept from the I2C RTC on the USB-A port.
  * See tang_clock.h for what it is for; this file is the logic only.
  *
  * SPDX-License-Identifier: MIT

@@ -93,8 +93,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   Function keys are not translated yet, so the desktop's F10 (start menu), F6
   (switch windows) and F11 (full screen) work from a computer's terminal but
   not from the keyboard; F12 is reserved for switching the screen and is never
-  typed. A wired keyboard link on the front USB-A ports remains as a debug
-  backup; see `third_party/patches/qmk/README.md`.
+  typed.
 - **A pointer in the desktop.** A Bluetooth LE mouse connected with
   `blemouse`, the D-pad on controller 1, or the arrows with left-alt held,
   moves it; the mouse's buttons, A or Enter are the left button, B or Esc the
@@ -227,29 +226,28 @@ Building and flashing are under *Quick start* and *Building requirements*.
   are reported and ignored.  `tangini` shows the layout, its problems, the word
   and what the loaded core holds, and `tangini apply` sends it again without
   reloading the core.
-- **The I2C and UART sockets are dormant.** Neither layout has an I2C socket,
-  so the three items below -- `pmodi2c`, `pmodlora` and the desktop clock's
-  RTC -- stay in the firmware but cannot be reached: their commands say no
-  socket is declared, and the clock stays unset.
-- **`pmodi2c scan | read | write | rtc | auto`** drives the desktop core's I2C
-  bus on whichever socket `/tang.ini` declares `i2c` (or `i2c_uart`): SCL on
-  pins 3 and 9, SDA on 4 and 10, 100 kHz, register-addressed transfers of 1 to
-  8 bytes, and no pull-ups from the FPGA, so the module brings its own (an
-  Adafruit DS3231 on a STEMMA QT cable does; a Digilent Pmod RTCC needs
-  2.2 kOhm added).
-  `pmodi2c rtc` reads the DS3231 at 0x68 and prints the desktop clock in UTC
-  and local time; `pmodi2c rtc set YYYY-MM-DD HH:MM:SS` sets the RTC in UTC and
-  `pmodi2c rtc sync` rereads it.
-- **`i2c_uart` adds a UART below the I2C row.** The same socket keeps the I2C
-  bus on pins 3 and 4 and gains an 8N1 UART at 115200 on pins 8, 9 and 10:
-  NRST, TX and RX. `pmodlora at <text>|recv|reset|loopback on|off|flush|status`
-  is the transport for the RYLR998 LoRa module on that row; the module's own
-  AT command set is unchanged and passes through `pmodlora at`.
-- **The desktop clock** is the DS3231's UTC, read when a core with an I2C
-  socket is loaded and about hourly after that (`ports/bl616/tang_clock.c`),
-  shown in the zone the Date & time window keeps in `/tinydesk_tz`. Root can
-  set the time from that window, which writes the RTC. With no RTC ever read
-  the clock says it is not set rather than invent a date.
+- **`tangi2c scan | read | write | rtc | auto`** drives the desktop core's I2C
+  bus on the USB-A port (desktop ABI 1.5): SDA on D+ and SCL on D- of the
+  populated port, 100 kHz, register-addressed transfers of 1 to 8 bytes, and
+  no pull-ups from the FPGA beyond its weak internal ones, so the bus takes its
+  pull-ups from Adafruit's Wii Nunchuck Breakout Adapter on that port.  The
+  Adafruit DS3231 RTC goes on the same STEMMA QT chain, at 0x68 beside the Wii
+  controller's 0x52, so TinyNES and TinyGBC keep their controller there.  The
+  bus needs no `/tang.ini` declaration and is there whenever the desktop core
+  is loaded; with any other core the command says the core has no I2C bus.
+  The engine waits out a device that stretches the clock, as the Wii
+  controller does, and reads with a STOP and a 200 us pause before the read
+  rather than a repeated START, which the controller answers with 0xff.
+  `tangi2c scan` finds the DS3231 but not the Wii controller, which
+  `tangi2c read 0x52 0xfa 6` still reaches after its wake-up writes
+  (0x55 to 0xf0, then 0x00 to 0xfb).  `tangi2c rtc` reads the DS3231 and prints the desktop clock in UTC and local
+  time; `tangi2c rtc set YYYY-MM-DD HH:MM:SS` sets the RTC in UTC and
+  `tangi2c rtc sync` rereads it.
+- **The desktop clock** is the DS3231's UTC, read when the desktop core is
+  loaded and about hourly after that (`ports/bl616/tang_clock.c`), shown in
+  the zone the Date & time window keeps in `/tinydesk_tz`. Root can set the
+  time from that window, which writes the RTC. With no RTC ever read the clock
+  says it is not set rather than invent a date.
 - **`osd desk on | off | status`** controls the desktop layer directly. `on`
   shows the console on the layer, `off` stops it and hands the screen back to
   the core, `status` reports cells and rows sent and any refused.
@@ -561,8 +559,8 @@ for the register interface and regression commands.
   desktop, as submodules.
 - `fpga/desktop/` — the desktop core, TinyTang's own HDL; `fpga/hdmi_test/` —
   the minimal HDMI colour-bar core.
-- `third_party/patches/` — the nestang patch series (NES core), the menu-core
-  patch and the QMK keyboard patches.
+- `third_party/patches/` — the nestang patch series (NES core) and the
+  menu-core patch.
 - `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up),
   `boot-cart.tdsh` (core, probe, ROM), `castlevania.tdsh` and `phosphor.tdsh`
   (start one track on the Phosphor core under TinyDesk); plus the two
@@ -699,8 +697,6 @@ SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
 - **Verilator** for `tools/test_textdisp_wide.sh`, and a C compiler for
   `tools/tests/`.
 - Python with `pyserial` for the tools in `tools/`.
-- For the wired debug keyboard only, Keychron's QMK fork and its toolchain; see
-  `third_party/patches/qmk/README.md`.
 
 ## Third-party
 
@@ -722,7 +718,4 @@ SDK 2.3.36 the build's configuration comes from `defconfig`, so the three
   core in `fpga/desktop/` is GPL-3.0-only, derived in part from nestang. The BL616 end of
   the core's UART protocol was written from nestang's documentation of it, and
   no nestang code is copied into the firmware.
-- **Keychron QMK** — GPL-2.0 overall, with the Keychron board files and the
-  added keymap GPL-3.0-only — the keyboard firmware, modified by the patches in
-  `third_party/patches/qmk/` and not vendored here.
 - **Bouffalo SDK** — the vendor SDK, for the chip support and FatFS.

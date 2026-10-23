@@ -20,7 +20,7 @@
 // Three things are deliberately absent for now:
 //
 //   * The clock is only as good as the RTC behind it.  The board has none of
-//     its own; time_now() is the PMOD I2C RTC's UTC, kept by tang_clock.c,
+//     its own; time_now() is the USB-A I2C RTC's UTC, kept by tang_clock.c,
 //     and reports "not set" rather than invent a date when no RTC has ever
 //     been read.
 //   * The network apps (Network, MQTT, Modbus, OTA) are left out, because they
@@ -165,7 +165,7 @@ static bool settings_save(const void *data, int len)
     return ok;
 }
 
-/* UTC from the PMOD I2C RTC (tang_clock.c); false while no RTC has ever been
+/* UTC from the USB-A I2C RTC (tang_clock.c); false while no RTC has ever been
  * read, rather than a date the Files app would then stamp on everything. */
 static bool time_now(int64_t *utc)
 {

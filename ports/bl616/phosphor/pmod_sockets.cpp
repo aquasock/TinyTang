@@ -29,8 +29,7 @@ int tdsh_printf(const char *fmt, ...);
 int tang_tangini_register(void);
 void tang_ini_core_loaded(void);
 void tang_ini_core_replacing(void);
-bool tang_ini_i2c_declared(void);
-bool tang_ini_uart_declared(void);
+bool tang_core_i2c_bus(void);
 }
 
 #include "fpga_debug.h"
@@ -61,11 +60,11 @@ const socket_core s_socket_cores[] = {
 // Kept off the stack: the parser holds a line and its notes.
 tang_ini_t s_ini;
 
-// True while the loaded core is the desktop core and holds a declaration with
-// an I2C socket, which is when the PMOD RTC can be reached (tang_clock.c).
-bool s_i2c_declared;
-// True while that socket is personality 7, whose lower row is the PMOD UART.
-bool s_uart_declared;
+// True while the loaded core is the desktop core at an ABI with the I2C bus
+// on the USB-A port, which is when the RTC can be reached (tang_clock.c).  It
+// does not depend on /tang.ini: the bus is not a socket.
+constexpr uint32_t DESKTOP_I2C_ABI = 0x00010005u;
+bool s_i2c_bus;
 
 bool core_id(uint8_t *id)
 {
@@ -192,8 +191,6 @@ bool send(const socket_core &core)
 {
     const uint32_t word = tang_ini_word(s_ini.layout, core.id);
     uint32_t back = 0;
-    s_i2c_declared = false;
-    s_uart_declared = false;
     if (!write_reg(core.reg, word) || !read_reg(core.reg, &back)) {
         tdsh_printf("tang.ini: the core did not take the socket declaration\r\n");
         return false;
@@ -205,15 +202,6 @@ bool send(const socket_core &core)
         return false;
     }
     print_word("sockets declared,", core.reg, word);
-    // No layout has an I2C socket, so these stay false: pmodi2c, pmodlora and
-    // the PMOD RTC are dormant until one does.
-    const uint32_t p0 = (word >> 4) & 0xfu;
-    const uint32_t p1 = (word >> 8) & 0xfu;
-    s_i2c_declared = core.id == 0x54 &&
-                     (p0 == TANG_PMOD_I2C || p1 == TANG_PMOD_I2C ||
-                      p0 == TANG_PMOD_I2C_UART || p1 == TANG_PMOD_I2C_UART);
-    s_uart_declared = core.id == 0x54 &&
-                      (p0 == TANG_PMOD_I2C_UART || p1 == TANG_PMOD_I2C_UART);
     return true;
 }
 
@@ -271,13 +259,13 @@ const tdsh_command_t s_commands[] = {
 
 void tang_ini_core_loaded(void)
 {
-    s_i2c_declared = false;
-    s_uart_declared = false;
+    s_i2c_bus = false;
     tang_clock_core_changed();
     bool answered = false;
     uint8_t id = 0;
     uint32_t abi = 0;
     const socket_core *core = socket_core_loaded(&answered, &id, &abi);
+    s_i2c_bus = core != nullptr && core->id == TANG_INI_CORE_DESKTOP && abi >= DESKTOP_I2C_ABI;
     if (core == nullptr) {
         return;                            // no sockets: nothing to say
     }
@@ -285,23 +273,17 @@ void tang_ini_core_loaded(void)
     (void)send(*core);
 }
 
-// The core is about to be replaced: its sockets, and any RTC behind them, go
-// with it, whether or not the next load succeeds.
+// The core is about to be replaced: its sockets, and the I2C bus and RTC
+// behind it, go with it, whether or not the next load succeeds.
 void tang_ini_core_replacing(void)
 {
-    s_i2c_declared = false;
-    s_uart_declared = false;
+    s_i2c_bus = false;
     tang_clock_core_changed();
 }
 
-bool tang_ini_i2c_declared(void)
+bool tang_core_i2c_bus(void)
 {
-    return s_i2c_declared;
-}
-
-bool tang_ini_uart_declared(void)
-{
-    return s_uart_declared;
+    return s_i2c_bus;
 }
 
 int tang_tangini_register(void)

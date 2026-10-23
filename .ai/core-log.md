@@ -775,3 +775,64 @@ Whether a `tangini apply` to a running desktop core lights the panel is open: th
 - User Test: PASS
 
 ---
+
+## 23 COMMIT Unreleased 2026-10-23T11:24:30-07:00
+
+#### Coming From:
+
+Unreleased fc2e144
+
+#### Purpose:
+
+Move the desktop clock's DS3231 to the USB-A port's STEMMA QT chain beside the Adafruit Wii adapter that TinyNES and TinyGBC read their controller through, and remove the Keychron keyboard and LoRa code, as the user approved.
+
+#### Outcome:
+
+The user chose the command name `tangi2c`, the removal of LoRa, and a separate cycle for the legacy nestang and menu keyboard link. Desktop ABI 1.5 (`0x04` reads `0x00010005`, bitmap `0x0f`) runs `fpga/desktop/i2c_master.sv` always on with SDA on D+ (H13) and SCL on D- (G13), open-drain with `PULL_MODE=UP` as TinyNES wires them, and needs no `/tang.ini` declaration; the PMOD personalities 6 and 7, the UART at `0x170`-`0x17c`, `pmod_uart.sv`, both Keychron receivers (`keylink_rx.sv`) and `desktop_link.v`'s unprompted keyboard and pad reports are gone, so the core accepts only none or OLEDrgb per socket or the VGA pair. In the firmware `pmodi2c` became `tangi2c`, which with the desktop clock works only while `tang_core_i2c_bus()` reports core 0x54 at ABI 1.5 or later; `tang_lora.cpp`, the MCP79410 path, the QMK patches and `scripts/apply-qmk-tang-patches.sh` were deleted. Firmware `fc2e144-dirty.c680dcc`, 653,200 bytes, SHA-256 `2c408681ff6b10a09f2c6ad001f75ecb744a9516f1c11341f3e1ae0fb6168437`, built against `~/.cache/tangcore-dev/sdk-2.3.36` and was flashed with `tools/tinytang_flash.py --yes`; the old ABI 1.4 core stays on the card as `tinytang.bin.abi14` and `tinytang.fs.gz.abi14`. The first ABI 1.5 core, `desktop.2f3ad2bd0bda.bin`, read the DS3231 but its scan found only 0x68 and the Classic Controller NACKed its wake-up writes, while with the RTC on the chain TinyNES's latest build, its entry 51 image `d6bc2a6d` with the player `0435d849` stripped from the current `nes_bench.elf` and Castlevania (USA) (Rev A) installed under `/root/cores`, `/root/ae350` and `/root/media/nes` and started from the shell, played with the controller; the game froze on exit, which the user says happens when leaving NES. Two engine faults were found and fixed against the TinyNES master: the engine drove SCL without reading it back, so it now waits for SCL to read high before timing each high half and ends a transfer, or a whole scan, as a NACK with both lines released when SCL stays low for 1 ms, after which the controller's writes ACKed (core `desktop.1ec24a701253.bin`) but its reads gave `ff`; and it read with a repeated START, so a read now sets the register, sends STOP, waits 200 us and reads separately, and scan probes became one-byte NACKed reads. `tb_i2c_master` gained a stretching slave, a Wii mode that sends `ff` after a repeated START or under 150 us from STOP to START, a dead bus, a stuck SCL and a write-probe count, and `tb_desktop_pmod` a stretching controller at 0x52; they failed on each of six planted faults (no SCL wait, no timeout, an abort leaving SDA held, a repeated START, no pause, write probes), the unit slave's ACK sampling was moved to SCL's rising edge after it raced SDA, and `tools/tests/test_desktop_core.sh` passed. An eight-seed sweep (`DESKTOP_BUILD_DIR=build/desktop-abi15w`) passed every seed, and seed 3, `desktop.bff603129045.bin` (4,479,158 bytes, `desktop.37935486286e.fs`, `tinytang.fs.gz` 389,364 bytes from `gzip -9 -n`), met timing at 74.97 MHz on `clk`, 110.67 MHz on the pixel clock and 148.92 MHz on `sys_clk` with both clocks on global resources only and no SPINE17 hop, and went on the card as `tinytang.bin`. On the board it read the controller's identity `00 00 a4 20 01 01` and data `a0 20 10 62 ff ff`, byte 5 reading `bf` while the user held B; `tangi2c scan` still finds only 0x68, for a reason not established. The DS3231 had lost its time (OSF set, 2000-01-01), was set from host UTC with `tangi2c rtc set`, and held it across reboots and the TinyNES session; the user set the zone in Date & time, saw the right desktop time across a reboot, and passed the cycle, and skipped the D+ voltage measurement. In `.ai/core-reference.md` BRD-003 now has the populated port and its pull-downs from TinyNES's record, the new BRD-011 records the USB-A bus, PMOD-007 is retired into it, PMOD-006 and PMOD-008 record the removed personalities, and BL6-005 and TOOL-017 follow, with ABI 1.5 seed 3 as the build of record. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 23 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The legacy nestang and menu keyboard link, nestang patches 0004 to 0006, `boot-cart.tdsh` and the firmware's 0x08 keyboard path in `fpga_frames`, `tang_osd_desk` and `tang_key`, is to be retired in its own cycle as the user chose. Why `tangi2c scan` misses the Wii controller that `tangi2c read` reaches is open and needs a logic analyser or a slower probe rate to settle. The pin voltage with the adapter's and the DS3231's pull-ups both to 5 V is unmeasured and was estimated at about 3.75 V, above the 3.3 V bank, the same under TinyNES; the DS3231 losing its time suggests a missing or flat backup cell. TinyNES was started from the shell rather than its window, so the window's launch and return to `tinytang.bin` remain untested, and the freeze on leaving a game belongs to TinyNES. The older items stand: whether `tangini apply` to a running desktop core lights the panel, `i2s2_oled` on Phosphor and `vga` under the new key untested, TinyNES and TinyGBC driving PMOD0 where the OLED now sits, whether the pairings reached `/root/ble/bonds.bin`, a lost state send shows only on this console, a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/README.md
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop.cst
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/i2c_master.sv
+- fpga/desktop/keylink_rx.sv
+- fpga/desktop/pmod_uart.sv
+- manual/getting-started.md
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/tang_clock.c
+- ports/bl616/tang_clock.h
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_ini.h
+- ports/bl616/tang_lora.cpp
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/apply-qmk-tang-patches.sh
+- third_party/patches/qmk/0001-keychron-k2he-tang-mode.patch
+- third_party/patches/qmk/0002-keychron-k2he-tang-keymap.patch
+- third_party/patches/qmk/README.md
+- tools/desktop_open/synth.ys
+- tools/tests/sim/tb_desktop_link.sv
+- tools/tests/sim/tb_desktop_pmod.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_i2c_master.sv
+- tools/tests/test_desktop_core.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

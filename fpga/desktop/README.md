@@ -1,15 +1,17 @@
 # TinyTang desktop core
 
 `desktop.bin` hosts TinyDesk without an emulator. It keeps the existing
-80×45 desktop layer, UART keyboard reports, injected input, front-port
-keyboard link and F12 switching. HDMI and PmodVGA mirror the same compositor;
-the background is black when the layer is disabled. Physical DS2 controllers
-and the old LED outputs are removed to release the PMOD pins.
+80×45 desktop layer, injected input and F12 switching, and carries the I2C
+bus for the desktop clock's RTC on the USB-A port. HDMI and PmodVGA mirror the
+same compositor; the background is black when the layer is disabled. Physical
+DS2 controllers, the old LED outputs and, since ABI 1.5, the wired keyboard
+link are removed; the keyboard and mouse are Bluetooth, on the BL616.
 
 Every source is in this directory: `desktop_top.sv`, the UART link
 (`desktop_link.v`), the compositor and HDMI output (`desktop_hdmi.sv`, `hdmi/`),
-the 80×45 layer (`textdisp_wide.sv`), the keyboard link, the register endpoint,
-PMOD sockets, OLED terminal and PLL wrappers. The top, link and compositor
+the 80×45 layer (`textdisp_wide.sv`), the register endpoint, PMOD sockets and
+the I2C engine (`desktop_pmod.sv`, `i2c_master.sv`), OLED terminal and PLL
+wrappers. The top, link and compositor
 began as nestang's `nestang_top.sv`, `iosys_bl616.v` and `nes2hdmi.sv`
 (nand2mario, GPL-3.0); the NES machine, cartridge loader, controllers, frame
 buffer and scaler are gone. No nestang checkout or patch is involved.
@@ -63,19 +65,46 @@ OLED alone, `0xc0 = 0x0010`, rather than a word it would refuse. The first deskt
 released or a complete VGA pair, in either order, with independent row flips.
 Unsupported module words are rejected without changing the active word.
 Sockets start released after reset. ABI 1.1 additionally supports OLEDrgb
-on either socket, including two panels sharing the same terminal. ABI 1.3
-adds `i2c` (the generic bus on both rows) and ABI 1.4 adds `i2c_uart`, which
-keeps the bus on pins 3 and 4 and puts an 8N1 UART at 115200 on pins 8 (NRST),
-9 (TX) and 10 (RX). At most one socket may be `i2c` or `i2c_uart`, because
-there is one I2C engine; either may sit beside `none` or `oledrgb`. Encoder
-and I2S remain Phosphor features. The OLED build is deployed and was
-accepted by the user on hardware (core-log entry 65).
+on either socket, including two panels sharing the same terminal. ABI 1.3 and
+1.4 put the I2C engine on a socket (`i2c`, then `i2c_uart` with an 8N1 UART
+for a LoRa module); ABI 1.5 removed both personalities and the UART and moved
+the engine to the USB-A port, below. Encoder and I2S remain Phosphor
+features. The OLED build is deployed and was accepted by the user on hardware
+(core-log entry 65).
+
+## The I2C bus on the USB-A port
+
+From ABI 1.5 the I2C engine is always on, on the data pair of the populated
+USB-A port, the only pair that reaches the FPGA on a stock dock: SDA on D+
+(H13) and SCL on D- (G13), open-drain, as TinyNES and TinyGBC wire their
+first Wii controller. Adafruit's Wii Nunchuck Breakout Adapter on that port
+carries the bus's pull-ups, and the DS3231 RTC sits on the same STEMMA QT
+chain at 0x68, beside the Wii controller at 0x52. The bus needs no
+`/tang.ini` declaration. The firmware's `tangi2c` command and the desktop
+clock use it while this core is loaded; a game core that replaces this one
+drives the same pair as its own controller bus.
+
+The engine reads SCL back as well as driving it. Once it releases SCL it waits
+for the line to read high before timing the high half of the bit, as
+TinyNES's Wii master does, because a Wii controller stretches the clock: an
+engine that runs the clock blind samples the controller's ACK before it is
+given, and a scan then finds the DS3231 alone. SCL held low for 1 ms ends the
+transfer, or the whole scan, with a NACK and both lines released, so an empty
+port, whose lines the dock's 15K pull-downs hold low, or a stuck device cannot
+hang the engine.
+
+A read writes the register, sends STOP, waits 200 us and reads in a
+transaction of its own; it never uses a repeated START. A Wii controller ACKs
+a read after a repeated START but sends only 0xff, and needs the pause to load
+its bytes (TinyNES waits the same); the DS3231 keeps its register pointer
+across the STOP. A scan probes each address from 0x08 to 0x77 with a one-byte
+read that it NACKs, so a probe never writes to a device.
 
 The boot script loads `/root/cores/console138k/tinytang.bin`; removing or
 renaming the script leaves the board at a plain prompt. Firmware must include
 the `0x54` entry in `pmod_sockets.cpp` for automatic VGA declaration.
 
-## Register ABI 1.4
+## Register ABI 1.5
 
 The endpoint accepts version-1 extended TangCore command `0x10` with the
 existing big-endian fields and CRC-16/CCITT-FALSE. Read32 and write32 are
@@ -90,23 +119,24 @@ frames made by the firmware's own encoder.
 | Address | Access | Meaning |
 |---|---|---|
 | `0x00` | Read | Identity `0x00544453` (TDS) |
-| `0x04` | Read | Desktop ABI `0x00010004` |
-| `0x08` | Read | Personality bitmap `0x000000cf` (none, OLEDrgb, VGA J1, VGA J2, i2c, i2c_uart) |
+| `0x04` | Read | Desktop ABI `0x00010005` |
+| `0x08` | Read | Personality bitmap `0x0000000f` (none, OLEDrgb, VGA J1, VGA J2) |
 | `0xc0` | Read/write | Socket declaration |
 | `0x100` | Read | Geometry of the active font set: `0x00180010` (24×16), `0x000c0008` (12×8) or `0x00100008` (16×8) |
 | `0x108` | Read | Completed OLED frame count |
 | `0x10c` | Read | CRC32 of the last emitted RGB565 frame, high byte first |
 | `0x114` | Read/write | Cursor visible bit 16, row bits 15:8, column bits 7:0 |
 | `0x118` | Read/write | OLED font set: 0 Graphics (reset), 1 Standard, 2 Compact |
-| `0x170` | Write | One byte into the UART's transmit FIFO (`i2c_uart`) |
-| `0x174` | Read | One byte from the UART's receive FIFO; reading pops it |
-| `0x178` | Read | UART status: `[0]` rx available, `[1]` tx full, `[2]` rx overrun, `[3]` byte in flight, `[19:8]` rx count, `[31:20]` tx count |
-| `0x17c` | Read/write | UART control: bit 0 NRST low, bit 1 flush (a pulse), bit 2 internal loopback, bit 3 hold the transmitter while the FIFO fills |
+| `0x140` | Read | I2C status: valid, busy, nack, scan done, sequence, scan address and count |
+| `0x144`–`0x148` | Read | I2C read window, 8 bytes |
+| `0x154` | Read/write | I2C command: op `[1:0]`, address `[14:8]`, register `[23:16]`, length `[28:24]`, start `[31]` |
+| `0x158` | Read/write | I2C automatic read: address `[6:0]`, register `[15:8]`, length `[20:16]`, enable `[31]` |
+| `0x160`–`0x164` | Read/write | I2C write window, 8 bytes |
 | `0x200`–`0x7fc` | Write | 384 row-major cells with a stride of 24, word-aligned |
 
 The socket word uses personality nibbles `[7:4]` and `[11:8]`, and row flips
 `[12]` and `[13]`. All other bits must be zero. Personalities are 0 (released),
-1 (OLEDrgb), 2 (VGA J1), 3 (VGA J2), 6 (i2c) and 7 (i2c_uart). A validated
+1 (OLEDrgb), 2 (VGA J1), 3 (VGA J2). A validated
 write commits at the beginning of
 vertical blank; its reply waits for the pixel-domain acknowledgement. The
 held word and synchronized toggles prevent a partial pin configuration.
@@ -116,7 +146,7 @@ Status values are implementation choices: 0 success, 1 unsupported version,
 6 unsupported value. No malformed request changes sockets or text cells.
 
 The regression exercises the real 2 Mbaud UART, reply CRCs through an
-independent Python implementation, legacy keyboard/layer traffic, invalid
+independent Python implementation, legacy layer traffic with no unprompted frames, invalid
 requests and acknowledgement latency. An independent PMOD simulation checks
 row mapping and flips, released pins, frame-boundary commits, blanking and
 sync counts across a full 720p frame. The link regression checks the layer

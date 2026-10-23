@@ -23,7 +23,7 @@ import binascii
 import sys
 from pathlib import Path
 replies=Path(sys.argv[1]).read_text().splitlines()
-assert len(replies)==75
+assert len(replies)==71
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15
@@ -32,7 +32,6 @@ print('desktop responses: independent Python CRC check PASS')
 PY
 iverilog -g2012 -I "$root/fpga/desktop" -s tb_desktop_pmod -o "$work/pmod" \
     "$root/tools/tests/sim/tb_desktop_pmod.sv" "$root/fpga/desktop/desktop_pmod.sv" \
-    "$root/fpga/desktop/pmod_uart.sv" \
     "$root/fpga/desktop/desktop_oled.sv" "$root/fpga/desktop/oled_panel.sv" \
     "$root/fpga/desktop/oled_spi.sv" "$root/fpga/desktop/i2c_master.sv"
 vvp "$work/pmod"

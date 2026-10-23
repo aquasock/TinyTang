@@ -184,8 +184,8 @@ documented UART protocol. Provenance by file:
   at all, so the structure is load-bearing rather than decoration.  The seed-1
   build is bit-for-bit identical to the generated build; see core-log entry 55.
 - `oled_spi.sv` and `oled_panel.sv` come from Tang-Phosphor (below).
-- The rest (`textdisp_wide.sv`, `keylink_rx.sv`, `desktop_regs.sv`,
-  `desktop_pmod.sv`, `desktop_oled.sv`, `clock_monitor.sv`, constraints and
+- The rest (`textdisp_wide.sv`, `desktop_regs.sv`, `desktop_pmod.sv`,
+  `i2c_master.sv`, `desktop_oled.sv`, `clock_monitor.sv`, constraints and
   build scripts) is TinyTang's work, as are the simulation benches in
   `tools/tests/sim/tb_desktop_*`. Build scripts and timing-validation tools
   retain their explicit MIT notices.
@@ -193,29 +193,6 @@ documented UART protocol. Provenance by file:
 The desktop handshake design uses synchronization and held-data conventions
 reviewed in CERN's colibri library as engineering guidance. No colibri module
 was copied, translated or adapted into the desktop core.
-
-## Keychron QMK firmware (Tang keyboard link, carried as patches)
-
-The keyboard end of the link is a Keychron K2 HE running a modified QMK, built
-from Keychron's fork of QMK and not vendored here — only the changes are:
-
-- Project: https://github.com/Keychron/qmk_firmware
-- Branch: `2025q3`, base commit `c5d998442710b38650903937249144a0cd728ebe`
-- License: GPL-2.0 (`LICENSE`); individual files carry their own notices, and
-  `tmk_core/protocol/chibios/usb_main.c` is marked
-  `SPDX-License-Identifier: GPL-3.0-or-later OR Apache-2.0`. The Keychron board
-  files these patches modify descend from Keychron's GPL-3.0-only tree
-- Patches: `third_party/patches/qmk/`, applied by
-  `scripts/apply-qmk-tang-patches.sh`
-- Added files: `keyboards/keychron/k2_he/ansi/keymaps/tang/`, written for this
-  project and marked `SPDX-License-Identifier: GPL-3.0-only`
-
-As above, the patch files reproduce lines of GPL-licensed sources and those
-lines keep their licence. Nothing of QMK is built into this repository or into
-this firmware: the patches exist so the keyboard firmware can be rebuilt, and
-the resulting image runs on the keyboard, not on the Tang. The keyboard is
-not a USB keyboard while that image is on it, which the patches' README states
-along with both ways back to stock behaviour.
 
 ## Bouffalo SDK
 
