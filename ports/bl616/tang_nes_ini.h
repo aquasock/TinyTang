@@ -1,4 +1,4 @@
-// TinyNES — the settings file, /nes.ini at the card root.
+// TinyNES — the settings file, /tinynes.ini at the card root.
 //
 // SPDX-License-Identifier: MIT
 
@@ -15,8 +15,8 @@ extern "C" {
 #endif
 
 /* The FatFS path, and the one the user sees. */
-#define TANG_NES_INI_REAL   "/sd/nes.ini"
-#define TANG_NES_INI_SHOWN  "/nes.ini"
+#define TANG_NES_INI_REAL   "/sd/tinynes.ini"
+#define TANG_NES_INI_SHOWN  "/tinynes.ini"
 
 #define TANG_NES_BUTTONS 8
 

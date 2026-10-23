@@ -30,7 +30,7 @@ loaded and replaced. That is why you can press F12 mid-game.
 The shell is the ground floor. A few commands worth knowing:
 
      platform        firmware identity
-     tangini         what /tang.ini declares
+     tangini         what /tinytang.ini declares
      fpga            which core is loaded and answering
      tangload <bin>  load a core from the card
      help            everything else

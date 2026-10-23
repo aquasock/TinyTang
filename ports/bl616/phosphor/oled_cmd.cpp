@@ -15,7 +15,7 @@
 // desktop layer's own traffic takes.
 //
 // Only the desktop core (0x54) has the OLED, from desktop ABI 1.2 (the font
-// sets), and only when /tang.ini has declared the OLEDrgb in a socket.  The
+// sets), and only when /tinytang.ini has declared the OLEDrgb in a socket.  The
 // core is asked for its ID with the legacy command every core answers before
 // any extended frame is sent, so a game core is never sent one.
 //
@@ -97,7 +97,7 @@ bool oled_ready(void)
         return false;
     }
     if (((sockets >> 4) & 0xfu) != PERS_OLEDRGB && ((sockets >> 8) & 0xfu) != PERS_OLEDRGB) {
-        tdsh_printf("oled: /tang.ini does not declare the OLED (layout = i2s2_oled)\r\n");
+        tdsh_printf("oled: /tinytang.ini does not declare the OLED (layout = i2s2_oled)\r\n");
         return false;
     }
     return true;

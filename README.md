@@ -169,7 +169,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
   the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
   desktop up, probes it, enables the stereo XY oscilloscope with medium trails
-  and glow, and hands it the screen, with the PMOD sockets as `/tang.ini`
+  and glow, and hands it the screen, with the PMOD sockets as `/tinytang.ini`
   declares them. Press F12 to return to TinyDesk and choose a track in the
   Phosphor app. Setting `FILE` in the session before running the script starts
   that track without waiting; no default music file is required. F12 switches
@@ -180,7 +180,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   earlier `oscope.tdsh`, `i2s2-play.tdsh` and `i2s2-tone.tdsh` scripts are
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
-  `/tang.ini`.
+  `/tinytang.ini`.
 - **The TinyHelp app** in the desktop's start menu reads the board's manual from
   `/root/manual`: `index.md` lists the chapters as `- [Title](file.md)` and
   each chapter is a Markdown file shown one line per desktop row. It has a
@@ -206,14 +206,14 @@ Building and flashing are under *Quick start* and *Building requirements*.
   closing the window leaves the track playing and reopening it picks the track
   back up. Without the Phosphor core loaded it says so and its buttons are
   disabled.
-- **`/tang.ini` names the PMOD layout.** PMOD modules cannot be detected,
+- **`/tinytang.ini` names the PMOD layout.** PMOD modules cannot be detected,
   so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
   and the desktop core) drives only what the file says is seated.  Two layouts
   are supported, each module in a fixed socket and seated right side up, with
   nothing flipped or swapped: `layout = i2s2_oled` is the Pmod I2S2 in PMOD1,
   beside the HDMI port, and the Pmod OLEDrgb in PMOD0, beside the USB-A ports;
   `layout = vga` is the PmodVGA across both, J1 in PMOD1 and J2 in PMOD0.
-  `docs/tang.ini` is a commented example.  Each core is sent the layout as the
+  `docs/tinytang.ini` is a commented example.  Each core is sent the layout as the
   socket word it can take: Phosphor gets `0x0510` or `0x0230`, and the desktop
   core, which has no I2S2, gets the OLED alone (`0x0010`) for `i2s2_oled` and
   `0x0230` for `vga`.  `tangload` sends it after every core load, whichever
@@ -231,7 +231,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   pull-ups from Adafruit's Wii Nunchuck Breakout Adapter on that port.  The
   Adafruit DS3231 RTC goes on the same STEMMA QT chain, at 0x68 beside the Wii
   controller's 0x52, so TinyNES and TinyGBC keep their controller there.  The
-  bus needs no `/tang.ini` declaration and is there whenever the desktop core
+  bus needs no `/tinytang.ini` declaration and is there whenever the desktop core
   is loaded; with any other core the command says the core has no I2C bus.
   The engine waits out a device that stretches the clock, as the Wii
   controller does, and reads with a STOP and a 200 us pause before the read
@@ -390,7 +390,7 @@ firmware's own files stay at the top of the card.
 | `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
-| `/tang.ini`, `/crash.log`, `/tinydesk_tz` | the PMOD layout, the crash record and the time zone |
+| `/tinytang.ini`, `/crash.log`, `/tinydesk_tz` | the PMOD layout, the crash record and the time zone |
 | `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
 
 ### Cartridges
@@ -402,12 +402,12 @@ loads `tinynes.bin`, runs the player `/root/ae350/tinynes-play.elf` with the
 cartridge, and loads the desktop core again when the game ends.  The
 controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
-PMOD1, the `i2s2_oled` layout of `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
+PMOD1, the `i2s2_oled` layout of `/tinytang.ini`.  The TinyNES window, like TinyGBC's, has a
 fixed size of 54 by 20 cells that shows twelve Library entries at a time and
 five tabs: Library, Input, Video, Audio and Saves.  Audio is one master volume
 for HDMI and the Line Out together, a slider from 0 to 100 percent in 5 percent
-steps with a mute beside it; it is kept in `[audio]` of `/nes.ini`, or of
-`/gbc.ini` for TinyGBC, and sent to the player when the next game starts, which
+steps with a mute beside it; it is kept in `[audio]` of `/tinynes.ini`, or of
+`/tinygbc.ini` for TinyGBC, and sent to the player when the next game starts, which
 scales every sample by it.
 Each cartridge has one save state, as on the NES Classic: in the game HOME
 with L saves it and HOME with R loads it, and the player sends a save here,
@@ -444,7 +444,7 @@ core, its keyboard link and its scripts were retired in core-log entry 25;
 ### What the board boots
 
 `/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
-line -- `tinytang.bin` -- probes it, applies `/tang.ini`, enables the desktop
+line -- `tinytang.bin` -- probes it, applies `/tinytang.ini`, enables the desktop
 layer and stops at the prompt. Removing or renaming the file boots to a plain
 prompt with no core loaded; the FPGA then stays on the core it configured itself with, and
 the screen shows a TangCore splash (fact 14).
@@ -477,7 +477,7 @@ together and carries the PMOD I2C bus (apicula `04bc3c5` and nextpnr
 `8be8657b` or later, whose spine select ports hold VSS; TOOL-021). Seed 26 of
 ABI 1.2 was the core that stayed clean when the board was hot (`pll_nes` at `PLL_R[0]`; see
 `fpga/desktop/desktop.cst` and [BUILDING.md](BUILDING.md)). It targets revision C (`.ai/core-reference.md` TOOL-017). The firmware applies
-`/tang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED text display
+`/tinytang.ini` after loading it. Desktop ABI 1.1 adds a separate OLED text display
 alongside released sockets and the complete VGA pair, and ABI 1.2 gives it
 three font sets -- Standard 8×8 (12×8), Compact 6×8 (16×8) and Graphics 4×4
 (24×16); `oled print "line" ["line"...]` writes text to it once, from the USB

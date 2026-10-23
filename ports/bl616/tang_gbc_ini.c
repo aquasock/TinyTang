@@ -1,6 +1,6 @@
-// TinyGBC — reading /gbc.ini, the settings file at the card root.
+// TinyGBC — reading /tinygbc.ini, the settings file at the card root.
 //
-// The same shape as /nes.ini and read the same way
+// The same shape as /tinynes.ini and read the same way
 // (ports/bl616/tang_settings_ini.c).  It holds only [audio] so far, the one
 // thing the TinyGBC player takes from the host.  Read once per launch; the
 // TinyGBC window on the desktop is what writes it.

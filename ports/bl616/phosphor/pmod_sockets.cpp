@@ -1,8 +1,8 @@
-// TinyTang — applying /tang.ini to a core that has the PMOD sockets.
+// TinyTang — applying /tinytang.ini to a core that has the PMOD sockets.
 //
 // After every successful tangload the loaded core is asked for its ID; a core
 // in s_socket_cores, at a register ABI new enough for that register to mean
-// socket control, is sent the word tang_ini.c makes from /tang.ini's layout
+// socket control, is sent the word tang_ini.c makes from /tinytang.ini's layout
 // for that core, and the word is read back.  Every core load goes through tangload -- the boot
 // script, phosphor.tdsh, the Phosphor app, a tangload typed in the Terminal --
 // so the sockets follow the file whichever way a core arrives.  Other cores
@@ -36,7 +36,7 @@ bool tang_core_i2c_bus(void);
 
 namespace {
 
-constexpr char INI_REAL[] = "/sd/tang.ini";
+constexpr char INI_REAL[] = "/sd/tinytang.ini";
 constexpr uint32_t REG_ABI = 0x04;
 // Socket control word: hold [0], personalities [7:4] [11:8], flips [12] [13];
 // a read adds the renderer's frame selector at [18:16] (PMOD-004).
@@ -62,7 +62,7 @@ tang_ini_t s_ini;
 
 // True while the loaded core is the desktop core at an ABI with the I2C bus
 // on the USB-A port, which is when the RTC can be reached (tang_clock.c).  It
-// does not depend on /tang.ini: the bus is not a socket.
+// does not depend on /tinytang.ini: the bus is not a socket.
 constexpr uint32_t DESKTOP_I2C_ABI = 0x00010005u;
 bool s_i2c_bus;
 
@@ -138,7 +138,7 @@ const socket_core *socket_core_loaded(bool *answered, uint8_t *id, uint32_t *abi
     return nullptr;
 }
 
-// Parse /tang.ini into s_ini.  Returns false when there is no file.
+// Parse /tinytang.ini into s_ini.  Returns false when there is no file.
 bool parse_file(void)
 {
     tang_ini_begin(&s_ini);
@@ -160,27 +160,27 @@ bool parse_file(void)
 void print_declaration(bool present)
 {
     if (!present) {
-        tdsh_printf("tang.ini: no /tang.ini; both sockets released\r\n");
+        tdsh_printf("tinytang.ini: no /tinytang.ini; both sockets released\r\n");
         return;
     }
     for (unsigned i = 0; i < s_ini.nnotes; i++) {
         const tang_ini_note_t &n = s_ini.notes[i];
         if (n.line != 0) {
-            tdsh_printf("tang.ini: line %u: %s\r\n", (unsigned)n.line, n.text);
+            tdsh_printf("tinytang.ini: line %u: %s\r\n", (unsigned)n.line, n.text);
         } else {
-            tdsh_printf("tang.ini: %s\r\n", n.text);
+            tdsh_printf("tinytang.ini: %s\r\n", n.text);
         }
     }
     if (s_ini.more_notes != 0) {
-        tdsh_printf("tang.ini: (%u more)\r\n", s_ini.more_notes);
+        tdsh_printf("tinytang.ini: (%u more)\r\n", s_ini.more_notes);
     }
-    tdsh_printf("tang.ini: layout %s\r\n", tang_ini_layout_name(s_ini.layout));
+    tdsh_printf("tinytang.ini: layout %s\r\n", tang_ini_layout_name(s_ini.layout));
 }
 
 // What `word` puts in each socket, for the console.
 void print_word(const char *what, uint32_t reg, uint32_t word)
 {
-    tdsh_printf("tang.ini: %s 0x%02lx = 0x%04lx: pmod0 %s, pmod1 %s\r\n", what,
+    tdsh_printf("tinytang.ini: %s 0x%02lx = 0x%04lx: pmod0 %s, pmod1 %s\r\n", what,
                 static_cast<unsigned long>(reg), static_cast<unsigned long>(word),
                 tang_ini_module_name((word >> 4) & 0xfu),
                 tang_ini_module_name((word >> 8) & 0xfu));
@@ -192,11 +192,11 @@ bool send(const socket_core &core)
     const uint32_t word = tang_ini_word(s_ini.layout, core.id);
     uint32_t back = 0;
     if (!write_reg(core.reg, word) || !read_reg(core.reg, &back)) {
-        tdsh_printf("tang.ini: the core did not take the socket declaration\r\n");
+        tdsh_printf("tinytang.ini: the core did not take the socket declaration\r\n");
         return false;
     }
     if ((back & SOCKET_BITS) != word) {
-        tdsh_printf("tang.ini: wrote 0x%04lx to 0x%02lx, read back 0x%08lx\r\n",
+        tdsh_printf("tinytang.ini: wrote 0x%04lx to 0x%02lx, read back 0x%08lx\r\n",
                     static_cast<unsigned long>(word),
                     static_cast<unsigned long>(core.reg), static_cast<unsigned long>(back));
         return false;
@@ -221,11 +221,11 @@ int cmd_tangini(tdsh_session_t *session, int argc, char **argv)
     uint32_t abi = 0;
     const socket_core *core = socket_core_loaded(&answered, &id, &abi);
     if (!answered) {
-        tdsh_printf("tang.ini: no core answering\r\n");
+        tdsh_printf("tinytang.ini: no core answering\r\n");
         return apply ? 1 : 0;
     }
     if (core == nullptr) {
-        tdsh_printf("tang.ini: core 0x%02x has no PMOD sockets\r\n", (unsigned)id);
+        tdsh_printf("tinytang.ini: core 0x%02x has no PMOD sockets\r\n", (unsigned)id);
         return apply ? 1 : 0;
     }
     if (apply) {
@@ -236,7 +236,7 @@ int cmd_tangini(tdsh_session_t *session, int argc, char **argv)
     uint32_t now = 0;
     if (read_reg(core->reg, &now)) {
         const uint32_t word = tang_ini_word(s_ini.layout, core->id);
-        tdsh_printf("tang.ini: core 0x%02x (ABI %lu.%lu) has 0x%02lx = 0x%04lx%s\r\n",
+        tdsh_printf("tinytang.ini: core 0x%02x (ABI %lu.%lu) has 0x%02lx = 0x%04lx%s\r\n",
                     (unsigned)id, static_cast<unsigned long>(abi >> 16),
                     static_cast<unsigned long>(abi & 0xffffu),
                     static_cast<unsigned long>(core->reg),
@@ -252,7 +252,7 @@ int cmd_tangini(tdsh_session_t *session, int argc, char **argv)
 
 const tdsh_command_t s_commands[] = {
     { "tangini", "tangini [apply]",
-      "Show /tang.ini's PMOD sockets, or send them to the loaded core", cmd_tangini, 0 },
+      "Show /tinytang.ini's PMOD sockets, or send them to the loaded core", cmd_tangini, 0 },
 };
 
 } // namespace

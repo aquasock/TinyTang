@@ -1,4 +1,4 @@
-// TinyTang — /tang.ini, the declaration of what is seated in the PMOD sockets.
+// TinyTang — /tinytang.ini, the declaration of what is seated in the PMOD sockets.
 //
 // PMOD modules carry no identification pins, so the core can only be told
 // what is attached (PMOD-002).  Two layouts are supported, each with its

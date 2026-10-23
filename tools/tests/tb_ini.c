@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * The /tang.ini parser (ports/bl616/tang_ini.c) against the contract in
+ * The /tinytang.ini parser (ports/bl616/tang_ini.c) against the contract in
  * tang_ini.h: the layout it settles on, when it releases the sockets and why,
  * what it only warns about, and the word each core is sent for a layout.
  */
@@ -52,7 +52,7 @@ static bool says(unsigned line, const char *part)
     return false;
 }
 
-/* A file given on the command line -- docs/tang.ini -- must declare the
+/* A file given on the command line -- docs/tinytang.ini -- must declare the
  * i2s2_oled layout with nothing to say about it. */
 static void example(const char *path)
 {

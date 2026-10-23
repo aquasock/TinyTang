@@ -1,4 +1,4 @@
-// TinyGBC — the settings file, /gbc.ini at the card root.
+// TinyGBC — the settings file, /tinygbc.ini at the card root.
 //
 // SPDX-License-Identifier: MIT
 
@@ -15,8 +15,8 @@ extern "C" {
 #endif
 
 /* The FatFS path, and the one the user sees. */
-#define TANG_GBC_INI_REAL   "/sd/gbc.ini"
-#define TANG_GBC_INI_SHOWN  "/gbc.ini"
+#define TANG_GBC_INI_REAL   "/sd/tinygbc.ini"
+#define TANG_GBC_INI_SHOWN  "/tinygbc.ini"
 
 typedef struct {
     tang_audio_t audio;              /* [audio]: the master volume and mute */
@@ -28,7 +28,7 @@ typedef struct {
 void tang_gbc_defaults(tang_gbc_settings_t *s);
 
 /* Read a FatFS path.  Returns false when it could not be opened, which leaves
- * the defaults: a card with no /gbc.ini is the usual case, not an error. */
+ * the defaults: a card with no /tinygbc.ini is the usual case, not an error. */
 bool tang_gbc_load(tang_gbc_settings_t *s, const char *path);
 
 #ifdef __cplusplus

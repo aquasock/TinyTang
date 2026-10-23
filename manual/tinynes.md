@@ -15,7 +15,7 @@ that, because it lives on the BL616; F12 brings it back over the game.
 ## Input
 
 Which controller button each NES button answers to, for two players.
-Change steps the selected row; Save writes /nes.ini for the next game.
+Change steps the selected row; Save writes /tinynes.ini for the next game.
 
 ## Video
 

@@ -1582,7 +1582,7 @@ int tang_ae350_run(const char *player, const char *data)
         return 1;
     }
     ae350_run_t run = { .elf_file = &s_ae350_elf_file };
-    /* The settings this launch will use, read once.  /nes.ini and the AE350's
+    /* The settings this launch will use, read once.  /tinynes.ini and the AE350's
      * mapping are the same choice seen from two sides. */
     static tang_nes_settings_t nes;
     (void)tang_nes_load(&nes, TANG_NES_INI_REAL);
@@ -1726,7 +1726,7 @@ int tang_ae350_run(const char *player, const char *data)
         }
         if (starts_with(run.line, "TinyGBC SETTINGS WANT ")) {
             /* TinyGBC's blob (TinyGBC firmware/apps/gb_bench/main.cpp): the
-             * master volume and the mute, from /gbc.ini. */
+             * master volume and the mute, from /tinygbc.ini. */
             static tang_gbc_settings_t gbc;
             static uint8_t blob[2];
             unsigned long address = 0, room = 0;

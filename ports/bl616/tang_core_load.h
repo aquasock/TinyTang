@@ -26,7 +26,7 @@ typedef enum {
 /* Program the FPGA from a FatFS path (one the port mounts, such as
  * "/sd/root/cores/console138k/tinyphosphor.bin").  Stops the Phosphor player
  * and releases the OLED and PMOD declarations first, and re-applies what
- * /tang.ini declares afterwards, exactly as `tangload` does.  Blocks for the
+ * /tinytang.ini declares afterwards, exactly as `tangload` does.  Blocks for the
  * whole erase and programming time. */
 tang_load_result_t tang_core_load(const char *real_path);
 

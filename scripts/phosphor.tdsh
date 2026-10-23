@@ -18,7 +18,7 @@
 # comes straight back and the core stays
 # loaded after the track ends -- loading another core is what replaces it.
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
-# PMOD selection comes only from /tang.ini, applied automatically by tangload.
+# PMOD selection comes only from /tinytang.ini, applied automatically by tangload.
 CORE=/root/cores/console138k/tinyphosphor.bin
 PLAYER=/root/ae350/resident.tpi
 
@@ -59,7 +59,7 @@ if $? != 0
     return 1
 endif
 
-# The PMOD sockets were declared by tangload from /tang.ini (`tangini` shows
+# The PMOD sockets were declared by tangload from /tinytang.ini (`tangini` shows
 # what it says); the core powers up with both released.
 
 # The core comes up with the stereo XY oscilloscope already enabled.  Set the

@@ -6,11 +6,11 @@
  * the app uses, two dots and all, so it is the long-name path that is
  * exercised.
  *
- * The TinyNES Control Deck app saved its settings by building /nes.ini.tmp and
- * renaming it over /nes.ini.  That cannot work: f_rename() checks the new name
+ * The TinyNES Control Deck app saved its settings by building /tinynes.ini.tmp and
+ * renaming it over /tinynes.ini.  That cannot work: f_rename() checks the new name
  * and returns FR_EXIST when an object holds it, because FAT has no atomic
  * replace, so the save failed with "cannot rename over the settings file"
- * while /nes.ini.tmp vanished and /nes.ini never changed.
+ * while /tinynes.ini.tmp vanished and /tinynes.ini never changed.
  *
  * The first case below is therefore a negative one, kept as a guard: if the
  * save is ever simplified back to a single rename, this says why it cannot be.
@@ -75,9 +75,9 @@ static void check(bool held, const char *what)
 }
 
 /* Short names for what the app calls them. */
-static const char REAL[] = "/sd/nes.ini";
-static const char TMP[] = "/sd/nes.ini.tmp";
-static const char BAK[] = "/sd/nes.ini.bak";
+static const char REAL[] = "/sd/tinynes.ini";
+static const char TMP[] = "/sd/tinynes.ini.tmp";
+static const char BAK[] = "/sd/tinynes.ini.bak";
 
 static FRESULT write_file(const char *path, const char *text)
 {

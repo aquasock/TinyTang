@@ -40,7 +40,7 @@ static char *trim(char *text)
     return text;
 }
 
-/* One line: one or more `key = value` pairs, because /nes.ini is laid out
+/* One line: one or more `key = value` pairs, because /tinynes.ini is laid out
  * with several to a line.  A value ends at the first whitespace, which is
  * what lets the next key follow on the same line; a value with a space in it
  * would need its own line and a different rule, and none has one. */

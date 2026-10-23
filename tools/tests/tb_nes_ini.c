@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
  *
- * The /nes.ini and /gbc.ini parsers on the host, as tools/tests/test_ini.sh
- * does for /tang.ini.  tang_nes_ini.c reads its file through FatFS, so this supplies
+ * The /tinynes.ini and /tinygbc.ini parsers on the host, as tools/tests/test_ini.sh
+ * does for /tinytang.ini.  tang_nes_ini.c reads its file through FatFS, so this supplies
  * the four calls it makes and drives the real load path -- including the chunk
  * boundary, which is the part a buffer-only test would not reach.
  *
@@ -77,7 +77,7 @@ static void load(tang_nes_settings_t *s, const char *text)
     s_text = text;
     s_open_fails = false;
     s_read_fails = false;
-    (void)tang_nes_load(s, "/nes.ini");
+    (void)tang_nes_load(s, "/tinynes.ini");
 }
 
 int main(int argc, char **argv)
@@ -154,17 +154,17 @@ int main(int argc, char **argv)
     load(&s, "[video]\nvolume = 10\n");
     check(s.keys == 0 && s.audio.volume == 100, "volume outside [audio] counts nothing");
 
-    /* /gbc.ini: the same reader, [audio] only. */
+    /* /tinygbc.ini: the same reader, [audio] only. */
     {
         static tang_gbc_settings_t g;
         tang_gbc_defaults(&g);
         check(g.audio.volume == 100 && !g.audio.mute, "gbc default: volume 100, not muted");
         s_text = "# TinyGBC\n[audio]\nvolume = 25   mute = yes\n[input]\np1_a = y\n";
-        check(tang_gbc_load(&g, "/gbc.ini") && g.found, "gbc: the file is found");
+        check(tang_gbc_load(&g, "/tinygbc.ini") && g.found, "gbc: the file is found");
         check(g.keys == 2, "gbc: both audio keys counted, the NES key not");
         check(g.audio.volume == 25 && g.audio.mute, "gbc: volume 25, muted");
         s_open_fails = true;
-        check(!tang_gbc_load(&g, "/gbc.ini") && !g.found, "gbc: an absent file reports false");
+        check(!tang_gbc_load(&g, "/tinygbc.ini") && !g.found, "gbc: an absent file reports false");
         check(g.audio.volume == 100 && !g.audio.mute, "gbc: an absent file leaves the defaults");
         s_open_fails = false;
     }
@@ -172,7 +172,7 @@ int main(int argc, char **argv)
     /* No file at all: the defaults, and no error. */
     s_text = "";
     s_open_fails = true;
-    check(!tang_nes_load(&s, "/nes.ini"), "an absent file reports false");
+    check(!tang_nes_load(&s, "/tinynes.ini"), "an absent file reports false");
     check(s.p1[TANG_NES_A] == NES_CTL_B, "an absent file leaves the defaults");
     check(!s.found, "an absent file is not recorded as found");
     s_open_fails = false;
@@ -180,11 +180,11 @@ int main(int argc, char **argv)
     /* A read that fails part way leaves what was parsed, and claims nothing. */
     s_text = "[input]\np1_a = y\n";
     s_read_fails = true;
-    (void)tang_nes_load(&s, "/nes.ini");
+    (void)tang_nes_load(&s, "/tinynes.ini");
     check(s.p1[TANG_NES_A] == NES_CTL_B, "a failed read leaves the defaults");
 
-    /* The shipped files, if the caller named them: /nes.ini first, then
-     * /gbc.ini, which must parse to its two keys. */
+    /* The shipped files, if the caller named them: /tinynes.ini first, then
+     * /tinygbc.ini, which must parse to its two keys. */
     if (argc > 2) {
         FILE *f = fopen(argv[2], "rb");
         static char gtext[4096];
@@ -197,9 +197,9 @@ int main(int argc, char **argv)
         s_open_fails = false;
         s_read_fails = false;
         s_text = gtext;
-        (void)tang_gbc_load(&g, "/gbc.ini");
+        (void)tang_gbc_load(&g, "/tinygbc.ini");
         check(f != NULL && g.keys == 2 && g.audio.volume == 100 && !g.audio.mute,
-              "the shipped gbc.ini parses to volume 100, not muted");
+              "the shipped tinygbc.ini parses to volume 100, not muted");
     }
     if (argc > 1) {
         s_open_fails = false;

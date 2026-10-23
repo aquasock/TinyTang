@@ -3,7 +3,7 @@
 # Renaming over a name that is already in use, through the SDK's real FatFs and
 # this repository's fatfs_conf_user.h (tools/tests/tb_fat_rename.c).  f_rename()
 # refuses an occupied name with FR_EXIST, so the Control Deck app's save cannot be a
-# single rename over /nes.ini and goes through a backup name instead.
+# single rename over /tinynes.ini and goes through a backup name instead.
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"

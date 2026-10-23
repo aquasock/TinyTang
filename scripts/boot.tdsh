@@ -25,7 +25,7 @@
 #
 # The desktop core hosts TinyDesk without a machine running behind it. F12
 # switches between the desktop layer and an empty frame. Its VGA sockets follow
-# /tang.ini automatically, just as Phosphor does. The first version supports
+# /tinytang.ini automatically, just as Phosphor does. The first version supports
 # none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
 # Build it with tools/build_desktop_core_open.sh, as BUILDING.md describes.
 CORE=/root/cores/console138k/tinytang.bin

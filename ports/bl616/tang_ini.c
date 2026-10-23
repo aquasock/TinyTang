@@ -1,4 +1,4 @@
-// TinyTang — the /tang.ini parser.  See tang_ini.h.
+// TinyTang — the /tinytang.ini parser.  See tang_ini.h.
 //
 // SPDX-License-Identifier: MIT
 

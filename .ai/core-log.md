@@ -986,3 +986,65 @@ None.
 - User Test: N/A
 
 ---
+
+## 27 COMMIT Unreleased 2026-10-23T16:21:08-07:00
+
+#### Coming From:
+
+Unreleased ff1ccd4
+
+#### Purpose:
+
+Point the firmware at the three settings files the rebuilt card now carries, so the PMOD layout and both players' settings are read from /tinytang.ini, /tinynes.ini and /tinygbc.ini.
+
+#### Outcome:
+
+The user fixed the card's names and directed that they are the layout from now on, so the firmware followed the card rather than the card following the firmware. `ports/bl616/phosphor/pmod_sockets.cpp` opens `/sd/tinytang.ini` and its console messages, the `tangini` help line included, name it; `tang_nes_ini.h` and `tang_gbc_ini.h` point at `/sd/tinynes.ini` and `/sd/tinygbc.ini` with those shown names, so the `tang` command reports them without further change; and the settings writers in `tinynes_app.cpp` and `tinygbc_app.cpp` build their temporary and backup files from the new names, `.tmp` and `.bak` as before. Comments across `tang_ini.c`, `tang_settings_ini.c`, `tang_fpga_uart.c`, `tdsh_platform_bl616.c`, `tang_core_load.h`, `tdsh_tang_flash.c` and `phosphor/oled_cmd.cpp` were corrected in the same pass, the examples became `docs/tinytang.ini`, `docs/tinynes.ini` and `docs/tinygbc.ini`, and the host tests and the README, the manual chapters, `fpga/desktop/README.md`, `fpga/hdmi_test/hdmi_test.v` and the two scripts' comments follow. `test_ini.sh` passed, `test_nes_ini.sh` ran 45 checks and `test_fat_rename.sh` 16, all without failure, and the firmware built with `make CHIP=bl616 BOARD=bl616dk` as `ff1ccd4-dirty.9db4a4e`, 644,848 bytes, SHA-256 `2c947cb737ac50df4ed552cf24ad33417339e91b2b9c8e9fe02212758ac7b4b2`, with no warning in any changed file and only the ten pre-existing ones in the SDK's `usbh_core.c` and `tang_jtag_programmer.c`. `tinytang_flash.py` stages the image on the card with `tangput` before `tangflash` installs it, so a flash with the card out of the board could not proceed and the card went back in; the commit reported OK, the user power-cycled, and the board returned as `ffff:5454`. On the board `platform` read `tinytang ff1ccd4-dirty.9db4a4e`, `tangini` printed `tinytang.ini: layout i2s2_oled` and `core 0x54 (ABI 1.5) has 0xc0 = 0x0010, as declared` from the boot path's load, and `tang` read `/tinynes.ini` with 24 keys, the user's keymap, `aspect=1:1 palette=fceumm scale=3`, `volume=20 mute=no`, and `/tinygbc.ini` with 2 keys at `volume=20 mute=no`; the heap read 47,864 bytes free of 98,456 with a 29,504-byte largest block. The user reported PASS for the change. Two builds of the same tree produced different image hashes, `f3a18b64` and `2c947cb7`, which is the non-reproducibility already recorded and not a change here. The user asked mid-cycle for the Game Boy save, state and ROM folders to be made to work in the same build and then withdrew it on recalling that TinyGBC has no save or state path; TinyNES's own `/root/media/nes`, `/root/saves/nes` and `/root/states/nes` already matched the card, so nothing about the folders changed, and the card's `/root/saves/gb`, `/root/saves/gbc`, `/root/states/gb` and `/root/states/gbc` stay as placeholders. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 26 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 27 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The card still holds the previous firmware at `/bl616-firmware.bin`, so the Software Update window would offer to install the older image; replacing it with this build waits on the user's approval to write the card. TinyGBC's saves and states remain its own cycle: its player has no battery-save path and no card build of its state code, and TinyTang has no TinyGBC NVRAM or state transfer, so the four Game Boy folders stay empty until that work is done. On the card, `manual/getting-started.md` and `manual/tinynes.md` are empty, `manual/files.md` and `manual/troubleshooting.md` are older than the repository's copies, and `/root/scripts/boot.tdsh` is the older copy that still names the retired `boot-cart.tdsh`. A `tools/check_manual.py` to enforce the reader's subset is proposed and unapproved.
+
+#### Files Modified:
+
+- README.md
+- docs/gbc.ini (renamed to docs/tinygbc.ini)
+- docs/nes.ini (renamed to docs/tinynes.ini)
+- docs/tang.ini (renamed to docs/tinytang.ini)
+- fpga/desktop/README.md
+- fpga/hdmi_test/hdmi_test.v
+- manual/files.md
+- manual/getting-started.md
+- manual/tinynes.md
+- manual/troubleshooting.md
+- ports/bl616/phosphor/oled_cmd.cpp
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/tang_core_load.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gbc_ini.c
+- ports/bl616/tang_gbc_ini.h
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- ports/bl616/tang_nes_ini.c
+- ports/bl616/tang_nes_ini.h
+- ports/bl616/tang_settings_ini.c
+- ports/bl616/tang_settings_ini.h
+- ports/bl616/tdsh_tang_flash.c
+- ports/bl616/tinygbc_app.cpp
+- ports/bl616/tinynes_app.cpp
+- scripts/boot.tdsh
+- scripts/phosphor.tdsh
+- tools/tests/tb_fat_rename.c
+- tools/tests/tb_ini.c
+- tools/tests/tb_nes_ini.c
+- tools/tests/test_fat_rename.sh
+- tools/tests/test_ini.sh
+- tools/tests/test_nes_ini.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

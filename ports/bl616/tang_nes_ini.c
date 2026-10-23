@@ -1,6 +1,6 @@
-// TinyNES — reading /nes.ini, the settings file at the card root.
+// TinyNES — reading /tinynes.ini, the settings file at the card root.
 //
-// The same shape as /tang.ini, read by ports/bl616/tang_settings_ini.c.  A
+// The same shape as /tinytang.ini, read by ports/bl616/tang_settings_ini.c.  A
 // missing file, or a key missing from it, is the default -- which is the
 // behaviour the firmware had before this file existed, so dropping one on the
 // card is safe and an old card keeps working.

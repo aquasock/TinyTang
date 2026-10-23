@@ -1,6 +1,6 @@
 // TinyTang — what the cartridge players' settings files have in common.
 //
-// /nes.ini and /gbc.ini have the shape of /tang.ini: section headers,
+// /tinynes.ini and /tinygbc.ini have the shape of /tinytang.ini: section headers,
 // `key = value`, several pairs to a line, `#` and `;` comments.  This is the
 // reader both are walked with, and the [audio] section both carry.
 //

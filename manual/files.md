@@ -10,7 +10,7 @@ Everything lives on one FAT32 card:
      /root/saves/nes       battery saves
      /root/manual          this manual
      /root/scripts         shell scripts
-     /tang.ini             which PMODs are seated
+     /tinytang.ini             which PMODs are seated
 
 ## Putting files on the card
 
@@ -23,7 +23,7 @@ first: bytes sent then are typed into whichever window has focus.
 
 ## PMODs
 
-A core drives a socket only if /tang.ini says what is seated there,
+A core drives a socket only if /tinytang.ini says what is seated there,
 because PMOD modules carry no identification. It names one layout:
 
      layout = i2s2_oled    I2S2 beside HDMI, OLED beside USB-A

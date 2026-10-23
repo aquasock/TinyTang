@@ -15,7 +15,7 @@
 // fpga/desktop/pll/), and the serialiser and output-buffer wiring matches
 // fpga/desktop/hdmi/serializer.sv (GW_IDE branch) and desktop_hdmi.sv.  The
 // picture is eight colour bars, DVI only: no data islands, no audio.
-// The same bars go to the PmodVGA (J1 on PMOD1, J2 on PMOD0, as /tang.ini's
+// The same bars go to the PmodVGA (J1 on PMOD1, J2 on PMOD0, as /tinytang.ini's
 // vga_j1/vga_j2 and fpga/desktop/desktop_pmod.sv), registered on the same
 // pixel clock, so a VGA picture shows the PLLs and divider run even when HDMI
 // does not.

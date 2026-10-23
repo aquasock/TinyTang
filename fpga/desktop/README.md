@@ -49,7 +49,7 @@ designed independently after reviewing colibri conventions.
 
 ## Configuration
 
-TinyTang firmware recognizes UART core ID `0x54` and applies `/tang.ini`
+TinyTang firmware recognizes UART core ID `0x54` and applies `/tinytang.ini`
 after each successful `tangload`. The file names one of two layouts, each
 module seated right side up. The VGA seating is **J1 on PMOD1 (nearest
 HDMI), J2 on PMOD0**:
@@ -80,7 +80,7 @@ USB-A port, the only pair that reaches the FPGA on a stock dock: SDA on D+
 first Wii controller. Adafruit's Wii Nunchuck Breakout Adapter on that port
 carries the bus's pull-ups, and the DS3231 RTC sits on the same STEMMA QT
 chain at 0x68, beside the Wii controller at 0x52. The bus needs no
-`/tang.ini` declaration. The firmware's `tangi2c` command and the desktop
+`/tinytang.ini` declaration. The firmware's `tangi2c` command and the desktop
 clock use it while this core is loaded; a game core that replaces this one
 drives the same pair as its own controller bus.
 

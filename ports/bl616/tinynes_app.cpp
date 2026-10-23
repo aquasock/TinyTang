@@ -2,7 +2,7 @@
 //
 // Opened from the start menu or the desktop, over a running game, and driven
 // with F12 the way the desktop is: the game keeps running behind it.  The
-// settings live in /nes.ini at the card root (ports/bl616/tang_nes_ini.c), and
+// settings live in /tinynes.ini at the card root (ports/bl616/tang_nes_ini.c), and
 // a launch reads the same file the same way, so what is saved here is what the
 // next game start uses.
 //
@@ -90,8 +90,8 @@ const int ACCENT = 14;
  * name that is already in use (FR_EXIST -- FAT has no atomic replace), so a
  * save cannot be one rename over the settings file and goes through the
  * backup name instead (tools/tests/test_fat_rename.sh). */
-const char TMP_PATH[] = "/sd/nes.ini.tmp";
-const char BAK_PATH[] = "/sd/nes.ini.bak";
+const char TMP_PATH[] = "/sd/tinynes.ini.tmp";
+const char BAK_PATH[] = "/sd/tinynes.ini.bak";
 
 /* Audio is one master volume, not one per output: HDMI and the I2S2's Line
  * Out play the same stream, and the player scales it before either sees it. */

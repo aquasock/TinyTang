@@ -194,7 +194,7 @@ tang_load_result_t tang_core_load(const char *real)
          * sign of why. */
         tang_osd_desk_core_reloaded();
         /* A core with the PMOD sockets brings them up released; declare
-         * what /tang.ini says is seated (phosphor/pmod_sockets.cpp). */
+         * what /tinytang.ini says is seated (phosphor/pmod_sockets.cpp). */
         tang_ini_core_loaded();
     }
     s_programming = false;

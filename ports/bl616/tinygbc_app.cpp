@@ -7,7 +7,7 @@
 // desktop core back.
 //
 // The Library page starts games, and the Audio page sets one master volume and
-// a mute for HDMI and the Line Out together, kept in /gbc.ini at the card root
+// a mute for HDMI and the Line Out together, kept in /tinygbc.ini at the card root
 // (ports/bl616/tang_gbc_ini.c) and sent to the player when a game starts.
 // Input, Video and Saves are placeholders: they name what the player will
 // grow, so the window does not have to change shape when they arrive.
@@ -89,8 +89,8 @@ const int AUDIO_TAB = 3;
 /* Where a save is built before it replaces the real file, and where the file
  * being replaced is set aside meanwhile, as the TinyNES app does it: FatFS's
  * f_rename refuses a name already in use, so FAT has no atomic replace. */
-const char TMP_PATH[] = "/sd/gbc.ini.tmp";
-const char BAK_PATH[] = "/sd/gbc.ini.bak";
+const char TMP_PATH[] = "/sd/tinygbc.ini.tmp";
+const char BAK_PATH[] = "/sd/tinygbc.ini.bak";
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -204,7 +204,7 @@ bool is_audio_line(const char *line)
 
 /* Write the volume and the mute where the file's [audio] section is, keeping
  * every other line, so a hand-written comment or a key for a later firmware
- * survives a save.  A card with no /gbc.ini yet gets one.  NULL when it wrote,
+ * survives a save.  A card with no /tinygbc.ini yet gets one.  NULL when it wrote,
  * else a short reason. */
 const char *save_settings(void)
 {
