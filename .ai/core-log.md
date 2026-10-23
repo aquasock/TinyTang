@@ -702,3 +702,38 @@ The volume reaches the player only at launch; changing it over a running game wo
 - User Test: PASS
 
 ---
+
+## 21 COMMIT Unreleased 2026-10-23T04:16:19-07:00
+
+#### Coming From:
+
+Unreleased 5877729
+
+#### Purpose:
+
+Boot the board from a card rebuilt from empty, with the desktop core named `tinytang.bin` and its matching `.fs` gzipped beside it as `tinytang.fs.gz`, as the user directed.
+
+#### Outcome:
+
+The user reformatted the 120 GB card as one empty FAT volume, labelled `TINYTANG`, to rebuild it from scratch rather than restore the backup, and the first goal was the core and firmware alone. The card was written on the host with only `/root/scripts/boot.tdsh` and `/root/cores/console138k/tinytang.bin`, the latter being seed 3 of desktop ABI 1.4 from `build/desktop/seed3/open-s3/`, `desktop.fe5289f5e446.bin`, 4,497,792 bytes, still the core of record because nothing under `fpga/desktop` has changed since entry 3; the user renamed it from `desktop.bin` and asked for the `.fs` beside it, and chose, of the options offered, a companion copy that the board does not read over teaching `tangload` to inflate and parse a `.fs`. `tinytang.fs.gz` is `gzip -9 -n` of the build's paired `desktop.c71a7cfe81de.fs`, 442,662 bytes, which decompresses to that file's SHA-256. The name had been hardcoded in four places, so `scripts/boot.tdsh`'s `CORE` line and its loaded message, `DESKTOP_REAL` in `ports/bl616/tinynes_app.cpp` and `ports/bl616/tinygbc_app.cpp`, which is the core a game's exit puts back, and the path in `tools/tests/tb_tang_flash.c` now name `tinytang.bin`; `README.md` and `fpga/desktop/README.md` describe the card name, the README's put commands gained the `gzip` step and lost a stale `24a11e81a46c`, and the build scripts and their outputs keep the `desktop.*` names this log and the reference use. The firmware `5877729-dirty.35d6fd9`, 653,232 bytes, SHA-256 `379ca7b0425e6b813924ade857ea6fde9ed0fee67e5c9ee82d4c2244ef653248`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in the changed files and no `console138k/desktop.bin` string left in the image, and `tools/tests/test_tang_flash.sh` passed. On the new card the board first booted on entry 20's `f035e73-dirty.70177ad`, `fpga` answering core 84 and `tangini` reporting no `/tang.ini`, core 0x54 at ABI 1.4 and `0xc0 = 0x0000`; the new firmware was installed with `tools/tinytang_flash.py --yes`, and after the user's power cycle `platform` read `tinytang 5877729-dirty.35d6fd9` with the same core and socket state. The card holds no pairings, so `blekbd pair` was run for the Logitech keyboard; the console dropped as the radio started, as USB-008 records, re-enumerated by itself, and the board then reported `blekbd: ready` with a report received. The user then connected the mouse, opened the desktop and reported PASS. `/root/ble/bonds.bin` was not read back, because the desktop held the console when the cycle closed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 21 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The new `DESKTOP_REAL` is exercised only when a game exits, which waits on the TinyNES and TinyGBC cores and players being put back on the card, and that exit is this cycle's one untested path. The card is otherwise bare: no `/tang.ini`, so the OLED, the DS3231 and the RYLR998 are released and the desktop clock is unset, no time zone, manual, Phosphor core or media, and its rebuild is the user's to order. Whether the pairings reached `/root/ble/bonds.bin` should be read at the next prompt. The older items stand: `tang.ini: the core did not take the socket declaration` after the desktop core reloads, a lost state send shows only on this console, a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- fpga/desktop/README.md
+- ports/bl616/tinygbc_app.cpp
+- ports/bl616/tinynes_app.cpp
+- scripts/boot.tdsh
+- tools/tests/tb_tang_flash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

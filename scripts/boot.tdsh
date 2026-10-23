@@ -29,7 +29,7 @@
 # none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
 # Build it with tools/build_desktop_core_open.sh, as BUILDING.md describes.
 # Cartridge launching uses boot-cart.tdsh.
-CORE=/root/cores/console138k/desktop.bin
+CORE=/root/cores/console138k/tinytang.bin
 
 # The core is named at the "loaded" line below, not up here.  Until tangload has
 # programmed the FPGA the board has no raster, and `osd desk on` starts showing
@@ -75,7 +75,7 @@ osd desk on
 # Stop here, at a loaded core, a displayed prompt and a live console.  The
 # desktop is the only thing that draws into the layer as a window manager, so
 # starting it from here would take the console before the user asked.
-echo "boot: desktop.bin loaded - type 'desktop' to bring up TinyDesk"
+echo "boot: tinytang.bin loaded - type 'desktop' to bring up TinyDesk"
 
 # The mouse works at this prompt too: the wheel scrolls the shell's history and
 # a left click presses Enter.  Wheel up once recalls the last command and a

@@ -116,7 +116,7 @@ static void clear(void)
 }
 static int tangload(void)
 {
-    char *argv[] = {"tangload", "/root/cores/console138k/desktop.bin"};
+    char *argv[] = {"tangload", "/root/cores/console138k/tinytang.bin"};
     return cmd_tangload(NULL, 2, argv);
 }
 static int g_first_rc = -1;

@@ -55,7 +55,7 @@ constexpr BYTE AM_VOLUME_LABEL = 0x08;
  * tools/deploy_tinygbc.sh puts beside TinyNES's. */
 constexpr char CORE_REAL[] = "/sd/root/cores/console138k/tinygbc.bin";
 constexpr char PLAYER_REAL[] = "/sd/root/ae350/tinygbc-play.elf";
-constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
+constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/tinytang.bin";
 
 /* Where the library opens: the first of these that the card has, so a GB
  * folder beside TinyNES's own is found and a card with only a media root

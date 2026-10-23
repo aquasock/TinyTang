@@ -64,7 +64,7 @@ constexpr BYTE AM_VOLUME_LABEL = 0x08;
  * These are the three files a launch needs, as FatFS mounts them. */
 constexpr char CORE_REAL[] = "/sd/root/cores/console138k/tinynes.bin";
 constexpr char PLAYER_REAL[] = "/sd/root/ae350/tinynes-play.elf";
-constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
+constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/tinytang.bin";
 
 /* 8 KiB is what the Phosphor player gives its task, and half what a shell
  * worker gave this run: no interpreter, no script, no line table.  The margin

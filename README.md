@@ -55,7 +55,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
 ## What it does
 
 - **Boots to a console on HDMI and configured VGA.** `/root/scripts/boot.tdsh` loads
-  `desktop.bin`, turns the desktop layer on, and stops at the shell prompt
+  `tinytang.bin`, turns the desktop layer on, and stops at the shell prompt
   (`root@tinytang:~#`) drawn on the screen. The board has the shell's built-in
   commands, redirection and scripts, plus the Tang commands below.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
@@ -364,7 +364,9 @@ tools/build_desktop_core_open.sh # build/desktop/open-s3/desktop.bin, open toolc
 # tools/build_menu_core.sh      # legacy HDMI-only host: Gowin EDA, not released
 
 # Put the core and the scripts on the card (at a plain shell prompt -- fact 15)
-tools/tinytang_put.py build/desktop/open-s3/desktop.bin                /root/cores/console138k/desktop.bin   # 24a11e81a46c
+tools/tinytang_put.py build/desktop/open-s3/desktop.bin                /root/cores/console138k/tinytang.bin   # fe5289f5e446
+gzip -9 -n -c build/desktop/open-s3/desktop.fs > tinytang.fs.gz        # the matching .fs, for openFPGALoader
+tools/tinytang_put.py tinytang.fs.gz        /root/cores/console138k/tinytang.fs.gz
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
 tools/tinytang_put.py scripts/phosphor.tdsh  /root/scripts/phosphor.tdsh
 
@@ -383,7 +385,7 @@ firmware's own files stay at the top of the card.
 | Path | Holds |
 |---|---|
 | `/root/scripts/` | `boot.tdsh`, run at power-up, and the other scripts; bring-up scripts in `diagnostics/` |
-| `/root/cores/console138k/` | FPGA core images for `tangload` |
+| `/root/cores/console138k/` | FPGA core images for `tangload`; the desktop core is `tinytang.bin`, with its `.fs` gzipped beside it as `tinytang.fs.gz` for openFPGALoader, which the board does not read |
 | `/root/media/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
 | `/root/media/music/` | tracks for `phosphor play` and the Phosphor app |
 | `/root/ae350/` | AE350 programs, `resident.tpi` among them |
@@ -446,14 +448,14 @@ but the core they load, `nestang-desk.bin`, needs Gowin EDA to build
 ### What the board boots
 
 `/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
-line -- `desktop.bin` -- probes it, applies `/tang.ini`, enables the desktop
+line -- `tinytang.bin` -- probes it, applies `/tang.ini`, enables the desktop
 layer and stops at the prompt. Removing or renaming the file boots to a plain
 prompt with no core loaded; the FPGA then stays on the core it configured itself with, and
 the screen shows a TangCore splash (fact 14).
 
 ## The FPGA cores
 
-The default host, `desktop.bin`, is TinyTang's own core in `fpga/desktop/`
+The default host, `desktop.bin` (`tinytang.bin` on the card), is TinyTang's own core in `fpga/desktop/`
 (below). The NES and menu cores derive from nand2mario's nestang, carried as
 patches against upstream rather than as a fork; they need Gowin EDA and are
 not part of the release, whose NES core is TinyNES's. The checkout stays pristine at commit `c2450818`, and
