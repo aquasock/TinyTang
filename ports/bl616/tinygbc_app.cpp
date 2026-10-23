@@ -63,6 +63,13 @@ const char *const LIB_ROOTS[] = {
 
 /* 8 KiB is what the Phosphor player gives its task, and half what a shell
  * worker gave this run: no interpreter, no script, no line table. */
+/* The window's fixed size, frame included, and the Library rows it shows:
+ * rows 3 to 14 of the client area, above the buttons on row 16 and the status
+ * line on row 17. */
+constexpr int WIN_W = 50;
+constexpr int WIN_H = 20;
+constexpr int LIB_ROWS = 12;
+
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 4;
 const int PAGE_WIDGETS = 16;
@@ -479,10 +486,14 @@ void launch(void)
 
     td_window_desc_t d = {};
     d.title = "TinyGBC";
-    d.rect = td_rect(-1, -1, 66, 26);
-    d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
-    d.min_w = 50;
-    d.min_h = 18;
+    /* A fixed size, the same for TinyNES and TinyGBC: 50 columns, the
+     * narrowest the pages fit in, and 20 rows, which gives the Library list
+     * twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
+     * maximise and no F11, and the minimum pins the size as well. */
+    d.rect = td_rect(-1, -1, WIN_W, WIN_H);
+    d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE;
+    d.min_w = WIN_W;
+    d.min_h = WIN_H;
     d.on_close = on_close;
     d.on_tick = on_tick;
     d.tick_ms = TICK_MS;
@@ -508,9 +519,9 @@ void launch(void)
     lib_choose_root();
     lib_set_path(s_root);
     s_lib_path = td_label(s_win, 1, 2, 0, "");
-    s_lib_list = td_list(s_win, td_rect(1, 3, -1, -11), lib_get_item, lib_on_activate,
-                         nullptr);
-    td_scrollbar(s_win, -1, 3, -11, s_lib_list);
+    s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
+                         lib_on_activate, nullptr);
+    td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
     page_add(0, s_lib_path);
     page_add(0, s_lib_list);
     page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));

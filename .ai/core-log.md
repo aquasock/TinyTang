@@ -592,3 +592,35 @@ The window's three other pages stay placeholders until the TinyGBC player has so
 - User Test: PASS
 
 ---
+
+## 18 COMMIT Unreleased 2026-10-22T18:57:18-07:00
+
+#### Coming From:
+
+Unreleased 14f27e9
+
+#### Purpose:
+
+Lock the TinyNES and TinyGBC windows to one fixed size, as the user asked, the width the narrowest the windows could already be made and the height showing twelve Library entries, so the two look the same.
+
+#### Outcome:
+
+Both windows opened at 66 by 26 cells and could be resized down to `min_w = 50` and `min_h = 18`, the Library list followed the window as `td_rect(1, 3, -1, -11)`, and its Launch, Up and Refresh buttons and status line were fixed on client rows 16 and 17, which fell outside the window at its minimum height. `ports/bl616/tinynes_app.cpp` and `ports/bl616/tinygbc_app.cpp` now share the same three constants, `WIN_W = 50`, `WIN_H = 20` and `LIB_ROWS = 12`: the window opens at that size, its minimum is the same size, and `TD_WIN_RESIZABLE` is dropped, which in TinyDesk's window manager also removes the resize grip, the title-bar maximise and F11. The Library list is `td_rect(1, 3, -1, LIB_ROWS)` with a scrollbar of the same height, client rows 3 to 14 above the unchanged buttons and status line, so the 18-row client area is the frame's 20 less its border (`td_win_client`). At 50 columns the client is 48 wide, and TinyNES's Input page had put Change, Restore defaults and Save, and two lines of help, at column 38, where Restore defaults, 20 cells wide by `td_button`'s caption plus four, ran to column 58 and was cut off; the three buttons now sit in one row under the eight-row list at client row 13, columns 1, 13 and 35, with the help on row 14 as one line. TinyGBC's pages are labels well inside 48 columns and needed no change. The firmware was built with `make CHIP=bl616 BOARD=bl616dk` against `~/.cache/tangcore-dev/sdk-2.3.36`, the SDK the build tree is configured for, after a first attempt with `BL_SDK_BASE` set to the older `~/.cache/tangcore-dev/sdk` stopped on CherryUSB's missing `cherryusb_config_template.h` and produced nothing; the image is `14f27e9-dirty.3bfa327`, 648,976 bytes, SHA-256 `7bf89bdcca6984aee46b87b2d0a6c5140399c2597e7957b56b2b586af908294f`, with no warning in either file. It was installed with `tools/tinytang_flash.py --yes`, the user power-cycled the board, and `platform` reported `tinytang 14f27e9-dirty.3bfa327`. The user opened both windows, found them the same size with no way to resize or maximise them, twelve Library entries showing and every page whole, and passed the cycle. `README.md` now states the fixed size and corrects where the controllers are, player 1 having moved to the USB-A port through Adafruit's adapter in TinyNES's core-log entry 47. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 18 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The TinyNES launch task's stack margin is now read, in TinyNES's entry 47, as 5,400 bytes left of 8 KiB, so `LAUNCH_STACK_WORDS` needs no change. After that run, reloading the desktop core printed `tang.ini: the core did not take the socket declaration`, which is this tree's to explain. The older items stand: a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, FatFS timestamps need `FF_FS_NORTC` off and a `get_fattime()`, the MCP79410 waits on external pull-ups, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tinygbc_app.cpp
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -401,8 +401,10 @@ or anywhere on the card, and start one from the **TinyNES** app's Library tab,
 which browses that folder's subfolders and the cartridges in them.  A launch
 loads `tinynes.bin`, runs the player `/root/ae350/tinynes-play.elf` with the
 cartridge, and loads the desktop core again when the game ends.  The
-controllers are Wii Classic Controllers on PMOD0, and sound needs a Pmod I2S2
-on PMOD1, declared in `/tang.ini`.
+controllers are Wii Classic Controllers, player 1 on the USB-A port through
+Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
+PMOD1, declared in `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
+fixed size of 50 by 20 cells that shows twelve Library entries at a time.
 
 That is the only way to start TinyNES.  A cartridge double-clicked in the
 Files app or on the desktop is not opened at all: the desktop would have to

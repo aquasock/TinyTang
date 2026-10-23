@@ -69,6 +69,13 @@ constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/desktop.bin";
 /* 8 KiB is what the Phosphor player gives its task, and half what a shell
  * worker gave this run: no interpreter, no script, no line table.  The margin
  * left over is printed when the game ends so the size stays visible. */
+/* The window's fixed size, frame included, and the Library rows it shows:
+ * rows 3 to 14 of the client area, above the buttons on row 16 and the status
+ * line on row 17. */
+constexpr int WIN_W = 50;
+constexpr int WIN_H = 20;
+constexpr int LIB_ROWS = 12;
+
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 4;
 const int PAGE_WIDGETS = 16;
@@ -832,10 +839,14 @@ void launch(void)
 
     td_window_desc_t d = {};
     d.title = "TinyNES";
-    d.rect = td_rect(-1, -1, 66, 26);
-    d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
-    d.min_w = 50;
-    d.min_h = 18;
+    /* A fixed size, the same for TinyNES and TinyGBC: 50 columns, the
+     * narrowest the pages fit in, and 20 rows, which gives the Library list
+     * twelve entries.  Without TD_WIN_RESIZABLE there is no resize grip, no
+     * maximise and no F11, and the minimum pins the size as well. */
+    d.rect = td_rect(-1, -1, WIN_W, WIN_H);
+    d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE;
+    d.min_w = WIN_W;
+    d.min_h = WIN_H;
     d.on_close = on_close;
     d.on_tick = on_tick;
     d.tick_ms = TICK_MS;
@@ -861,9 +872,9 @@ void launch(void)
      * because it lives on the BL616. */
     lib_set_path(ROOT_SHOWN);
     s_lib_path = td_label(s_win, 1, 2, 0, "");
-    s_lib_list = td_list(s_win, td_rect(1, 3, -1, -11), lib_get_item, lib_on_activate,
-                         nullptr);
-    td_scrollbar(s_win, -1, 3, -11, s_lib_list);
+    s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
+                         lib_on_activate, nullptr);
+    td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
     page_add(0, s_lib_path);
     page_add(0, s_lib_list);
     page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
@@ -885,11 +896,12 @@ void launch(void)
         td_list_set_count(s_list, TANG_NES_BUTTONS);
     }
     page_add(1, s_list);
-    page_add(1, td_button(s_win, 38, 4, "Change", on_row, nullptr));
-    page_add(1, td_button(s_win, 38, 6, "Restore defaults", on_restore, nullptr));
-    page_add(1, td_button(s_win, 38, 8, "Save", on_save, nullptr));
-    page_add(1, td_label(s_win, 38, 10, 0, "Change steps the"));
-    page_add(1, td_label(s_win, 38, 11, 0, "selected row."));
+    /* The actions sit in a row under the list, because beside it they ran
+     * past the 48 columns of the fixed window. */
+    page_add(1, td_button(s_win, 1, 13, "Change", on_row, nullptr));
+    page_add(1, td_button(s_win, 13, 13, "Restore defaults", on_restore, nullptr));
+    page_add(1, td_button(s_win, 35, 13, "Save", on_save, nullptr));
+    page_add(1, td_label(s_win, 1, 14, 0, "Change steps the selected row."));
 
     /* Video: two rows, the pixel aspect and the palette, and the Save that
      * writes them.  Scale, scanlines and overscan were dropped, so the page
