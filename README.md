@@ -405,6 +405,13 @@ controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
 PMOD1, declared in `/tang.ini`.  The TinyNES window, like TinyGBC's, has a
 fixed size of 50 by 20 cells that shows twelve Library entries at a time.
+Each cartridge has one save state, as on the NES Classic: in the game HOME
+with L saves it and HOME with R loads it, and the player sends a save here,
+where it is written to `/root/states/nes/<cartridge>.state` through a `.part`
+file that is read back and checked before it replaces the old one.  At launch
+that file is handed to the player, which keeps it for R and never loads it on
+its own.  The window's Saves page shows the state of the cartridge selected in
+the Library; states can be swapped by copying them in the Files app.
 
 That is the only way to start TinyNES.  A cartridge double-clicked in the
 Files app or on the desktop is not opened at all: the desktop would have to

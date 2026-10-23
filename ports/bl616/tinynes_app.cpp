@@ -132,6 +132,14 @@ td_widget_t *s_video_list;       /* the Video page's rows: aspect, palette */
 td_widget_t *s_player_button;    /* which player the rows are showing */
 td_widget_t *s_status[TABS];     /* one per page: a shared widget cannot be
                                   * shown on one page and hidden on another */
+
+/* The Saves page: the save state of the cartridge selected in the Library, one
+ * file per cartridge that the player writes when L is pressed in the game
+ * (TinyNES core-log entry 49), read again whenever the page is shown. */
+const char STATE_SHOWN[] = "/root/states/nes";
+const char STATE_REAL[] = "/sd/root/states/nes";
+const int STATE_LINES = 6;
+td_widget_t *s_state_line[STATE_LINES];
 int s_player;
 bool s_dirty;                    /* edited here and not yet saved */
 
@@ -163,9 +171,15 @@ void show_tab(int tab)
     s_tab_shown = tab;
 }
 
+void state_show(void);
+
 void on_tab(td_widget_t *, void *user)
 {
-    show_tab((int)(uintptr_t)user);
+    const int tab = (int)(uintptr_t)user;
+    show_tab(tab);
+    if (tab == 3) {
+        state_show();
+    }
 }
 
 /* --------------------------------------------------------------- the file */
@@ -678,6 +692,120 @@ void lib_load(void)
     lib_say(text);
 }
 
+/* ------------------------------------------------------------ the state */
+
+/* TinyNES's state header (firmware/apps/nes_bench/main.cpp, StateHeader):
+ * little-endian, as both ends are. */
+struct state_header
+{
+    char magic[4];
+    uint16_t header_bytes;
+    uint16_t version;
+    uint32_t rom_crc;
+    uint32_t fceumm;
+    uint32_t patches;
+    uint32_t frame;
+    uint32_t length;
+    uint32_t crc;
+};
+static_assert(sizeof(state_header) == 32, "TinyNES's state header is 32 bytes");
+
+uint32_t state_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
+{
+    crc = ~crc;
+    while (n-- != 0) {
+        crc ^= *bytes++;
+        for (int bit = 0; bit < 8; bit++) {
+            crc = crc >> 1 ^ (0xedb88320u & (0u - (crc & 1u)));
+        }
+    }
+    return ~crc;
+}
+
+void state_lines(const char *const text[STATE_LINES])
+{
+    for (int i = 0; i < STATE_LINES; i++) {
+        if (s_state_line[i] != nullptr) {
+            td_widget_set_text(s_state_line[i], text[i] != nullptr ? text[i] : "");
+        }
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* What the card holds for the Library's selected cartridge.  The CRC-32 is of
+ * the whole file, the number the player prints as it sends a state and the
+ * one TinyTang verifies it by, so the three can be matched by eye. */
+void state_show(void)
+{
+    static char line[STATE_LINES][TD_TEXT_MAX];
+    const char *text[STATE_LINES] = {};
+    const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
+
+    if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
+        s_lib_entries[row].is_dir) {
+        text[0] = "Select a cartridge in the Library.";
+        state_lines(text);
+        return;
+    }
+    const char *name = s_lib_entries[row].name;
+    const char *dot = strrchr(name, '.');
+    const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+    char real[TD_PATH_MAX + 8];
+    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
+    snprintf(line[1], sizeof line[1], "%s/%.*s.state", STATE_SHOWN, stem, name);
+    snprintf(real, sizeof real, "%s/%.*s.state", STATE_REAL, stem, name);
+    text[0] = line[0];
+    text[1] = line[1];
+
+    FIL file;
+    if (f_open(&file, real, FA_READ) != FR_OK) {
+        text[2] = "No save state yet. L saves one in the game.";
+        state_lines(text);
+        return;
+    }
+    const uint32_t size = (uint32_t)f_size(&file);
+    state_header h = {};
+    uint8_t chunk[256];
+    uint32_t crc = 0, total = 0;
+    bool ok = true;
+    for (;;) {
+        UINT got = 0;
+        if (f_read(&file, chunk, sizeof chunk, &got) != FR_OK) {
+            ok = false;
+            break;
+        }
+        if (got == 0) {
+            break;
+        }
+        if (total == 0 && got >= sizeof h) {
+            memcpy(&h, chunk, sizeof h);
+        }
+        crc = state_crc32(crc, chunk, got);
+        total += got;
+    }
+    (void)f_close(&file);
+
+    snprintf(line[2], sizeof line[2], "Size %lu bytes, CRC-32 %08lx",
+             (unsigned long)size, (unsigned long)crc);
+    text[2] = line[2];
+    if (!ok || memcmp(h.magic, "TNS1", 4) != 0 || h.header_bytes != sizeof h ||
+        h.length + sizeof h != size) {
+        text[3] = "Not a TinyNES save state, or cut short.";
+    } else {
+        snprintf(line[3], sizeof line[3], "Game CRC-32 %08lx, frame %lu",
+                 (unsigned long)h.rom_crc, (unsigned long)h.frame);
+        snprintf(line[4], sizeof line[4], "Core %08lx, patches %lu",
+                 (unsigned long)h.fceumm, (unsigned long)h.patches);
+        text[3] = line[3];
+        text[4] = line[4];
+    }
+    /* FatFS stamps files with a fixed date while the board has no clock. */
+    text[5] = "Created: unknown, the board has no clock.";
+    state_lines(text);
+}
+
 /* ---------------------------------------------------------------- actions */
 
 void lib_descend_to(const char *name);
@@ -917,10 +1045,15 @@ void launch(void)
     page_add(2, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
     page_add(2, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
-    page_add(3, td_label(s_win, 1, 2, 0, "Battery saves are in /root/saves/nes"));
-    page_add(3, td_label(s_win, 1, 3, 0, "and written when the game ends."));
-    page_add(3, td_label(s_win, 1, 5, 0, "Save states are not implemented,"));
-    page_add(3, td_label(s_win, 1, 6, 0, "so this page is a placeholder."));
+    /* Saves: the selected cartridge's save state, then where battery saves
+     * go.  L saves and R loads in the game; there is one state a cartridge. */
+    page_add(3, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
+    for (int i = 0; i < STATE_LINES; i++) {
+        s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
+        page_add(3, s_state_line[i]);
+    }
+    page_add(3, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/nes"));
+    page_add(3, td_label(s_win, 1, 11, 0, "and written when the game ends."));
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is

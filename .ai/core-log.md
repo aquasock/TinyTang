@@ -624,3 +624,35 @@ The TinyNES launch task's stack margin is now read, in TinyNES's entry 47, as 5,
 - User Test: PASS
 
 ---
+
+## 19 COMMIT Unreleased 2026-10-22T19:42:34-07:00
+
+#### Coming From:
+
+Unreleased 42ea867
+
+#### Purpose:
+
+Keep TinyNES's one save state per cartridge on the card and show it on the TinyNES window's Saves page, as the user approved, the player's half being TinyNES's core-log entry 49.
+
+#### Outcome:
+
+`ports/bl616/tang_fpga_uart.c`'s battery-save receiver now writes whichever destination the arming line names, `s_ae350_dest`, instead of always the `.sav`, and makes every folder above it, so the same verified path, a `.part` file read back and checked against the length and CRC-32 before it replaces the old file, serves both: `TinyNES NVRAM DATA` and `SAVE` still go to `/root/saves/nes/<cartridge>.sav`, and the new `TinyNES STATE DATA <bytes> <crc32>`, which the player sends as bytes while the game runs, goes to `/root/states/nes/<cartridge>.state`, its messages naming a state rather than a save. `ae350_named_path` builds both names from the cartridge's basename, so `Game.zip` and `Game.nes` share one state as they share one save. At launch `TinyNES STATE WANT <address> <room>` is answered with that file, headerless, by `ae350_send_named`, which the battery save's request now uses too, and with nothing when the card has none. `ports/bl616/tinynes_app.cpp`'s Saves page, a placeholder until now, reads the selected Library cartridge's `.state` each time the page is opened and shows its path, size and a CRC-32 of the whole file, the number the player prints as it sends, then from TinyNES's 32-byte header the game's CRC-32, the frame and the core, or says that there is no state, that a folder is selected, or that the file is not a TinyNES state; it says there is no creation time while the board has no clock. The firmware `42ea867-dirty.f1b9751`, 649,008 bytes, SHA-256 `a053fdb16059e8fe94de82b9580fe2fa1d932981b274076b69f3af612b7e14c4`, built against `~/.cache/tangcore-dev/sdk-2.3.36` with no warning in either file, was installed with `tools/tinytang_flash.py --yes` beside TinyNES's player `a865a41d`; the user power-cycled, tested saving, loading and the Saves page and reported that everything works perfectly, and afterwards `platform` read `tinytang 42ea867-dirty.f1b9751` and `ls -l /root/states/nes` showed `Castlevania.state` at 22,047 bytes. `README.md` describes the state. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 19 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+A state that does not arrive whole leaves the previous one and says so only on this console; showing that on the desk layer would make a lost send visible during play. The Saves page's creation time waits on the RTC and FatFS timestamps. The older items stand: `tang.ini: the core did not take the socket declaration` after the desktop core reloads, a `.zip` double-clicked in Files or on the desktop still opens in the Editor, TinyGBC's Input, Video and Saves pages wait on the player, `tools/fetch-deps.sh --check` looks for fork paths this machine does not use, and `v0.1.0` remains a pre-release.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
