@@ -695,7 +695,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   status: VERIFIED
   verified_date: 2026-10-06
   statement: "In Tang-Phosphor's merged player core, the one TinyTang loads as phosphortang.bin, the socket control word is 0xc0: bit 0 holds the renderer, bits 4-7 are the PMOD0 personality, bits 8-11 the PMOD1 personality, bit 12 marks PMOD0 seated upside down and bit 13 PMOD1, and a read adds the renderer's frame selector at 18:16. Personalities are 0 none, 1 oledrgb, 2 vga J1, 3 vga J2 and 4 rotary encoder (PMOD-006 adds 5, I2S2). Both sockets power up released, which is that project's safe state, so nothing is driven until a host declares it, and the host is the only party that validates a declaration, because it is the only party that knows what the user wrote. Tang-Phosphor's bring-up core uses the same layout at register 0x10, with 0x14 as scratch and a power-on default of the panel on PMOD0."
-  consequence: "TinyTang declares the sockets from /tinytang.ini after every tangload of core 0x50 (PMOD-006); scripts/phosphor.tdsh no longer declares them. Bit 0 must not be used for stream routing, which moved to 0xa8 (PHOS-011). The bring-up core's register 0x10 is not extended-protocol frame type 0x10 (EXTCTL-001), which is a transport opcode; the two must not be conflated."
+  consequence: "TinyTang declares the sockets from /tinytang.ini after every tangload of core 0x50 (PMOD-006); scripts/tinyphosphor.tdsh no longer declares them. Bit 0 must not be used for stream routing, which moved to 0xa8 (PHOS-011). The bring-up core's register 0x10 is not extended-protocol frame type 0x10 (EXTCTL-001), which is a transport opcode; the two must not be conflated."
   sources:
     - "Tang-Phosphor b7ec367: src/debug/debug_regs.sv, docs/debug-registers.md, and its .ai/core-reference.md records on the 0x10 socket control register and on socket control and stream routing in the merged player map"
     - "Tang-Phosphor src/pmod_mirror_core.sv: PERS_NONE through PERS_ENC"
@@ -1578,14 +1578,14 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   kind: EXTERNAL
   topic_id: EXTCTL
   title: "Frame type 0x11: a stop-and-credit byte stream"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "Frame type 0x11 carries a byte stream with explicit flow control. A request payload is version, flags, a stream ID, a 32-bit byte offset, a 16-bit data length, the data, and a CRC-16. Flags are start 0x01, data 0x02, end 0x04 and cancel 0x08; data frames carry at most 1024 bytes. After consuming each frame the FPGA replies with a status, the echoed flags and stream ID, the next expected byte offset, a receive credit value and a CRC-16. The sender does not transmit the next frame until that acknowledgement arrives. Start resets the expected offset to zero, and end and cancel carry no data."
-  consequence: "This is how a host feeds a core that cannot keep up, without extra wiring: the core's own acknowledgement provides back-pressure. It is the mechanism a file-streaming command needs, and note that the acknowledgement carries the next expected offset, so a lost or reordered frame is detectable rather than silently absorbed."
+  status: VERIFIED
+  verified_date: 2026-10-23
+  statement: "Frame type 0x11 carries a byte stream with explicit flow control. A request payload is version, flags, a stream ID, a 32-bit byte offset, a 16-bit data length, the data, and a CRC-16. Flags are start 0x01, data 0x02, end 0x04 and cancel 0x08; data frames carry at most 1024 bytes. After consuming each frame the FPGA replies with a status, the echoed flags and stream ID, the next expected byte offset, a receive credit value and a CRC-16. The sender does not transmit the next frame until that acknowledgement arrives. Start resets the expected offset to zero, and end and cancel carry no data. An acknowledgement is occasionally lost in transit while the frame itself lands: the core then answers a resend of that same frame with status 2 and the already-advanced next offset and credit, so the offset, not the status byte, is what says whether the data is in."
+  consequence: "This is how a host feeds a core that cannot keep up, without extra wiring: the core's own acknowledgement provides back-pressure. It is the mechanism a file-streaming command needs, and note that the acknowledgement carries the next expected offset, so a lost or reordered frame is detectable rather than silently absorbed. A sender that treats a non-zero status as fatal, without comparing the offset, will abort a whole transfer over one lost acknowledgement: TinyTang's Phosphor player stream stopped 220 to 230 KB into an 845 KB image for exactly that reason, at both 2 and 5 Mbaud, until the sender retried the frame behind a core-ID probe and accepted a reply whose next offset matched the offset the frame ended at."
   sources:
     - "Tang-Control, docs/extended-control-protocol.md: the stream frames section"
     - "Tang-Control, README.md: the stream and bench commands, and utils/fpga_stream.cpp and fpga_file_stream.cpp as their implementation"
-  verification: "Read from the document and the README. Not exercised here."
+  verification: "Read from the document and the README. Revised 2026-10-23 (core-log entry 33): exercised on this board by streaming TinyPhosphor's resident player to the Phosphor core; an acknowledgement went missing roughly every 220 KB, at both 2 and 5 Mbaud, and the resend was answered with status 2 and the advanced offset, which the sender now accepts. With that, an 844,964-byte image streamed in about 9 s and the track played with 0 underruns."
 
 - record_id: EXTCTL-004
   kind: EXTERNAL
@@ -1716,7 +1716,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   sources:
     - "Tang-Phosphor core-log entry 69 and software/rbhost/Makefile at 9e6f183"
     - "The rebuild on 2026-10-05: tools/ae350_run.py pack's report and zlib.crc32 of the output"
-  verification: "Rebuilt on 2026-10-05 and played on this board over one-wire (TOOL-013), completing with zero underruns."
+  verification: "Rebuilt on 2026-10-05 and played on this board over one-wire (TOOL-013), completing with zero underruns. Revised 2026-10-23 (core-log entry 33): this is Tang-Phosphor's player, not TinyPhosphor's. TinyPhosphor's own resident image is 844,964 bytes with `.tpi` SHA-256 cb77d0d309e143e7457614573749dea86fd4c31acd9a58cca6abd02db0afbeca and payload CRC-32 7c007b8b, built with `make bench-ondemand BENCH_NAME=tinyphosphor` (TinyPhosphor core-log entry 14). Streaming Tang-Phosphor's 863,764-byte image to a TinyPhosphor core loads it and leaves the loader in RUN with the program hung before it asks for a track, so the size and CRC must be checked against the core's own project."
 
 - record_id: PHOS-009
   kind: EXTERNAL

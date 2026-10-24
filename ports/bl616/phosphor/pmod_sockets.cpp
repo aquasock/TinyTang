@@ -4,7 +4,7 @@
 // in s_socket_cores, at a register ABI new enough for that register to mean
 // socket control, is sent the word tang_ini.c makes from /tinytang.ini's layout
 // for that core, and the word is read back.  Every core load goes through tangload -- the boot
-// script, phosphor.tdsh, the Phosphor app, a tangload typed in the Terminal --
+// script, tinyphosphor.tdsh, the Phosphor app, a tangload typed in the Terminal --
 // so the sockets follow the file whichever way a core arrives.  Other cores
 // are left alone: nothing is written to a core without the sockets.
 //

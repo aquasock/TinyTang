@@ -147,9 +147,25 @@ bool fpga_debug_request(uint8_t opcode, uint32_t address, uint32_t data,
     if (tang_fpga_link_open() != 0) {
         return false;
     }
-    tang_fpga_lock();
-    const bool received = request_locked(opcode, address, data, result, timeout_ms);
-    tang_fpga_unlock();
+    bool received = false;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        tang_fpga_lock();
+        received = request_locked(opcode, address, data, result, timeout_ms);
+        tang_fpga_unlock();
+        if (received) {
+            break;
+        }
+        if (attempt == 0) {
+            /* The core can drop the first extended frame after the link has
+             * been idle: on the Phosphor core every peek after a tangload
+             * timed out until a legacy core-ID probe had been sent, and the
+             * same request then answered.  The probe returns at once and puts
+             * the core's receiver back in step, so one retry after it costs a
+             * round trip only when a request would otherwise have failed. */
+            uint8_t id = 0;
+            (void)tang_fpga_core_id(&id, 500);
+        }
+    }
     // Let another sender waiting on the link run before this task can submit
     // its next transaction.
     taskYIELD();
@@ -167,13 +183,25 @@ bool fpga_debug_write_block(uint32_t address, const uint32_t *words, size_t coun
         return false;
     }
     static uint8_t payload[FPGA_EXT_BLOCK_HEADER_LENGTH + 4 * FPGA_EXT_BLOCK_MAX_WORDS + 2];
-    tang_fpga_lock();
-    const size_t length = fpga_ext_block_payload(payload, FPGA_EXT_VERSION,
-                                                 FPGA_EXT_WRITE_BLOCK, address,
-                                                 words, count);
-    const bool received = transaction_locked(FPGA_BLOCK_COMMAND, payload, length,
-                                             result, timeout_ms);
-    tang_fpga_unlock();
+    bool received = false;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        tang_fpga_lock();
+        const size_t length = fpga_ext_block_payload(payload, FPGA_EXT_VERSION,
+                                                     FPGA_EXT_WRITE_BLOCK, address,
+                                                     words, count);
+        received = transaction_locked(FPGA_BLOCK_COMMAND, payload, length,
+                                      result, timeout_ms);
+        tang_fpga_unlock();
+        if (received) {
+            break;
+        }
+        if (attempt == 0) {
+            // As in fpga_debug_request: a lost first frame is retried after a
+            // core-ID probe wakes the receiver, and the write is idempotent.
+            uint8_t id = 0;
+            (void)tang_fpga_core_id(&id, 500);
+        }
+    }
     taskYIELD();
     return received;
 }

@@ -73,7 +73,16 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
         return false;
     }
 
-    tang_fpga_lock();
+    /* A stream starts after the link has been idle while the track is
+     * prepared, and the core drops the first frame it is sent after an idle
+     * period.  A legacy core-ID probe returns at once and puts its receiver
+     * back in step, so the START below is not the frame that gets lost; the
+     * probe costs one short round trip per track. */
+    if (flags == FPGA_STREAM_START) {
+        uint8_t id = 0;
+        (void)tang_fpga_core_id(&id, 500);
+    }
+
     frame[0] = FPGA_STREAM_VERSION;
     frame[1] = flags;
     fpga_ext_write_be16(&frame[2], stream_id);
@@ -87,30 +96,47 @@ bool fpga_stream_send(uint8_t flags, uint16_t stream_id, uint32_t offset,
                         fpga_ext_packet_crc(FPGA_STREAM_COMMAND, frame, body));
 
     bool received = false;
-    if (tang_fpga_frame(FPGA_STREAM_COMMAND, frame, body + 2) == 0) {
-        const uint64_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
-        for (;;) {
-            // Check the ring once more even past the deadline: a pre-empted
-            // task can wake late with the reply already queued.
-            const uint64_t now = bflb_mtimer_get_time_ms();
-            const uint32_t remaining =
-                now < deadline ? static_cast<uint32_t>(deadline - now) : 0;
-            uint8_t reply[RESPONSE_PAYLOAD_LENGTH + 8];
-            const int n = tang_fpga_wait(FPGA_STREAM_COMMAND, reply, sizeof(reply),
-                                         remaining);
-            if (n < 0) {
-                break;
-            }
-            if (accept(reply, n, flags, stream_id, result)) {
-                received = true;
-                break;
+    for (int attempt = 0; attempt < 2 && !received; ++attempt) {
+        tang_fpga_lock();
+        if (tang_fpga_frame(FPGA_STREAM_COMMAND, frame, body + 2) == 0) {
+            const uint64_t deadline = bflb_mtimer_get_time_ms() + timeout_ms;
+            for (;;) {
+                // Check the ring once more even past the deadline: a pre-empted
+                // task can wake late with the reply already queued.
+                const uint64_t now = bflb_mtimer_get_time_ms();
+                const uint32_t remaining =
+                    now < deadline ? static_cast<uint32_t>(deadline - now) : 0;
+                uint8_t reply[RESPONSE_PAYLOAD_LENGTH + 8];
+                const int n = tang_fpga_wait(FPGA_STREAM_COMMAND, reply,
+                                             sizeof(reply), remaining);
+                if (n < 0) {
+                    break;
+                }
+                if (accept(reply, n, flags, stream_id, result)) {
+                    received = true;
+                    break;
+                }
             }
         }
+        // The link is held through the matching response: the FPGA transport
+        // has one response channel and cannot take an unrelated request while
+        // this stream frame is outstanding.
+        tang_fpga_unlock();
+        /* A frame or its acknowledgement is occasionally lost mid-stream: at
+         * both 2 and 5 Mbaud a DATA frame went unanswered a few hundred KB
+         * into a track.  The acknowledgement carries the next offset, so
+         * resending the same frame at the same offset is safe -- a frame the
+         * core already took answers with the offset this attempt expects. */
+        if (!received && attempt == 0) {
+            /* A frame that was cut short leaves the core's parser waiting for
+             * the payload bytes that never arrived, and it then eats the next
+             * frame as that payload.  A legacy core-ID probe makes it drop the
+             * half-seen frame and hunt for a header again, so the retry below
+             * is parsed as a frame rather than as data. */
+            uint8_t id = 0;
+            (void)tang_fpga_core_id(&id, 500);
+        }
     }
-    // Keep the shared link locked through the matching response: the FPGA
-    // transport has one response channel and cannot accept an unrelated
-    // request while this stream frame is outstanding.
-    tang_fpga_unlock();
     // A stream can otherwise reacquire the link immediately and starve every
     // other sender for the length of a track.
     taskYIELD();

@@ -51,7 +51,7 @@ constexpr uint32_t CORE_CHECK_TIMEOUT_MS = 100;
 constexpr uint32_t PHOSPHOR_MAGIC_ADDRESS = 0x0000;
 constexpr uint32_t PHOSPHOR_MAGIC = 0x54504830;  // "TPH0"
 
-// The Load button does not go through /root/scripts/phosphor.tdsh, which the
+// The Load button does not go through /root/scripts/tinyphosphor.tdsh, which the
 // desktop icon and the shell still use.  A shell command runs in a worker task
 // and a script needs its line table; with the desktop up the heap cannot give
 // either one, so a click used to fail with "not enough memory to load the
@@ -343,7 +343,7 @@ bool need_core(void)
         show_core();
     }
     if (!s_core) {
-        say("No Phosphor core yet: press Load, or run /root/scripts/phosphor.tdsh");
+        say("No Phosphor core yet: press Load, or run /root/scripts/tinyphosphor.tdsh");
     }
     return s_core;
 }

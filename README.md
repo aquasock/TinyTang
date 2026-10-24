@@ -148,7 +148,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   type `0x10`, files streamed on `0x11` at 5 Mbaud). `phosphor play <file>`
   plays any of the twelve formats Phosphor supports -- WAV, FLAC, MP2, MP3,
   Ogg Vorbis, Opus, AAC, ALAC, WavPack, WMA, AC-3 and TTA -- by loading the
-  resident Rockbox player `/root/ae350/resident.tpi` onto the core's AE350 and
+  resident Rockbox player `/root/ae350/tinyphosphor-play.tpi` onto the core's AE350 and
   serving the file to it on demand, as the player asks for each part, so a
   track starts as soon as the player is sent. A playback task owns the
   track, so the shell is
@@ -167,7 +167,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   `/root/cores/console138k/tinyphosphor.bin`, carries the desktop layer, so it
   runs under TinyDesk with the layer left on. The merged core has no WAV or FLAC decoder in the
   fabric: its FPGA player is a raw-PCM sink fed by the AE350, so the AE350 is
-  the only way to play a file. `scripts/phosphor.tdsh` loads the core with the
+  the only way to play a file. `scripts/tinyphosphor.tdsh` loads the core with the
   desktop up, probes it, enables the stereo XY oscilloscope with medium trails
   and glow, and hands it the screen, with the PMOD sockets as `/tinytang.ini`
   declares them. Press F12 to return to TinyDesk and choose a track in the
@@ -365,7 +365,7 @@ tools/tinytang_put.py build/desktop/open-s3/desktop.bin                /root/cor
 gzip -9 -n -c build/desktop/open-s3/desktop.fs > tinytang.fs.gz        # the matching .fs, for openFPGALoader
 tools/tinytang_put.py tinytang.fs.gz        /root/cores/console138k/tinytang.fs.gz
 tools/tinytang_put.py scripts/boot.tdsh      /root/scripts/boot.tdsh
-tools/tinytang_put.py scripts/phosphor.tdsh  /root/scripts/phosphor.tdsh
+tools/tinytang_put.py scripts/tinyphosphor.tdsh  /root/scripts/tinyphosphor.tdsh
 
 # Talk to it from a computer as well
 screen /dev/ttyACM0 115200
@@ -385,7 +385,7 @@ firmware's own files stay at the top of the card.
 | `/root/cores/console138k/` | FPGA core images for `tangload`; the desktop core is `tinytang.bin`, with its `.fs` gzipped beside it as `tinytang.fs.gz` for openFPGALoader, which the board does not read |
 | `/root/media/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
 | `/root/media/music/` | tracks for `phosphor play` and the Phosphor app |
-| `/root/ae350/` | AE350 programs, `resident.tpi` among them |
+| `/root/ae350/` | AE350 programs, `tinyphosphor-play.tpi` among them |
 | `/root/ble/bonds.bin` | Bluetooth pairings |
 | `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
@@ -541,7 +541,7 @@ for the register interface and regression commands.
   the minimal HDMI colour-bar core.
 - `third_party/patches/` — the TinyDesk and TinyDesk Shell patches.
 - `scripts/` — `.tdsh` scripts for the card: `boot.tdsh` (power-up) and
-  `phosphor.tdsh` (start one track on the Phosphor core under TinyDesk); plus
+  `tinyphosphor.tdsh` (start one track on the Phosphor core under TinyDesk); plus
   the patch appliers, which run on the host.
 - `tools/` — host tools:
   - `make_test_wav.py` — writes a deterministic 4-second test tone for the

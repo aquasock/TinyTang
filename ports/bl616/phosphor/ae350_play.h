@@ -14,7 +14,7 @@ constexpr uint32_t AE350_REG_USER0 = 0x00004040u;    // USER(n) at + 4 * n
 constexpr uint32_t AE350_REG_RESTART = 0x000043f0u;
 
 // Restart the AE350's loader and send it the resident player
-// (/root/ae350/resident.tpi), leaving cpu_mode set so the decoded PCM reaches the
+// (/root/ae350/tinyphosphor-play.tpi), leaving cpu_mode set so the decoded PCM reaches the
 // pcm_sink.  *baseline is the request mailbox's sequence from before the
 // player was sent, for serving its requests (ae350_file_server).  Returns
 // true on success; on failure returns false and, when error_out is non-null,

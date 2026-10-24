@@ -1198,3 +1198,41 @@ The Game Boy save and state folders remain empty placeholders until TinyGBC gain
 - User Test: PASS
 
 ---
+
+## 33 COMMIT Unreleased 2026-10-23T19:37:12-07:00
+
+#### Coming From:
+
+Unreleased 248ed17
+
+#### Purpose:
+
+Bring TinyPhosphor back onto the rebuilt card under the new naming, and fix the two faults that stopped it playing: a lost stream acknowledgement the firmware treated as fatal, and a player image taken from the wrong project.
+
+#### Outcome:
+
+The card's Phosphor set followed the `tinyphosphor` naming: `ports/bl616/phosphor/ae350_play.*` now streams `/sd/root/ae350/tinyphosphor-play.tpi`, `scripts/phosphor.tdsh` became `scripts/tinyphosphor.tdsh` with its `PLAYER=` line and the app's no-core hint following, and README, the app comments and the reference were updated; the core went on as `/root/cores/console138k/tinyphosphor.bin` (TinyPhosphor `build/ae350_e22/sweep/seed-7`, 5,047,788 bytes, SHA-256 `e9460424…`, ABI 1.14) with its `.fs.gz` beside it, the seven FLACs to `/root/media/music`, and the script to `/root/scripts`. The first board tests failed three ways and each was traced. Register reads after a `tangload` timed out until a legacy core-ID frame had been sent, which `tangini` did and `phosphor peek` did not, so `fpga_debug_request` now retries once behind a probe, and three `peek`s then answered with no priming. The player-image stream stalled 215–232 KB into 845 KB at 2 Mbaud and 419 KB at 5 Mbaud, with no acknowledgement and no stream-loader overflow; a resend behind the same probe came back `status 2` with the offset already advanced, proving the frame had landed and only its acknowledgement was lost, so `fpga_file_stream` now treats the acknowledgement's next offset as authoritative and `fpga_stream` retries a frame behind a probe. The stream was pinned to 2 Mbaud while that was being understood. To decide whether the fault was firmware at all, the 2026-10-21 firmware was rebuilt from `6843692` in a worktree: it streamed the same image in 2,725 ms, which proved the transport and the core sound and the regression to be in later firmware, and it also showed the second fault, `the AE350 did not start playing (loader 0x03)` with the loader in RUN and its log holding only `ae350 boot`. The player deployed was Tang-Phosphor's qualified image, 863,764 bytes, CRC-32 `ef1502ed`, chosen on the strength of the inherited PHOS-008 record; TinyPhosphor's own log names its player as 844,964 bytes, `.tpi` SHA-256 `cb77d0d3…`, and TinyPhosphor's player on this core asks for a track and plays. With it, the final build `248ed17-dirty.f41fa49` (644,848 bytes) streamed the player in 9,117 ms and reported `playback complete: 1,439,192 samples, 0 underruns, 48000 Hz`, first sample 10,350 ms after the play, and the user opened the Phosphor window, loaded the core, played a track and reported PASS. The diagnostics were then removed, the wrong `/root/ae350/resident.tpi` and the temporary old-format `/tang.ini` deleted from the card with the flash's leftover `/tinytang-upload.bin`, and `.ai/core-reference.md` revised: EXTCTL-003 is now VERIFIED with the lost-acknowledgement behaviour, and PHOS-008 records that Tang-Phosphor's player is not TinyPhosphor's. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 32 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 33 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The cause of the missing stream acknowledgement is not established: it happens at both 2 and 5 Mbaud, roughly every 220 KB, and the retry now hides it at the cost of about a second and a half per track. The fast link is therefore still switched off in `fpga_file_stream` and should be re-tested once the loss is understood. TinyPhosphor's README still names `/root/ae350/resident.tpi`; that is a documentation fix in that repository and needs its own cycle. `/root/media/music/test.flac` is the 1.3 MB test file and stays unless the user wants it removed. The earlier open items stand: TinyGBC's save and state folders, the card's empty or older manual chapters and its older `boot.tdsh`, and `tools/check_manual.py` unapproved.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/ae350_play.h
+- ports/bl616/phosphor/fpga_debug.cpp
+- ports/bl616/phosphor/fpga_file_stream.cpp
+- ports/bl616/phosphor/fpga_stream.cpp
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- scripts/tinyphosphor.tdsh (renamed from scripts/phosphor.tdsh)
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

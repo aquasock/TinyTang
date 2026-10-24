@@ -1,16 +1,16 @@
 #!/bin/tdsh
-# phosphor.tdsh - load the merged Phosphor core and enable its oscilloscope.
+# tinyphosphor.tdsh - load the merged Phosphor core and enable its oscilloscope.
 #
 # Run it from the console prompt, or from the desktop -- right-click its icon
 # and choose Run -- or from the Terminal:
 #
-#   tdsh run /root/scripts/phosphor.tdsh
+#   tdsh run /root/scripts/tinyphosphor.tdsh
 #
 # Choose a track in the desktop's Phosphor app after launching. To start a
 # track automatically, set FILE in the session first; tdsh run passes no
 # arguments, but the script inherits the session's variables:
 #
-#   FILE="/root/media/music/test.mp3"; tdsh run /root/scripts/phosphor.tdsh
+#   FILE="/root/media/music/test.mp3"; tdsh run /root/scripts/tinyphosphor.tdsh
 #
 # The core carries the TinyDesk layer, so the desktop stays up across the
 # load, the screen is handed to the oscilloscope, and F12 switches between it
@@ -20,7 +20,7 @@
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
 # PMOD selection comes only from /tinytang.ini, applied automatically by tangload.
 CORE=/root/cores/console138k/tinyphosphor.bin
-PLAYER=/root/ae350/resident.tpi
+PLAYER=/root/ae350/tinyphosphor-play.tpi
 
 echo "phosphor: core  $CORE"
 

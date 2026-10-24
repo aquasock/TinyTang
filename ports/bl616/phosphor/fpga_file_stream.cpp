@@ -29,6 +29,10 @@ namespace {
 
 volatile bool busy;
 uint16_t next_stream_id = 1;
+
+/* Diagnostic: the 5 Mbaud link drops a stream frame a few hundred KB in, so
+ * the stream is run at 2 Mbaud until that is understood. */
+constexpr bool TRY_FAST_BAUD = false;
 uint8_t stream_buffer[FPGA_STREAM_MAX_DATA];
 
 bool take_busy(void)
@@ -61,7 +65,12 @@ bool send_frame(uint8_t flags, uint16_t stream_id, uint32_t offset,
         return false;
     }
     summary.transport_status = response.status;
-    return response.status == 0 && response.next_offset == expected_next;
+    /* The acknowledgement's offset is the authoritative word: when it names
+     * the offset this frame ends at, the data is in the loader whatever the
+     * status byte says.  That matters for a resend after a lost
+     * acknowledgement, which the core answers as a duplicate (status 2) with
+     * the offset already advanced. */
+    return response.next_offset == expected_next;
 }
 
 bool cancellation_requested(fpga_file_stream_cancel cancel, void *context)
@@ -141,7 +150,7 @@ fpga_file_stream_result fpga_file_stream(const char *path,
         }
     }
 
-    if ((capabilities.data & FPGA_EXT_CAP_BAUD_SWITCH) != 0) {
+    if (TRY_FAST_BAUD && (capabilities.data & FPGA_EXT_CAP_BAUD_SWITCH) != 0) {
         if (!fpga_debug_set_baud(5000000)) {
             summary.status = fpga_file_stream_status::BAUD_FAILED;
             goto finish;
