@@ -1298,3 +1298,33 @@ The lost stream acknowledgement of entry 33 is still unexplained and the fast 5 
 - User Test: PASS
 
 ---
+
+## 36 COMMIT Unreleased 2026-10-23T20:15:21-07:00
+
+#### Coming From:
+
+Unreleased 341802c
+
+#### Purpose:
+
+Repair `scripts/tinyphosphor.tdsh`, whose player check still looked for the `.tpi` deleted when the player became an ELF, so the script aborted before loading anything.
+
+#### Outcome:
+
+The script's only use of the player path is a presence check ahead of the load; the playback itself goes through `phosphor play`, which already resolves `/root/ae350/tinyphosphor-play.elf`. `PLAYER=` now names that file, the repo copy and the card copy were updated with `tools/tinytang_put.py` (3,119 bytes, the same size because `.tpi` and `.elf` are both four characters), and the script was then run from the console: `tangload` loaded the core with the layout declared as `0xc0 = 0x0510`, `fpga` answered `core 80`, `phosphor poke 0xac 0x13` set the scope's look, `osd off` handed the screen over, and the run ended at `phosphor: up` rather than returning at the player check as it would have done before the fix. The user asked whether the two game systems need a comparable script and they do not: both launch entirely in-process from their windows, `tang_core_load()` then `tang_ae350_run()` then the desktop core back, and neither app mentions a `.tdsh`; the console equivalent for a game is the two commands without a script. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 35 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 36 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The lost stream acknowledgement of entry 33 and the fast 5 Mbaud link still off are the remaining Phosphor engineering items. TinyPhosphor's README still names `/root/ae350/resident.tpi`. The card's other standing items are unchanged: TinyGBC's save and state folders, the empty or older manual chapters, the older `boot.tdsh`, and `tools/check_manual.py` unapproved.
+
+#### Files Modified:
+
+- scripts/tinyphosphor.tdsh
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

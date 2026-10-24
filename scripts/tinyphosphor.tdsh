@@ -20,7 +20,7 @@
 # Left-alt held turns the keyboard into the pointer while TinyDesk is shown.
 # PMOD selection comes only from /tinytang.ini, applied automatically by tangload.
 CORE=/root/cores/console138k/tinyphosphor.bin
-PLAYER=/root/ae350/tinyphosphor-play.tpi
+PLAYER=/root/ae350/tinyphosphor-play.elf
 
 echo "phosphor: core  $CORE"
 
