@@ -1328,3 +1328,36 @@ The lost stream acknowledgement of entry 33 and the fast 5 Mbaud link still off 
 - User Test: NOT RUN
 
 ---
+
+## 37 COMMIT Unreleased 2026-10-23T20:24:17-07:00
+
+#### Coming From:
+
+Unreleased 3138403
+
+#### Purpose:
+
+Rename the two game windows and the Phosphor window in the desktop's start menu so all three carry the same `Tiny*` name the rest of the card uses.
+
+#### Outcome:
+
+The window titles were already `TinyNES` and `TinyGBC`, but the registered app names the desktop lists read `TinyNES Control Deck` and `TinyGBC Control Deck`; they are now `TinyNES` and `TinyGBC`, and the Phosphor app, whose title and registered name were both `Phosphor`, is now `TinyPhosphor` in both. The file-header comments in `tinynes_app.cpp`, `tinygbc_app.cpp` and `td_phosphor_app.cpp` follow, as does the comment in `docs/tinynes.ini` that names the app; the only remaining mentions are historical comments in `tools/tests/tb_fat_rename.c` and `test_fat_rename.sh` describing what the app did in earlier cycles. The firmware built as `3138403-dirty.3dc7b84` with no warning in the changed files, was flashed, and after the user's power cycle the user opened the start menu and reported PASS for all three names and the Phosphor window's title bar. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 36 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 37 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Tiny89 is the next system to bring up like the other three, starting with an exit in its player: the diagnostic runs until the board is reset, so a windowed launch could never return to the desktop. Its core already takes input from the keyboard over the link rather than a pad on PMOD0, which suits the current `i2s2_oled` layout. The Phosphor engineering items stand: the lost stream acknowledgement and the fast 5 Mbaud link still off.
+
+#### Files Modified:
+
+- docs/tinynes.ini
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tinynes_app.cpp
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

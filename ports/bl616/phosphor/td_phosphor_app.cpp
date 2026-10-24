@@ -8,7 +8,7 @@
 // after `phosphor play ... nowait`.  Only tracks this window started advance to
 // the next file when they end, so a track played from the shell is left alone.
 //
-// The window has two tabs, the way the TinyNES Control Deck does it.  Player is
+// The window has two tabs, the way the TinyNES window does it.  Player is
 // the library and the transport, and its Load button runs the same script the
 // desktop icon and the shell run, so loading a core has one path.  Scope holds
 // the XY scope's controls, which until now only a shell `phosphor poke 0xac`
@@ -102,7 +102,7 @@ td_widget_t *s_folder, *s_list, *s_title, *s_line, *s_bar, *s_message, *s_auto;
 td_widget_t *s_buttons[5];
 td_widget_t *s_pause;
 
-// One row of tab buttons over one page of widgets, the TinyNES Control Deck's
+// One row of tab buttons over one page of widgets, the TinyNES window's
 // arrangement.  There is no tab widget in TinyDesk, so a page is shown by
 // hiding the other page's widgets.
 td_widget_t *s_tab[TABS];
@@ -833,7 +833,7 @@ void launch(void)
     }
     (void)phosphor_player_init();
     td_window_desc_t d = {};
-    d.title = "Phosphor";
+    d.title = "TinyPhosphor";
     d.rect = td_rect(-1, -1, 64, 24);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 50;
@@ -973,7 +973,7 @@ void launch(void)
     td_widget_focus(s_list);
 }
 
-const td_app_t s_app = {"Phosphor", launch, "|>"};
+const td_app_t s_app = {"TinyPhosphor", launch, "|>"};
 
 } // namespace
 

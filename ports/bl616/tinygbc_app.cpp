@@ -1,4 +1,4 @@
-// TinyGBC Control Deck -- the window that starts Game Boy cartridges.
+// TinyGBC -- the window that starts Game Boy cartridges.
 //
 // The same shape as the TinyNES app beside it: an app window with a Library
 // page that browses the card and starts what is picked, over a core loaded
@@ -790,7 +790,7 @@ void launch(void)
     show_tab(0);
 }
 
-const td_app_t s_app = { "TinyGBC Control Deck", launch, "GBC" };
+const td_app_t s_app = { "TinyGBC", launch, "GBC" };
 
 } // namespace
 
