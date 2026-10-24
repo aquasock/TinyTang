@@ -23,4 +23,9 @@
  * Returns the program's exit code, or 1 when it could not be started. */
 int tang_ae350_run(const char *player_real, const char *data_real);
 
+/* Name the file the program may ask for with a "<System> SEND WANT" line: the
+ * calculator's link transfer.  A real FatFS path, or NULL for none.  It
+ * applies to the next run only; tang_ae350_run clears it when it ends. */
+void tang_ae350_set_send_file(const char *path_real);
+
 #endif

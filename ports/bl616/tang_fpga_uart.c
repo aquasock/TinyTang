@@ -1039,7 +1039,8 @@ static const char *ae350_system(const char *line)
 static bool ae350_channel_line(const char *line, const char **system,
                                const char **channel, const char **rest)
 {
-    static const char *const channels[] = { "NVRAM ", "FLASH ", "STATE " };
+    static const char *const channels[] = { "NVRAM ", "FLASH ", "STATE ",
+                                            "SEND " };
     const char *sys = ae350_system(line);
     const char *tail;
 
@@ -1067,10 +1068,27 @@ static bool ae350_channel_line(const char *line, const char **system,
  * this cartridge is named after it, as saves always were. */
 static char s_ae350_base[64];
 
+/* The file a session was asked to hand the calculator over its link.  Unlike
+ * the saves, its name is the user's choice rather than a derivation, so it is
+ * remembered here and served when the program asks for it. */
+static char s_ae350_send_path[TDSH_MAX_REAL_PATH];
+
+void tang_ae350_set_send_file(const char *path_real)
+{
+    if (path_real == NULL) {
+        s_ae350_send_path[0] = '\0';
+        return;
+    }
+    (void)snprintf(s_ae350_send_path, sizeof s_ae350_send_path, "%s", path_real);
+}
+
 static bool ae350_path_for(const char *system, const char *channel,
                            char *out, size_t size)
 {
     const bool state = strcmp(channel, "STATE ") == 0;
+    if (strcmp(channel, "SEND ") == 0) {
+        return false;    /* its name comes from the caller, not from the base */
+    }
     const bool flash = strcmp(channel, "FLASH ") == 0;
     const char *dir = state ? "/sd/root/states/" : "/sd/root/saves/";
     const char *ext = state ? ".state"
@@ -1941,7 +1959,16 @@ int tang_ae350_run(const char *player, const char *data)
             if (ae350_channel_line(run.line, &system, &channel, &rest) &&
                 starts_with(rest, "WANT ")) {
                 char dest[TDSH_MAX_REAL_PATH];
-                if (ae350_path_for(system, channel, dest, sizeof dest)) {
+                if (strcmp(channel, "SEND ") == 0) {
+                    /* The file to hand the calculator: whatever the caller
+                     * named, and nothing at all when it named none. */
+                    if (s_ae350_send_path[0] != '\0') {
+                        ae350_send_named(&run, &link, rest + 5,
+                                         s_ae350_send_path, "file");
+                    } else {
+                        ae350_send_named(&run, &link, rest + 5, "", "file");
+                    }
+                } else if (ae350_path_for(system, channel, dest, sizeof dest)) {
                     ae350_send_named(&run, &link, rest + 5, dest,
                                      strcmp(channel, "STATE ") == 0 ? "state"
                                                                     : "save");
@@ -2058,6 +2085,15 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
         return 1;
     }
     char data[TDSH_MAX_REAL_PATH];
+    char send[TDSH_MAX_REAL_PATH];
+    tang_ae350_set_send_file(NULL);
+    if (argc > 3) {
+        if (!resolve_path(session, argv[3], send, sizeof(send))) {
+            tdsh_printf("ae350run: cannot open %s\r\n", argv[3]);
+            return 1;
+        }
+        tang_ae350_set_send_file(send);
+    }
     if (argc > 2) {
         if (!resolve_path(session, argv[2], data, sizeof(data))) {
             tdsh_printf("ae350run: cannot open %s\r\n", argv[2]);
@@ -2081,8 +2117,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_fpgar, 0 },
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",
       cmd_fpgapipe, 0 },
-    { "ae350run", "ae350run <program.elf> [<file>]",
-      "Load a program into a TinyNES core's AE350 and serve its files",
+    { "ae350run", "ae350run <program.elf> [<file>] [<file-to-send>]",
+      "Load a program into an AE350 core, serve its files, and name a file to send over the link",
       cmd_ae350run, 0 },
 };
 

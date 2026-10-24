@@ -1424,3 +1424,34 @@ The Saves page still lists the `.ram` file that Tiny89 no longer writes on a sav
 - User Test: PASS
 
 ---
+
+## 40 COMMIT Unreleased 2026-10-24T03:14:00-07:00
+
+#### Coming From:
+
+Unreleased 159e65d
+
+#### Purpose:
+
+Let a session be handed one file to send to the calculator over its link, so Tiny89 can offer software that is not in the flash image.
+
+#### Outcome:
+
+`ae350run` takes an optional third argument naming the file to send, and `tang_ae350_set_send_file()` records it for the next run; the channel table gains `SEND`, and a program asking `Tiny89 SEND WANT <address> <room>` is served that exact file through the loader with the same block checksums every other file gets. Unlike the saves, the name is the caller's rather than a derivation, which is why it is remembered rather than built from the data file's base. The shell command's usage line and description now say so. The firmware built as `9bda7e3-dirty` with no warning in the changed file and was flashed. With it in place Tiny89 fetched and parsed `/root/media/ti89/apps/TINOTES.89k` (22,051 bytes) on the board, and the transfer that followed failed on the calculator side -- Tiny89's entry 20 records that -- so the channel itself is proven and the protocol is not. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the `.ai/` diff, confirmed `.ai/core.md` unchanged and entries 1 to 38 not rewritten, checked the reference's six YAML blocks parse with 147 index ids matching 147 records in order, and validated this entry as number 40 of 100 with six sections, prose, allowed Status values and eligible paths only.
+
+#### Next Steps:
+
+The Link tab in the Tiny89 window: a folder of calculator files, a Send button, and a launch that passes the chosen file as this third argument and lands on the saved Receive state. The protocol question -- what an application's RTS must say -- is Tiny89's to settle first; this channel only has to carry the file.
+
+#### Files Modified:
+
+- ports/bl616/tang_ae350_run.h
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---
