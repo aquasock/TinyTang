@@ -134,6 +134,7 @@ else()
                                ports/bl616/tinynes_app.cpp
                                # TinyGBC: the cartridge library and its core.
                                ports/bl616/tinygbc_app.cpp
+                               ports/bl616/tiny89_app.cpp
                                # TinyHelp: the manual's Markdown chapters, on the card.
                                ports/bl616/td_help_app.cpp
                                # The USB-A I2C bus client and `tangi2c` command.

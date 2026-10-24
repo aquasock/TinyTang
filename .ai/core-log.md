@@ -1361,3 +1361,35 @@ Tiny89 is the next system to bring up like the other three, starting with an exi
 - User Test: PASS
 
 ---
+
+## 38 COMMIT Unreleased 2026-10-23T20:33:49-07:00
+
+#### Coming From:
+
+Unreleased 6c741a0
+
+#### Purpose:
+
+Give the desktop a Tiny89 window that lists the card's calculator images and starts a session, so the fourth system launches the way the other three do.
+
+#### Outcome:
+
+`ports/bl616/tiny89_app.cpp` is the window: a fixed 50x20 frame titled Tiny89 with a library over `/root/media/ti89` that lists folders and images (` .89u`, `.89t`, `.raw` and `.rom`, case-insensitive), enters a folder and climbs back with `..`, and shows the current path and count in its status line. Launch takes the selected image and runs `tang_core_load(tiny89.bin)`, then `tang_ae350_run(tiny89-play.elf, <image>)`, then `tang_core_load(tinytang.bin)` in an 8 KiB task of the app's own, the same shape the two game windows use, and the window survives because it lives on the BL616; if the core load is busy or fails it says so rather than starting half a session. The app is registered in `td_desktop_bl616.c` and built from `CMakeLists.txt`. The card took the set in the new naming: `tiny89.bin` from Tiny89's `tiny89_soc_kbd` build (4,698,604 bytes, SHA-256 `ec9b3027…`) with `tiny89.fs.gz` (712,813), `tiny89-play.elf` (5,657,172 bytes, SHA-256 `52b77b39…`, the build carrying the exit Tiny89's entry 18 added) and `/root/media/ti89/TI89Titanium_OS.89u` (1,400,021 bytes). Tiny89's core takes its input from the keyboard over the link rather than a pad on PMOD0, so the current `i2s2_oled` layout needs no change and the OLED is not displaced. The firmware built as `6c741a0-dirty.67aa894` with no warning in the new file, was flashed, and after the user's power cycle the user ran the session and reported PASS: the library listed the image, Launch booted the calculator on HDMI after the player's long stream, the Bluetooth keyboard typed on it, F12 swapped between TinyDesk and the calculator, and Control with Alt and q returned to the desktop. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 37 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 38 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The calculator's RAM save still speaks the TinyNES NVRAM protocol, so it would land in `/root/saves/nes`; naming the product in that protocol and giving this firmware a per-system save folder is the next cycle, and Tiny89's entry 17 leaves an 18-byte loss in a large byte payload open, which is what a 4 MiB flash write depends on. The card's other standing items are unchanged: the Phosphor stream's lost acknowledgement and the fast link still off, TinyPhosphor's README naming `resident.tpi`, TinyGBC's save and state folders, the empty or older manual chapters, the older `boot.tdsh`, and `tools/check_manual.py` unapproved.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tiny89_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
