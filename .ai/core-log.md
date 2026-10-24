@@ -1168,3 +1168,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 32 COMMIT Unreleased 2026-10-23T17:21:16-07:00
+
+#### Coming From:
+
+Unreleased 6c20dcf
+
+#### Purpose:
+
+Make the TinyGBC window's library open the media root and offer both Game Boy folders, so the monochrome and the Color library are reachable from one window.
+
+#### Outcome:
+
+`ports/bl616/tinygbc_app.cpp`'s `LIB_ROOTS` list, whose `lib_choose_root()` opened only the first root that existed, is gone: `GB_ROOT` is `/root/media` and `GB_DIRS` names `gb`, `gbc` and `gbcolor`, so the library opens one level higher and lists only those folders, in any case, and no loose cartridges at that level. `lib_listable()` gained an `at_root` flag that applies that filter at the media root and leaves every folder and cartridge listable below it; `lib_at_root()`, the `..` handling and the launch path are unchanged, so a cartridge starts from whichever folder it sits in. An empty media root now says `No gb, gbc or gbcolor folder` rather than `0 entries`. The alternative, merging both roots into one list, was rejected because the letter folders would have appeared twice and games shared between the two sets would have been indistinguishable. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as `6c20dcf-dirty.5c5154b`, 644,848 bytes, SHA-256 `90a60ecbba81642d28eb3e3a073dac43d5b0cc3cf2b2fbe86d4937b88e3bb1d8`, with no warning in the changed file; `tinytang_flash.py` staged and committed it, the user power-cycled, and `platform` read `tinytang 6c20dcf-dirty.5c5154b`. `/root/media` held `nes`, `gb` and `gbc`, and `/root/media/gb` its `4` and `A` to `Z` folders. The user opened the TinyGBC window and reported that everything passes: `gb` and `gbc` are listed with `nes` absent, both folders open to their letter folders, a game starts from each, and `Up` returns to `/root/media`. Housekeeping followed on the card: the flash's leftover `/tinytang-upload.bin` was removed with the shell's `rm`, and `/bl616-firmware.bin` was rewritten with the running image so the Software Update window installs this build rather than the previous one; the card root then held `root`, `tinygbc.ini`, `tinytang.ini`, `tinynes.ini`, `tinydesk_tz` and `bl616-firmware.bin`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 31 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 32 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Game Boy save and state folders remain empty placeholders until TinyGBC gains a battery save and a card build of its state code, and its player still has no NVRAM or state protocol for TinyTang to serve. The card's `manual/getting-started.md` and `manual/tinynes.md` are empty, `manual/files.md` and `manual/troubleshooting.md` are older than the repository's copies, and `/root/scripts/boot.tdsh` is the older copy that still names the retired `boot-cart.tdsh`; `tools/check_manual.py` remains proposed and unapproved. The ABI 1.4 desktop core is no longer on the card, the user having deleted it, so there is no rollback to the PMOD-I2C desktop arrangement.
+
+#### Files Modified:
+
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

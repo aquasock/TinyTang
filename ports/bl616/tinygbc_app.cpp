@@ -57,12 +57,12 @@ constexpr char CORE_REAL[] = "/sd/root/cores/console138k/tinygbc.bin";
 constexpr char PLAYER_REAL[] = "/sd/root/ae350/tinygbc-play.elf";
 constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/tinytang.bin";
 
-/* Where the library opens: the first of these that the card has, so a GB
- * folder beside TinyNES's own is found and a card with only a media root
- * still shows one.  Listed as the shell shows them; the task works in /sd. */
-const char *const LIB_ROOTS[] = {
-    "/root/media/gb", "/root/media/gbc", "/root/media/gbcolor", "/root/media",
-};
+/* Where the library opens: the media root itself, showing only the Game Boy
+ * folders inside it, so the monochrome and the Color set are both reachable
+ * and TinyNES's own folder is never offered to a Game Boy player.  Listed as
+ * the shell shows them; the task works in /sd. */
+constexpr char GB_ROOT[] = "/root/media";
+const char *const GB_DIRS[] = { "gb", "gbc", "gbcolor" };
 
 /* 8 KiB is what the Phosphor player gives its task, and half what a shell
  * worker gave this run: no interpreter, no script, no line table. */
@@ -384,7 +384,21 @@ bool lib_is_cartridge(const char *name)
                               strcasecmp(dot, ".zip") == 0);
 }
 
-bool lib_listable(const FILINFO &info)
+/* A folder the library offers at the media root: the Game Boy sets, by name
+ * without case.  Anything else there belongs to another player. */
+bool lib_is_gb_dir(const char *name)
+{
+    for (size_t i = 0; i < sizeof GB_DIRS / sizeof GB_DIRS[0]; i++) {
+        if (strcasecmp(name, GB_DIRS[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* At the media root only the Game Boy folders are offered; below it every
+ * folder and every cartridge is, which is where the letters live. */
+bool lib_listable(const FILINFO &info, bool at_root)
 {
     if ((info.fattrib & (AM_HID | AM_SYS | AM_VOLUME_LABEL)) != 0) {
         return false;
@@ -397,9 +411,9 @@ bool lib_listable(const FILINFO &info)
         return false;
     }
     if ((info.fattrib & AM_DIR) != 0) {
-        return true;
+        return at_root ? lib_is_gb_dir(info.fname) : true;
     }
-    return lib_is_cartridge(info.fname);
+    return !at_root && lib_is_cartridge(info.fname);
 }
 
 /* Folders first, then cartridges, each by name without case. */
@@ -432,14 +446,15 @@ void lib_load(void)
         lib_say("No folder here on the card");
         return;
     }
+    const bool at_root = lib_at_root();
 
     /* Counted before anything is allocated, so a folder of a few files costs
      * a few hundred bytes and not the ceiling. */
-    const int parent = lib_at_root() ? 0 : 1;
+    const int parent = at_root ? 0 : 1;
     int capacity = parent;
     FRESULT result;
     while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
-        if (!lib_listable(info)) {
+        if (!lib_listable(info, at_root)) {
             continue;
         }
         if (capacity < LIB_MAX_ENTRIES) {
@@ -470,7 +485,7 @@ void lib_load(void)
         ++n;
     }
     while (n < capacity && (result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
-        if (!lib_listable(info)) {
+        if (!lib_listable(info, at_root)) {
             continue;
         }
         snprintf(s_lib_entries[n].name, LIB_NAME_BYTES, "%s", info.fname);
@@ -489,28 +504,20 @@ void lib_load(void)
     char text[TD_TEXT_MAX];
     if (s_lib_truncated) {
         snprintf(text, sizeof text, "%d shown, more not listed", s_lib_count);
+    } else if (at_root && s_lib_count == 0) {
+        snprintf(text, sizeof text, "No gb, gbc or gbcolor folder");
     } else {
         snprintf(text, sizeof text, "%d entr%s", s_lib_count, s_lib_count == 1 ? "y" : "ies");
     }
     lib_say(text);
 }
 
-/* The first root the card has.  A card with none of them keeps the last, so
- * the page says so instead of showing nothing at all. */
+/* The library always starts at the media root; lib_list() offers only the
+ * Game Boy folders there, so both sets sit one step below it.  A card without
+ * that root says so in the list rather than showing nothing. */
 void lib_choose_root(void)
 {
-    DIR dir;
-    char real[TD_PATH_MAX + 4];
-
-    for (size_t i = 0; i < sizeof LIB_ROOTS / sizeof LIB_ROOTS[0]; i++) {
-        snprintf(real, sizeof real, "/sd%s", LIB_ROOTS[i]);
-        if (f_opendir(&dir, real) == FR_OK) {
-            (void)f_closedir(&dir);
-            snprintf(s_root, sizeof s_root, "%s", LIB_ROOTS[i]);
-            return;
-        }
-    }
-    snprintf(s_root, sizeof s_root, "%s", LIB_ROOTS[sizeof LIB_ROOTS / sizeof LIB_ROOTS[0] - 1]);
+    snprintf(s_root, sizeof s_root, "%s", GB_ROOT);
 }
 
 /* ---------------------------------------------------------------- actions */
