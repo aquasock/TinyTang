@@ -1268,3 +1268,33 @@ The user reorganized `/root/media/music` into `myst/` and `hungarian/`, and the 
 - User Test: PASS
 
 ---
+
+## 35 COMMIT Unreleased 2026-10-23T20:08:00-07:00
+
+#### Coming From:
+
+Unreleased 5aa6cdd
+
+#### Purpose:
+
+Give the Phosphor window's library folder navigation, so albums kept in subfolders of `/root/media/music` can be browsed and played from the window rather than only from the shell.
+
+#### Outcome:
+
+`ports/bl616/phosphor/td_phosphor_app.cpp`'s listing had filtered `AM_DIR` out, which suited a flat music folder and left the window empty once the user reorganized the card into `myst/` and `hungarian/`. The library now keeps a shown and a real current directory, both starting at the music root, and `load_folder()` lists folders as well as tracks: folders first, each entry carrying an `is_dir` flag, with `..` prepended below the root and suppressed at it so the library cannot wander off into the card. `open_dir()` walks into a folder, or back up by truncating the current path, and reloads; `on_activate` opens a folder or plays a track; Play with a folder selected, or with nothing selected, falls through to `first_track()`; Prev, Next and the auto-advance step use `next_track()`, which skips folders, so none of them can land on `..` or an album; `play_index()` refuses a folder and builds both paths from the current directory; `index_of()` matches against the current shown path, so the playing row is still highlighted; the header line names the current path and its item count; and a reopened window resets to the music root rather than to the album the last one was browsing. The firmware built as `5aa6cdd-dirty.f0c59e0` with no warning in the changed file, was flashed, and after the user's power cycle `platform` read it back. The user opened the Phosphor window and reported PASS: `myst/` and `hungarian/` are listed in place of an empty list, `hungarian/` opens to its seven tracks, `..` returns to the music root, a track starts from the folder, Play with a folder selected falls through to its first track, Prev and Next skip folders, and auto-advance carries on. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 34 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 35 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The lost stream acknowledgement of entry 33 is still unexplained and the fast 5 Mbaud link still off; both are worth one cycle once the cause is understood. TinyPhosphor's README still names `/root/ae350/resident.tpi` and needs its own documentation cycle, and its reference should record that its player's home on this card is `tinyphosphor-play.elf`. The earlier card items stand: TinyGBC's save and state folders, the empty or older manual chapters, the older `boot.tdsh`, and `tools/check_manual.py` unapproved.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/td_phosphor_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

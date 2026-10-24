@@ -94,6 +94,7 @@ constexpr int PAGE_WIDGETS = 40;
 
 struct entry {
     char name[NAME_BYTES];
+    bool is_dir;
 };
 
 td_window_t *s_win;
@@ -143,6 +144,11 @@ uint32_t s_scope_ticks;
 entry *s_entries;
 int s_count;
 bool s_truncated;
+
+// The folder the list is showing.  The library opens on the music root and
+// walks down into album folders; ".." climbs back and never above the root.
+char s_dir_shown[TD_PATH_MAX] = {};
+char s_dir_real[TD_PATH_MAX] = {};
 
 bool s_core;
 uint32_t s_ticks;
@@ -199,20 +205,27 @@ void on_tab(td_widget_t *, void *user) { show_tab(static_cast<int>(reinterpret_c
 
 int compare(const void *a, const void *b)
 {
-    return strcasecmp(static_cast<const entry *>(a)->name, static_cast<const entry *>(b)->name);
+    const entry *x = static_cast<const entry *>(a);
+    const entry *y = static_cast<const entry *>(b);
+    if (x->is_dir != y->is_dir) {
+        return x->is_dir ? -1 : 1;
+    }
+    return strcasecmp(x->name, y->name);
 }
 
 bool listable(const FILINFO &info)
 {
-    if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) != 0 ||
-        !phosphor_media::supported(info.fname)) {
+    if ((info.fattrib & (AM_HID | AM_SYS)) != 0 || info.fname[0] == '.') {
         return false;
     }
     if (strlen(info.fname) >= NAME_BYTES) {
         s_truncated = true;
         return false;
     }
-    return true;
+    if ((info.fattrib & AM_DIR) != 0) {
+        return true;
+    }
+    return phosphor_media::supported(info.fname);
 }
 
 void load_folder(void)
@@ -224,14 +237,17 @@ void load_folder(void)
     td_list_set_count(s_list, 0);
     DIR dir;
     FILINFO info;
-    if (f_opendir(&dir, MUSIC_REAL) != FR_OK) {
-        set_text(s_folder, "No /root/media/music folder on the card");
+    if (f_opendir(&dir, s_dir_real) != FR_OK) {
+        char text[TD_TEXT_MAX];
+        snprintf(text, sizeof text, "%s is not on the card", s_dir_shown);
+        set_text(s_folder, text);
         return;
     }
 
     // Count before allocating: reserving all 256 names costs 24 KB even for
     // a small folder, leaving too little heap for a desktop script worker.
-    int capacity = 0;
+    const bool at_root = strcmp(s_dir_real, MUSIC_REAL) == 0;
+    int capacity = at_root ? 0 : 1;   // ".." when below the root
     FRESULT result;
     while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
         if (listable(info)) {
@@ -244,16 +260,21 @@ void load_folder(void)
     }
     if (result != FR_OK || f_rewinddir(&dir) != FR_OK) {
         (void)f_closedir(&dir);
-        set_text(s_folder, "Could not read /root/media/music folder");
+        set_text(s_folder, "Could not read that folder");
         return;
     }
     if (capacity != 0) {
         s_entries = static_cast<entry *>(malloc(sizeof(entry) * capacity));
         if (s_entries == nullptr) {
             (void)f_closedir(&dir);
-            set_text(s_folder, "Not enough memory for /root/media/music list");
+            set_text(s_folder, "Not enough memory for the music list");
             return;
         }
+    }
+    if (!at_root) {
+        snprintf(s_entries[s_count].name, NAME_BYTES, "..");
+        s_entries[s_count].is_dir = true;
+        ++s_count;
     }
     while ((result = f_readdir(&dir, &info)) == FR_OK && info.fname[0] != '\0') {
         if (!listable(info)) {
@@ -264,21 +285,23 @@ void load_folder(void)
             s_truncated = true;
             continue;
         }
-        strcpy(s_entries[s_count++].name, info.fname);
+        strcpy(s_entries[s_count].name, info.fname);
+        s_entries[s_count].is_dir = (info.fattrib & AM_DIR) != 0;
+        ++s_count;
     }
     (void)f_closedir(&dir);
     if (result != FR_OK) {
         free(s_entries);
         s_entries = nullptr;
         s_count = 0;
-        set_text(s_folder, "Could not read /root/media/music folder");
+        set_text(s_folder, "Could not read that folder");
         return;
     }
     if (s_count > 1) {
         qsort(s_entries, static_cast<size_t>(s_count), sizeof(entry), compare);
     }
-    char text[64];
-    snprintf(text, sizeof(text), "%s: %d track%s%s", MUSIC_SHOWN, s_count,
+    char text[TD_TEXT_MAX];
+    snprintf(text, sizeof(text), "%s: %d item%s%s", s_dir_shown, s_count,
              s_count == 1 ? "" : "s", s_truncated ? " (some not listed)" : "");
     set_text(s_folder, text);
     td_list_set_count(s_list, s_count);
@@ -287,8 +310,8 @@ void load_folder(void)
 // The list index of a status path such as "/root/media/music/song.flac", or -1.
 int index_of(const char *path)
 {
-    const size_t prefix = strlen(MUSIC_SHOWN);
-    if (strncmp(path, MUSIC_SHOWN, prefix) != 0 || path[prefix] != '/') {
+    const size_t prefix = strlen(s_dir_shown);
+    if (strncmp(path, s_dir_shown, prefix) != 0 || path[prefix] != '/') {
         return -1;
     }
     const char *name = path + prefix + 1;
@@ -532,13 +555,13 @@ void on_load(td_widget_t *, void *)
 
 void play_index(int index)
 {
-    if (index < 0 || index >= s_count || !need_core()) {
+    if (index < 0 || index >= s_count || s_entries[index].is_dir || !need_core()) {
         return;
     }
-    char real[sizeof(MUSIC_REAL) + 1 + NAME_BYTES + 16];
-    char shown[sizeof(MUSIC_SHOWN) + 1 + NAME_BYTES + 16];
-    snprintf(real, sizeof(real), "%s/%s", MUSIC_REAL, s_entries[index].name);
-    snprintf(shown, sizeof(shown), "%s/%s", MUSIC_SHOWN, s_entries[index].name);
+    char real[TD_PATH_MAX + 4];
+    char shown[TD_PATH_MAX + 4];
+    snprintf(real, sizeof(real), "%s/%s", s_dir_real, s_entries[index].name);
+    snprintf(shown, sizeof(shown), "%s/%s", s_dir_shown, s_entries[index].name);
     uint32_t track = 0;
     if (!phosphor_player_play(real, shown, &track)) {
         say("The playback task is not running");
@@ -551,12 +574,84 @@ void play_index(int index)
 
 void refresh(void);
 
-void on_activate(td_widget_t *, void *) { play_index(td_list_selected(s_list)); }
+// The first playable row, skipping folders and "..".
+int first_track(void)
+{
+    for (int i = 0; i < s_count; ++i) {
+        if (!s_entries[i].is_dir) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// The next playable row in `direction`, skipping folders; -1 when there is none.
+int next_track(int from, int direction)
+{
+    for (int i = from + direction; i >= 0 && i < s_count; i += direction) {
+        if (!s_entries[i].is_dir) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Walk into a folder, or back up with "..", and reload the list.  ".." at the
+// music root does nothing, so the library cannot wander off into the card.
+void open_dir(const char *name)
+{
+    char shown[TD_PATH_MAX];
+    char real[TD_PATH_MAX];
+    if (strcmp(name, "..") == 0) {
+        if (strcmp(s_dir_real, MUSIC_REAL) == 0) {
+            return;
+        }
+        snprintf(shown, sizeof shown, "%s", s_dir_shown);
+        snprintf(real, sizeof real, "%s", s_dir_real);
+        char *slash = strrchr(shown, '/');
+        if (slash != nullptr) {
+            *slash = '\0';
+        }
+        slash = strrchr(real, '/');
+        if (slash != nullptr) {
+            *slash = '\0';
+        }
+    } else {
+        const int n = snprintf(shown, sizeof shown, "%s/%s", s_dir_shown, name);
+        const int m = snprintf(real, sizeof real, "%s/%s", s_dir_real, name);
+        if (n <= 0 || n >= static_cast<int>(sizeof shown) || m <= 0 ||
+            m >= static_cast<int>(sizeof real)) {
+            say("That folder's path is too long");
+            return;
+        }
+    }
+    snprintf(s_dir_shown, sizeof s_dir_shown, "%s", shown);
+    snprintf(s_dir_real, sizeof s_dir_real, "%s", real);
+    load_folder();
+    if (s_list != nullptr) {
+        td_list_select(s_list, 0);
+    }
+}
+
+void on_activate(td_widget_t *, void *)
+{
+    const int index = td_list_selected(s_list);
+    if (index < 0 || index >= s_count) {
+        return;
+    }
+    if (s_entries[index].is_dir) {
+        open_dir(s_entries[index].name);
+        return;
+    }
+    play_index(index);
+}
 
 void on_play(td_widget_t *, void *)
 {
     const int selected = td_list_selected(s_list);
-    play_index(selected >= 0 ? selected : 0);
+    const bool usable = selected >= 0 && selected < s_count &&
+                        !s_entries[selected].is_dir;
+    play_index(usable ? selected : first_track());
     refresh();
 }
 
@@ -585,7 +680,7 @@ void on_pause(td_widget_t *, void *)
 void step(int direction)
 {
     const int from = s_current >= 0 ? s_current : td_list_selected(s_list);
-    const int to = phosphor_media::neighbour(from, s_count, direction);
+    const int to = next_track(from, direction);
     if (to < 0) {
         say(direction > 0 ? "That was the last track" : "That was the first track");
         return;
@@ -607,7 +702,8 @@ const char *get_item(td_widget_t *, int index, int *fg, void *)
     if (playing) {
         *fg = td_theme()->accent;
     }
-    snprintf(text, sizeof(text), "%s%s", playing ? "> " : "  ", s_entries[index].name);
+    snprintf(text, sizeof(text), "%s%s%s", playing ? "> " : "  ",
+             s_entries[index].name, s_entries[index].is_dir ? "/" : "");
     return text;
 }
 
@@ -627,7 +723,7 @@ void refresh(void)
     if (s.state == phosphor_player_state::ENDED && s.track == s_own_track &&
         s.track != s_advanced_from && td_checkbox_get(s_auto)) {
         s_advanced_from = s.track;
-        const int next = phosphor_media::neighbour(s_current, s_count, 1);
+        const int next = next_track(s_current, 1);
         if (next >= 0) {
             play_index(next);
             phosphor_player_get(&s);
@@ -860,6 +956,10 @@ void launch(void)
     s_tab_shown = -1;
     show_tab(0);
 
+    // A reopened window starts at the music root rather than at whatever
+    // album the last one was browsing.
+    snprintf(s_dir_shown, sizeof s_dir_shown, "%s", MUSIC_SHOWN);
+    snprintf(s_dir_real, sizeof s_dir_real, "%s", MUSIC_REAL);
     load_folder();
     s_core = check_core();
     show_core();
