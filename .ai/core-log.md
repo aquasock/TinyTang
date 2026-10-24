@@ -1393,3 +1393,34 @@ The calculator's RAM save still speaks the TinyNES NVRAM protocol, so it would l
 - User Test: PASS
 
 ---
+
+## 39 COMMIT Unreleased 2026-10-24T01:16:05-07:00
+
+#### Coming From:
+
+Unreleased 9bda7e3
+
+#### Purpose:
+
+Put a real date and time on the save log, make the card's write timing visible, and give Tiny89's window a page that says whether its save verified, so a failed save stops being invisible.
+
+#### Outcome:
+
+Every line `ae350_log()` writes now begins with the local ISO-8601 time, `2026-10-24T00:56:43-07:00`, taken from the RTC-kept clock: UTC from `tang_clock_now()`, the zone from `/sd/tinydesk_tz` (the same file the desktop and `tangi2c` read), and a civil-date conversion in the file so no time library is needed. A clock that has never been set writes `no-clock` rather than a date it invented, which is what the log shows until the desktop has synced the RTC after a power-up. Each save now also records what the card cost: `card <path>: <n> writes, <ms> in all, max <ms>, <n> over 5 ms`, measured around `f_write`, because the longest write is the window in which arriving payload bytes are lost. The `STATE` channel needed no firmware change -- `ae350_channel_line()` and `ae350_path_for()` have served `/root/states/<system>/` since TinyNES -- and Tiny89's new state save now lands there; what the firmware did need was nothing at all, which the log confirms. `ports/bl616/tiny89_app.cpp`'s Saves page became three channels, State, RAM and Flash, filtered to the image selected in the Library because the log spans sessions and images: it shows the file sizes, the board's last verdict per channel with the stamp, and a dim line that says "Did not verify -- Ctrl+S again, then Refresh" when a save came back short. That line is the change with the most evidence behind it: the user's own missing variable turned out to be a save that failed at 00:44:10 and an older state restored afterwards, a failure the window had no way to show. The firmware built as `9bda7e3-dirty.aa03010` with no warning in either file, was flashed and power-cycled; the log then carried stamped lines for every event, a whole state save at `00:56:43` with `515 writes, 343 ms in all, max 24 ms, 3 over 5 ms`, and the user reported PASS on the cycle that followed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 38 were not rewritten, checked that the reference's YAML blocks parse with the index and records naming the same ids in the same order, and validated this entry as number 39 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Saves page still lists the `.ram` file that Tiny89 no longer writes on a save, so it reads as stale history beside the state; either drop it or label it as the fallback. The stamps depend on the desktop having run since power-up, so a session started straight from the shell writes `no-clock`; syncing the clock from `ae350run`'s own start would close that. The save remains one-way, so the page reports the board's verdict only after the fact -- the retry is the user's.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tiny89_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

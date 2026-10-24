@@ -97,8 +97,10 @@
 #include "ae350_load.h"
 #include "tang_ae350_run.h"
 #include "tang_fpga_link.h"
+#include <stdarg.h>
 #include "tang_osd.h"
 #include "tang_osd_desk.h"
+#include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -831,9 +833,7 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
  * the next one in line.  A save over the bound is still refused rather than
  * truncated -- the length is judged before a byte is written. */
 #define AE350_SAVE_MAX (8u * 1024u * 1024u)
-#define AE350_SAVE_DIR "/sd/root/saves/nes"
 /* TinyNES's one save state per cartridge (TinyNES core-log entry 49). */
-#define AE350_STATE_DIR "/sd/root/states/nes"
 
 typedef struct {
     FIL *elf_file;
@@ -996,7 +996,7 @@ static bool starts_with(const char *s, const char *prefix)
  * requests below are TinyNES's alone until the TinyGBC player has them. */
 static const char *ae350_past_name(const char *line)
 {
-    static const char *const names[] = { "TinyNES ", "TinyGBC " };
+    static const char *const names[] = { "TinyNES ", "TinyGBC ", "Tiny89 " };
 
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (starts_with(line, names[i])) {
@@ -1019,6 +1019,65 @@ static bool ae350_says(const char *line, const char *what, const char **rest)
         *rest = tail + n;
     }
     return true;
+}
+
+/* The system a program names in its own lines.  The name is the program's
+ * declaration of what it is, and it decides which folder the card keeps its
+ * files in; the calculator arrived last and got its own. */
+static const char *ae350_system(const char *line)
+{
+    if (starts_with(line, "TinyNES ")) return "nes";
+    if (starts_with(line, "TinyGBC ")) return "gbc";
+    if (starts_with(line, "Tiny89 ")) return "ti89";
+    return NULL;
+}
+
+/* "<product> <channel> <rest>", the shape every file line takes:
+ * "Tiny89 NVRAM SAVE 262144 8d90ffa5", "TinyNES STATE DATA ...",
+ * "Tiny89 FLASH WANT ...".  NVRAM is the program's RAM, FLASH is the
+ * calculator's 4 MiB flash image, and STATE stays TinyNES's save state. */
+static bool ae350_channel_line(const char *line, const char **system,
+                               const char **channel, const char **rest)
+{
+    static const char *const channels[] = { "NVRAM ", "FLASH ", "STATE " };
+    const char *sys = ae350_system(line);
+    const char *tail;
+
+    if (sys == NULL) {
+        return false;
+    }
+    tail = strchr(line, ' ');
+    if (tail == NULL) {
+        return false;
+    }
+    ++tail;
+    for (size_t i = 0; i < sizeof channels / sizeof channels[0]; i++) {
+        const size_t n = strlen(channels[i]);
+        if (strncmp(tail, channels[i], n) == 0) {
+            *system = sys;
+            *channel = channels[i];
+            *rest = tail + n;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The run's data file without its extension: every file the card keeps for
+ * this cartridge is named after it, as saves always were. */
+static char s_ae350_base[64];
+
+static bool ae350_path_for(const char *system, const char *channel,
+                           char *out, size_t size)
+{
+    const bool state = strcmp(channel, "STATE ") == 0;
+    const bool flash = strcmp(channel, "FLASH ") == 0;
+    const char *dir = state ? "/sd/root/states/" : "/sd/root/saves/";
+    const char *ext = state ? ".state"
+                    : flash ? ".flash"
+                    : (strcmp(system, "ti89") == 0 ? ".ram" : ".sav");
+    const int n = snprintf(out, size, "%s%s/%s%s", dir, system, s_ae350_base, ext);
+    return n > 0 && (size_t)n < size;
 }
 
 static const char *ae350_error(int rc)
@@ -1052,32 +1111,141 @@ static bool ae350_line_ends(const ae350_run_t *run, int *code)
 
 /* ------------------------------------------------------------ the save --
  *
- * Battery saves are named after the cartridge: its basename under
- * AE350_SAVE_DIR, with the extension replaced by ".sav".  Save states are
- * named the same way under AE350_STATE_DIR, with ".state".  Both come back
- * through the one receiver below, which writes whichever s_ae350_dest names. */
-static char s_ae350_save_path[TDSH_MAX_REAL_PATH];
-static char s_ae350_state_path[TDSH_MAX_REAL_PATH];
+ * Every file is named for the cartridge and the system the program named:
+ * /root/saves/<system>/<cartridge><ext> and /root/states/<system>/<cartridge>.state,
+ * with .sav for a game's battery save, .ram for the calculator's memory and
+ * .flash for its flash image.  All of them come back through the one receiver
+ * below, which writes whichever s_ae350_dest names. */
 static char s_ae350_dest[TDSH_MAX_REAL_PATH];
 static const char *s_ae350_dest_kind = "save";
 
-static bool ae350_named_path(const char *cart_real, const char *dir,
-                             const char *ext, char *out, size_t size)
-{
-    const char *base = strrchr(cart_real, '/');
-    const char *dot;
-    size_t stem;
-    int n;
+/* ------------------------------------------------------------------ clock */
 
-    out[0] = '\0';                      /* a caller that finds "" has no save */
-    base = base ? base + 1 : cart_real;
-    dot = strrchr(base, '.');
-    stem = dot && dot != base ? (size_t)(dot - base) : strlen(base);
-    if (stem == 0) {
-        return false;
+/* The desktop's time zone, seconds east of UTC.  It is the same file the
+ * desktop reads (/tinydesk_tz, td_desktop_bl616.c) and the shell's tangi2c
+ * reads; a missing or unreadable file is UTC, not an error. */
+static long ae350_zone(void)
+{
+    static long zone;
+    static bool known;
+    FIL file;
+    char buf[16];
+    UINT got = 0;
+
+    if (known) {
+        return zone;
     }
-    n = snprintf(out, size, "%s/%.*s%s", dir, (int)stem, base, ext);
-    return n > 0 && (size_t)n < size;
+    known = true;
+    if (f_open(&file, "/sd/tinydesk_tz", FA_READ) != FR_OK) {
+        return zone;
+    }
+    if (f_read(&file, buf, sizeof buf - 1, &got) == FR_OK && got > 0) {
+        buf[got] = '\0';
+        const long v = strtol(buf, NULL, 10);
+        /* A zone is under a day either way; anything else is a bad file. */
+        if (v > -86400 && v < 86400) {
+            zone = v;
+        }
+    }
+    (void)f_close(&file);
+    return zone;
+}
+
+/* Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm), so the
+ * stamp needs no time library and no per-call locale. */
+static void ae350_civil(int64_t days, int *year, int *month, int *day)
+{
+    int64_t z = days + 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = (unsigned)(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    *day = (int)(doy - (153 * mp + 2) / 5 + 1);
+    *month = (int)(mp + (mp < 10 ? 3 : -9));
+    *year = (int)((int64_t)yoe + era * 400 + (*month <= 2 ? 1 : 0));
+}
+
+/* A log line's time stamp: the RTC-kept clock in the desktop's zone, ISO-8601
+ * with the offset, or "no-clock" when the RTC has never been set -- the clock
+ * says when it does not know rather than writing a date it invented.  During a
+ * calculator session the AE350 program holds the link, so tang_clock_now finds
+ * no I2C bus (it touches no link traffic) and returns the running clock the
+ * last desktop-core sync left behind, which is the right time to stamp. */
+static void ae350_stamp(char *out, size_t cap)
+{
+    int64_t utc;
+    int64_t local;
+    int64_t days;
+    int64_t sod;
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    long zone;
+    long az;
+
+    if (!tang_clock_now(&utc)) {
+        (void)snprintf(out, cap, "no-clock");
+        return;
+    }
+    zone = ae350_zone();
+    local = utc + zone;
+    days = local / 86400;
+    sod = local % 86400;
+    if (sod < 0) {
+        sod += 86400;
+        days -= 1;
+    }
+    ae350_civil(days, &year, &month, &day);
+    az = zone < 0 ? -zone : zone;
+    (void)snprintf(out, cap, "%04d-%02d-%02dT%02d:%02d:%02d%c%02ld:%02ld",
+                   year, month, day, (int)(sod / 3600), (int)(sod / 60 % 60),
+                   (int)(sod % 60), zone < 0 ? '-' : '+', az / 3600,
+                   az % 3600 / 60);
+}
+
+/* One line per save attempt, on the card.  The console is not always where a
+ * session's output can be read, and a save that never finishes leaves no trace
+ * but a .part file: this says what was armed, what arrived and why it stopped.
+ * Each line carries the local date and time from the RTC-kept clock, so the
+ * Tiny89 window's Saves page can show when the last attempt ran and whether it
+ * verified.  A run's first line is "--- run", a separator; the file grows. */
+static void ae350_log(const char *fmt, ...)
+{
+    char text[176];
+    char stamp[48];
+    char line[240];
+    va_list ap;
+    int n;
+    size_t len;
+    FIL file;
+    UINT wrote = 0;
+
+    va_start(ap, fmt);
+    n = vsnprintf(text, sizeof text, fmt, ap);
+    va_end(ap);
+    if (n <= 0) {
+        return;
+    }
+    ae350_stamp(stamp, sizeof stamp);
+    n = snprintf(line, sizeof line, "%s %s", stamp, text);
+    if (n <= 0) {
+        return;
+    }
+    len = strnlen(line, sizeof line - 1);
+    /* One write per line: a frame's worth of log must never be left without
+     * its newline, or the Saves page's line scanner joins it to the next. */
+    if (len == 0 || line[len - 1] != '\n') {
+        line[len < sizeof line - 1 ? len : sizeof line - 2] = '\n';
+        line[len < sizeof line - 1 ? len + 1 : sizeof line - 1] = '\0';
+        len = strlen(line);
+    }
+    if (f_open(&file, "/sd/root/saves/last.log",
+               FA_OPEN_APPEND | FA_WRITE) != FR_OK) {
+        return;
+    }
+    (void)f_write(&file, line, (UINT)len, &wrote);
+    (void)f_close(&file);
 }
 
 /* The save coming back, in either of two ways.  TinyNES's is hex lines
@@ -1096,9 +1264,21 @@ static uint32_t s_ae350_save_running;    /* CRC-32 of what has been written */
 static bool s_ae350_save_active, s_ae350_save_failed, s_ae350_save_open;
 static FIL s_ae350_save_file;
 static bool s_ae350_save_bin;            /* the payload is bytes, not hex */
+static bool s_ae350_save_first_logged;   /* the first byte has been noted */
 static uint32_t s_ae350_save_left;       /* payload bytes still due */
 static unsigned s_ae350_save_chunk_len;
 static uint8_t s_ae350_save_chunk[AE350_SAVE_CHUNK];
+
+/* What the card cost this save, and what it cost at its worst.  The save is
+ * paced from the other end, so the number that matters is the longest window
+ * the card held the CPU with interrupts masked: every byte that arrives in
+ * that window is lost, and no counter sees it.  One line in the log per save
+ * (a line per write would cost card time to write down what the card cost). */
+#define AE350_WRITE_SLOW_MS 5u
+static uint32_t s_ae350_write_ms;        /* card time for the whole save */
+static uint32_t s_ae350_write_max_ms;    /* the slowest single write */
+static uint32_t s_ae350_write_slow;      /* writes over AE350_WRITE_SLOW_MS */
+static uint32_t s_ae350_write_count;
 
 static int ae350_hex_digit(char c)
 {
@@ -1117,8 +1297,19 @@ static int ae350_hex_digit(char c)
 static int ae350_save_write(const uint8_t *bytes, unsigned n)
 {
     UINT wrote = 0;
+    const uint32_t began = (uint32_t)bflb_mtimer_get_time_ms();
+    const FRESULT result = f_write(&s_ae350_save_file, bytes, n, &wrote);
+    const uint32_t took = (uint32_t)bflb_mtimer_get_time_ms() - began;
 
-    if (f_write(&s_ae350_save_file, bytes, n, &wrote) != FR_OK || wrote != n) {
+    s_ae350_write_ms += took;
+    s_ae350_write_count++;
+    if (took > s_ae350_write_max_ms) {
+        s_ae350_write_max_ms = took;
+    }
+    if (took >= AE350_WRITE_SLOW_MS) {
+        s_ae350_write_slow++;
+    }
+    if (result != FR_OK || wrote != n) {
         s_ae350_save_failed = true;
         return -1;
     }
@@ -1140,6 +1331,9 @@ static void ae350_save_hex(const char *line)
         const int low = line[1] != '\0' ? ae350_hex_digit(line[1]) : -1;
         if (high < 0 || low < 0 || !s_ae350_save_open ||
             s_ae350_save_got + n >= s_ae350_save_expect) {
+            ae350_log("refused line at %lu bytes: \"%.24s\" open %d\n",
+                      (unsigned long)s_ae350_save_got, line,
+                      s_ae350_save_open ? 1 : 0);
             s_ae350_save_failed = true;
             return;
         }
@@ -1153,6 +1347,11 @@ static void ae350_save_hex(const char *line)
     }
     if (n != 0) {
         (void)ae350_save_write(bytes, n);
+        if ((s_ae350_save_got & 0x7fffu) < n) {
+            ae350_log("progress: %lu of %lu bytes\n",
+                      (unsigned long)s_ae350_save_got,
+                      (unsigned long)s_ae350_save_expect);
+        }
     }
 }
 
@@ -1182,6 +1381,11 @@ static void ae350_save_raw(uint8_t byte)
     if (s_ae350_save_left == 0) {
         return;
     }
+    if (!s_ae350_save_first_logged) {
+        s_ae350_save_first_logged = true;
+        ae350_log("first byte %02x of %lu\n", (unsigned)byte,
+                  (unsigned long)s_ae350_save_expect);
+    }
     s_ae350_save_left--;
     if (!s_ae350_save_open || s_ae350_save_failed) {
         s_ae350_save_failed = true;
@@ -1190,6 +1394,11 @@ static void ae350_save_raw(uint8_t byte)
     s_ae350_save_chunk[s_ae350_save_chunk_len++] = byte;
     if (s_ae350_save_chunk_len == sizeof s_ae350_save_chunk) {
         ae350_save_flush();
+        if ((s_ae350_save_got & 0x7fffu) < s_ae350_save_chunk_len) {
+            ae350_log("progress %s: %lu of %lu bytes\n", s_ae350_dest,
+                      (unsigned long)s_ae350_save_got,
+                      (unsigned long)s_ae350_save_expect);
+        }
     }
 }
 
@@ -1291,9 +1500,12 @@ static void ae350_save_arm(const char *counts, bool binary, const char *dest,
     s_ae350_save_failed = false;
     s_ae350_save_open = false;
     s_ae350_save_bin = binary;
+    s_ae350_save_first_logged = false;
     s_ae350_save_active = true;
     if (sscanf(counts, "%lu %lx", &expect, &crc) != 2 || expect == 0 ||
         expect > AE350_SAVE_MAX) {
+        ae350_log("arm %s: refused, counts \"%s\" (max %lu)\n", dest, counts,
+                  (unsigned long)AE350_SAVE_MAX);
         s_ae350_save_expect = 0;
         s_ae350_save_crc = 0;
         s_ae350_save_failed = true;
@@ -1302,11 +1514,20 @@ static void ae350_save_arm(const char *counts, bool binary, const char *dest,
     s_ae350_save_expect = (uint32_t)expect;
     s_ae350_save_crc = (uint32_t)crc;
     s_ae350_save_left = (uint32_t)expect;
+    s_ae350_write_ms = 0;
+    s_ae350_write_max_ms = 0;
+    s_ae350_write_slow = 0;
+    s_ae350_write_count = 0;
     if (s_ae350_dest[0] == '\0') {
+        ae350_log("arm: no destination\n");
         s_ae350_save_failed = true;
         return;
     }
+    ae350_log("arm %s: %lu bytes, crc %08lx, %s\n", s_ae350_dest,
+              (unsigned long)expect, (unsigned long)crc,
+              binary ? "bytes" : "hex");
     if (!ae350_save_open_file()) {
+        ae350_log("arm %s: cannot open the temporary\n", s_ae350_dest);
         s_ae350_save_failed = true;
     }
 }
@@ -1323,6 +1544,21 @@ static void ae350_save_finish(void)
                        s_ae350_save_got == s_ae350_save_expect &&
                        s_ae350_save_running == s_ae350_save_crc;
     FRESULT closed = FR_OK;
+    ae350_log("finish %s: %lu of %lu bytes, crc %08lx of %08lx, %s\n",
+              s_ae350_dest, (unsigned long)s_ae350_save_got,
+              (unsigned long)s_ae350_save_expect,
+              (unsigned long)s_ae350_save_running,
+              (unsigned long)s_ae350_save_crc,
+              whole ? "whole" : "short");
+    /* The card's side of the same attempt: how long it held the CPU, which is
+     * the window in which arriving bytes were lost.  A max far above the
+     * emulator's pause per chunk is the shortfall the pacing has to cover. */
+    ae350_log("card %s: %lu writes, %lu ms in all, max %lu ms, %lu over %lu ms\n",
+              s_ae350_dest, (unsigned long)s_ae350_write_count,
+              (unsigned long)s_ae350_write_ms,
+              (unsigned long)s_ae350_write_max_ms,
+              (unsigned long)s_ae350_write_slow,
+              (unsigned long)AE350_WRITE_SLOW_MS);
     char temp[TDSH_MAX_REAL_PATH];
     const bool named = ae350_save_temp_path(temp, sizeof temp);
 
@@ -1385,29 +1621,14 @@ static void ae350_save_finish(void)
 
 /* The line that opens a hex save; its hex follows.  Everything from here to
  * the DONE line is consumed in this file so hex never reaches the console. */
-static void ae350_save_begin(const char *line)
-{
-    ae350_save_arm(line + 19, false, s_ae350_save_path, "save");
-}
-
 /* The same thing with the bytes themselves as the payload: TinyNES's framing
  * with the data put in whole.  The length the header carries says where the
  * payload ends, so nothing in it needs escaping and nothing is special -- CR,
  * LF and 0xAA are bytes here, and the text reader that would have mangled
  * them is not the one reading this. */
-static void ae350_save_data_begin(const char *line)
-{
-    ae350_save_arm(line + 19, true, s_ae350_save_path, "save");
-}
-
 /* A save state, TinyNES's one per cartridge, as bytes: "TinyNES STATE DATA"
  * and the same length and CRC-32, written to the cartridge's .state through
  * the same verified replace as a battery save. */
-static void ae350_state_data_begin(const char *line)
-{
-    ae350_save_arm(line + 19, true, s_ae350_state_path, "state");
-}
-
 /* One byte of a save's hex, or of its DONE line. */
 static void ae350_save_byte(uint8_t byte)
 {
@@ -1423,11 +1644,18 @@ static void ae350_save_byte(uint8_t byte)
         return;
     }
     s_ae350_save_line[s_ae350_save_line_len] = '\0';
-    if (starts_with(s_ae350_save_line, "TinyNES NVRAM DONE")) {
-        ae350_save_finish();
-        s_ae350_save_active = false;
-    } else {
-        ae350_save_hex(s_ae350_save_line);
+    {
+        const char *system = NULL, *channel = NULL, *rest = NULL;
+        if (ae350_channel_line(s_ae350_save_line, &system, &channel, &rest) &&
+            starts_with(rest, "DONE")) {
+            ae350_log("done line: %lu of %lu bytes\n",
+                      (unsigned long)s_ae350_save_got,
+                      (unsigned long)s_ae350_save_expect);
+            ae350_save_finish();
+            s_ae350_save_active = false;
+        } else {
+            ae350_save_hex(s_ae350_save_line);
+        }
     }
     s_ae350_save_line_len = 0;
 }
@@ -1483,17 +1711,29 @@ static int ae350_follow_link(ae350_run_t *run)
             if (!run->line_ready) {
                 continue;
             }
-            if (starts_with(run->line, "TinyNES NVRAM DATA ")) {
-                ae350_save_data_begin(run->line);
-                continue;
-            }
-            if (starts_with(run->line, "TinyNES STATE DATA ")) {
-                ae350_state_data_begin(run->line);
-                continue;
-            }
-            if (starts_with(run->line, "TinyNES NVRAM SAVE ")) {
-                ae350_save_begin(run->line);
-                continue;
+            {
+                const char *system = NULL, *channel = NULL, *rest = NULL;
+                if (ae350_channel_line(run->line, &system, &channel, &rest)) {
+                    char dest[TDSH_MAX_REAL_PATH];
+                    const char *kind =
+                        strcmp(channel, "STATE ") == 0 ? "state" : "save";
+                    const bool named =
+                        ae350_path_for(system, channel, dest, sizeof dest);
+                    if (starts_with(rest, "DATA ")) {
+                        if (named) {
+                            ae350_save_arm(rest + 5, true, dest, kind);
+                        } else {
+                            s_ae350_save_active = false;
+                        }
+                    } else if (starts_with(rest, "SAVE ")) {
+                        if (named) {
+                            ae350_save_arm(rest + 5, false, dest, kind);
+                        } else {
+                            s_ae350_save_active = false;
+                        }
+                    }
+                    continue;
+                }
             }
             done = ae350_line_ends(run, &code);
         }
@@ -1502,6 +1742,16 @@ static int ae350_follow_link(ae350_run_t *run)
         }
     }
 
+    if (s_ae350_save_active) {
+        ae350_log("abandoned %s: %lu of %lu bytes\n", s_ae350_dest,
+                  (unsigned long)s_ae350_save_got,
+                  (unsigned long)s_ae350_save_expect);
+        if (s_ae350_save_open) {
+            (void)f_close(&s_ae350_save_file);
+            s_ae350_save_open = false;
+        }
+        s_ae350_save_active = false;
+    }
     (void)tang_osd_set(was_shown);
     tang_fpga_lock();
     taskENTER_CRITICAL();
@@ -1526,6 +1776,7 @@ static void ae350_send_named(ae350_run_t *run, const ae350_link_t *link,
 
     if (path[0] == '\0' || sscanf(args, "%lx %lx", &address, &room) != 2 ||
         f_open(&s_ae350_save_file, path, FA_READ) != FR_OK) {
+        ae350_log("want %s: none at %s\n", kind, path);
         tdsh_printf("ae350run: no %s to send yet\r\n", kind);
         return;
     }
@@ -1543,6 +1794,8 @@ static void ae350_send_named(ae350_run_t *run, const ae350_link_t *link,
         if (rc != AE350_OK) {
             tdsh_printf("ae350run: sending %s: %s\r\n", path, ae350_error(rc));
         } else {
+            ae350_log("want %s: sent %s, %lu bytes\n", kind, path,
+                      (unsigned long)run->save_length);
             tdsh_printf("ae350run: sent %s, %lu bytes\r\n", path,
                         (unsigned long)run->save_length);
         }
@@ -1586,10 +1839,10 @@ int tang_ae350_run(const char *player, const char *data)
      * mapping are the same choice seen from two sides. */
     static tang_nes_settings_t nes;
     (void)tang_nes_load(&nes, TANG_NES_INI_REAL);
-    /* No cartridge last time does not mean one now: the path must not
+    /* No cartridge last time does not mean one now: the name must not
      * survive from a previous run. */
-    s_ae350_save_path[0] = '\0';
-    s_ae350_state_path[0] = '\0';
+    s_ae350_base[0] = '\0';
+    ae350_log("--- run\n");
     if (data != NULL) {
         if (f_open(&s_ae350_data_file, data, FA_READ) != FR_OK) {
             f_close(&s_ae350_elf_file);
@@ -1598,10 +1851,15 @@ int tang_ae350_run(const char *player, const char *data)
         }
         run.data_file = &s_ae350_data_file;
         run.data_length = (uint32_t)f_size(&s_ae350_data_file);
-        (void)ae350_named_path(data, AE350_SAVE_DIR, ".sav", s_ae350_save_path,
-                               sizeof(s_ae350_save_path));
-        (void)ae350_named_path(data, AE350_STATE_DIR, ".state", s_ae350_state_path,
-                               sizeof(s_ae350_state_path));
+        {
+            const char *slash = strrchr(data, '/');
+            snprintf(s_ae350_base, sizeof s_ae350_base, "%s",
+                     slash != NULL ? slash + 1 : data);
+            char *dot = strrchr(s_ae350_base, '.');
+            if (dot != NULL && dot != s_ae350_base) {
+                *dot = '\0';
+            }
+        }
     }
     static ae350_elf_t elf;
     int rc = ae350_elf_parse(&elf, ae350_file_read, &s_ae350_elf_file);
@@ -1678,13 +1936,18 @@ int tang_ae350_run(const char *player, const char *data)
             }
             continue;
         }
-        if (starts_with(run.line, "TinyNES NVRAM WANT ")) {
-            ae350_send_named(&run, &link, run.line + 19, s_ae350_save_path, "save");
-            continue;
-        }
-        if (starts_with(run.line, "TinyNES STATE WANT ")) {
-            ae350_send_named(&run, &link, run.line + 19, s_ae350_state_path, "state");
-            continue;
+        {
+            const char *system = NULL, *channel = NULL, *rest = NULL;
+            if (ae350_channel_line(run.line, &system, &channel, &rest) &&
+                starts_with(rest, "WANT ")) {
+                char dest[TDSH_MAX_REAL_PATH];
+                if (ae350_path_for(system, channel, dest, sizeof dest)) {
+                    ae350_send_named(&run, &link, rest + 5, dest,
+                                     strcmp(channel, "STATE ") == 0 ? "state"
+                                                                    : "save");
+                }
+                continue;
+            }
         }
         if (starts_with(run.line, "TinyNES SETTINGS WANT ")) {
             /* The blob's bytes are the ABI with the core (TinyNES

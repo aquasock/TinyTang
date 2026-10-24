@@ -58,6 +58,9 @@ constexpr int WIN_W = 50;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
+constexpr int TABS = 2;
+constexpr int PAGE_WIDGETS = 10;
+const int ACCENT = 14;           /* the palette's accent, as the other apps use */
 
 struct lib_entry {
     char name[LIB_NAME_BYTES];
@@ -68,6 +71,15 @@ td_window_t *s_win;
 td_widget_t *s_path;
 td_widget_t *s_list;
 td_widget_t *s_status;
+
+// Two pages, the TinyNES arrangement: the library, and what the card holds for
+// the image selected there.
+td_widget_t *s_tab[TABS];
+td_widget_t *s_page[TABS][PAGE_WIDGETS];
+int s_page_count[TABS];
+int s_tab_shown = -1;
+td_widget_t *s_saves_path, *s_saves_state, *s_saves_ram, *s_saves_flash,
+    *s_saves_state_log, *s_saves_ram_log, *s_saves_flash_log, *s_saves_hint;
 
 lib_entry *s_entries;
 int s_count;
@@ -80,6 +92,28 @@ char s_real[TD_PATH_MAX];
 char s_cart[TD_PATH_MAX + 4];
 
 /* ---------------------------------------------------------------- the list */
+
+void page_add(int tab, td_widget_t *w)
+{
+    if (w != nullptr && s_page_count[tab] < PAGE_WIDGETS) {
+        s_page[tab][s_page_count[tab]++] = w;
+    }
+}
+
+void show_tab(int tab)
+{
+    if (tab == s_tab_shown) {
+        return;
+    }
+    for (int t = 0; t < TABS; t++) {
+        for (int i = 0; i < s_page_count[t]; i++) {
+            td_widget_set_visible(s_page[t][i], t == tab);
+        }
+        td_widget_set_color(s_tab[t], TD_COLOR_DEFAULT,
+                            t == tab ? ACCENT : TD_COLOR_DEFAULT);
+    }
+    s_tab_shown = tab;
+}
 
 void say(const char *text)
 {
@@ -375,6 +409,224 @@ void on_tick(td_window_t *)
     }
 }
 
+/* ----------------------------------------------------------------- saves */
+
+/* One line of the board's log, split into the two things the page shows: the
+ * stamp the firmware wrote (local date and time from the RTC-kept clock) and
+ * what the line says. */
+struct log_line {
+    char stamp[32];
+    const char *rest;
+};
+
+void split_line(const char *line, log_line *out)
+{
+    const char *space = strchr(line, ' ');
+
+    out->stamp[0] = '\0';
+    out->rest = line;
+    if (space == nullptr || space == line ||
+        (size_t)(space - line) >= sizeof out->stamp) {
+        return;
+    }
+    const size_t n = (size_t)(space - line);
+    memcpy(out->stamp, line, n);
+    out->stamp[n] = '\0';
+    out->rest = space + 1;
+}
+
+/* "2026-10-23T21:40:12-07:00" as "2026-10-23 21:40"; "no-clock" stays as it
+ * is, so a session without a set RTC reads as such rather than as a date. */
+void show_stamp(const char *stamp, char *out, size_t cap)
+{
+    const size_t n = strlen(stamp);
+
+    if (strcmp(stamp, "no-clock") == 0 || n < 19) {
+        snprintf(out, cap, "%s", n != 0 ? stamp : "unknown");
+        return;
+    }
+    snprintf(out, cap, "%.10s %.5s", stamp, stamp + 11);
+}
+
+/* What the board's log says about one channel of one image.  A run arms the
+ * RAM and, when the flash changed, the flash; the two attempts' lines
+ * interleave, so each channel keeps its own record. */
+struct attempt {
+    char stamp[32];
+    char verdict[16];
+    unsigned long got;
+    unsigned long want;
+    bool armed;
+};
+
+/* One "finish <path>: <got> of <want> bytes, crc <a> of <b>, <verdict>" line
+ * into the record it belongs to. */
+void note_finish(const log_line &parts, attempt *rec)
+{
+    const char *colon = strchr(parts.rest, ':');
+    unsigned long crc_got = 0;
+    unsigned long crc_want = 0;
+
+    snprintf(rec->stamp, sizeof rec->stamp, "%s", parts.stamp);
+    rec->armed = false;
+    rec->got = 0;
+    rec->want = 0;
+    rec->verdict[0] = '\0';
+    if (colon != nullptr) {
+        (void)sscanf(colon + 1, " %lu of %lu bytes, crc %lx of %lx, %15s",
+                     &rec->got, &rec->want, &crc_got, &crc_want, rec->verdict);
+    }
+}
+
+void describe(const attempt &rec, const char *label, char *out, size_t cap)
+{
+    char when[32] = "unknown";
+
+    if (rec.stamp[0] != '\0') {
+        show_stamp(rec.stamp, when, sizeof when);
+    }
+    if (rec.verdict[0] != '\0') {
+        snprintf(out, cap, "%s %-6s %s %lu B", label, rec.verdict, when, rec.want);
+    } else if (rec.armed) {
+        snprintf(out, cap, "%s armed  %s, no finish", label, when);
+    } else {
+        snprintf(out, cap, "%s no attempt in the log", label);
+    }
+}
+
+/* What the card holds for the image selected in the Library: the two files a
+ * session writes, and the board's own word on the last attempt.  Every line of
+ * last.log is stamped with the RTC's time, so this says when as well as what:
+ * a save that did not verify is visible here without opening the console, and
+ * the answer is to press Ctrl+S in the calculator and Refresh. */
+void saves_refresh(void)
+{
+    const int index = s_list != nullptr ? td_list_selected(s_list) : -1;
+    char base[LIB_NAME_BYTES];
+    char path[TD_PATH_MAX + 16];
+    char text[TD_TEXT_MAX];
+    FILINFO info;
+
+    td_widget_set_text(s_saves_state_log, "");
+    td_widget_set_text(s_saves_ram_log, "");
+    td_widget_set_text(s_saves_flash_log, "");
+    td_widget_set_text(s_saves_hint, "");
+    if (index < 0 || index >= s_count || s_entries[index].is_dir) {
+        td_widget_set_text(s_saves_path, "Select an image in the Library page");
+        td_widget_set_text(s_saves_state, "");
+        td_widget_set_text(s_saves_ram, "");
+        td_widget_set_text(s_saves_flash, "");
+        return;
+    }
+    snprintf(base, sizeof base, "%s", s_entries[index].name);
+    char *dot = strrchr(base, '.');
+    if (dot != nullptr && dot != base) {
+        *dot = '\0';
+    }
+    td_widget_set_text(s_saves_path, s_entries[index].name);
+
+    /* The state is the save that matters: it is what a launch resumes. */
+    snprintf(path, sizeof path, "/sd/root/states/ti89/%s.state", base);
+    if (f_stat(path, &info) == FR_OK) {
+        snprintf(text, sizeof text, "State  present, %lu bytes",
+                 (unsigned long)info.fsize);
+    } else {
+        snprintf(text, sizeof text, "State  none -- a launch will boot");
+    }
+    td_widget_set_text(s_saves_state, text);
+
+    snprintf(path, sizeof path, "/sd/root/saves/ti89/%s.ram", base);
+    if (f_stat(path, &info) == FR_OK) {
+        snprintf(text, sizeof text, "RAM    present, %lu bytes",
+                 (unsigned long)info.fsize);
+    } else {
+        snprintf(text, sizeof text, "RAM    none -- the last save did not verify");
+    }
+    td_widget_set_text(s_saves_ram, text);
+
+    snprintf(path, sizeof path, "/sd/root/saves/ti89/%s.flash", base);
+    if (f_stat(path, &info) == FR_OK) {
+        snprintf(text, sizeof text, "Flash  present, %lu bytes",
+                 (unsigned long)info.fsize);
+    } else {
+        snprintf(text, sizeof text, "Flash  none yet");
+    }
+    td_widget_set_text(s_saves_flash, text);
+
+    /* The board's own word, from the log the firmware appends to.  Lines name
+     * the file they are about, so only lines for this image count: the log
+     * spans sessions and images, and its newest line is often another one. */
+    FIL file;
+    char needle[LIB_NAME_BYTES + 8];
+    char needle_flash[LIB_NAME_BYTES + 8];
+    char needle_state[LIB_NAME_BYTES + 8];
+    attempt ram = {};
+    attempt flash = {};
+    attempt state = {};
+
+    snprintf(needle, sizeof needle, "/%s.ram", base);
+    snprintf(needle_flash, sizeof needle_flash, "/%s.flash", base);
+    snprintf(needle_state, sizeof needle_state, "/%s.state", base);
+    if (f_open(&file, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
+        char buf[256];
+        char line[192];
+        size_t used = 0;
+        UINT got = 0;
+
+        while (f_read(&file, buf, sizeof buf, &got) == FR_OK && got > 0) {
+            for (UINT i = 0; i < got; i++) {
+                if (buf[i] == '\n') {
+                    line[used] = '\0';
+                    attempt *rec = nullptr;
+                    if (strstr(line, needle_state) != nullptr) {
+                        rec = &state;
+                    } else if (strstr(line, needle) != nullptr) {
+                        rec = &ram;
+                    } else if (strstr(line, needle_flash) != nullptr) {
+                        rec = &flash;
+                    }
+                    if (rec != nullptr) {
+                        log_line parts;
+                        split_line(line, &parts);
+                        if (strncmp(parts.rest, "finish ", 7) == 0) {
+                            note_finish(parts, rec);
+                        } else if (strncmp(parts.rest, "arm ", 4) == 0) {
+                            /* A newer attempt: its finish has not come yet. */
+                            *rec = attempt{};
+                            rec->armed = true;
+                            snprintf(rec->stamp, sizeof rec->stamp, "%s",
+                                     parts.stamp);
+                        }
+                    }
+                    used = 0;
+                } else if (used + 1 < sizeof line) {
+                    line[used++] = buf[i];
+                }
+            }
+        }
+        (void)f_close(&file);
+    }
+
+    describe(state, "State", text, sizeof text);
+    td_widget_set_text(s_saves_state_log, text);
+    describe(ram, "RAM", text, sizeof text);
+    td_widget_set_text(s_saves_ram_log, text);
+    describe(flash, "Flash", text, sizeof text);
+    td_widget_set_text(s_saves_flash_log, text);
+    if (state.armed && state.verdict[0] == '\0') {
+        td_widget_set_text(s_saves_hint,
+                           "The run ended before the save finished");
+    } else if (state.verdict[0] != '\0' && strcmp(state.verdict, "whole") != 0) {
+        td_widget_set_text(s_saves_hint,
+                           "Did not verify -- Ctrl+S again, then Refresh");
+    } else if (state.verdict[0] == '\0') {
+        td_widget_set_text(s_saves_hint, "No save yet -- Ctrl+S in the app");
+    }
+}
+
+void on_tab(td_widget_t *, void *ctx) { show_tab(static_cast<int>(reinterpret_cast<intptr_t>(ctx))); }
+void on_saves_refresh(td_widget_t *, void *) { saves_refresh(); }
+
 /* ----------------------------------------------------------------- window */
 
 void launch(void)
@@ -399,20 +651,56 @@ void launch(void)
         return;
     }
 
+    memset(s_page_count, 0, sizeof s_page_count);
+
+    /* The tab row, spaced by caption so the labels keep a column between them. */
+    int tab_x = 1;
+    s_tab[0] = td_button(s_win, tab_x, 0, "Library", on_tab, (void *)0);
+    tab_x += static_cast<int>(strlen("Library")) + 5;
+    s_tab[1] = td_button(s_win, tab_x, 0, "Saves", on_tab, (void *)1);
+
     set_path(MEDIA_ROOT);
     s_path = td_label(s_win, 1, 2, 0, "");
     s_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), get_item, on_activate,
                      nullptr);
     td_scrollbar(s_win, -1, 3, LIB_ROWS, s_list);
-    td_button(s_win, 1, 16, "Launch", on_launch, nullptr);
-    td_button(s_win, 10, 16, "Up", on_up, nullptr);
-    td_button(s_win, 15, 16, "Refresh", on_refresh, nullptr);
     s_status = td_label(s_win, 1, 17, 0, "");
     td_widget_set_color(s_status, td_theme()->dim, TD_COLOR_DEFAULT);
 
+    page_add(0, s_path);
+    page_add(0, s_list);
+    page_add(0, td_button(s_win, 1, 16, "Launch", on_launch, nullptr));
+    page_add(0, td_button(s_win, 10, 16, "Up", on_up, nullptr));
+    page_add(0, td_button(s_win, 15, 16, "Refresh", on_refresh, nullptr));
+    page_add(0, s_status);
+
+    /* What the card holds, and what the board's log says about the last
+     * attempt on each channel, with the RTC's time on it. */
+    s_saves_path = td_label(s_win, 1, 2, 0, "");
+    s_saves_state = td_label(s_win, 1, 3, 0, "");
+    s_saves_ram = td_label(s_win, 1, 4, 0, "");
+    s_saves_flash = td_label(s_win, 1, 5, 0, "");
+    s_saves_state_log = td_label(s_win, 1, 7, 0, "");
+    s_saves_ram_log = td_label(s_win, 1, 8, 0, "");
+    s_saves_flash_log = td_label(s_win, 1, 9, 0, "");
+    s_saves_hint = td_label(s_win, 1, 11, 0, "");
+    td_widget_set_color(s_saves_hint, td_theme()->dim, TD_COLOR_DEFAULT);
+    page_add(1, s_saves_path);
+    page_add(1, s_saves_state);
+    page_add(1, s_saves_ram);
+    page_add(1, s_saves_flash);
+    page_add(1, s_saves_state_log);
+    page_add(1, s_saves_ram_log);
+    page_add(1, s_saves_flash_log);
+    page_add(1, s_saves_hint);
+    page_add(1, td_button(s_win, 1, 16, "Refresh", on_saves_refresh, nullptr));
+
     s_launching = false;
     s_reload = false;
+    s_tab_shown = -1;
+    show_tab(0);
     load();
+    saves_refresh();
 }
 
 const td_app_t s_app = { "Tiny89", launch, "TI89" };
