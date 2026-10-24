@@ -1138,3 +1138,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 31 COMMIT Unreleased 2026-10-23T17:09:50-07:00
+
+#### Coming From:
+
+Unreleased 0284dab
+
+#### Purpose:
+
+Shorten the 212 Game Boy and Game Boy Color names that the TinyGBC window's 56-byte limit hides, so every cartridge in the two new libraries can be listed and started.
+
+#### Outcome:
+
+The user chose renaming over widening the window, noting that the NES library had been treated the same way, which its 47-byte longest name is consistent with. A deterministic rule was applied on the card: trailing parenthetical groups are dropped from the end while the name is at or over 56 bytes, then the stem is cut at the last space, hyphen, underscore or comma past 60 percent of the allowance, a cut that would leave an unbalanced parenthesis is backed off to before it, and a collision appends ` ~2`, ` ~3` and so on. 57 names in `/root/media/gb` and 155 in `/root/media/gbc` were renamed, none now exceeds 55 bytes, the longest is `World Cup USA 94 (Europe) (En,Fr,De,Es,It,Nl,Pt,Sv).zip` at 55, the zip counts remain 600 and 543, the byte totals remain 61,209,403 and 242,645,015, no folder holds two names that differ only in case, and eight randomly chosen renamed archives across the two sets pass `unzip -t`. Each set gained a `RENAMED.txt` at its root holding `folder/original -> new` for every rename; the library ignores it because it is not a `.gb`, `.gbc` or `.zip`. Losing a region or enhancement tag from the display name is the cost, and the manifest is what restores it. No repository file changed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 30 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 31 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The GBC library is still unreachable from the window, because `lib_choose_root()` in `ports/bl616/tinygbc_app.cpp` opens only the first media root that exists and `/root/media/gb` wins; that needs the app to list every GB root in one view, which is a TinyTang firmware cycle to propose and approve. Entry 30's and 28's items stand otherwise: the card's `/bl616-firmware.bin` is the running build, the Game Boy save and state folders wait on TinyGBC, the card's manual chapters and `boot.tdsh` are older or empty, and `tools/check_manual.py` remains proposed.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
