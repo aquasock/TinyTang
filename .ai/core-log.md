@@ -1108,3 +1108,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 30 COMMIT Unreleased 2026-10-23T17:07:02-07:00
+
+#### Coming From:
+
+Unreleased 007f4ee
+
+#### Purpose:
+
+Populate `/root/media/gb` and `/root/media/gbc` on the card from the MiSTer card's Game Boy and Game Boy Color sets, in lettered folders like the NES library.
+
+#### Outcome:
+
+The MiSTer card was mounted at `/run/media/vash/MiSTer_Data` and its sets are `games/Gameboy` and `games/GBC`, not a `GB` folder: 600 and 543 zip files. Each was copied into a folder named for its first character — `A` to `Z` uppercased, the digit itself, and `#` for the one name beginning with a bracket — giving `/root/media/gb` with 600 files in 27 folders and `/root/media/gbc` with 543 files in 31 folders, 427 MB used on the card in total. Names were copied unchanged. `mister-boot.gb`, MiSTer's own boot ROM, and the `Palettes` folder were not copied. The counts on the card match the source sets exactly, five randomly chosen archives from each folder set passed `unzip -t`, and the largest folder holds 75 files, well inside the library's 256-entry ceiling. Two limits of the window now bear on the result and were reported to the user: `lib_choose_root()` opens only the first media root that exists and lists nothing else, so with `/root/media/gb` present the 543 GBC files are not shown at all; and `lib_listable()` drops any name at or over `LIB_NAME_BYTES` (56), which hides 57 of the GB names and 155 of the GBC names. Neither is a fault in the copy. No repository file changed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 29 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 30 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The GBC library is on the card but unreachable from the window while `gb` exists, and 212 of the 1,143 names are too long to list. Both are TinyTang's `ports/bl616/tinygbc_app.cpp`: the library could list every GB root in one view instead of only the first, and the 56-byte cap could be named in the status line or raised, which costs about 40 bytes per entry across 256 entries of static memory that the board's free heap would lose. Shortening the 212 names on the card is the alternative that needs no firmware change. The user is to choose; nothing has been changed in the repository or the app.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
