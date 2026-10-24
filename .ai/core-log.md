@@ -1078,3 +1078,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 29 COMMIT Unreleased 2026-10-23T17:00:28-07:00
+
+#### Coming From:
+
+Unreleased cf8018b
+
+#### Purpose:
+
+Put each game core's `.fs` beside its `.bin` on the card, as the desktop core already had, so a one-wire JTAG load has a bitstream for every core the card carries.
+
+#### Outcome:
+
+The user had deleted the retired ABI 1.4 pair (`tinytang.bin.abi14` and `tinytang.fs.gz.abi14`) and asked for the FS files of the two game cores beside their BINs. Both builds were on this machine and each was proved against the image already on the card before anything was written: running `tools/fs_to_bin.py` over TinyGBC's `build/ae350_soc/ae350_soc.fs` (37,362,149 bytes, SHA-256 `1f1b64e5…`) reproduces the card's `tinygbc.bin` (`78d01d47…`, 4,666,860 bytes) byte for byte, and the same over TinyNES's `build/ae350_soc/ae350_soc.fs` (38,252,773 bytes, SHA-256 `2a356060…`) reproduces the card's `tinynes.bin` (`5cd4ab00…`, 4,777,964 bytes). They were written as `gzip -9 -n` companions, matching the desktop core's `tinytang.fs.gz`: `/root/cores/console138k/tinygbc.fs.gz`, 867,585 bytes, and `tinynes.fs.gz`, 795,315 bytes, written to the card while it was mounted on the host; decompressing each from the card returned exactly the source `.fs` hashes above. Neither is read by the board — `tangload` takes the `.bin`, and the gzipped `.fs` is a companion for the one-wire path that loads the text bitstream over JTAG (TOOL-012) — so nothing on the board changed and no test applies. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 28 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 29 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The card now carries a `.fs.gz` beside each of its three cores; the retired ABI 1.4 pair is gone, as the user deleted it, so the rollback to the PMOD-I2C desktop core no longer exists on the card. Entry 28's items stand: the card's `/bl616-firmware.bin` is the running build, the Game Boy save and state folders wait on TinyGBC, the card's manual chapters and `boot.tdsh` are older or empty, and `tools/check_manual.py` remains proposed and unapproved.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
