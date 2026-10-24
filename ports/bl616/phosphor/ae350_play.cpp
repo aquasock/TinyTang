@@ -14,6 +14,7 @@
 extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
+#include "ae350_load.h"
 }
 
 #include "ae350_file_server.h"
@@ -22,7 +23,7 @@ extern "C" {
 
 namespace {
 
-constexpr char PLAYER_TPI[] = "/sd/root/ae350/tinyphosphor-play.tpi";
+constexpr char PLAYER_IMAGE[] = "/sd/root/ae350/tinyphosphor-play.elf";
 
 // Tang-Phosphor register ABI 1.8 moved cpu_mode from bit 0 of 0xc0, which it
 // shared with the PMOD socket declaration, to a word of its own.  An older core
@@ -30,6 +31,126 @@ constexpr char PLAYER_TPI[] = "/sd/root/ae350/tinyphosphor-play.tpi";
 constexpr uint32_t REG_ABI = 0x00000004u;
 constexpr uint32_t REG_ABI_CPU_MODE = 0x00010008u;
 constexpr uint32_t REG_CPU_MODE = 0x000000a8u;
+
+// The boot ROM's image header (software/ae350/include/ae350.h, written by
+// tools/ae350_run.py pack): eight little-endian words.  A player deployed as
+// an ELF, the way the game players are, is turned into that image here, so the
+// card needs no pack step and the core still receives the TPI1 it always did.
+constexpr uint32_t IMAGE_MAGIC = 0x31495054u;        /* "TPI1" */
+constexpr uint32_t IMAGE_HEADER_BYTES = 32;
+
+void put_le32(uint8_t *at, uint32_t value)
+{
+    at[0] = static_cast<uint8_t>(value);
+    at[1] = static_cast<uint8_t>(value >> 8);
+    at[2] = static_cast<uint8_t>(value >> 16);
+    at[3] = static_cast<uint8_t>(value >> 24);
+}
+
+int elf_read(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    FIL *file = static_cast<FIL *>(ctx);
+    UINT got = 0;
+    if (f_lseek(file, offset) != FR_OK) {
+        return -1;
+    }
+    if (f_read(file, dst, length, &got) != FR_OK || got != length) {
+        return -1;
+    }
+    return 0;
+}
+
+bool player_is_elf(const char *path)
+{
+    FIL file;
+    uint8_t magic[4];
+    UINT got = 0;
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        return false;
+    }
+    const bool elf = f_read(&file, magic, sizeof magic, &got) == FR_OK &&
+                     got == sizeof magic && memcmp(magic, "\x7f" "ELF", 4) == 0;
+    (void)f_close(&file);
+    return elf;
+}
+
+/* Stream the player: a packed .tpi as it is, or an ELF turned into the boot
+ * ROM's image.  Only a single loadable segment can be flattened into that
+ * image, so a multi-segment ELF is refused rather than mis-packed. */
+bool stream_player(const char *path, const char **error_out,
+                   fpga_file_stream_cancel cancel, void *cancel_context)
+{
+    if (!player_is_elf(path)) {
+        const fpga_file_stream_result plain =
+            fpga_file_stream(path, cancel, cancel_context);
+        if (plain.status == fpga_file_stream_status::OK) {
+            return true;
+        }
+        if (error_out != nullptr) {
+            *error_out = fpga_file_stream_status_text(plain.status);
+        }
+        return false;
+    }
+
+    FIL file;
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        if (error_out != nullptr) {
+            *error_out = "the player image is missing";
+        }
+        return false;
+    }
+    ae350_elf_t elf;
+    bool ok = ae350_elf_parse(&elf, elf_read, &file) == AE350_OK && elf.count == 1;
+    const ae350_segment_t segment = ok ? elf.segment[0] : ae350_segment_t{};
+    if (ok && ((segment.size & 3u) != 0)) {
+        ok = false;
+    }
+    uint32_t crc = 0;
+    uint8_t chunk[512];
+    for (uint32_t at = 0; ok && at < segment.size;) {
+        const uint32_t left = segment.size - at;
+        const uint32_t n = left < sizeof chunk ? left : sizeof chunk;
+        if (elf_read(&file, segment.offset + at, chunk, n) != 0) {
+            ok = false;
+            break;
+        }
+        crc = ae350_crc32(crc, chunk, n);
+        at += n;
+    }
+    (void)f_close(&file);
+    if (!ok) {
+        if (error_out != nullptr) {
+            *error_out = "the player ELF is not one 4-byte-aligned segment";
+        }
+        return false;
+    }
+
+    uint8_t header[IMAGE_HEADER_BYTES];
+    put_le32(header + 0, IMAGE_MAGIC);
+    put_le32(header + 4, IMAGE_HEADER_BYTES);
+    put_le32(header + 8, elf.base);
+    put_le32(header + 12, elf.entry);
+    put_le32(header + 16, segment.size);
+    put_le32(header + 20, crc);
+    put_le32(header + 24, 0);
+    put_le32(header + 28, 0);
+
+    fpga_file_stream_options options;
+    options.offset = segment.offset;
+    options.length = IMAGE_HEADER_BYTES + segment.size;
+    options.prefix = header;
+    options.prefix_length = IMAGE_HEADER_BYTES;
+
+    const fpga_file_stream_result sent =
+        fpga_file_stream(path, cancel, cancel_context, options);
+    if (sent.status == fpga_file_stream_status::OK) {
+        return true;
+    }
+    if (error_out != nullptr) {
+        *error_out = fpga_file_stream_status_text(sent.status);
+    }
+    return false;
+}
 
 } // namespace
 
@@ -125,10 +246,7 @@ bool ae350_start_player(uint32_t *baseline, const char **error_out,
             *error_out = "AE350 did not respond";
         return false;
     }
-    const fpga_file_stream_result player = fpga_file_stream(PLAYER_TPI, cancel, cancel_context);
-    if (player.status != fpga_file_stream_status::OK) {
-        if (error_out != nullptr)
-            *error_out = fpga_file_stream_status_text(player.status);
+    if (!stream_player(PLAYER_IMAGE, error_out, cancel, cancel_context)) {
         return false;
     }
 

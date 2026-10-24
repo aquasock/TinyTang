@@ -1236,3 +1236,35 @@ The cause of the missing stream acknowledgement is not established: it happens a
 - User Test: PASS
 
 ---
+
+## 34 COMMIT Unreleased 2026-10-23T19:58:34-07:00
+
+#### Coming From:
+
+Unreleased 5db3dba
+
+#### Purpose:
+
+Deploy TinyPhosphor's player as an ELF like the two game players, by building the AE350 boot ROM's image header in the firmware instead of shipping a packed `.tpi`.
+
+#### Outcome:
+
+`fpga_file_stream_options` gained a prefix, bytes sent as the stream's first data ahead of the file's range, and `fpga_file_stream` sends it before the data loop; `options.length` then counts the prefix and the payload together. `ports/bl616/phosphor/ae350_play.cpp` reads `/sd/root/ae350/tinyphosphor-play.elf`, and when the file's first four bytes are the ELF magic it parses the image with `ports/bl616/ae350_load.c`, the same reader `ae350run` uses, requires a single 4-byte-aligned loadable segment, computes the payload's CRC-32, builds the boot ROM's 32-byte TPI1 header from the segment's address, the ELF's entry point and the section length, and streams header then payload; a packed `.tpi` still takes the old path unchanged, and a multi-segment ELF is refused with a reason rather than mis-packed, since TPI1 is a flat image. The first build was rejected by the loader with state `0x81`, `AE350_STATE_BAD_HEADER`, and the cause was mine: the magic constant was written `0x31504954`, which little-endian is `TIP1`, instead of `0x31495054`, `TPI1`. Comparing the generated header against the `.tpi` built by `tools/ae350_run.py pack` showed every other field already identical and the payload byte-identical, and with the constant corrected the two headers matched exactly. The firmware built as `5db3dba-dirty.05cbb3b`, was flashed, and after the user's power cycle `phosphor play` of a 28.7 MB FLAC in `/root/media/music/hungarian` reported `player sent in 9772 ms`, first sample at 11,475 ms, and played with 0 underruns, the user hearing it; `phosphor status` read 4,391,537 samples at 48000 Hz at 1:31. The `.tpi` was removed from the card, which now carries `tinyphosphor-play.elf` beside `tinynes-play.elf` and `tinygbc-play.elf`. `.ai/core-reference.md`'s PHOS-008 records the ELF deployment. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 33 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 147 ids in the same order, and validated this entry as number 34 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The user reorganized `/root/media/music` into `myst/` and `hungarian/`, and the Phosphor window's library skips directories (`td_phosphor_app.cpp` filters `AM_DIR`), so its list is now empty while the shell plays both folders; folder navigation like the TinyNES and TinyGBC libraries have is the next cycle, as the user directed. The lost stream acknowledgement of entry 33 is still unexplained and the fast 5 Mbaud link still off. TinyPhosphor's README still names `/root/ae350/resident.tpi`. The card's `/root/ae350` no longer holds the TinyCreature or TI-Emu images that were there this morning.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/ae350_play.cpp
+- ports/bl616/phosphor/fpga_file_stream.cpp
+- ports/bl616/phosphor/fpga_file_stream.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

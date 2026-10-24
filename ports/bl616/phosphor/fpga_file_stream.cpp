@@ -190,6 +190,21 @@ fpga_file_stream_result fpga_file_stream(const char *path,
         }
     }
 
+    if (options.prefix != nullptr && options.prefix_length != 0) {
+        if (options.prefix_length > sizeof(stream_buffer)) {
+            summary.status = fpga_file_stream_status::INVALID_ARGUMENT;
+            goto finish;
+        }
+        memcpy(stream_buffer, options.prefix, options.prefix_length);
+        crc = crc32_update(crc, stream_buffer, options.prefix_length);
+        if (send_frame(FPGA_STREAM_DATA, stream_id, 0, stream_buffer,
+                       options.prefix_length, options.prefix_length, summary)) {
+            offset = options.prefix_length;
+        } else {
+            summary.status = fpga_file_stream_status::TRANSPORT_FAILED;
+        }
+    }
+
     while (summary.status == fpga_file_stream_status::INVALID_ARGUMENT &&
            !cancellation_requested(cancel, cancel_context)) {
         UINT count = 0;

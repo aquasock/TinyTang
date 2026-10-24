@@ -47,6 +47,11 @@ struct fpga_file_stream_options {
     // to the end of the file).  Stream offsets still count from zero.
     uint32_t offset = 0;
     uint32_t length = 0;
+    // Bytes sent as the stream's first data, ahead of the file range: the
+    // AE350 boot ROM's image header when the card holds an ELF rather than a
+    // packed .tpi.  Counted in `length`.
+    const uint8_t *prefix = nullptr;
+    uint16_t prefix_length = 0;
 };
 
 uint16_t fpga_file_stream_reserve_id(void);
