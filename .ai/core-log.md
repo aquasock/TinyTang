@@ -1493,3 +1493,34 @@ The SHT45 needs isolating on the bench: move a device that already works onto ch
 - User Test: PASS
 
 ---
+
+## 42 COMMIT Unreleased 2026-10-24T22:26:29-07:00
+
+#### Coming From:
+
+Unreleased 6099d54
+
+#### Purpose:
+
+Make the core-load path actually point the PCA9548A at the Wii adapter's channel before a game core takes the bus, correcting the no-op preselection entry 41 shipped.
+
+#### Outcome:
+
+The user reported that the Wii Classic Controller no longer drove a game after entry 41, and the cause was mine: `tang_i2c_mux_for_game_core()` was called after `tang_ini_core_replacing()`, whose first act is to clear `tang_core_i2c_bus()`, so the hook saw no bus, took its early return and never wrote the switch. The switch therefore stayed on the RTC's channel from the clock's last read, the game core polled 0x52 on segment 6, and the controller answered nothing. The call now sits ahead of both `*_replacing()` hooks, where the desktop core is still driving H13/G13 and can perform the select. `tools/tests/tb_tang_flash.c` could not have caught it, because its stubs recorded only that a hook ran; they now model the bus's ownership, held by the desktop core until `tang_ini_core_replacing()` gives it up and restored by `tang_ini_core_loaded()`, and the hook records `mux-select-NOBUS` instead of `mux-select` when it fires without the bus, so reinstating the old order fails three checks with that marker. The firmware built as `6099d54-dirty.aa86eb6`, 657,280 bytes, SHA-256 `44ed4fd5cfc1bf3e891fa96508a0e7ce92d524b0fc1414409c31c588e42cf7d0`, with no warning in either changed file, and was flashed; that image also carried the still-unverified Saves-page work whose own cycle follows, so the deployed binary is not this commit alone. After the power cycle the user launched a game and reported PASS on the Classic Controller. One residual consequence is recorded rather than fixed: a failed core load leaves `tang_core_i2c_bus()` cleared until the next successful load, so `tangi2c` refuses meanwhile and that next load's select is also a no-op. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 41 were not rewritten, checked that the reference's six YAML blocks still parse with the index and records naming the same 148 ids in the same order, and validated this entry as number 42 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Saves-page cycle that is already built into this image needs its user test -- a save made with HOME and L, then the TinyNES window's Saves page showing the time -- before its own entry can be written. After that the failed-load consequence above is worth a small cycle of its own: a load that does not program should restore `tang_core_i2c_bus()` for the core that is still running, or the firmware should re-derive it from the core that answers rather than from whether a load happened. The standing items are unchanged, and the SHT45 on the switch's channel 7 still answers nothing while the switch, the RTC, the magnetometer and the Wii adapter are all proven through it.
+
+#### Files Modified:
+
+- ports/bl616/tdsh_tang_flash.c
+- tools/tests/tb_tang_flash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

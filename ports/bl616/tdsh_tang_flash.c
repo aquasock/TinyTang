@@ -183,14 +183,17 @@ tang_load_result_t tang_core_load(const char *real)
         return TANG_LOAD_BUSY;
     }
 
+    /* A game core drives the USB-A data pair itself and cannot select a
+     * PCA9548A channel, so the switch is pointed at the Wii adapter while the
+     * desktop core can still be asked to do it.  This must come before
+     * tang_ini_core_replacing(), which clears tang_core_i2c_bus() and so makes
+     * this a no-op: the controller then answers on whichever channel the clock
+     * left selected, and the pad is dead in the game. */
+    tang_i2c_mux_for_game_core();
     /* A track playing on a Phosphor core is stopped while that core can still
      * be told, so the playback task never talks to the core that replaces it. */
     tang_phosphor_core_replacing();
     tang_ini_core_replacing();
-    /* A game core drives the USB-A data pair itself and cannot select a
-     * PCA9548A channel, so the switch is pointed at the Wii adapter while the
-     * desktop core can still be asked to do it. */
-    tang_i2c_mux_for_game_core();
 
     const bool ok = fpga_program(real);
     if (ok) {
