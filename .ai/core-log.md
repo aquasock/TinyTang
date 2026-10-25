@@ -1524,3 +1524,39 @@ The Saves-page cycle that is already built into this image needs its user test -
 - User Test: PASS
 
 ---
+
+## 43 COMMIT Unreleased 2026-10-24T22:29:57-07:00
+
+#### Coming From:
+
+Unreleased f10cd4c
+
+#### Purpose:
+
+Give the TinyNES window's Saves page the real time of each save, read from the board's RTC-stamped save log, and share that log's parser with the Tiny89 window instead of keeping a second copy.
+
+#### Outcome:
+
+The page's last line had said "Created: unknown, the board has no clock" since it was written, which the switch work made false: the firmware has stamped every line of `/sd/root/saves/last.log` with the RTC-kept clock's local ISO-8601 time since entry 39, and the Tiny89 window already read that log. The parsing moved out of `ports/bl616/tiny89_app.cpp` into `ports/bl616/td_saves_log.c` and `td_saves_log.h`: one reader folds a log a chunk at a time into a per-destination record, keeping a half-read line across read boundaries, recognising the firmware's `arm <path>: ...` and `finish <path>: <got> of <want> bytes, crc <a> of <b>, <verdict>` lines only for the destination whose path ends in the caller's needle, and turning `2026-10-24T20:41:05-07:00` into `2026-10-24 20:41` while leaving `no-clock` and a line written before stamps existed as themselves rather than passing either off as a date. `ports/bl616/tinynes_app.cpp`'s `state_show()` reads the log once per page for both of a cartridge's files and replaces the hardcoded line with the state's record -- `Saved 2026-10-24 20:41, whole, 262144 B` -- distinguishing an attempt that started and never finished, one whose clock was unset, and one with no record at all, and the static "and written when the game ends" sentence under the battery-save folder became that file's own record, so both saves are dated. `tiny89_app.cpp` kept its wording and now uses the shared reader. `tools/tests/tb_saves_log.c` and `test_saves_log.sh` cover no log, a finished save, one that came back short, an arm that never finished, a newer arm superseding a verdict, two cartridges and two files interleaved, a line split across a read boundary and inside the path, `no-clock`, a legacy unstamped line, CRLF and an overlong line, and three planted faults were shown to fail it: dropping stamp recognition gives 21 failures, dropping the path filter 7, and dropping the partial line between reads 3; the overlong-line case does not discriminate and is a crash-safety assertion instead. The rest of the host suite passed except `tools/tests/test_phosphor_catalog.sh`, whose breakage predates this work and is recorded in entry 41. `tools/check_help_width.py` found no entry over 80 columns. Nothing new was built or flashed for this entry: the work was already in the image entry 42 deployed, `6099d54-dirty.aa86eb6`, 657,280 bytes, SHA-256 `44ed4fd5cfc1bf3e891fa96508a0e7ce92d524b0fc1414409c31c588e42cf7d0`, and the user then saved with HOME and L, reopened the TinyNES window's Saves page and reported PASS on the time and on the battery-save line. The README's description of that page follows. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 42 were not rewritten, checked that the reference's six YAML blocks still parse with the index and records naming the same 148 ids in the same order, and validated this entry as number 43 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Files on the card still carry no real date, because turning that on means `FF_FS_NORTC` off and a `get_fattime()` against the RTC, which would give the Editor and Files views a date too and is its own cycle. `/root/saves/last.log` is appended to and never rotated, so it grows for the life of the card; a size cap that keeps the newest lines would bound it. The failed-load consequence entry 42 recorded is still parked. The SHT45 on the switch's channel 7 still answers nothing, and the control test that would separate a dead port from a dead sensor -- a device that already answers, moved to that channel -- has not been run.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/td_saves_log.c
+- ports/bl616/td_saves_log.h
+- ports/bl616/tiny89_app.cpp
+- ports/bl616/tinynes_app.cpp
+- tools/tests/tb_saves_log.c
+- tools/tests/test_saves_log.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

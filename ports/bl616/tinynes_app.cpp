@@ -26,6 +26,7 @@ extern "C" {
 #include "tdsh.h"
 #include "tang_ae350_run.h"
 #include "tang_core_load.h"
+#include "td_saves_log.h"
 
 /* The USB console writer.  It is declared for the shell's own sources in
  * ports/bl616/tdsh_stdio_redirect.h, which also renames printf here; only the
@@ -145,6 +146,7 @@ const char STATE_SHOWN[] = "/root/states/nes";
 const char STATE_REAL[] = "/sd/root/states/nes";
 const int STATE_LINES = 6;
 td_widget_t *s_state_line[STATE_LINES];
+td_widget_t *s_batt_line;   /* when the battery save was last written */
 int s_player;
 bool s_dirty;                    /* edited here and not yet saved */
 
@@ -802,12 +804,31 @@ void state_lines(const char *const text[STATE_LINES])
     }
 }
 
+/* One saved file, in the page's words.  The stamp is the RTC-kept clock's
+ * local time as the firmware wrote it; a save made before the clock had been
+ * set says so rather than passing "no-clock" off as a date. */
+void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
+                   size_t cap)
+{
+    char when[32];
+
+    td_saves_when(rec.stamp, when, sizeof when);
+    if (rec.verdict[0] != '\0' && strcmp(rec.stamp, "no-clock") == 0) {
+        snprintf(out, cap, "%s, %lu B; clock was unset then", verb, rec.want);
+    } else if (rec.verdict[0] != '\0') {
+        snprintf(out, cap, "%s %s, %s, %lu B", verb, when, rec.verdict, rec.want);
+    } else {
+        snprintf(out, cap, "%s %s, did not finish", verb, when);
+    }
+}
+
 /* What the card holds for the Library's selected cartridge.  The CRC-32 is of
  * the whole file, the number the player prints as it sends a state and the
  * one TinyTang verifies it by, so the three can be matched by eye. */
 void state_show(void)
 {
     static char line[STATE_LINES][TD_TEXT_MAX];
+    static char batt[TD_TEXT_MAX];
     const char *text[STATE_LINES] = {};
     const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
 
@@ -815,11 +836,51 @@ void state_show(void)
         s_lib_entries[row].is_dir) {
         text[0] = "Select a cartridge in the Library.";
         state_lines(text);
+        if (s_batt_line != nullptr) {
+            td_widget_set_text(s_batt_line, "Battery save: select a cartridge.");
+        }
         return;
     }
     const char *name = s_lib_entries[row].name;
     const char *dot = strrchr(name, '.');
     const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+
+    /* The board's log, read once for both files: every line names the file it
+     * carried and is stamped with the RTC-kept clock's local time.  The files
+     * carry no date of their own, because FatFS has no clock on this board. */
+    td_saves_attempt_t saved_state = {};
+    td_saves_attempt_t saved_batt = {};
+    {
+        char needle_state[LIB_NAME_BYTES + 8];
+        char needle_sav[LIB_NAME_BYTES + 8];
+        snprintf(needle_state, sizeof needle_state, "/%.*s.state", stem, name);
+        snprintf(needle_sav, sizeof needle_sav, "/%.*s.sav", stem, name);
+        FIL log;
+        if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
+            char buf[256];
+            UINT got = 0;
+            td_saves_reader_t reader_state;
+            td_saves_reader_t reader_batt;
+            td_saves_reader_init(&reader_state);
+            td_saves_reader_init(&reader_batt);
+            while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
+                td_saves_reader_feed(&reader_state, buf, got, needle_state,
+                                     &saved_state);
+                td_saves_reader_feed(&reader_batt, buf, got, needle_sav,
+                                     &saved_batt);
+            }
+            (void)f_close(&log);
+        }
+    }
+    if (s_batt_line != nullptr) {
+        if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
+            describe_save(saved_batt, "Battery save", batt, sizeof batt);
+        } else {
+            snprintf(batt, sizeof batt, "Battery save: none written yet.");
+        }
+        td_widget_set_text(s_batt_line, batt);
+    }
+
     char real[TD_PATH_MAX + 8];
     snprintf(line[0], sizeof line[0], "%.*s", stem, name);
     snprintf(line[1], sizeof line[1], "%s/%.*s.state", STATE_SHOWN, stem, name);
@@ -869,8 +930,14 @@ void state_show(void)
         text[3] = line[3];
         text[4] = line[4];
     }
-    /* FatFS stamps files with a fixed date while the board has no clock. */
-    text[5] = "Created: unknown, the board has no clock.";
+    /* When it was written: the log's record, since the file itself predates
+     * any clock.  A save that started and never finished says that instead. */
+    if (saved_state.verdict[0] != '\0' || saved_state.armed) {
+        describe_save(saved_state, "Saved", line[5], sizeof line[5]);
+    } else {
+        snprintf(line[5], sizeof line[5], "Saved: no record in the log.");
+    }
+    text[5] = line[5];
     state_lines(text);
 }
 
@@ -1137,7 +1204,8 @@ void launch(void)
         page_add(SAVES_TAB, s_state_line[i]);
     }
     page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/nes"));
-    page_add(SAVES_TAB, td_label(s_win, 1, 11, 0, "and written when the game ends."));
+    s_batt_line = td_label(s_win, 1, 11, 0, "Battery save: none written yet.");
+    page_add(SAVES_TAB, s_batt_line);
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is

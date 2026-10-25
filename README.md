@@ -424,7 +424,12 @@ where it is written to `/root/states/nes/<cartridge>.state` through a `.part`
 file that is read back and checked before it replaces the old one.  At launch
 that file is handed to the player, which keeps it for R and never loads it on
 its own.  The window's Saves page shows the state of the cartridge selected in
-the Library; states can be swapped by copying them in the Files app.
+the Library and when it and that cartridge's battery save were last written:
+the firmware stamps every line of its save log `/root/saves/last.log` with the
+RTC-kept clock's local time, so the page reads the log rather than the file's
+date, which FatFS cannot set on this board.  A save that started and never
+finished, or one that came back short, says so there too; states can be swapped
+by copying them in the Files app.
 
 That is the only way to start TinyNES.  A cartridge double-clicked in the
 Files app or on the desktop is not opened at all: the desktop would have to

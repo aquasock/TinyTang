@@ -25,6 +25,7 @@ extern "C" {
 #include "tdsh.h"
 #include "tang_ae350_run.h"
 #include "tang_core_load.h"
+#include "td_saves_log.h"
 
 /* The USB console writer, declared for the shell's own sources in
  * ports/bl616/tdsh_stdio_redirect.h.  Only the function is wanted. */
@@ -411,79 +412,16 @@ void on_tick(td_window_t *)
 
 /* ----------------------------------------------------------------- saves */
 
-/* One line of the board's log, split into the two things the page shows: the
- * stamp the firmware wrote (local date and time from the RTC-kept clock) and
- * what the line says. */
-struct log_line {
-    char stamp[32];
-    const char *rest;
-};
-
-void split_line(const char *line, log_line *out)
-{
-    const char *space = strchr(line, ' ');
-
-    out->stamp[0] = '\0';
-    out->rest = line;
-    if (space == nullptr || space == line ||
-        (size_t)(space - line) >= sizeof out->stamp) {
-        return;
-    }
-    const size_t n = (size_t)(space - line);
-    memcpy(out->stamp, line, n);
-    out->stamp[n] = '\0';
-    out->rest = space + 1;
-}
-
-/* "2026-10-23T21:40:12-07:00" as "2026-10-23 21:40"; "no-clock" stays as it
- * is, so a session without a set RTC reads as such rather than as a date. */
-void show_stamp(const char *stamp, char *out, size_t cap)
-{
-    const size_t n = strlen(stamp);
-
-    if (strcmp(stamp, "no-clock") == 0 || n < 19) {
-        snprintf(out, cap, "%s", n != 0 ? stamp : "unknown");
-        return;
-    }
-    snprintf(out, cap, "%.10s %.5s", stamp, stamp + 11);
-}
-
-/* What the board's log says about one channel of one image.  A run arms the
- * RAM and, when the flash changed, the flash; the two attempts' lines
- * interleave, so each channel keeps its own record. */
-struct attempt {
-    char stamp[32];
-    char verdict[16];
-    unsigned long got;
-    unsigned long want;
-    bool armed;
-};
-
-/* One "finish <path>: <got> of <want> bytes, crc <a> of <b>, <verdict>" line
- * into the record it belongs to. */
-void note_finish(const log_line &parts, attempt *rec)
-{
-    const char *colon = strchr(parts.rest, ':');
-    unsigned long crc_got = 0;
-    unsigned long crc_want = 0;
-
-    snprintf(rec->stamp, sizeof rec->stamp, "%s", parts.stamp);
-    rec->armed = false;
-    rec->got = 0;
-    rec->want = 0;
-    rec->verdict[0] = '\0';
-    if (colon != nullptr) {
-        (void)sscanf(colon + 1, " %lu of %lu bytes, crc %lx of %lx, %15s",
-                     &rec->got, &rec->want, &crc_got, &crc_want, rec->verdict);
-    }
-}
-
-void describe(const attempt &rec, const char *label, char *out, size_t cap)
+/* What the page shows for one channel: the verdict word the board wrote, when
+ * it wrote it and the size it carried.  The log's parsing is the shared one in
+ * td_saves_log.h, which TinyNES's Saves page reads by the same rules. */
+void describe(const td_saves_attempt_t &rec, const char *label, char *out,
+              size_t cap)
 {
     char when[32] = "unknown";
 
     if (rec.stamp[0] != '\0') {
-        show_stamp(rec.stamp, when, sizeof when);
+        td_saves_when(rec.stamp, when, sizeof when);
     }
     if (rec.verdict[0] != '\0') {
         snprintf(out, cap, "%s %-6s %s %lu B", label, rec.verdict, when, rec.want);
@@ -560,49 +498,29 @@ void saves_refresh(void)
     char needle[LIB_NAME_BYTES + 8];
     char needle_flash[LIB_NAME_BYTES + 8];
     char needle_state[LIB_NAME_BYTES + 8];
-    attempt ram = {};
-    attempt flash = {};
-    attempt state = {};
+    td_saves_attempt_t ram = {};
+    td_saves_attempt_t flash = {};
+    td_saves_attempt_t state = {};
 
     snprintf(needle, sizeof needle, "/%s.ram", base);
     snprintf(needle_flash, sizeof needle_flash, "/%s.flash", base);
     snprintf(needle_state, sizeof needle_state, "/%s.state", base);
     if (f_open(&file, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
         char buf[256];
-        char line[192];
-        size_t used = 0;
         UINT got = 0;
+        /* One reader per channel: a line can only belong to one of them, and
+         * each keeps its half-read line across chunk boundaries. */
+        td_saves_reader_t reader_state;
+        td_saves_reader_t reader_ram;
+        td_saves_reader_t reader_flash;
+        td_saves_reader_init(&reader_state);
+        td_saves_reader_init(&reader_ram);
+        td_saves_reader_init(&reader_flash);
 
         while (f_read(&file, buf, sizeof buf, &got) == FR_OK && got > 0) {
-            for (UINT i = 0; i < got; i++) {
-                if (buf[i] == '\n') {
-                    line[used] = '\0';
-                    attempt *rec = nullptr;
-                    if (strstr(line, needle_state) != nullptr) {
-                        rec = &state;
-                    } else if (strstr(line, needle) != nullptr) {
-                        rec = &ram;
-                    } else if (strstr(line, needle_flash) != nullptr) {
-                        rec = &flash;
-                    }
-                    if (rec != nullptr) {
-                        log_line parts;
-                        split_line(line, &parts);
-                        if (strncmp(parts.rest, "finish ", 7) == 0) {
-                            note_finish(parts, rec);
-                        } else if (strncmp(parts.rest, "arm ", 4) == 0) {
-                            /* A newer attempt: its finish has not come yet. */
-                            *rec = attempt{};
-                            rec->armed = true;
-                            snprintf(rec->stamp, sizeof rec->stamp, "%s",
-                                     parts.stamp);
-                        }
-                    }
-                    used = 0;
-                } else if (used + 1 < sizeof line) {
-                    line[used++] = buf[i];
-                }
-            }
+            td_saves_reader_feed(&reader_state, buf, got, needle_state, &state);
+            td_saves_reader_feed(&reader_ram, buf, got, needle, &ram);
+            td_saves_reader_feed(&reader_flash, buf, got, needle_flash, &flash);
         }
         (void)f_close(&file);
     }
