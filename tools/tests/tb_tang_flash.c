@@ -105,6 +105,7 @@ bool fpga_program(const char *fname)
 }
 void tang_phosphor_core_replacing(void) { hook("phos-replacing"); }
 void tang_ini_core_replacing(void) { hook("ini-replacing"); }
+void tang_i2c_mux_for_game_core(void) { hook("mux-select"); }
 void tang_osd_desk_core_reloaded(void) { hook("osd-reloaded"); }
 void tang_ini_core_loaded(void) { hook("ini-loaded"); }
 
@@ -147,7 +148,7 @@ int main(void)
     g_release = true;
     clear();
     CHECK(tangload() == 0);
-    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program osd-reloaded ini-loaded ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing mux-select program osd-reloaded ini-loaded ") == 0);
 
     /* A second load while the first programs is refused and touches nothing. */
     g_release = false;
@@ -159,7 +160,7 @@ int main(void)
     pthread_mutex_unlock(&g_prog_lock);
     CHECK(tangload() == 1);
     CHECK(strstr(g_out, "another tangload is running") != NULL);
-    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing mux-select program ") == 0);
     pthread_mutex_lock(&g_prog_lock);
     g_release = true;
     pthread_cond_broadcast(&g_prog_cond);
@@ -171,7 +172,7 @@ int main(void)
     g_program_ok = false;
     clear();
     CHECK(tangload() == 1);
-    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing program ") == 0);
+    CHECK(strcmp(g_hooks, "phos-replacing ini-replacing mux-select program ") == 0);
     g_program_ok = true;
     clear();
     CHECK(tangload() == 0);

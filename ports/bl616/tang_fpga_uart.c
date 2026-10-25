@@ -2118,7 +2118,7 @@ static const tdsh_command_t s_fpga_commands[] = {
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",
       cmd_fpgapipe, 0 },
     { "ae350run", "ae350run <program.elf> [<file>] [<file-to-send>]",
-      "Load a program into an AE350 core, serve its files, and name a file to send over the link",
+      "Load an AE350 program, serve its files, send one named file",
       cmd_ae350run, 0 },
 };
 

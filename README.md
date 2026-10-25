@@ -224,23 +224,32 @@ Building and flashing are under *Quick start* and *Building requirements*.
   are reported and ignored.  `tangini` shows the layout, its problems, the word
   and what the loaded core holds, and `tangini apply` sends it again without
   reloading the core.
-- **`tangi2c scan | read | write | rtc | auto`** drives the desktop core's I2C
-  bus on the USB-A port (desktop ABI 1.5): SDA on D+ and SCL on D- of the
+- **`tangi2c scan | read | write | rtc | mux | auto`** drives the desktop core's
+  I2C bus on the USB-A port (desktop ABI 1.5): SDA on D+ and SCL on D- of the
   populated port, 100 kHz, register-addressed transfers of 1 to 8 bytes, and
   no pull-ups from the FPGA beyond its weak internal ones, so the bus takes its
-  pull-ups from Adafruit's Wii Nunchuck Breakout Adapter on that port.  The
-  Adafruit DS3231 RTC goes on the same STEMMA QT chain, at 0x68 beside the Wii
-  controller's 0x52, so TinyNES and TinyGBC keep their controller there.  The
-  bus needs no `/tinytang.ini` declaration and is there whenever the desktop core
-  is loaded; with any other core the command says the core has no I2C bus.
-  The engine waits out a device that stretches the clock, as the Wii
-  controller does, and reads with a STOP and a 200 us pause before the read
-  rather than a repeated START, which the controller answers with 0xff.
-  `tangi2c scan` finds the DS3231 but not the Wii controller, which
-  `tangi2c read 0x52 0xfa 6` still reaches after its wake-up writes
-  (0x55 to 0xf0, then 0x00 to 0xfb).  `tangi2c rtc` reads the DS3231 and prints the desktop clock in UTC and local
-  time; `tangi2c rtc set YYYY-MM-DD HH:MM:SS` sets the RTC in UTC and
-  `tangi2c rtc sync` rereads it.
+  pull-ups from Adafruit's Wii Nunchuck Breakout Adapter on that port.  A TI
+  PCA9548A switch at 0x70 now sits in front of the devices, one channel live at
+  a time; it is a switch and not a second master, so every transfer still comes
+  from the loaded core.  The firmware routes the two devices it knows without
+  being told — the Wii controller's 0x52 on channel 0 and the DS3231 RTC's 0x68
+  on channel 6 — and channels 1 and 7 are named for a magnetometer and an SHT45
+  that are not fitted yet.  `tangi2c mux <0-7>` selects any channel, `tangi2c
+  mux off` releases them all and `tangi2c mux` reports the switch and where it
+  sits; on a direct bus with no switch the same firmware talks as it always
+  did.  The DS3231 on channel 6 holds the desktop clock, so the clock reads and
+  sets it through the switch, and a game core is handed channel 0 before it is
+  loaded so its controller still answers.  `tangi2c scan` walks all eight
+  channels and names what each holds, still finding the DS3231 and not the Wii
+  controller; `tangi2c read 0x52 0xfa 6` reaches the controller after its
+  wake-up writes (0x55 to 0xf0, then 0x00 to 0xfb).  The engine waits out a
+  device that stretches the clock, as the controller does, and reads with a
+  STOP and a 200 us pause before the read rather than a repeated START, which
+  the controller answers with 0xff.  `tangi2c rtc` reads the DS3231 and prints
+  the desktop clock in UTC and local time; `tangi2c rtc set YYYY-MM-DD HH:MM:SS`
+  sets the RTC in UTC and `tangi2c rtc sync` rereads it.  `tangi2c auto` is
+  refused while the switch is fitted, because the engine's once-a-second read
+  cannot select a channel.
 - **The desktop clock** is the DS3231's UTC, read when the desktop core is
   loaded and about hourly after that (`ports/bl616/tang_clock.c`), shown in
   the zone the Date & time window keeps in `/tinydesk_tz`. Root can set the

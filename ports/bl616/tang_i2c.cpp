@@ -39,6 +39,7 @@ bool tang_core_i2c_bus(void);
 }
 
 #include "fpga_debug.h"
+#include "tang_i2c_mux.h"
 
 namespace {
 
@@ -53,6 +54,14 @@ constexpr uint32_t OP_WRITE = 1;
 constexpr uint32_t OP_SCAN  = 2;
 
 constexpr uint8_t DS3231 = TANG_CLOCK_RTC_ADDR;
+
+// The PCA9548A in front of the card's devices (tang_i2c_mux.h).  Its presence
+// is probed once and cached; `tangi2c mux` re-probes, since the board can be
+// rewired without losing power.  s_mux_channel is what the switch holds, -1
+// being "nothing selected", which is also its power-up state.
+constexpr int MUX_UNKNOWN = 0, MUX_PRESENT = 1, MUX_ABSENT = -1;
+int s_mux = MUX_UNKNOWN;
+int s_mux_channel = -1;
 
 SemaphoreHandle_t s_bus;
 
@@ -219,6 +228,66 @@ bool transaction_body(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
     return !after.nack;
 }
 
+// ---- the PCA9548A switch (tang_i2c_mux.h) ----
+//
+// A select is a write whose byte lands in the control register.  The engine
+// always sends a register byte before the data, and the switch keeps the last
+// byte received, so register and data carry the same value and the transaction
+// is also well-formed for a bus with no switch on it.
+
+bool mux_present(bool reprobe = false)
+{
+    if (reprobe) {
+        s_mux = MUX_UNKNOWN;
+    }
+    if (s_mux != MUX_UNKNOWN) {
+        return s_mux == MUX_PRESENT;
+    }
+    // The switch has no way to be read without being written first: the
+    // engine sends a register byte ahead of a read, and the switch takes that
+    // byte as its new control value.  So the probe writes back the value the
+    // firmware believes is there — 0x00 on a first probe, which is also the
+    // power-up state — and the selection survives it.
+    const uint8_t v = s_mux_channel < 0 ? 0x00 : (uint8_t)(1u << s_mux_channel);
+    if (transaction_body(OP_WRITE, TANG_I2C_MUX_ADDR, v, 1, &v, nullptr)) {
+        s_mux = MUX_PRESENT;
+        // The engine's once-a-second read (0x158) cannot select a channel, so
+        // it would read 0x68 through whichever channel happened to be live.
+        // It is turned off here and refused while the switch is fitted.
+        uint32_t w;
+        if (read32(REG_AUTO, &w) && (w & (1u << 31))) {
+            (void)write32(REG_AUTO, w & ~(1u << 31));
+        }
+    } else {
+        s_mux = MUX_ABSENT;
+        s_mux_channel = -1;
+    }
+    return s_mux == MUX_PRESENT;
+}
+
+// Make `channel` the live one; true when the bus may be used.  With no switch
+// fitted this is a no-op, so one firmware serves both wirings.
+bool mux_select(int channel)
+{
+    if (!mux_present()) {
+        return true;
+    }
+    if (s_mux_channel == channel) {
+        return true;
+    }
+    const uint8_t v = channel < 0 ? 0x00 : (uint8_t)(1u << channel);
+    if (!transaction_body(OP_WRITE, TANG_I2C_MUX_ADDR, v, 1, &v, nullptr)) {
+        return false;
+    }
+    s_mux_channel = channel;
+    return true;
+}
+
+bool mux_fitted(void)
+{
+    return s_mux == MUX_PRESENT;
+}
+
 bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
                  const uint8_t *wdata, uint8_t *rdata)
 {
@@ -230,10 +299,18 @@ bool transaction(uint32_t op, uint32_t addr, uint32_t reg, uint32_t len,
         (void)write32(REG_AUTO, saved_auto & ~(1u << 31));
         vTaskDelay(pdMS_TO_TICKS(2));
     }
+    // Known devices live behind a fixed channel; any other address goes to
+    // whichever channel `tangi2c mux` last selected.  With no switch fitted
+    // the select is a no-op and the bus reads as it always did.
+    const int want = tang_i2c_mux_target((uint8_t)addr);
+    if (want >= 0) {
+        (void)mux_select(want);
+    }
     const bool ok = transaction_body(op, addr, reg, len, wdata, rdata);
     // Turned back on whatever the outcome; a failed transaction used to
-    // leave the once-a-second read off.
-    if (on) {
+    // leave the once-a-second read off.  Not with the switch fitted: the probe
+    // has just turned it off, and it must stay off (see mux_present).
+    if (on && !mux_fitted()) {
         (void)write32(REG_AUTO, saved_auto);
     }
     return ok;
@@ -380,6 +457,30 @@ int command_rtc(int argc, char **argv)
     return 0;
 }
 
+// One hardware scan, waited out; false when the engine did not finish it.
+bool scan_run(status_t *out)
+{
+    if (!write32(REG_CMD, cmd_word(OP_SCAN, 0, 0, 1))) {
+        tdsh_printf("tangi2c: cannot start a scan\r\n");
+        return false;
+    }
+    const TickType_t start = xTaskGetTickCount();
+    for (;;) {
+        if (!get_status(out)) {
+            tdsh_printf("tangi2c: the core did not answer during the scan\r\n");
+            return false;
+        }
+        if (out->scan_done) {
+            return true;
+        }
+        if ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS >= 1000) {
+            tdsh_printf("tangi2c: the scan did not finish\r\n");
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 int command(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
@@ -404,25 +505,42 @@ int command(tdsh_session_t *session, int argc, char **argv)
     }
 
     if (std::strcmp(what, "scan") == 0) {
-        if (!write32(REG_CMD, cmd_word(OP_SCAN, 0, 0, 1))) {
-            tdsh_printf("tangi2c: cannot start a scan\r\n");
-            return 1;
-        }
-        const TickType_t start = xTaskGetTickCount();
-        for (;;) {
-            if (!get_status(&s)) {
-                tdsh_printf("tangi2c: the core did not answer during the scan\r\n");
+        if (!mux_present()) {
+            if (!scan_run(&s)) {
                 return 1;
             }
-            if (s.scan_done) break;
-            if ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS >= 1000) {
-                tdsh_printf("tangi2c: the scan did not finish\r\n");
+            tdsh_printf("tangi2c: scan found %u device%s, first at 0x%02x\r\n",
+                        s.scan_count, s.scan_count == 1 ? "" : "s", s.scan_addr);
+            return 0;
+        }
+        // One channel at a time: the switch makes each channel its own segment.
+        // The switch itself answers 0x70 upstream of all of them, so its own
+        // reply is counted on every channel and taken back out here.
+        for (int ch = 0; ch < 8; ch++) {
+            if (!mux_select(ch)) {
+                tdsh_printf("tangi2c: ch %d (%s): the switch refused the select\r\n",
+                            ch, tang_i2c_mux_name(ch));
+                continue;
+            }
+            if (!scan_run(&s)) {
                 return 1;
             }
-            vTaskDelay(pdMS_TO_TICKS(10));
+            const unsigned found = s.scan_count > 0 ? s.scan_count - 1 : 0;
+            tdsh_printf("tangi2c: ch %d (%s): ", ch, tang_i2c_mux_name(ch));
+            if (s.scan_count == 0) {
+                tdsh_printf("no reply at all\r\n");
+            } else if (found == 0) {
+                tdsh_printf("the switch only\r\n");
+            } else if (s.scan_addr == TANG_I2C_MUX_ADDR) {
+                tdsh_printf("%u device%s at or above 0x70\r\n", found,
+                            found == 1 ? "" : "s");
+            } else {
+                tdsh_printf("%u device%s, first at 0x%02x\r\n", found,
+                            found == 1 ? "" : "s", s.scan_addr);
+            }
         }
-        tdsh_printf("tangi2c: scan found %u device%s, first at 0x%02x\r\n",
-                    s.scan_count, s.scan_count == 1 ? "" : "s", s.scan_addr);
+        (void)mux_select(-1);
+        tdsh_printf("tangi2c: scan done, switch released\r\n");
         return 0;
     }
 
@@ -480,6 +598,52 @@ int command(tdsh_session_t *session, int argc, char **argv)
         return 0;
     }
 
+    if (std::strcmp(what, "mux") == 0) {
+        // Re-probed every time: the switch can be added or taken out while the
+        // board stays powered, and this is the command that reports it.
+        const bool present = mux_present(true);
+        if (argc == 2) {
+            if (!present) {
+                tdsh_printf("tangi2c: no switch at 0x%02x, the bus is direct\r\n",
+                            TANG_I2C_MUX_ADDR);
+                return 0;
+            }
+            if (s_mux_channel < 0) {
+                tdsh_printf("tangi2c: pca9548a at 0x%02x, no channel selected\r\n",
+                            TANG_I2C_MUX_ADDR);
+            } else {
+                tdsh_printf("tangi2c: pca9548a at 0x%02x, channel %d (%s)\r\n",
+                            TANG_I2C_MUX_ADDR, s_mux_channel,
+                            tang_i2c_mux_name(s_mux_channel));
+            }
+            return 0;
+        }
+        if (!present) {
+            tdsh_printf("tangi2c: no switch at 0x%02x to select on\r\n",
+                        TANG_I2C_MUX_ADDR);
+            return 1;
+        }
+        if (std::strcmp(argv[2], "off") == 0) {
+            if (!mux_select(-1)) {
+                tdsh_printf("tangi2c: the switch refused the write\r\n");
+                return 1;
+            }
+            tdsh_printf("tangi2c: switch released, no channel selected\r\n");
+            return 0;
+        }
+        uint32_t ch;
+        if (!parse_hex(argv[2], &ch) || ch > 7) {
+            tdsh_printf("usage: tangi2c mux [0-7|off]\r\n");
+            return 1;
+        }
+        if (!mux_select((int)ch)) {
+            tdsh_printf("tangi2c: the switch refused channel %u\r\n", ch);
+            return 1;
+        }
+        tdsh_printf("tangi2c: channel %u (%s)\r\n", ch, tang_i2c_mux_name((int)ch));
+        return 0;
+    }
+
     if (std::strcmp(what, "rtc") == 0) {
         return command_rtc(argc, argv);
     }
@@ -490,6 +654,12 @@ int command(tdsh_session_t *session, int argc, char **argv)
             tdsh_printf("usage: tangi2c auto [on|off]\r\n");
             return 1;
         }
+        if (on && mux_present()) {
+            tdsh_printf("tangi2c: the PCA9548A cannot follow the engine's automatic read\r\n");
+            tdsh_printf("tangi2c: it would read 0x68 on whichever channel is live;\r\n");
+            tdsh_printf("tangi2c: the clock already reads the RTC through the switch\r\n");
+            return 1;
+        }
         if (!write32(REG_AUTO, auto_word(DS3231, 0x00, 7, on))) {
             tdsh_printf("tangi2c: cannot set the automatic read\r\n");
             return 1;
@@ -498,8 +668,9 @@ int command(tdsh_session_t *session, int argc, char **argv)
         return 0;
     }
 
-    tdsh_printf("usage: tangi2c [status|scan|read <a> <r> <n>|write <a> <r> <b...>|\r\n"
-                "                rtc [set YYYY-MM-DD HH:MM:SS|sync]|auto [on|off]]\r\n");
+    tdsh_printf("usage: tangi2c [status|scan|mux [0-7|off]]\r\n"
+                "                read <a> <r> <n>|write <a> <r> <b...>\r\n"
+                "                rtc [set YYYY-MM-DD HH:MM:SS|sync]|auto [on|off]\r\n");
     return 1;
 }
 
@@ -535,6 +706,19 @@ extern "C" uint64_t tang_clock_hw_ms(void)
     return bflb_mtimer_get_time_ms();
 }
 
+extern "C" void tang_i2c_mux_for_game_core(void)
+{
+    // A core that drives H13/G13 itself (any game core) cannot select a
+    // channel, so point the switch at the Wii adapter before it takes the bus.
+    // Only the desktop core's engine can be used to do it, and there is
+    // nothing to do with no switch fitted.
+    if (!tang_core_i2c_bus()) {
+        return;
+    }
+    bus_lock lock;
+    (void)mux_select(TANG_I2C_MUX_CH_WII);
+}
+
 extern "C" int tang_i2c_register(void)
 {
     if (s_bus == nullptr) {
@@ -542,7 +726,7 @@ extern "C" int tang_i2c_register(void)
     }
     static const tdsh_command_t commands[] = {
         {"tangi2c", "tangi2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc [set|sync]|auto",
-         "USB-A I2C bus: scan, read, write, RTC", command, 0},
+         "USB-A I2C bus: scan, read, write, RTC, mux", command, 0},
     };
     return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));
 }

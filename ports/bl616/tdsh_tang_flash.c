@@ -11,6 +11,7 @@
 
 #include "tang_fw_update.h"
 #include "tang_core_load.h"
+#include "tang_i2c_mux.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
 
@@ -186,6 +187,10 @@ tang_load_result_t tang_core_load(const char *real)
      * be told, so the playback task never talks to the core that replaces it. */
     tang_phosphor_core_replacing();
     tang_ini_core_replacing();
+    /* A game core drives the USB-A data pair itself and cannot select a
+     * PCA9548A channel, so the switch is pointed at the Wii adapter while the
+     * desktop core can still be asked to do it. */
+    tang_i2c_mux_for_game_core();
 
     const bool ok = fpga_program(real);
     if (ok) {

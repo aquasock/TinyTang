@@ -1455,3 +1455,41 @@ The Link tab in the Tiny89 window: a folder of calculator files, a Send button, 
 - User Test: N/A
 
 ---
+
+## 41 COMMIT Unreleased 2026-10-24T20:48:25-07:00
+
+#### Coming From:
+
+Unreleased b964e76
+
+#### Purpose:
+
+Put the card's USB-A I2C devices behind the PCA9548A switch the user fitted, so the RTC and the Wii adapter are each reached on their own channel without any `/tinytang.ini` key, as the user approved.
+
+#### Outcome:
+
+The desktop core's bus now goes through the switch. `ports/bl616/tang_i2c_mux.c` and `tang_i2c_mux.h` hold the bench's fixed map -- channel 0 the Wii adapter at 0x52, channel 1 a magnetometer, channel 6 the DS3231 at 0x68, channel 7 an SHT45 -- and the routing rule: those two mapped addresses always select their own channel, the switch's own address never does, and any other address stays on whichever channel `tangi2c mux` selected, which is how an unmapped sensor is reached. `ports/bl616/tang_i2c.cpp` probes the switch once at 0x70 and caches the answer, selects a channel ahead of every known-device transaction under the same recursive bus lock, walks all eight channels with `tangi2c scan` and removes the switch's own reply from each count, gained `tangi2c mux <0-7>|off|status`, and refuses `tangi2c auto on` while the switch is fitted because the engine's once-a-second read in `0x158` cannot select a channel; `ports/bl616/tdsh_tang_flash.c` points the switch at channel 0 before programming any core, so a game core that drives H13/G13 itself still finds its controller, and `tools/tests/tb_tang_flash.c` asserts that step's place in the load order. With no switch fitted the same firmware probes 0x70, gets no answer and talks on a direct bus, so one image serves both wirings. On the board the firmware before this cycle found 0x70 and reported no RTC at all, and the deployed one reports `pca9548a at 0x70`, scans channel 0 with 0x52, channel 1 with 0x1c, channel 6 with 0x68 and channels 2 to 5 and 7 with only the switch, reads `0x3d` at `0x1c/0x0f` on channel 1 after `tangi2c mux 1` -- the LIS3MDL's identity value, so the user's magnetometer is already fitted -- and set and read back the DS3231 through channel 6 (`2026-10-25 03:34:30` UTC, OSF clear, local `2026-10-24 20:34:31` at the `-25200` second zone) with the time surviving the flash and reboot. The first deployed build had `tangi2c mux` status write 0x00 to the switch to report it, which deselected the channel it was reporting; the switch cannot be read without being written, because the engine sends a register byte ahead of a read and the part takes that byte as its control value, so the probe now writes back the value it believes is selected, and the corrected firmware `b964e76-dirty.a70bd07`, 657,264 bytes, SHA-256 `97c81534da73b09aba85bb8445a251ba09f8fc2a0949f05b6a97bec7c5e8937e`, built with no warning in any changed file, was flashed and the user then reported PASS on the desktop clock and on a game still seeing the Wii Classic Controller. No SHT45 answers on channel 7, nor at 0x44 or 0x45 when that channel is selected, so the sensor the user has powered there is not on the bus; that is left as a bench question rather than a firmware one. `tools/tests/tb_i2c_mux.c` and `test_i2c_mux.sh` lock the map and the routing rule, and of the 26 host tests 25 pass: `tools/check_help_width.py` had been failing since entry 40 on `ae350run`'s 102-column help line, which is now 59 columns and the command's meaning unchanged, and `tools/tests/test_phosphor_catalog.sh` was already red, compiling `td_phosphor_app.cpp` without `-I ports/bl616` and, once that path is added, asserting the pre-entry-35 music root; it was left untouched for its own cycle. `.ai/core-reference.md` gained BRD-012 for the switch, its control register, the read-without-write limitation and the routing rule, BRD-011 gained the revision that the devices now hang off it, and the routing table and fast lookup index gained BRD-012. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 40 were not rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 148 ids in the same order and that every record has its ten fields, and validated this entry as number 41 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The SHT45 needs isolating on the bench: move a device that already works onto channel 7, or move the SHT45 onto a chain that works, to separate a dead channel from a cable that is carrying power and no data. `tools/tests/test_phosphor_catalog.sh` needs its own cycle to be brought back to the app's current music-root behaviour. The magnetometer at 0x1c and the SHT45 are otherwise undriven: reading them means adding their commands, not extending the switch. The map stays fixed in firmware until the user asks for `/tinytang.ini` keys, and the standing items are unchanged.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_i2c_mux.c
+- ports/bl616/tang_i2c_mux.h
+- ports/bl616/tdsh_tang_flash.c
+- tools/tests/tb_i2c_mux.c
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_i2c_mux.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
