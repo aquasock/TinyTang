@@ -233,8 +233,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
   a time; it is a switch and not a second master, so every transfer still comes
   from the loaded core.  The firmware routes the two devices it knows without
   being told — the Wii controller's 0x52 on channel 0 and the DS3231 RTC's 0x68
-  on channel 6 — and channels 1 and 7 are named for a magnetometer and an SHT45
-  that are not fitted yet.  `tangi2c mux <0-7>` selects any channel, `tangi2c
+  on channel 6 — and names channel 7 for the MLX90614 IR thermometer fitted
+  there, which answers its address but returns no register data yet, so nothing
+  reads it; channels 1 to 5 are unassigned.  `tangi2c mux <0-7>` selects any channel, `tangi2c
   mux off` releases them all and `tangi2c mux` reports the switch and where it
   sits; on a direct bus with no switch the same firmware talks as it always
   did.  The DS3231 on channel 6 holds the desktop clock, so the clock reads and

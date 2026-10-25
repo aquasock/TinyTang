@@ -10,9 +10,13 @@
  * (core-log entry 41), because the ini contract admits one key, `layout`:
  *
  *   channel 0  Adafruit Wii adapter, 0x52
- *   channel 1  magnetometer (not fitted yet)
  *   channel 6  DS3231 RTC, 0x68
- *   channel 7  SHT45 (not fitted yet)
+ *   channel 7  MLX90614 IR thermometer, 0x5A
+ *
+ * Channels 1 to 5 are unassigned: the LIS3MDL magnetometer that named channel
+ * 1 was removed from the bench, so it no longer has a name or a constant here.
+ * The MLX90614 answers its address on channel 7 but returns no register data
+ * yet, so the channel carries the part's name and nothing reads it.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -29,9 +33,8 @@ extern "C" {
 #define TANG_I2C_WII_ADDR     0x52u
 
 #define TANG_I2C_MUX_CH_WII   0
-#define TANG_I2C_MUX_CH_MAG   1
 #define TANG_I2C_MUX_CH_RTC   6
-#define TANG_I2C_MUX_CH_SHT45 7
+#define TANG_I2C_MUX_CH_IR    7
 
 /* The channel a transaction to `addr` has to have selected, or -1 to leave the
  * switch where it is: the switch itself answers upstream of every channel, and

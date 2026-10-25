@@ -1560,3 +1560,35 @@ Files on the card still carry no real date, because turning that on means `FF_FS
 - User Test: PASS
 
 ---
+## 44 COMMIT Unreleased 2026-10-25T14:36:13-07:00
+
+#### Coming From:
+
+Unreleased 462f6e2
+
+#### Purpose:
+
+Rename the switch's channel 7 for the MLX90614 now fitted there and drop the magnetometer from the fixed channel map, the user having replaced both that sensor and the upstream cable that was silently taking the whole bus down.
+
+#### Outcome:
+
+The user replaced the cable from the dock's USB-A port to the PCA9548A with one whose two centre conductors were crossed, and with it fitted nothing on the bus answered: `tangi2c mux` reported no switch at 0x70, `tangi2c scan` found nothing across 0x08 to 0x77, and direct reads of 0x70, 0x68 and 0x44 each NACKed, while `fpga` still reported core 84 (0x54, the desktop core) and `tangi2c status` showed nack at sequence 0, so the core and the engine were alive and everything behind them was silent; the crossing was what the user found on inspection, and re-terminating the pair with SCL on D- and SDA on D+ brought the switch back with no firmware change, which also establishes that the firmware cannot tell a crossed pair from an absent chain (BRD-011). The restored bus scanned channel 0 with 0x52, channel 6 with 0x68 and channel 7 with one device at 0x5a, and `tangi2c read 68 00 7` returned 35 28 21 07 25 10 26, the correct UTC. The user reported that the SHT45 which had named channel 7 is broken, that the magnetometer is disconnected, and that channel 7 now carries Adafruit product 1982, an MLX90614 IR thermometer, at its factory address 0x5A; that part ACKs its address but returns 00 for every register read (0x03, 0x06, 0x07 and 0x0e tried), which the DS3231 does not do through the same engine. The firmware change is a rename: `TANG_I2C_MUX_CH_MAG` and its `mag` name are gone so channels 1 to 5 read unassigned, `TANG_I2C_MUX_CH_SHT45` became `TANG_I2C_MUX_CH_IR` with the name `ir`, and the README's `tangi2c` paragraph follows; `tang_i2c_mux_target()` is untouched because no address ever routed to channel 1, so the Wii and RTC routing is unchanged. `tools/tests/tb_i2c_mux.c` now asserts that channel 1 is unassigned and that the three named channels are distinct, and `test_i2c_mux.sh` passes; `tools/check_help_width.py` reports 138 entries with none over 80 columns. The firmware built as `462f6e2-dirty.ec043f4`, 657,280 bytes, SHA-256 `eec58f69e373c326ca7987a0cedb54c78324f7e8dcd7777219b0419f83c536f2`, with no warning in the changed file, and its image no longer carries the strings `sht45` or `mag`; it was installed with `tools/tinytang_flash.py --port /dev/ttyACM1 --yes` and the user power-cycled the board. `platform` then reported `462f6e2-dirty.ec043f4`, `tangi2c mux 7` read `channel 7 (ir)`, `tangi2c mux 1` read `channel 1 (unassigned)`, `tangi2c scan` named every channel as above, and `tangi2c rtc` read the DS3231 at 2026-10-25 21:34:52 UTC with OSF clear, zone -25200 seconds and local time matching the host; the user reported PASS. Both host tools default to /dev/ttyACM0, which on this workstation is an Arduino NanoESP32 (2341:0070) while the board enumerates as /dev/ttyACM1 (ffff:5454), and the console guard's status probe is what kept any command from being typed into it. `.ai/core-reference.md`'s BRD-012 now carries the new map, the unreadable MLX90614 and the unassigned channels, and BRD-011 carries the crossed-pair result, with a routing row for a silent bus. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 43 were not rewritten, checked that the reference's YAML blocks parse with the routing table, the index and the records naming the same ids in the same order, and validated this entry as number 44 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The MLX90614 does not read yet, and the next cycle for it is a bench test rather than code: moving the DS3231 onto channel 7, or the MLX90614 onto channel 6, would separate a fault in that segment from a fault in the part, and if the part is sound the leads are the engine's STOP, 200 us then separate read against an SMBus Read Word that expects a repeated START, which would mean changing `fpga/desktop/i2c_master.sv` and rebuilding the desktop core, and pull-ups missing on a channel that has never carried a device that answered, the SHT45 having NACKed at 0x44 and 0x45 on it too. Channel 1 stays unassigned unless a device is fitted and given a name, and a later map change is two constants plus this test. The standing items of entry 43 are otherwise unchanged: rotation for `/root/saves/last.log`, `FF_FS_NORTC` off with a `get_fattime()` for real card dates, the failed core load that leaves `tang_core_i2c_bus()` cleared, the TinyNES Saves page's stale `.ram` row, and the Tiny89 link tab with its 18-byte payload loss.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_i2c_mux.c
+- ports/bl616/tang_i2c_mux.h
+- tools/tests/tb_i2c_mux.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

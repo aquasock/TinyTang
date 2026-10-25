@@ -27,12 +27,10 @@ const char *tang_i2c_mux_name(int channel)
     switch (channel) {
     case TANG_I2C_MUX_CH_WII:
         return "wii";
-    case TANG_I2C_MUX_CH_MAG:
-        return "mag";
     case TANG_I2C_MUX_CH_RTC:
         return "rtc";
-    case TANG_I2C_MUX_CH_SHT45:
-        return "sht45";
+    case TANG_I2C_MUX_CH_IR:
+        return "ir";
     default:
         return "unassigned";
     }
