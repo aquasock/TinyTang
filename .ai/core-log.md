@@ -1715,3 +1715,37 @@ The recorded launch found the clock unset after the board was replugged, so a ga
 - User Test: PASS
 
 ---
+
+## 49 COMMIT Unreleased 2026-10-27T09:01:04-07:00
+
+#### Coming From:
+
+Unreleased 0f896ca
+
+#### Purpose:
+
+Give the TinyGBC window a working Input page, as TinyNES has one, so the player's buttons are rebound from the desk and the mapping is kept in `/tinygbc.ini` instead of being fixed at build time.
+
+#### Outcome:
+
+The mapping is one `<button> = <controller>` key per Game Boy button under an `[input]` section, written by the window's Save and read back when the window opens. `ports/bl616/tang_gbc_ini.h` gained `TANG_GBC_BUTTONS`, the Game Boy's buttons in the order the player's `pad_joypad[]` holds them, the fourteen controller buttons in the order the player's `pad_source[]` holds them, a `pad_map[]` in the settings struct and `tang_gbc_default_map()` so the page's Restore resets the buttons without moving the volume; `tang_gbc_ini.c` parses the section, names both sides and defaults to what the player did before the mapping existed. `ports/bl616/tang_fpga_uart.c` answers `TinyGBC SETTINGS WANT` with twenty-four bytes instead of sixteen, the mapping last so a player built before it keeps its default, still cut to what the player asked for, and its console line now names the A binding as well as the volume and the clock. `ports/bl616/tinygbc_app.cpp`'s Input tab replaces the "not implemented yet" placeholder with the page TinyNES has: eight rows showing each button and what answers to it, a Change that steps the selected row to the next controller button, Restore, and Save, whose writer rewrites only `[input]` and `[audio]` and keeps every other byte of the file. Two faults belong with it. The first build, `0f896ca-dirty.8e08ee8`, drew an empty rectangle: `td_list` draws nothing until `td_list_set_count()` is called, which the page did not do, as TinyNES's does; the count is in, and a window invalidation now clears the rows' change marks after a save. The firmware was rebuilt as `0f896ca-dirty.ad50850`, 661,456 bytes, SHA-256 `d2ddc5bdb9bcf8978cec42dff7cfde6dcfa022cba944600708a7b3cae73f45bb`, flashed with `tinytang_flash.py --yes` and reported by `platform` after a power cycle. On the board the launcher answered a request of `00000018` bytes with `ae350run: settings /tinygbc.ini, volume=20, clock not set, a=x` and the player reported `TinyGBC GB PADMAP=1,8,3,2,4,5,6,7`, so A answered to X; the user then opened the Input page, changed the mapping to one of their own, saved it and passed the cycle, and the file read back with the shell's `cat` holds `b = y`, `a = b`, the four directions and `select`/`start` unchanged, `volume = 20` as it was, and the comment line above them. Before that fix the mapping could arrive as nothing at all: TinyGBC entry 30 records the head of the request line being lost on the wire one launch in five, leaving the player on its defaults silently, and the repair is in that repository, which now settles the line before every request and asks again for the settings when no answer lands. The board left the USB bus during the cleanup afterwards, with the desktop core not yet reloaded, so the last core the FPGA was given may still be the TinyGBC one; the card holds the player this cycle deployed, 3,244,664 bytes, SHA-256 `40bde651750768c988aa66916cca15d99aa1fa75d293826ed66a8db5bd0a6551`. The user's uncommitted `third_party/tinydesk` changes were left alone. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 48 were not rewritten, and validated this entry as number 49 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Video page is the last placeholder in the TinyGBC window, and it has nothing to set until the player offers a picture setting. The TinyGBC player's requests for the battery save, the clock and the state file are settled but not retried, so a lost request line there still starts a game silently without its save. Carrying the mapping to the left stick, which TinyGBC's player still does not decode, would add eight axes as sources once the player measures them.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gbc_ini.c
+- ports/bl616/tang_gbc_ini.h
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

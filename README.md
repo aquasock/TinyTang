@@ -414,7 +414,13 @@ controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
 PMOD1, the `i2s2_oled` layout of `/tinytang.ini`.  The TinyNES window, like TinyGBC's, has a
 fixed size of 54 by 20 cells that shows twelve Library entries at a time and
-five tabs: Library, Input, Video, Audio and Saves.  Audio is one master volume
+five tabs: Library, Input, Video, Audio and Saves.  Input is which controller
+button answers to each console button, one row per button, with Change stepping
+the row to the next controller button, Restore putting the mapping back and Save
+writing it: `p1_<button>` and `p2_<button>` keys in `[input]` of `/tinynes.ini`
+for TinyNES, and one `<button>` key each for TinyGBC's one player in
+`/tinygbc.ini`.  HOME is not offered on either, because a tap of it swaps
+between the game and the desktop.  Audio is one master volume
 for HDMI and the Line Out together, a slider from 0 to 100 percent in 5 percent
 steps with a mute beside it; it is kept in `[audio]` of `/tinynes.ini`, or of
 `/tinygbc.ini` for TinyGBC, and sent to the player when the next game starts, which

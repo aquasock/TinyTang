@@ -127,6 +127,11 @@ bool s_dirty;                    /* edited here and not yet saved */
 td_widget_t *s_volume;
 td_widget_t *s_volume_label;
 
+/* The Input page: the selected row, and the list that shows the mapping. */
+const int INPUT_TAB = 1;
+const int INPUT_ROWS = 8;
+td_widget_t *s_input_list;
+
 /* The Saves page: the save state of the cartridge selected in the Library, one
  * file per cartridge that the player writes when L is pressed with HOME in the
  * game (TinyGBC core-log entry 25), read again whenever the page is shown. */
@@ -209,6 +214,21 @@ bool put_audio(FIL *file)
     return put(file, line);
 }
 
+/* One line per Game Boy button, in the names the parser reads back. */
+bool put_mapping(FIL *file)
+{
+    char line[48];
+
+    for (int i = 0; i < TANG_GBC_BUTTONS; i++) {
+        snprintf(line, sizeof line, "%s = %s\n",
+                 tang_gbc_button_name(i), tang_gbc_pad_name(s_set.pad_map[i]));
+        if (!put(file, line)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool is_named_line(const char *line, const char *key)
 {
     const size_t n = strlen(key);
@@ -222,18 +242,32 @@ bool is_audio_line(const char *line)
     return is_named_line(line, "volume") || is_named_line(line, "mute");
 }
 
-/* Write the volume and the mute where the file's [audio] section is, keeping
- * every other line, so a hand-written comment or a key for a later firmware
- * survives a save.  A card with no /tinygbc.ini yet gets one.  NULL when it wrote,
- * else a short reason. */
+/* A line of [input]: one of the eight Game Boy buttons, e.g. `a = x`. */
+bool is_mapping_line(const char *line)
+{
+    for (int i = 0; i < TANG_GBC_BUTTONS; i++) {
+        if (is_named_line(line, tang_gbc_button_name(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Write the mapping and the volume where the file's [input] and [audio]
+ * sections are, keeping every line outside them byte for byte, so a
+ * hand-written comment or a key belonging to another section survives a save.
+ * The two sections this build owns are rewritten whole.  A card with no
+ * /tinygbc.ini yet gets one.  NULL when it wrote, else a short reason. */
 const char *save_settings(void)
 {
     FIL in, out;
     char chunk[64];
     char line[200];
     size_t len = 0;
+    bool in_input = false;
     bool in_audio = false;
-    bool done = false;          /* the volume and mute have been put out */
+    bool input_done = false;    /* the mapping has been put out */
+    bool audio_done = false;    /* ...and the volume and mute */
     bool ok = true;
     UINT got = 0;
     const char *reason = NULL;
@@ -259,15 +293,21 @@ const char *save_settings(void)
             line[len] = '\0';
             len = 0;
             if (line[0] == '[') {
+                in_input = strncmp(line, "[input]", 7) == 0;
                 in_audio = strncmp(line, "[audio]", 7) == 0;
                 ok = put(&out, line) && put(&out, "\n");
-                if (in_audio && !done) {
+                if (in_input && !input_done) {
+                    ok = ok && put_mapping(&out);
+                    input_done = true;
+                }
+                if (in_audio && !audio_done) {
                     ok = ok && put_audio(&out);
-                    done = true;
+                    audio_done = true;
                 }
                 continue;
             }
-            if (in_audio && is_audio_line(line)) {
+            if ((in_input && is_mapping_line(line)) ||
+                (in_audio && is_audio_line(line))) {
                 continue;       /* ours, and already out under the header */
             }
             ok = put(&out, line) && put(&out, "\n");
@@ -276,11 +316,15 @@ const char *save_settings(void)
     /* A last line with no newline after it. */
     if (ok && len != 0) {
         line[len] = '\0';
-        if (!(in_audio && is_audio_line(line))) {
+        if (!((in_input && is_mapping_line(line)) ||
+              (in_audio && is_audio_line(line)))) {
             ok = put(&out, line) && put(&out, "\n");
         }
     }
-    if (ok && !done) {
+    if (ok && !input_done) {
+        ok = put(&out, "\n[input]\n") && put_mapping(&out);
+    }
+    if (ok && !audio_done) {
         ok = put(&out, "\n[audio]\n") && put_audio(&out);
     }
     if (!ok) {
@@ -342,20 +386,67 @@ void on_mute(td_widget_t *w, void *)
     audio_status();
 }
 
+/* ------------------------------------------------------------------ input */
+
+/* One row: the Game Boy button and the controller button that answers to it.
+ * Activating it steps the mapping to the next controller button, as the
+ * TinyNES page does, because a capture would need the pad itself and the only
+ * pad an app can see is the desk layer's seven-bit word. */
+const char *input_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[48];
+
+    (void)fg;
+    if (index < 0 || index >= TANG_GBC_BUTTONS) {
+        return "";
+    }
+    snprintf(text, sizeof text, "%-8s %s%s", tang_gbc_button_name(index),
+             tang_gbc_pad_name(s_set.pad_map[index]), s_dirty ? " *" : "");
+    return text;
+}
+
+void on_row(td_widget_t *, void *)
+{
+    const int row = s_input_list != nullptr ? td_list_selected(s_input_list) : -1;
+
+    if (row < 0 || row >= TANG_GBC_BUTTONS) {
+        return;
+    }
+    s_set.pad_map[row] = (uint8_t)((s_set.pad_map[row] + 1) % TANG_GBC_CTL_COUNT);
+    s_dirty = true;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* The mapping alone, not the whole file: resetting the buttons must not move
+ * the volume the Audio page set. */
+void on_restore(td_widget_t *, void *)
+{
+    tang_gbc_default_map(s_set.pad_map);
+    s_dirty = true;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
 void on_save(td_widget_t *, void *)
 {
     if (!s_dirty) {
-        td_widget_set_text(s_status[AUDIO_TAB], "Nothing to save.");
+        td_widget_set_text(s_status[s_tab_shown], "Nothing to save.");
         return;
     }
     const char *why = save_settings();
     if (why == NULL) {
         s_dirty = false;
         (void)tang_gbc_load(&s_set, TANG_GBC_INI_REAL);
-        td_widget_set_text(s_status[AUDIO_TAB],
+        td_widget_set_text(s_status[s_tab_shown],
                            "Saved.  It applies from the next game start.");
+        if (s_win != nullptr) {
+            td_win_invalidate(s_win);    /* and the rows lose their change mark */
+        }
     } else {
-        td_widget_set_text(s_status[AUDIO_TAB], why);
+        td_widget_set_text(s_status[s_tab_shown], why);
     }
 }
 
@@ -970,11 +1061,22 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* Input and Video: named like TinyNES's, and saying plainly that nothing
-     * is behind them yet. */
-    page_add(1, td_label(s_win, 1, 2, 0, "Input is not implemented yet."));
-    page_add(1, td_label(s_win, 1, 4, 0, "The pad is read by the player"));
-    page_add(1, td_label(s_win, 1, 5, 0, "with its own fixed mapping."));
+    /* Input: which controller button answers to each Game Boy button, edited
+     * a row at a time, written to /tinygbc.ini by Save and taken by the player
+     * when the next game starts. */
+    page_add(INPUT_TAB, td_label(s_win, 1, 2, 0, "Controller button per Game Boy button:"));
+    s_input_list = td_list(s_win, td_rect(1, 3, -1, INPUT_ROWS), input_item,
+                           on_row, nullptr);
+    /* A list draws nothing until its count is set, whatever its height. */
+    if (s_input_list != nullptr) {
+        td_list_set_count(s_input_list, TANG_GBC_BUTTONS);
+    }
+    page_add(INPUT_TAB, s_input_list);
+    page_add(INPUT_TAB, td_button(s_win, 1, 12, "Change", on_row, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, 10, 12, "Restore", on_restore, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, 20, 12, "Save", on_save, nullptr));
+    page_add(INPUT_TAB, td_label(s_win, 1, 13, 0, "Change steps the selected row."));
+    page_add(INPUT_TAB, td_label(s_win, 1, 14, 0, "Taken when the next game starts."));
 
     page_add(2, td_label(s_win, 1, 2, 0, "Video is not implemented yet."));
     page_add(2, td_label(s_win, 1, 4, 0, "The picture is five columns a"));

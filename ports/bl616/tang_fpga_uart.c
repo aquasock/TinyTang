@@ -2032,10 +2032,15 @@ int tang_ae350_run(const char *player, const char *data)
              * /tinygbc.ini, six reserved bytes, then the clock as UTC seconds
              * since 1970, little-endian, 0 while it has never been set.  The
              * player runs its time() from that, so a cartridge's own clock
-             * counts real time.  A player built before the clock asks for two
-             * bytes and gets the first two. */
+             * counts real time.  Then the button mapping, one byte per Game
+             * Boy button in the player's pad_joypad[] order, each naming a
+             * controller button by its index in the player's pad_source[].
+             * The mapping is last because the player keeps its default when
+             * fewer bytes arrive: a player built before the clock asks for two
+             * bytes and gets the first two, and one built before the mapping
+             * asks for sixteen and gets those, both keeping their defaults. */
             static tang_gbc_settings_t gbc;
-            static uint8_t blob[16];
+            static uint8_t blob[16 + TANG_GBC_BUTTONS];
             int64_t utc = 0;
             unsigned long address = 0, room = 0;
             if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 || room < 1) {
@@ -2052,12 +2057,15 @@ int tang_ae350_run(const char *player, const char *data)
             for (int i = 0; i < 8; i++) {
                 blob[8 + i] = (uint8_t)((uint64_t)utc >> (8 * i));
             }
+            memcpy(blob + 16, gbc.pad_map, TANG_GBC_BUTTONS);
             const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
             rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
-            tdsh_printf("ae350run: settings %s, volume=%u%s, clock %s\r\n",
+            tdsh_printf("ae350run: settings %s, volume=%u%s, clock %s, %s=%s\r\n",
                         gbc.found ? TANG_GBC_INI_SHOWN : "(defaults)",
                         (unsigned)gbc.audio.volume, gbc.audio.mute ? " muted" : "",
-                        utc != 0 ? "sent" : "not set");
+                        utc != 0 ? "sent" : "not set",
+                        tang_gbc_button_name(TANG_GBC_A),
+                        tang_gbc_pad_name(gbc.pad_map[TANG_GBC_A]));
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }
