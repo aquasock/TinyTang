@@ -1592,3 +1592,32 @@ The MLX90614 does not read yet, and the next cycle for it is a bench test rather
 - User Test: PASS
 
 ---
+## 45 COMMIT Unreleased 2026-10-26T20:53:48-07:00
+
+#### Coming From:
+
+Unreleased 416ba34
+
+#### Purpose:
+
+Establish on the bench, before any firmware is written for it, whether Adafruit's MCP23017 8xMOSFET solenoid board can be driven through the switch's channel 7 by the unchanged desktop core.
+
+#### Outcome:
+
+The user removed the MLX90614 from channel 7 for good and fitted the solenoid board there in its place, for a desktop app, first planned in the TinyControl repository and now to be built and logged here, that toggles the board's eight solenoid outputs and reads its channel B inputs. The board was found running `462f6e2-dirty.ec043f4` with no core answering on UART1, so `tangi2c` refused for want of an I2C bus; `tangload /root/cores/console138k/tinytang.bin`, the boot script's own load, brought core 84 back with `tinytang.ini` declaring `i2s2_oled` as `0x0010`. `tangi2c scan` then found 0x20 alone on channel 7, the MLX90614's 0x5a being gone, beside 0x68 on channel 6. Every access was preceded by `tangi2c mux 7`, since the firmware routes only 0x52 and 0x68 and the clock's RTC reads otherwise leave the switch on channel 6. The chip read its datasheet's power-on values, `ff ff 00 00 00 00 00 00` from 0x00, `00 00` at IOCON and zero elsewhere; GPPUB written `7f` read back `7f` and GPIOB then read `7f` with nothing wired; with IODIRA `00`, OLATA `55` and `aa` read back on GPIOA as `55` and `aa`; and IODIRA, GPPUB and OLATA were restored to their power-on values and read back, so register writes, multi-byte STOP-then-read reads and the pointer's auto-increment all work through the existing engine and the board needs no change to `desktop.bin`. At the user's request OLATA `01` and IODIRA `00` were then set and left, so OUT0 is on now; its LED cannot light because the schematic powers every LED from V+, which has no supply yet, and the user deferred the powered test and the grounded-input test. Microchip's current MCP23017 datasheet, DS20001952D of June 2022, makes GPA7 and GPB7 output only and requires IO7 to be set as an output, where the 2007 DS21952B in the user's manual folder calls them bidirectional, so channel B has seven inputs and GPB7 has to be driven. The user decided that outputs keep their state, which the hardware does by itself because nothing on the Tang can reset the chip. `.ai/core-reference.md` gains BRD-013 for the board's I2C side and BRD-014 for its output stages, SOURCED because no stage has conducted, with two routing rows and their index lines, and BRD-012 now records the new channel 7 contents, the stale `ir` name and the MLX90614 question closed unanswered; the reference's YAML blocks parse, and the index and the records name the same 150 ids in the same order with every routed id present. `.ai/core.md` was not touched. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 44 were not rewritten, and validated this entry as number 45 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and nothing listed in Files Modified.
+
+#### Next Steps:
+
+The next cycle is the firmware the user has seen proposed and not yet approved: route 0x20 to channel 7 and rename that channel `gpio` in `ports/bl616/tang_i2c_mux.c` with `tools/tests/tb_i2c_mux.c` to match; add a driver that configures a chip found at its power-on state with latches zero, port A as outputs, GPB0 to GPB6 as pulled-up inputs and GPB7 as an output, and that adopts the latches of a chip it finds already configured; add a `tangio` shell command and a TinyDesk window with eight output toggles, seven input indicators and a not-connected state; then build the BL616 firmware alone, flash it and have the user test it. The powered test of the output stages and the grounded-input test remain for the user once a V+ supply and solenoid ratings are chosen, and BRD-014 stays SOURCED until then. The standing items of entry 44 are unchanged apart from the MLX90614, which no longer applies.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: NOT RUN
+
+---
