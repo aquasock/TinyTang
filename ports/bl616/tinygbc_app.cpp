@@ -31,6 +31,7 @@ extern "C" {
 #include "tang_ae350_run.h"
 #include "tang_core_load.h"
 #include "tang_gbc_ini.h"
+#include "tang_clock.h"
 #include "td_saves_log.h"
 
 /* The USB console writer.  It is declared for the shell's own sources in
@@ -152,6 +153,12 @@ const int STATE_LINES = 6;
 td_widget_t *s_state_line[STATE_LINES];
 td_widget_t *s_batt_line;   /* when the battery save was last written */
 td_widget_t *s_rtc_line;    /* when the cartridge's clock was last written */
+/* Whether this board's clock has a date, which is what a cartridge's clock is
+ * kept against.  Read while the desktop core still owns the I2C bus, because
+ * the clock is an RTC behind that core's engine and a launch replaces it. */
+td_widget_t *s_clock_line;
+tang_clock_sync_t s_board_clock = TANG_CLOCK_NO_BUS;
+bool s_board_clock_read;    /* a read has been attempted */
 
 /* A launch owns the core and the link until the game ends, so a second one is
  * refused rather than reloading the core under the first. */
@@ -180,6 +187,46 @@ void show_tab(int tab)
                             t == tab ? ACCENT : TD_COLOR_DEFAULT);
     }
     s_tab_shown = tab;
+}
+
+/* Read this board's clock and say what came of it, on the Saves page where the
+ * cartridge's clock is shown.  The clock is an RTC behind the desktop core's
+ * I2C engine, so this only works while that core is the loaded one: at window
+ * open, and in a launch before the core is swapped.  Without a date the player
+ * cannot keep a cartridge's clock at all, and until this existed it said
+ * nothing about that and simply left the clock unkept (core-log entry 37). */
+void board_clock_check(void)
+{
+    const tang_clock_sync_t got = tang_clock_sync();
+    static char text[TD_TEXT_MAX];
+    const char *why;
+
+    s_board_clock = got;
+    s_board_clock_read = true;
+    switch (got) {
+    case TANG_CLOCK_SYNCED:
+        why = NULL;
+        break;
+    case TANG_CLOCK_NO_DEVICE:
+        why = "no RTC answering";
+        break;
+    case TANG_CLOCK_RTC_INVALID:
+        why = "the RTC holds no date";
+        break;
+    default:
+        why = "the clock could not be read";
+        break;
+    }
+    if (s_clock_line == NULL) {
+        return;
+    }
+    if (why == NULL) {
+        snprintf(text, sizeof text, "Board clock: set, so cartridge clocks are kept.");
+    } else {
+        snprintf(text, sizeof text, "Board clock: not set (%s), so a cartridge's "
+                                    "clock is not kept.", why);
+    }
+    td_widget_set_text(s_clock_line, text);
 }
 
 void state_show(void);
@@ -995,7 +1042,17 @@ void lib_start(int index)
     if (s_lib_list != nullptr) {
         td_list_set_count(s_lib_list, 0);
     }
-    lib_say("Starting ...");
+    /* The cartridge's clock is kept against this board's date, and the moment
+     * to read it is now: it is an RTC behind the desktop core's I2C engine,
+     * which the launch is about to replace.  If there is no date, the game
+     * starts with a clock that is not kept, and the status line says so since
+     * the player cannot (core-log entry 37). */
+    board_clock_check();
+    if (s_board_clock != TANG_CLOCK_SYNCED) {
+        lib_say("Starting ... (board clock not set: its clock is not kept)");
+    } else {
+        lib_say("Starting ...");
+    }
     s_launching = true;
     if (xTaskCreate(launch_task, "gbclaunch", LAUNCH_STACK_WORDS, nullptr,
                     tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
@@ -1235,6 +1292,8 @@ void launch(void)
     page_add(SAVES_TAB, s_batt_line);
     s_rtc_line = td_label(s_win, 1, 12, 0, "");
     page_add(SAVES_TAB, s_rtc_line);
+    s_clock_line = td_label(s_win, 1, 13, 0, "");
+    page_add(SAVES_TAB, s_clock_line);
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */
@@ -1244,6 +1303,9 @@ void launch(void)
     }
     s_lib_message = s_status[0];
     audio_status();
+    /* The window opens on the desktop core, which is the only core that can
+     * reach the clock, so this is where the Saves page's answer comes from. */
+    board_clock_check();
 
     show_tab(0);
 }

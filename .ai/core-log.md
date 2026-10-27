@@ -1972,3 +1972,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 57 COMMIT Unreleased 2026-10-27T12:07:10-07:00
+
+#### Coming From:
+
+Unreleased 48f632d
+
+#### Purpose:
+
+Read this board's clock at the only moments it can be read, so a game started after a power cycle keeps its cartridge's clock, and say on the Saves page when it cannot.
+
+#### Outcome:
+
+The clock is an Adafruit DS3231 at 0x68 on the USB-A port reached through the desktop core's I2C engine over the UART link (tang_clock.h), so it can only be read while that core is loaded and the link is free -- and a launch replaces that core. A game started soon after a power cycle therefore went without a date, and the player kept nothing: `/root/saves/last.log` has stencilled such runs `no-clock` all along. `ports/bl616/tinygbc_app.cpp` gained `board_clock_check()`, which calls `tang_clock_sync()` -- the call that returns *why* it failed -- stores the result and writes a new line on the Saves page: `Board clock: set, so cartridge clocks are kept.` or `Board clock: not set (<reason>), so a cartridge's clock is not kept.` with the reason being no RTC answering, the RTC holding no date, or the clock not being readable. It is called when the window opens, which is while the desktop core is loaded, and in `lib_start` before the launch task swaps that core, which is the last moment the bus exists; when the date is missing the Library status says `Starting ... (board clock not set: its clock is not kept)` rather than the bare `Starting ...`. `tang_clock_sync()` sets the running clock as a side effect, so a successful read here also gives the settings reply its date, which is the fix rather than only a report. The firmware built as `48f632d-dirty.26b9ec3`, 648,960 bytes, SHA-256 `9efa097c9e5f931eddaf57240d3b77d0a19b42973bc3e93f282e0238d57df26f`, and `tools/tests/test_clock.sh` passes with 35,930 checks and none failed. Nothing was flashed: the board is in use, so this is built and waiting. The player's half, which names a session that cannot keep a clock, is TinyGBC entry 37. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 56 were not rewritten, and validated this entry as number 57 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible path in Files Modified.
+
+#### Next Steps:
+
+Flash it with the player TinyGBC entry 37 built, then test the case that failed: power-cycle, open the TinyGBC window without launching anything else first, and read the Saves page -- it should report the clock set if an RTC is fitted and reachable, and a clock cartridge's `.rtc` should then be written at exit where before nothing was. If it reports not set, the reason tells the two hardware faults apart: no RTC answering is an absent module or a wrong socket, and the RTC holding no date is the DS3231's oscillator-stop flag, which a write through `tang_clock_set` clears. Whether the RTC is physically fitted on this dock has never been recorded, and that is what the new line will settle.
+
+#### Files Modified:
+
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---
