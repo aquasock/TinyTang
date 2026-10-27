@@ -430,7 +430,10 @@ the firmware stamps every line of its save log `/root/saves/last.log` with the
 RTC-kept clock's local time, so the page reads the log rather than the file's
 date, which FatFS cannot set on this board.  A save that started and never
 finished, or one that came back short, says so there too; states can be swapped
-by copying them in the Files app.
+by copying them in the Files app.  TinyGBC's player does the same with its own
+`TinyGBC` lines: its states go to `/root/states/gbc/` and its battery saves to
+`/root/saves/gbc/`, and the TinyGBC window's Saves page shows them as TinyNES's
+does, reading the state's own `TGS1` header.
 
 That is the only way to start TinyNES.  A cartridge double-clicked in the
 Files app or on the desktop is not opened at all: the desktop would have to

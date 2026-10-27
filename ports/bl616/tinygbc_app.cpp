@@ -8,9 +8,11 @@
 //
 // The Library page starts games, and the Audio page sets one master volume and
 // a mute for HDMI and the Line Out together, kept in /tinygbc.ini at the card root
-// (ports/bl616/tang_gbc_ini.c) and sent to the player when a game starts.
-// Input, Video and Saves are placeholders: they name what the player will
-// grow, so the window does not have to change shape when they arrive.
+// (ports/bl616/tang_gbc_ini.c) and sent to the player when a game starts.  The
+// Saves page shows the selected cartridge's save state and when its battery
+// save was last written, as TinyNES's does.  Input and Video are placeholders:
+// they name what the player will grow, so the window does not have to change
+// shape when they arrive.
 //
 // SPDX-License-Identifier: MIT
 
@@ -29,6 +31,7 @@ extern "C" {
 #include "tang_ae350_run.h"
 #include "tang_core_load.h"
 #include "tang_gbc_ini.h"
+#include "td_saves_log.h"
 
 /* The USB console writer.  It is declared for the shell's own sources in
  * ports/bl616/tdsh_stdio_redirect.h, which also renames printf here; only the
@@ -81,10 +84,11 @@ const int PAGE_WIDGETS = 16;
 /* There is no named accent, only TD_COLOR_DEFAULT and raw palette indices. */
 const int ACCENT = 14;
 
-/* The tabs exist from the start so the window keeps its shape; Library and
- * Audio are built, the others are placeholders. */
+/* The tabs exist from the start so the window keeps its shape; Library, Audio
+ * and Saves are built, the others are placeholders. */
 const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Audio", "Saves" };
 const int AUDIO_TAB = 3;
+const int SAVES_TAB = 4;
 
 /* Where a save is built before it replaces the real file, and where the file
  * being replaced is set aside meanwhile, as the TinyNES app does it: FatFS's
@@ -123,6 +127,15 @@ bool s_dirty;                    /* edited here and not yet saved */
 td_widget_t *s_volume;
 td_widget_t *s_volume_label;
 
+/* The Saves page: the save state of the cartridge selected in the Library, one
+ * file per cartridge that the player writes when L is pressed with HOME in the
+ * game (TinyGBC core-log entry 25), read again whenever the page is shown. */
+const char STATE_SHOWN[] = "/root/states/gbc";
+const char STATE_REAL[] = "/sd/root/states/gbc";
+const int STATE_LINES = 6;
+td_widget_t *s_state_line[STATE_LINES];
+td_widget_t *s_batt_line;   /* when the battery save was last written */
+
 /* A launch owns the core and the link until the game ends, so a second one is
  * refused rather than reloading the core under the first. */
 volatile bool s_launching;
@@ -152,9 +165,15 @@ void show_tab(int tab)
     s_tab_shown = tab;
 }
 
+void state_show(void);
+
 void on_tab(td_widget_t *, void *user)
 {
-    show_tab((int)(uintptr_t)user);
+    const int tab = (int)(uintptr_t)user;
+    show_tab(tab);
+    if (tab == SAVES_TAB) {
+        state_show();
+    }
 }
 
 /* --------------------------------------------------------------- the file */
@@ -520,6 +539,185 @@ void lib_choose_root(void)
     snprintf(s_root, sizeof s_root, "%s", GB_ROOT);
 }
 
+/* ------------------------------------------------------------ the state */
+
+/* TinyGBC's state header (firmware/apps/gb_bench/main.cpp, StateHeader), the
+ * layout of TinyNES's with its own magic: little-endian, as both ends are. */
+struct state_header
+{
+    char magic[4];
+    uint16_t header_bytes;
+    uint16_t version;
+    uint32_t rom_crc;
+    uint32_t gambatte;
+    uint32_t patches;
+    uint32_t frame;
+    uint32_t length;
+    uint32_t crc;
+};
+static_assert(sizeof(state_header) == 32, "TinyGBC's state header is 32 bytes");
+
+uint32_t state_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
+{
+    crc = ~crc;
+    while (n-- != 0) {
+        crc ^= *bytes++;
+        for (int bit = 0; bit < 8; bit++) {
+            crc = crc >> 1 ^ (0xedb88320u & (0u - (crc & 1u)));
+        }
+    }
+    return ~crc;
+}
+
+void state_lines(const char *const text[STATE_LINES])
+{
+    for (int i = 0; i < STATE_LINES; i++) {
+        if (s_state_line[i] != nullptr) {
+            td_widget_set_text(s_state_line[i], text[i] != nullptr ? text[i] : "");
+        }
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* One saved file, in the page's words.  The stamp is the RTC-kept clock's
+ * local time as the firmware wrote it; a save made before the clock had been
+ * set says so rather than passing "no-clock" off as a date. */
+void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
+                   size_t cap)
+{
+    char when[32];
+
+    td_saves_when(rec.stamp, when, sizeof when);
+    if (rec.verdict[0] != '\0' && strcmp(rec.stamp, "no-clock") == 0) {
+        snprintf(out, cap, "%s, %lu B; clock was unset then", verb, rec.want);
+    } else if (rec.verdict[0] != '\0') {
+        snprintf(out, cap, "%s %s, %s, %lu B", verb, when, rec.verdict, rec.want);
+    } else {
+        snprintf(out, cap, "%s %s, did not finish", verb, when);
+    }
+}
+
+/* What the card holds for the Library's selected cartridge.  The CRC-32 is of
+ * the whole file, the number the player prints as it sends a state and the
+ * one TinyTang verifies it by, so the three can be matched by eye. */
+void state_show(void)
+{
+    static char line[STATE_LINES][TD_TEXT_MAX];
+    static char batt[TD_TEXT_MAX];
+    const char *text[STATE_LINES] = {};
+    const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
+
+    if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
+        s_lib_entries[row].is_dir) {
+        text[0] = "Select a cartridge in the Library.";
+        state_lines(text);
+        if (s_batt_line != nullptr) {
+            td_widget_set_text(s_batt_line, "Battery save: select a cartridge.");
+        }
+        return;
+    }
+    const char *name = s_lib_entries[row].name;
+    const char *dot = strrchr(name, '.');
+    const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+
+    /* The board's log, read once for both files: every line names the file it
+     * carried and is stamped with the RTC-kept clock's local time.  The files
+     * carry no date of their own, because FatFS has no clock on this board. */
+    td_saves_attempt_t saved_state = {};
+    td_saves_attempt_t saved_batt = {};
+    {
+        char needle_state[LIB_NAME_BYTES + 8];
+        char needle_sav[LIB_NAME_BYTES + 8];
+        snprintf(needle_state, sizeof needle_state, "/%.*s.state", stem, name);
+        snprintf(needle_sav, sizeof needle_sav, "/%.*s.sav", stem, name);
+        FIL log;
+        if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
+            char buf[256];
+            UINT got = 0;
+            td_saves_reader_t reader_state;
+            td_saves_reader_t reader_batt;
+            td_saves_reader_init(&reader_state);
+            td_saves_reader_init(&reader_batt);
+            while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
+                td_saves_reader_feed(&reader_state, buf, got, needle_state,
+                                     &saved_state);
+                td_saves_reader_feed(&reader_batt, buf, got, needle_sav,
+                                     &saved_batt);
+            }
+            (void)f_close(&log);
+        }
+    }
+    if (s_batt_line != nullptr) {
+        if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
+            describe_save(saved_batt, "Battery save", batt, sizeof batt);
+        } else {
+            snprintf(batt, sizeof batt, "Battery save: none written yet.");
+        }
+        td_widget_set_text(s_batt_line, batt);
+    }
+
+    char real[TD_PATH_MAX + 8];
+    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
+    snprintf(line[1], sizeof line[1], "%s/%.*s.state", STATE_SHOWN, stem, name);
+    snprintf(real, sizeof real, "%s/%.*s.state", STATE_REAL, stem, name);
+    text[0] = line[0];
+    text[1] = line[1];
+
+    FIL file;
+    if (f_open(&file, real, FA_READ) != FR_OK) {
+        text[2] = "No save state yet. L saves one in the game.";
+        state_lines(text);
+        return;
+    }
+    const uint32_t size = (uint32_t)f_size(&file);
+    state_header h = {};
+    uint8_t chunk[256];
+    uint32_t crc = 0, total = 0;
+    bool ok = true;
+    for (;;) {
+        UINT got = 0;
+        if (f_read(&file, chunk, sizeof chunk, &got) != FR_OK) {
+            ok = false;
+            break;
+        }
+        if (got == 0) {
+            break;
+        }
+        if (total == 0 && got >= sizeof h) {
+            memcpy(&h, chunk, sizeof h);
+        }
+        crc = state_crc32(crc, chunk, got);
+        total += got;
+    }
+    (void)f_close(&file);
+
+    snprintf(line[2], sizeof line[2], "Size %lu bytes, CRC-32 %08lx",
+             (unsigned long)size, (unsigned long)crc);
+    text[2] = line[2];
+    if (!ok || memcmp(h.magic, "TGS1", 4) != 0 || h.header_bytes != sizeof h ||
+        h.length + sizeof h != size) {
+        text[3] = "Not a TinyGBC save state, or cut short.";
+    } else {
+        snprintf(line[3], sizeof line[3], "Game CRC-32 %08lx, frame %lu",
+                 (unsigned long)h.rom_crc, (unsigned long)h.frame);
+        snprintf(line[4], sizeof line[4], "Core gambatte %08lx",
+                 (unsigned long)h.gambatte);
+        text[3] = line[3];
+        text[4] = line[4];
+    }
+    /* When it was written: the log's record, since the file itself predates
+     * any clock.  A save that started and never finished says that instead. */
+    if (saved_state.verdict[0] != '\0' || saved_state.armed) {
+        describe_save(saved_state, "Saved", line[5], sizeof line[5]);
+    } else {
+        snprintf(line[5], sizeof line[5], "Saved: no record in the log.");
+    }
+    text[5] = line[5];
+    state_lines(text);
+}
+
 /* ---------------------------------------------------------------- actions */
 
 void lib_descend_to(const char *name);
@@ -671,6 +869,8 @@ void on_close(td_window_t *)
     s_win = nullptr;
     s_volume = nullptr;
     s_volume_label = nullptr;
+    memset(s_state_line, 0, sizeof s_state_line);
+    s_batt_line = nullptr;
     memset(s_status, 0, sizeof s_status);
     s_lib_list = nullptr;
     s_lib_path = nullptr;
@@ -747,8 +947,8 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* Input, Video and Saves: named like TinyNES's, and saying plainly that
-     * nothing is behind them yet. */
+    /* Input and Video: named like TinyNES's, and saying plainly that nothing
+     * is behind them yet. */
     page_add(1, td_label(s_win, 1, 2, 0, "Input is not implemented yet."));
     page_add(1, td_label(s_win, 1, 4, 0, "The pad is read by the player"));
     page_add(1, td_label(s_win, 1, 5, 0, "with its own fixed mapping."));
@@ -774,9 +974,16 @@ void launch(void)
     page_add(AUDIO_TAB, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
     page_add(AUDIO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
 
-    page_add(4, td_label(s_win, 1, 2, 0, "Saves are not implemented yet."));
-    page_add(4, td_label(s_win, 1, 4, 0, "The player keeps no battery save"));
-    page_add(4, td_label(s_win, 1, 5, 0, "and no save state on the card."));
+    /* Saves: the selected cartridge's save state, then where battery saves
+     * go.  L saves and R loads in the game; there is one state a cartridge. */
+    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
+    for (int i = 0; i < STATE_LINES; i++) {
+        s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
+        page_add(SAVES_TAB, s_state_line[i]);
+    }
+    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/gbc"));
+    s_batt_line = td_label(s_win, 1, 11, 0, "Battery save: none written yet.");
+    page_add(SAVES_TAB, s_batt_line);
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */

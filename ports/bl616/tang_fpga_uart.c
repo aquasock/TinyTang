@@ -992,8 +992,9 @@ static bool starts_with(const char *s, const char *prefix)
 /* The program this deck runs names itself in what it prints: TinyNES's player
  * says "TinyNES WANT ...", TinyGBC's "TinyGBC WANT ...".  One set of parsers
  * serves both, so a line is matched against the name it carries and then past
- * it, and the caller reads the same fields either way.  The NVRAM and settings
- * requests below are TinyNES's alone until the TinyGBC player has them. */
+ * it, and the caller reads the same fields either way.  The NVRAM and STATE
+ * channels below serve every product; each product's settings request is its
+ * own, because each blob is that player's ABI. */
 static const char *ae350_past_name(const char *line)
 {
     static const char *const names[] = { "TinyNES ", "TinyGBC ", "Tiny89 " };
@@ -1035,7 +1036,8 @@ static const char *ae350_system(const char *line)
 /* "<product> <channel> <rest>", the shape every file line takes:
  * "Tiny89 NVRAM SAVE 262144 8d90ffa5", "TinyNES STATE DATA ...",
  * "Tiny89 FLASH WANT ...".  NVRAM is the program's RAM, FLASH is the
- * calculator's 4 MiB flash image, and STATE stays TinyNES's save state. */
+ * calculator's 4 MiB flash image, and STATE is a player's save state, which
+ * TinyNES and TinyGBC both keep one of per cartridge. */
 static bool ae350_channel_line(const char *line, const char **system,
                                const char **channel, const char **rest)
 {

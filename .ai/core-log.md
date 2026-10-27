@@ -1651,3 +1651,35 @@ Nothing outstanding here; the command is a bench tool and stays deliberately unn
 - User Test: NOT RUN
 
 ---
+
+## 47 COMMIT Unreleased 2026-10-26T23:26:04-07:00
+
+#### Coming From:
+
+Unreleased a879a92
+
+#### Purpose:
+
+Give the TinyGBC window the Saves page TinyNES's has, for the save states and battery saves TinyGBC's player now keeps on the card.
+
+#### Outcome:
+
+The transport needed no change: `ae350_channel_line` already maps `TinyGBC` to the `gbc` system, so `TinyGBC NVRAM WANT` and `STATE WANT` are answered from `/root/saves/gbc/` and `/root/states/gbc/`, and `NVRAM SAVE` and `STATE DATA` are written there through the verified replace, as TinyGBC's entries 24 and 25 used them. `ports/bl616/tinygbc_app.cpp`'s Saves tab, a placeholder until now, is TinyNES's page with TinyGBC's paths and header: the selected cartridge's `/root/states/gbc/<cartridge>.state` with its size and CRC-32, its `TGS1` header's game CRC-32, frame and gambatte commit, when it was saved and when the cartridge's battery save was last written, both read from `/root/saves/last.log` through `td_saves_log`, and a note that L saves and R loads with HOME. The page is filled whenever its tab is shown, and its widgets are cleared when the window closes. The comments in `ports/bl616/tang_fpga_uart.c` that called the NVRAM and STATE channels TinyNES's alone now say they serve every product, and README's cartridge section names TinyGBC's folders and page. The firmware was built with the default toolchain and SDK as `a879a92-dirty.3c5e535`, 657,328 bytes, SHA-256 `d07c8574793d52e8c7660d0e36bf7092c4157cd4ea824e2ed3f07a77a45b2f6a`, the dirty part including the user's uncommitted changes in `third_party/tinydesk`, which this cycle neither made nor commits; `tools/tinytang_flash.py --yes` staged and committed it, and after the user's power cycle `platform` reported `a879a92-dirty.3c5e535`. The user played TinyGBC with saves and states, opened the Saves page and passed the cycle; the card then held `/root/states/gbc/Pokemon Pinball (USA, Australia) (Rumble Version).state` at 59,661 bytes and two `.sav` files in `/root/saves/gbc/`. The shell's `cat` returned only the first 3,962 bytes of the 24,749-byte `last.log`, and there is no `tail` or `grep`, so the log's newest lines were not read from the host. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 46 were not rewritten, and validated this entry as number 47 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+TinyGBC's next cycle is the cartridge clock for MBC3 and HuC3 games, which needs the date this firmware's RTC keeps handed to the player at launch, likely beside the settings blob, and a place for the clock's `baseTime` beside the battery save. `cat` stopping at about four kilobytes leaves `last.log` unreadable from the host past its start, and a `tail` command, or a fix to `cat`, would let a save be checked from the console. Entry 45's MCP23017 firmware and entry 46's standing items are unchanged.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
