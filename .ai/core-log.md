@@ -2002,3 +2002,35 @@ Flash it with the player TinyGBC entry 37 built, then test the case that failed:
 - User Test: NOT RUN
 
 ---
+
+## 58 COMMIT Unreleased 2026-10-27T12:25:14-07:00
+
+#### Coming From:
+
+Unreleased 86d2424
+
+#### Purpose:
+
+Record the deployment of the clock read and the user's acceptance of it, and the note writer that made the result readable from the console.
+
+#### Outcome:
+
+The firmware deployed was `86d2424-dirty.455db9f`, 648,960 bytes, SHA-256 `d050eec1184842cedd1fde88278ecbfb1b758cf9e61890c94e59be68dabbcc43`, and it reads this board's clock where it can be read. Two changes are in it beyond entry 57. `ports/bl616/tang_ae350_run.h` and `tang_fpga_uart.c` gained `tang_ae350_note()`, which appends one stamped line to `/root/saves/last.log` through the same writer an AE350 run uses, so a window can leave a fact where a console cannot be read. `tinygbc_app.cpp`'s `board_clock_check()` calls it with its verdict. On the board, the user opened the window's Saves tab and the log recorded `2026-10-27T12:21:11-07:00 clock: set, a cartridge's clock is kept` with a real local time, where every earlier run in that file had said `no-clock`; they then launched Pokemon Gold and exited at the title screen, and the log shows the run at `12:23:28` reading the battery save (32,768 bytes), the state (84,237) and the clock (8 bytes), and the clock written back at `12:23:47` as `8 of 8 bytes, crc 9eb5c4ef of 9eb5c4ef, whole`, one write in 1 ms. The clock is therefore kept across a session started after a power cycle, which is what failed before. The RTC itself was already recorded here in BRD-011 and BRD-012, so this confirms a recorded fact rather than establishing one, and nothing in `.ai/core-reference.md` needed revising. The board reports the console on a `/dev/ttyACM*` that changes between boots -- this cycle it moved from 0 to 2 and back to 0 -- so the tools' `--port` was needed and is worth remembering. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 57 were not rewritten, and validated this entry as number 58 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Nothing here. The console port moving between boots is worth a line in the tooling: `tinytang_put.py`, `tinytang_flash.py` and `tinytang_console.py` default to `/dev/ttyACM0` and refuse safely when the board is elsewhere, which cost a few minutes of confusion; picking the port by asking the candidates in turn, as this cycle's checks did by hand, would remove that. TinyGBC's entry 38 records the player's half of the acceptance.
+
+#### Files Modified:
+
+- ports/bl616/tang_ae350_run.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

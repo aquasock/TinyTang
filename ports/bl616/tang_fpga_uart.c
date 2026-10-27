@@ -1280,6 +1280,13 @@ static void ae350_log(const char *fmt, ...)
     (void)f_close(&file);
 }
 
+/* The log, for a caller outside this file: the same stamped line an AE350
+ * run writes, so a window can leave a note where a console cannot be read. */
+void tang_ae350_note(const char *text)
+{
+    ae350_log("%s\n", text);
+}
+
 /* The save coming back, in either of two ways.  TinyNES's is hex lines
  * between "TinyNES NVRAM SAVE", which carries the length and CRC-32, and
  * "TinyNES NVRAM DONE", 32 bytes a line, because a line is what the text

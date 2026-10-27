@@ -217,6 +217,14 @@ void board_clock_check(void)
         why = "the clock could not be read";
         break;
     }
+    /* The same answer goes to the board's log, so a console can read what the
+     * window found without anyone looking at the screen. */
+    if (why == NULL) {
+        tang_ae350_note("clock: set, a cartridge's clock is kept");
+    } else {
+        snprintf(text, sizeof text, "clock: not set (%s)", why);
+        tang_ae350_note(text);
+    }
     if (s_clock_line == NULL) {
         return;
     }

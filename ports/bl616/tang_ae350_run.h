@@ -23,6 +23,12 @@
  * Returns the program's exit code, or 1 when it could not be started. */
 int tang_ae350_run(const char *player_real, const char *data_real);
 
+/* Append one stamped line to the board's save log, /root/saves/last.log, the
+ * same file a run writes its save traffic to.  For the things a launch needs
+ * to leave behind where a console cannot be read: the TinyGBC window records
+ * there whether the board's clock had a date when it tried to read it. */
+void tang_ae350_note(const char *text);
+
 /* The cartridge the last run reported, from the player's CORE line: 1 for a
  * colour cartridge, 0 for a monochrome one, -1 when no run has said.  The
  * TinyGBC window greys the palette row for a colour cartridge, whose picture
