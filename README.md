@@ -433,7 +433,10 @@ finished, or one that came back short, says so there too; states can be swapped
 by copying them in the Files app.  TinyGBC's player does the same with its own
 `TinyGBC` lines: its states go to `/root/states/gbc/` and its battery saves to
 `/root/saves/gbc/`, and the TinyGBC window's Saves page shows them as TinyNES's
-does, reading the state's own `TGS1` header.
+does, reading the state's own `TGS1` header.  A Game Boy cartridge with a
+clock, such as Pokemon Gold, also keeps it there as `<cartridge>.rtc` over the
+`RTC` channel, and the TinyGBC settings reply carries the RTC-kept clock so the
+player's clock runs on the date; with the clock unset none is kept.
 
 That is the only way to start TinyNES.  A cartridge double-clicked in the
 Files app or on the desktop is not opened at all: the desktop would have to

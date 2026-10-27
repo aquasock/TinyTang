@@ -135,6 +135,7 @@ const char STATE_REAL[] = "/sd/root/states/gbc";
 const int STATE_LINES = 6;
 td_widget_t *s_state_line[STATE_LINES];
 td_widget_t *s_batt_line;   /* when the battery save was last written */
+td_widget_t *s_rtc_line;    /* when the cartridge's clock was last written */
 
 /* A launch owns the core and the link until the game ends, so a second one is
  * refused rather than reloading the core under the first. */
@@ -616,6 +617,9 @@ void state_show(void)
         if (s_batt_line != nullptr) {
             td_widget_set_text(s_batt_line, "Battery save: select a cartridge.");
         }
+        if (s_rtc_line != nullptr) {
+            td_widget_set_text(s_rtc_line, "");
+        }
         return;
     }
     const char *name = s_lib_entries[row].name;
@@ -627,24 +631,31 @@ void state_show(void)
      * carry no date of their own, because FatFS has no clock on this board. */
     td_saves_attempt_t saved_state = {};
     td_saves_attempt_t saved_batt = {};
+    td_saves_attempt_t saved_rtc = {};
     {
         char needle_state[LIB_NAME_BYTES + 8];
         char needle_sav[LIB_NAME_BYTES + 8];
+        char needle_rtc[LIB_NAME_BYTES + 8];
         snprintf(needle_state, sizeof needle_state, "/%.*s.state", stem, name);
         snprintf(needle_sav, sizeof needle_sav, "/%.*s.sav", stem, name);
+        snprintf(needle_rtc, sizeof needle_rtc, "/%.*s.rtc", stem, name);
         FIL log;
         if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
             char buf[256];
             UINT got = 0;
             td_saves_reader_t reader_state;
             td_saves_reader_t reader_batt;
+            td_saves_reader_t reader_rtc;
             td_saves_reader_init(&reader_state);
             td_saves_reader_init(&reader_batt);
+            td_saves_reader_init(&reader_rtc);
             while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
                 td_saves_reader_feed(&reader_state, buf, got, needle_state,
                                      &saved_state);
                 td_saves_reader_feed(&reader_batt, buf, got, needle_sav,
                                      &saved_batt);
+                td_saves_reader_feed(&reader_rtc, buf, got, needle_rtc,
+                                     &saved_rtc);
             }
             (void)f_close(&log);
         }
@@ -656,6 +667,17 @@ void state_show(void)
             snprintf(batt, sizeof batt, "Battery save: none written yet.");
         }
         td_widget_set_text(s_batt_line, batt);
+    }
+    /* The clock of an MBC3 or HuC3 cartridge, which the player keeps only
+     * when this board's clock has the date; most cartridges have none. */
+    if (s_rtc_line != nullptr) {
+        static char clock[TD_TEXT_MAX];
+        if (saved_rtc.verdict[0] != '\0' || saved_rtc.armed) {
+            describe_save(saved_rtc, "Clock", clock, sizeof clock);
+        } else {
+            snprintf(clock, sizeof clock, "Clock: none kept for this cartridge.");
+        }
+        td_widget_set_text(s_rtc_line, clock);
     }
 
     char real[TD_PATH_MAX + 8];
@@ -871,6 +893,7 @@ void on_close(td_window_t *)
     s_volume_label = nullptr;
     memset(s_state_line, 0, sizeof s_state_line);
     s_batt_line = nullptr;
+    s_rtc_line = nullptr;
     memset(s_status, 0, sizeof s_status);
     s_lib_list = nullptr;
     s_lib_path = nullptr;
@@ -981,9 +1004,11 @@ void launch(void)
         s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
         page_add(SAVES_TAB, s_state_line[i]);
     }
-    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/gbc"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves and clocks are in /root/saves/gbc"));
     s_batt_line = td_label(s_win, 1, 11, 0, "Battery save: none written yet.");
     page_add(SAVES_TAB, s_batt_line);
+    s_rtc_line = td_label(s_win, 1, 12, 0, "");
+    page_add(SAVES_TAB, s_rtc_line);
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */

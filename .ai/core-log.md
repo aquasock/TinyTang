@@ -1683,3 +1683,35 @@ TinyGBC's next cycle is the cartridge clock for MBC3 and HuC3 games, which needs
 - User Test: PASS
 
 ---
+
+## 48 COMMIT Unreleased 2026-10-27T00:40:34-07:00
+
+#### Coming From:
+
+Unreleased b10ae68
+
+#### Purpose:
+
+Carry the clock of MBC3 and HuC3 Game Boy cartridges for TinyGBC's player: give it the date at launch, keep the clock on the card beside the battery save, and show it on the TinyGBC window's Saves page.
+
+#### Outcome:
+
+TinyGBC's player counts a cartridge's clock against `time()`, which on its CPU counts from reset unless it is told the date (TinyGBC entry 26). `ports/bl616/tang_fpga_uart.c` answers `TinyGBC SETTINGS WANT` with sixteen bytes instead of two: the volume and the mute from `/tinygbc.ini`, six zero bytes, and `tang_clock_now`'s UTC seconds little-endian, or 0 when the clock has never been set; a player that asks for two bytes still gets the first two, and the console line now ends `clock sent` or `clock not set`. `ae350_channel_line` gained an `RTC` channel, which `ae350_path_for` maps to `/root/saves/<system>/<cartridge>.rtc` through the battery save's verified replace, and a new `ae350_channel_kind` names its file a clock in the console's words, replacing two inline state-or-save tests. `ports/bl616/tinygbc_app.cpp`'s Saves page reads the `.rtc`'s last record from `/root/saves/last.log` with the other two and shows `Clock <when>, <verdict>, <bytes> B`, or that none is kept, on row 12, and the heading on row 10 now names clocks, 47 of the window's 52 columns. README's cartridge section names the clock. The firmware was built with the default toolchain and SDK as `b10ae68-dirty.886b72a`, 657,328 bytes, SHA-256 `cce78dee3e3cb3eb3530e551b74859e8a88628dafe5a9eb88e74901a72793f22`, the dirty part again including the user's uncommitted `third_party/tinydesk` changes, flashed with `tinytang_flash.py --yes`, and `platform` reported it after the power cycle. A launch with `ae350run` from the shell, recorded over the console, logged `clock not set` and stopped relaying after a few seconds; the exit then froze and the board needed a power cycle, which the user identified as a known effect of holding the console during a run, so that run is not counted. From the TinyGBC window the user set Pokemon Gold's clock, saved in the game and exited, the Saves page showed the battery save and the clock each written whole at 00:31, 32,768 and 8 bytes, and after a wait the relaunched game's clock had moved from 10:07 to 10:09; the user passed the cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 47 were not rewritten, and validated this entry as number 48 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The recorded launch found the clock unset after the board was replugged, so a game can start without a date and keep no clock for that session without saying so; syncing the RTC before the settings reply, or noting an unset clock in the TinyGBC window, would close that. Holding the console during an AE350 run still breaks the core unload at exit and deserves its own investigation. Entry 47's `cat` limit and entry 45's MCP23017 firmware stand.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -1036,13 +1036,14 @@ static const char *ae350_system(const char *line)
 /* "<product> <channel> <rest>", the shape every file line takes:
  * "Tiny89 NVRAM SAVE 262144 8d90ffa5", "TinyNES STATE DATA ...",
  * "Tiny89 FLASH WANT ...".  NVRAM is the program's RAM, FLASH is the
- * calculator's 4 MiB flash image, and STATE is a player's save state, which
- * TinyNES and TinyGBC both keep one of per cartridge. */
+ * calculator's 4 MiB flash image, STATE is a player's save state, which
+ * TinyNES and TinyGBC both keep one of per cartridge, and RTC is the clock of
+ * a Game Boy cartridge that has one, kept beside its battery save. */
 static bool ae350_channel_line(const char *line, const char **system,
                                const char **channel, const char **rest)
 {
     static const char *const channels[] = { "NVRAM ", "FLASH ", "STATE ",
-                                            "SEND " };
+                                            "RTC ", "SEND " };
     const char *sys = ae350_system(line);
     const char *tail;
 
@@ -1084,6 +1085,15 @@ void tang_ae350_set_send_file(const char *path_real)
     (void)snprintf(s_ae350_send_path, sizeof s_ae350_send_path, "%s", path_real);
 }
 
+/* What a channel's file is called in the console's words. */
+static const char *ae350_channel_kind(const char *channel)
+{
+    if (strcmp(channel, "STATE ") == 0) {
+        return "state";
+    }
+    return strcmp(channel, "RTC ") == 0 ? "clock" : "save";
+}
+
 static bool ae350_path_for(const char *system, const char *channel,
                            char *out, size_t size)
 {
@@ -1092,9 +1102,11 @@ static bool ae350_path_for(const char *system, const char *channel,
         return false;    /* its name comes from the caller, not from the base */
     }
     const bool flash = strcmp(channel, "FLASH ") == 0;
+    const bool rtc = strcmp(channel, "RTC ") == 0;
     const char *dir = state ? "/sd/root/states/" : "/sd/root/saves/";
     const char *ext = state ? ".state"
                     : flash ? ".flash"
+                    : rtc ? ".rtc"
                     : (strcmp(system, "ti89") == 0 ? ".ram" : ".sav");
     const int n = snprintf(out, size, "%s%s/%s%s", dir, system, s_ae350_base, ext);
     return n > 0 && (size_t)n < size;
@@ -1735,8 +1747,7 @@ static int ae350_follow_link(ae350_run_t *run)
                 const char *system = NULL, *channel = NULL, *rest = NULL;
                 if (ae350_channel_line(run->line, &system, &channel, &rest)) {
                     char dest[TDSH_MAX_REAL_PATH];
-                    const char *kind =
-                        strcmp(channel, "STATE ") == 0 ? "state" : "save";
+                    const char *kind = ae350_channel_kind(channel);
                     const bool named =
                         ae350_path_for(system, channel, dest, sizeof dest);
                     if (starts_with(rest, "DATA ")) {
@@ -1972,8 +1983,7 @@ int tang_ae350_run(const char *player, const char *data)
                     }
                 } else if (ae350_path_for(system, channel, dest, sizeof dest)) {
                     ae350_send_named(&run, &link, rest + 5, dest,
-                                     strcmp(channel, "STATE ") == 0 ? "state"
-                                                                    : "save");
+                                     ae350_channel_kind(channel));
                 }
                 continue;
             }
@@ -2017,23 +2027,37 @@ int tang_ae350_run(const char *player, const char *data)
             continue;
         }
         if (starts_with(run.line, "TinyGBC SETTINGS WANT ")) {
-            /* TinyGBC's blob (TinyGBC firmware/apps/gb_bench/main.cpp): the
-             * master volume and the mute, from /tinygbc.ini. */
+            /* TinyGBC's blob (TinyGBC firmware/apps/gb_bench/main.cpp,
+             * HostSettings): the master volume and the mute, from
+             * /tinygbc.ini, six reserved bytes, then the clock as UTC seconds
+             * since 1970, little-endian, 0 while it has never been set.  The
+             * player runs its time() from that, so a cartridge's own clock
+             * counts real time.  A player built before the clock asks for two
+             * bytes and gets the first two. */
             static tang_gbc_settings_t gbc;
-            static uint8_t blob[2];
+            static uint8_t blob[16];
+            int64_t utc = 0;
             unsigned long address = 0, room = 0;
             if (sscanf(run.line + 22, "%lx %lx", &address, &room) != 2 || room < 1) {
                 tdsh_printf("ae350run: the settings request is malformed\r\n");
                 continue;
             }
             (void)tang_gbc_load(&gbc, TANG_GBC_INI_REAL);
+            memset(blob, 0, sizeof blob);
             blob[0] = gbc.audio.volume;
             blob[1] = gbc.audio.mute;
+            if (!tang_clock_now(&utc) || utc < 0) {
+                utc = 0;
+            }
+            for (int i = 0; i < 8; i++) {
+                blob[8 + i] = (uint8_t)((uint64_t)utc >> (8 * i));
+            }
             const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
             rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
-            tdsh_printf("ae350run: settings %s, volume=%u%s\r\n",
+            tdsh_printf("ae350run: settings %s, volume=%u%s, clock %s\r\n",
                         gbc.found ? TANG_GBC_INI_SHOWN : "(defaults)",
-                        (unsigned)gbc.audio.volume, gbc.audio.mute ? " muted" : "");
+                        (unsigned)gbc.audio.volume, gbc.audio.mute ? " muted" : "",
+                        utc != 0 ? "sent" : "not set");
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }
