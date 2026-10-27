@@ -111,7 +111,7 @@ int main(int argc, char **argv)
     /* An unknown layout releases both, naming the two that exist. */
     parse("[tang]\nlayout = audio\n");
     assert(ini.layout == TANG_LAYOUT_NONE && errors() == 2);
-    assert(says(2, "unknown layout 'audio'; use i2s2_oled or vga"));
+    assert(says(2, "unknown layout 'audio'; use i2s2_oled, vga or lora"));
     assert(says(0, "both sockets released"));
     /* "none" is not a layout: leave the line out instead. */
     parse("[tang]\nlayout = none\n");
@@ -159,9 +159,18 @@ int main(int argc, char **argv)
 
     assert(strcmp(tang_ini_layout_name(TANG_LAYOUT_I2S2_OLED), "i2s2_oled") == 0);
     assert(strcmp(tang_ini_layout_name(TANG_LAYOUT_VGA), "vga") == 0);
-    assert(strcmp(tang_ini_layout_name(3), "?") == 0);
+    assert(strcmp(tang_ini_layout_name(TANG_LAYOUT_LORA), "lora") == 0);
+    assert(strcmp(tang_ini_layout_name(4), "?") == 0);
     assert(strcmp(tang_ini_module_name(TANG_PMOD_I2S2), "i2s2") == 0);
+    assert(strcmp(tang_ini_module_name(TANG_PMOD_LORA), "lora") == 0);
     assert(strcmp(tang_ini_module_name(9), "?") == 0);
+
+    /* The LoRa layout: personality 8 on PMOD0, PMOD1 released, on the desktop
+     * core that carries ABI 1.6's UART. */
+    parse("[tang]\nlayout = lora\n");
+    assert(ini.layout == TANG_LAYOUT_LORA && !ini.layout_bad);
+    assert(tang_ini_word(TANG_LAYOUT_LORA, TANG_INI_CORE_DESKTOP) == (8u << 4));
+    assert(tang_ini_word(TANG_LAYOUT_LORA, TANG_INI_CORE_PHOSPHOR) == (8u << 4));
 
     printf("tb_ini: PASS\n");
     return 0;

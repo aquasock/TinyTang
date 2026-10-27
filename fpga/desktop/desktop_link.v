@@ -52,6 +52,16 @@ module desktop_link #(
     output wire         desktop_i2c_cmd_toggle,
     output wire [63:0]  desktop_i2c_wdata,
     output wire [31:0]  desktop_i2c_auto,
+    // PMOD UART (personality 5): the register file's side of the LoRa link.
+    output wire [7:0]   desktop_uart_tx_data,
+    output wire         desktop_uart_tx_push,
+    output wire         desktop_uart_flush,
+    output wire         desktop_uart_hold,
+    output wire         desktop_uart_nrst_low,
+    output wire         desktop_uart_loopback,
+    output wire         desktop_uart_rx_pop,
+    input  wire [7:0]   desktop_uart_rx_data,
+    input  wire [31:0]  desktop_uart_status,
     output reg [15:0] hid1,         // USB HID joystick 1
     output reg [15:0] hid2,         // USB HID joystick 2
 
@@ -234,7 +244,12 @@ desktop_regs desktop_endpoint (
     .i2c_rdata(desktop_i2c_rdata), .i2c_res_toggle(desktop_i2c_res_toggle),
     .i2c_status(desktop_i2c_status),
     .i2c_cmd(desktop_i2c_cmd), .i2c_cmd_toggle(desktop_i2c_cmd_toggle),
-    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto)
+    .i2c_wdata(desktop_i2c_wdata), .i2c_auto(desktop_i2c_auto),
+    .uart_tx_data(desktop_uart_tx_data), .uart_tx_push(desktop_uart_tx_push),
+    .uart_flush(desktop_uart_flush), .uart_hold(desktop_uart_hold),
+    .uart_nrst_low(desktop_uart_nrst_low),
+    .uart_loopback(desktop_uart_loopback), .uart_rx_pop(desktop_uart_rx_pop),
+    .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status)
 );
 
 // UART RX: command processing

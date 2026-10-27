@@ -475,6 +475,56 @@ static bool fpga_ext_read32(uint32_t address, uint32_t *value, uint8_t *status)
     return true;
 }
 
+/* Write one 32-bit register through the same endpoint: opcode 2 carries the
+ * value in bytes 8..11, big-endian, and the reply's status says whether the
+ * register accepted it.  Same 14-byte request, same CRC, same 15-byte reply. */
+static bool fpga_ext_write32(uint32_t address, uint32_t value, uint8_t *status)
+{
+    uint8_t req[14];
+    memset(req, 0, sizeof(req));
+    req[0] = 1;                                   /* extended-request version */
+    req[1] = 2;                                   /* opcode: write32          */
+    req[4] = (uint8_t)(address >> 24);
+    req[5] = (uint8_t)(address >> 16);
+    req[6] = (uint8_t)(address >> 8);
+    req[7] = (uint8_t)address;
+    req[8] = (uint8_t)(value >> 24);
+    req[9] = (uint8_t)(value >> 16);
+    req[10] = (uint8_t)(value >> 8);
+    req[11] = (uint8_t)value;
+    uint16_t crc = fpga_crc16(0xffffu, 0x10u);
+    for (int i = 0; i < 12; i++) crc = fpga_crc16(crc, req[i]);
+    req[12] = (uint8_t)(crc >> 8);
+    req[13] = (uint8_t)crc;
+
+    tang_fpga_lock();
+    const int sent = tang_fpga_frame(0x10, req, sizeof(req));
+    tang_fpga_unlock();
+    if (sent != 0) return false;
+
+    uint8_t rep[16];
+    if (tang_fpga_wait(0x10, rep, sizeof(rep), 500) != 15) return false;
+    if (status) *status = rep[2];
+    return true;
+}
+
+/* Public register access, so a driver can claim the UART window or any other
+ * register without growing a copy of the request format.  Returns false when
+ * the core did not answer or answered with a non-zero status. */
+bool tang_fpga_read32(uint32_t address, uint32_t *value)
+{
+    uint8_t status = 0xff;
+    if (!fpga_ext_read32(address, value, &status)) return false;
+    return status == 0;
+}
+
+bool tang_fpga_write32(uint32_t address, uint32_t value)
+{
+    uint8_t status = 0xff;
+    if (!fpga_ext_write32(address, value, &status)) return false;
+    return status == 0;
+}
+
 /* The clock monitor's registers, contiguous from 0x120: `clk` and `pix` each
  * have two probes (A and B) so a host can see whether both regions the placer
  * chose are running, and `ref` is the 50 MHz crystal every rate is measured

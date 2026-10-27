@@ -55,6 +55,9 @@ enum {
     TANG_PMOD_I2S2    = 5,
     TANG_PMOD_I2C     = 6,
     TANG_PMOD_I2C_UART = 7,
+    /* The LoRa UART on the lower row, desktop ABI 1.6.  8 because 5 is the
+     * Phosphor core's I2S2 and 6/7 were this core's removed I2C sockets. */
+    TANG_PMOD_LORA    = 8,
 };
 
 /* The supported layouts; NONE is both sockets released. */
@@ -62,6 +65,7 @@ enum {
     TANG_LAYOUT_NONE      = 0,
     TANG_LAYOUT_I2S2_OLED = 1,
     TANG_LAYOUT_VGA       = 2,
+    TANG_LAYOUT_LORA      = 3,
 };
 
 /* Core IDs that have the sockets (pmod_sockets.cpp matches their ABI). */

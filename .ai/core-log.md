@@ -2034,3 +2034,46 @@ Nothing here. The console port moving between boots is worth a line in the tooli
 - User Test: PASS
 
 ---
+
+## 59 COMMIT Unreleased 2026-10-27T14:49:37-07:00
+
+#### Coming From:
+
+Unreleased e3ce7c3
+
+#### Purpose:
+
+Give the Tang a working UART on a PMOD socket so the RYLR998 LoRa module moves off the bench Pico and onto the board it belongs to.
+
+#### Outcome:
+
+`pmod_uart.sv` came back from `800d11b^` unchanged and was wired into the socket mux as a new personality, 8, rather than the 7 it had before, because 5 is the Phosphor core's I2S2 (PMOD-004) and the same word must not mean two things across cores. The desktop core reached ABI 1.6 with the register window at 0x170/0x174/0x178/0x17c, the capability word at 0x08 reading 0x10f and `supported_word` accepting only 0x0080 or 0x0800; the firmware gained `tang_fpga_read32`/`tang_fpga_write32` on the existing extended endpoint, a `lora` command with at/ctrl/loop/read/flush/status/reset/ver, and a `lora` layout in `/tinytang.ini` that declares PMOD0. Two RTL defects were found only by hardware and each cost a rebuild: `supported_word` refused the new word outright with status 6, and the combinational write validator ended in `else status=4`, so writes to 0x170 and 0x17c were rejected before they could be applied even though the FSM branches existed and reads worked; the read-back test (write the loopback bit, read 0x17c back as zero) is what proved the write never landed. The module then sat across pins 1-6 instead of 7-12, which put its TXD where the core does not read, and the receiver filled with 512 bytes of noise; the internal loopback returned `AT` byte for byte and so ruled out the RTL in one command. With the module on 7-12, `lora ver` answered +VER=RYLR998_REYAX_V1.2.4, `lora status` read 0x00000000, the module still held address 2, network 6, +PARAMETER=7,7,1,12 and 915 MHz from its time on the Pico, and one `AT+SEND` of a framed 24-character packet moved TinyNode's counters from rx 7 frames 16 to rx 8 frames 17 with rssi -32 dBm, so the Tang now transmits to the node over the radio. `tools/tests/test_ini.sh` passes with new coverage for the lora layout and its word, and `tools/check_help_width.py` passes at 144 entries. PMOD-009 and TOOL-022 record the personality and the fact that the desktop core's source list is kept in both `build.tcl` and `synth.ys`; PMOD-006 was revised for ABI 1.6. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 152 ids in the same order, and validated this entry as number 59 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The link exists but carries nothing but AT commands, so the next cycle is the framing port and then the application protocol: `lora_frame` moves from TinyNode almost unchanged, and the protocol above it needs its own length and checksum because a lost frame currently reassembles into a silently short message (TinyNode's FRM-008). The core load is still manual after each boot, since the boot script loads `tinytang.bin` rather than `tinytang-lora.bin`; the old core remains on the card as the rollback. Two small debts stand: the ini's `lora` layout releases PMOD1 and gives up that socket's OLED by design, and the read path has no back-pressure, so a chatty peer would overrun the 512-byte FIFO the way the floating line did.
+
+#### Files Modified:
+
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_pmod.sv
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/pmod_uart.sv
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- ports/bl616/tang_lora.c
+- ports/bl616/tdsh_platform_bl616.c
+- tools/desktop_open/synth.ys
+- tools/tests/tb_ini.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---

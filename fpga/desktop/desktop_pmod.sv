@@ -4,7 +4,9 @@
 // Raster timing is 1280x720p60, matching the existing HDMI transmitter.
 module desktop_pmod #(
     // The I2C engine's clock, sys_clk: the board's 50 MHz crystal.
-    parameter integer I2C_CLK_HZ = 50_000_000
+    parameter integer I2C_CLK_HZ = 50_000_000,
+    // The PMOD UART's rate on personality 8, which is the LoRa module's link.
+    parameter integer UART_BAUD = 115_200
 ) (
     input logic control_clk, pixel_clk, sys_clk, resetn,
     input logic [10:0] cx,
@@ -31,7 +33,17 @@ module desktop_pmod #(
     output logic [31:0] i2c_status,
     inout wire [7:0] pmod0_io, pmod1_io,
     // The I2C bus on the USB-A port's data pair: SDA on D+, SCL on D-.
-    inout wire usb_sda, usb_scl
+    inout wire usb_sda, usb_scl,
+    // PMOD UART (personality 8), control clock on the register side.
+    input  logic [7:0]  uart_tx_data,
+    input  logic        uart_tx_push,
+    input  logic        uart_flush,
+    input  logic        uart_hold,
+    input  logic        uart_nrst_low,
+    input  logic        uart_loopback,
+    input  logic        uart_rx_pop,
+    output logic [7:0]  uart_rx_data,
+    output logic [31:0] uart_status
 );
     (* ASYNC_REG = "TRUE" *) logic request_meta, request_sync;
     logic [15:0] active_word;
@@ -182,13 +194,55 @@ module desktop_pmod #(
         .frames(oled_frames),.signature(oled_signature)
     );
 
+    // ---------------------------------------------------------- PMOD UART --
+    // Personality 8 is the LoRa module's link on the lower row: pin 8 NRST,
+    // pin 9 TX out of the FPGA, pin 10 RX into it.  That is the wiring the
+    // module was proven against when this socket carried i2c_uart (PMOD-008),
+    // and the module's five-wire header goes on by name, so the mapping is
+    // fixed rather than made configurable, and `flip` does not apply.
+    wire uart_tx_line;
+    wire uart_rx_raw = active_word[7:4] == 8 ? pmod0_io[7]
+                     : active_word[11:8] == 8 ? pmod1_io[7] : 1'b1;
+
+    pmod_uart #(.CLK_HZ(I2C_CLK_HZ), .BAUD(UART_BAUD)) uart (
+        .control_clk(control_clk), .clk(sys_clk), .resetn(resetn),
+        .tx_data(uart_tx_data), .tx_push(uart_tx_push), .flush(uart_flush),
+        .hold(uart_hold), .loopback(uart_loopback),
+        .rx_data(uart_rx_data), .rx_pop(uart_rx_pop), .status(uart_status),
+        .rx_pin(uart_rx_raw), .tx_pin(uart_tx_line)
+    );
+
+    // TX and NRST are launched in the register clock and settled by the pixel
+    // clock, the same handshake the socket word uses.
+    logic uart_tx_meta, uart_tx_px, uart_nrst_meta, uart_nrst_px;
+    always_ff @(posedge pixel_clk) begin
+        if (!resetn) begin
+            uart_tx_meta <= 1'b1; uart_tx_px <= 1'b1;
+            uart_nrst_meta <= 1'b0; uart_nrst_px <= 1'b0;
+        end else begin
+            uart_tx_meta <= uart_tx_line; uart_tx_px <= uart_tx_meta;
+            uart_nrst_meta <= uart_nrst_low; uart_nrst_px <= uart_nrst_meta;
+        end
+    end
+
+    logic [7:0] uart_lanes, uart_enables;
+    always_comb begin
+        uart_lanes = 8'b0;
+        uart_enables = 8'b0;
+        // The register bit asserts reset, so the pin carries its inverse.
+        uart_lanes[5] = ~uart_nrst_px; uart_enables[5] = 1'b1;
+        uart_lanes[6] = uart_tx_px;    uart_enables[6] = 1'b1;
+    end
+
     for (genvar slot = 0; slot < 2; slot = slot + 1) begin : g_slot
         wire [3:0] personality = slot == 0 ? active_word[7:4] : active_word[11:8];
         wire flipped = slot == 0 ? active_word[12] : active_word[13];
         wire [7:0] lanes = personality == 1 ? oled_lanes : personality == 2 ? j1
-                         : personality == 3 ? j2 : 8'b0;
+                         : personality == 3 ? j2
+                         : personality == 8 ? uart_lanes : 8'b0;
         wire [7:0] enables = personality == 1 ? oled_enables : personality == 2 ? 8'hff
-                           : personality == 3 ? 8'h3f : 8'h00;
+                           : personality == 3 ? 8'h3f
+                           : personality == 8 ? uart_enables : 8'h00;
         for (genvar io = 0; io < 8; io = io + 1) begin : g_pin
             // The dock interleaves rows: even IO numbers are pins 1-4.
             localparam integer NORMAL_LANE = io/2 + (io%2)*4;

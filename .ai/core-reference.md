@@ -304,8 +304,9 @@ BRD-014: "Each output is an AO3406 low-side switch on GPAn with a 10 kOhm gate p
 PMOD-001: "Two PMOD sockets: PMOD1 beside HDMI on W19 W20 F19 F20 E22 D22 E21 D21 and PMOD0 on V18 V19 G21 G22 F18 E18 C22 B22, all LVCMOS33; Sipeed interleaves the rows, so IO0/2/4/6 are Digilent pins 1-4 and IO1/3/5/7 are pins 7-10, and flipping a module swaps pins 1-4 with 7-10"
 PMOD-002: "/tinytang.ini at the SD root carries Tang-Phosphor's socket contract (pmod0/pmod1 plus _flip, flat under [tang]); modules carry no ID pins, so presence can never be detected; this firmware parses it (tang_ini.c) but, by the user's choice, reads only `layout = i2s2_oled | vga` under [tang], two fixed layouts with every module right side up, and refuses the per-socket keys"
 PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold 0, PMOD0 personality 7:4, PMOD1 11:8, flips 12/13; personalities 0 none, 1 oledrgb, 2 vga J1, 3 vga J2, 4 rotary encoder; both sockets power up released, so a host must declare them; the bring-up core has the same layout at 0x10, which is not extended frame type 0x10"
-PMOD-006: "tangload declares /tinytang.ini's layout to core 0x50 at ABI 1.8+ and 0x54 as each core's own word (tang_ini_word): vga 0x0230 on both, i2s2_oled 0x0510 on Phosphor and 0x0010 (OLED alone) on the desktop core, which refuses i2s2; i2s2_oled on the desktop core is qualified at 0x0010 (core-log entries 22 and 23) and 0x0510 on Phosphor is not; earlier per-socket declarations qualified: I2S2 on PMOD0 0x0050; encoder face up on PMOD1 pins 7-12 needs flip=yes, 0x2400, or 0x2410 with OLED on PMOD0; PmodVGA face up has J1 on PMOD1 and J2 on PMOD0, 0x0230; missing-file release and unknown-module refusal pass; since desktop ABI 1.5 the desktop core 0x54 takes only none/oledrgb per socket or the VGA pair (bitmap 0x0f), refusing any other word whole; its I2C and i2c_uart personalities (6 and 7) were removed, the bus moving to USB-A (BRD-011)"
+PMOD-006: "tangload declares /tinytang.ini's layout to core 0x50 at ABI 1.8+ and 0x54 as each core's own word (tang_ini_word): vga 0x0230 on both, i2s2_oled 0x0510 on Phosphor and 0x0010 (OLED alone) on the desktop core, which refuses i2s2; i2s2_oled on the desktop core is qualified at 0x0010 (core-log entries 22 and 23) and 0x0510 on Phosphor is not; earlier per-socket declarations qualified: I2S2 on PMOD0 0x0050; encoder face up on PMOD1 pins 7-12 needs flip=yes, 0x2400, or 0x2410 with OLED on PMOD0; PmodVGA face up has J1 on PMOD1 and J2 on PMOD0, 0x0230; missing-file release and unknown-module refusal pass; since desktop ABI 1.5 the desktop core 0x54 takes only none/oledrgb per socket or the VGA pair, refusing any other word whole, and since ABI 1.6 it also takes personality 8, the LoRa UART, with the other socket released (bitmap 0x0000010f, PMOD-009); its I2C and i2c_uart personalities (6 and 7) were removed, the bus moving to USB-A (BRD-011)"
 PMOD-008: "Reyax RYLR998 at 868/915 MHz, 5-pin header 1 VDD 2 NRST 3 RXD 4 TXD 5 GND, 8N1 115200 default, AT commands answering +OK/+ADDRESS=/+BAND=/+NETWORKID=/+PARAMETER=/+VER=/+CRFOP= and +ERR=1 for an unknown command; its parser needs a command as one back-to-back line; TinyTang has had no transport for it since core-log entry 23"
+PMOD-009: "Personality 8, desktop ABI 1.6: an 8N1 UART on a socket's lower row -- NRST pin 8, TX pin 9, RX pin 10 -- with the register window at 0x170/0x174/0x178/0x17c and a hold bit, because a byte-at-a-time command makes the RYLR998 answer +ERR=1 per byte; the word is 0x0080 or 0x0800 and 5 stays the Phosphor core's I2S2"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
 BL6-002: "OCRAM is 320 KB at 0x20FC0000 and WRAM 160 KB at 0x21010000; the efuse reports psram_info 0 on this QFN40 part, so it cannot drive PSRAM at all and CONFIG_PSRAM would hang the boot"
 BL6-003: "SDK 2.3.36's mm.h: TLSF heaps OCRAM and WRAM in g_mem_manager; kfree_size(0), kmax_free_size(0) and kmin_free_size() (a true low-water mark, tracking on in defconfig); tang_heap_info() sums total_size"
@@ -431,6 +432,7 @@ TOOL-018: "The `help` command list renders each line as printf(\"  %-10s %s\\n\"
 TOOL-019: "tang_key.c translates the Bluetooth keyboard's HID usages into the ANSI bytes TinyDesk's input parser decodes (ports/bl616/tang_key.c): F1-F11, usages 0x3a-0x44, are sent as ESC [ 11~ through ESC [ 23~, which input.c's tilde_key() maps to TD_KEY_F1-F11, while F12 (usage 0x45) is TANG_KEY_USAGE_TOGGLE -- reserved for the desktop/core screen swap and skipped before translation, so no layer ever sees it -- and the arrow and editing keys already used the same CSI forms"
 TOOL-020: "Output printed before tangload has no raster to appear on, because the board draws nothing until a core is programmed, and osd desk on mirrors the console from that point forward rather than replaying it, so boot narration the user must read has to come after the core is loaded -- a line placed before tangload is reachable only by someone already attached to the USB console"
 TOOL-021: "On the GW5AST-138C, SPINE17-21 and SPINE23 clock only while select ports in the logic tiles at rows 27/81, columns 92-94 hold VSS: the vendor ties SPINE19's (27,94)/(81,94) CLK0 and CLK1 to VSS, apicula asked for VCC, which the .fse cannot express, and the placer put logic there, so every open-flow clk through those spines was dead until apicula 04bc3c5 and nextpnr 8be8657b; an open-flow core with clk on SPINE18 now runs"
+TOOL-022: "The desktop core's source list lives in both fpga/desktop/build.tcl and tools/desktop_open/synth.ys, so a new .sv must be added to each; missing from synth.ys fails loudly with unknown module, missing from build.tcl breaks only the Gowin path"
 ```
 
 ---
@@ -776,6 +778,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "Reyax RYLR998 datasheet (RYLR998_EN, 9-FEB-2026 56312E30), pin description, specification and application schematic"
     - "This board: the module's AT query answers and the +ERR-per-byte behaviour before the burst fix (core-log entry 3)"
   verification: "On 2026-10-19 the module answered AT, AT+ADDRESS?, AT+BAND?, AT+NETWORKID?, AT+PARAMETER?, AT+VER? and AT+CRFOP? through pmodlora on the desktop core with no receive overrun; the per-byte +ERR=1 behaviour was reproduced three times and disappeared when the line was sent as one burst. Revised 2026-10-23 (core-log entry 23): the transport and pmodlora were removed; the module's own facts are unchanged."
+
+- record_id: PMOD-009
+  kind: PROTOCOL
+  topic_id: PMOD
+  title: "Personality 8 is the LoRa UART on a socket's lower row"
+  status: VERIFIED
+  verified_date: 2026-10-27
+  statement: "Desktop ABI 1.6 gives the socket control word a further personality: 8 is an 8N1 UART on the socket's lower row, NRST on pin 8 (lane 5), TX on pin 9 (lane 6) and RX on pin 10 (lane 7), with no flip support and the pins fixed. The register window is 0x170 (write one transmit byte), 0x174 (read one received byte, and the read pops it), 0x178 (status: 0 rx available, 1 tx full, 2 rx overrun, 3 byte in flight, rx count 19:8, tx count 31:20) and 0x17c (bit 0 NRST low, bit 1 flush, bit 2 loopback, bit 3 hold). The word is accepted only as 0x0080 or 0x0800, personality 8 on one socket with the other released, and the capability word at 0x08 reads 0x0000010f. 5 is deliberately not accepted, because that is the Phosphor core's I2S2 (PMOD-004) and one word must not mean two things across cores."
+  consequence: "The hold bit is a requirement rather than a convenience: a register round trip over the BL616 link is slower than one character at 115200, so a command written a byte at a time leaves the line idle between bytes and the module answers +ERR=1 once per byte (PMOD-008). ports/bl616/tang_lora.c therefore fills the FIFO with the transmitter held and then releases it, and uses the loopback bit as the test that separates an RTL fault from a wiring fault. The RYLR998 is wired VDD to pin 12, GND to 11, NRST to 8, TXD to 10 and RXD to 9; seated across pins 1-6 instead of 7-12 the module's TXD reaches no pin the core reads, the receiver picks up a floating line and the FIFO fills with noise, which the internal loopback distinguishes from a UART fault in one command."
+  sources:
+    - "This project's fpga/desktop/desktop_pmod.sv: personality 8 in the socket mux, the pmod_uart instance and the lane map"
+    - "This project's fpga/desktop/desktop_regs.sv: the 0x170-0x17c window, supported_word's acceptance of 0x0080/0x0800, and the ABI 1.6 and capability words"
+    - "This project's ports/bl616/tang_lora.c: the driver, the hold/release sequence and the diagnostics"
+  verification: "Measured on the board on 2026-10-27: the core loaded and answered core 0x54 at ABI 1.6, took 0xc0 = 0x0080, and with loopback on `lora at AT` returned exactly the bytes sent; with the module seated across pins 7-12, `lora ver` answered +VER=RYLR998_REYAX_V1.2.4 and status read 0x00000000, and one AT+SEND of a framed packet moved TinyNode's counters by one frame and one packet (core-log entry 59)."
 
 - record_id: BL6-001
   kind: SOC
@@ -2484,6 +2500,19 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "aquasock/nextpnr epic/gw5ast138c 8be8657b: himbaechel/uarch/gowin/globals.cc enable_spines, gowin.cc isValidBelForCellType and isBelLocationValid, gowin_utils.cc get_spine_select_tiles"
     - "Decoded bitstreams: desktop-i2c-pins-gowin (Gowin, fs in its build stage), desktop.be6f111c0b53.fs (seed 26), desktop.4b4eafb7a455.fs (seed 16), desktop.97b2295ecd08.fs (entry 91), and the entry-94 sweep build/desktop-selfix/s1..s8"
   verification: "On 2026-10-18 (core-log entry 94) the 8-seed sweep with apicula 04bc3c5 and nextpnr 8be8657b put clk on SPINE9 -> TOP1 -> SPINE18 and SPINE25 in every seed with another clock on SPINE19; each pnr.json routed every select port of a used spine to $PACKER_GND, each bitstream programmed those ports, and no logic sat in the select tiles. Seed 3, desktop.24a11e81a46c.bin, loaded after a Gowin control, answered as core 84, declared the sockets, read the DS3231 through pmodi2c, and the user accepted HDMI, VGA and the OLED. SPINE20, 21 and 23 have not carried a clock on the board."
+
+- record_id: TOOL-022
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The desktop core's source list is kept in two places"
+  status: VERIFIED
+  verified_date: 2026-10-27
+  statement: "Two build paths keep their own hard-coded list of the desktop core's Verilog files: fpga/desktop/build.tcl for the vendor project, and tools/desktop_open/synth.ys for the open flow. Neither derives it from the other, and the prepare step copies the tree without rewriting either."
+  consequence: "A new .sv file has to be added to both. Missing from synth.ys, elaboration fails at once with `unknown module`; missing from build.tcl, the Gowin build is quietly incomplete instead, so the two lists can drift without either path failing loudly. pmod_uart.sv needed both when it returned in ABI 1.6."
+  sources:
+    - "This project's fpga/desktop/build.tcl: the foreach list passed to add_file -type verilog"
+    - "This project's tools/desktop_open/synth.ys: the read_slang argument list"
+  verification: "Observed on 2026-10-27: adding pmod_uart.sv to build.tcl alone still failed synthesis with `unknown module 'pmod_uart'` until it was added to synth.ys as well."
 
 ```
 

@@ -17,6 +17,7 @@ static const char *const s_names[] = {
     [TANG_PMOD_I2S2]    = "i2s2",
     [TANG_PMOD_I2C]     = "i2c",
     [TANG_PMOD_I2C_UART] = "i2c_uart",
+    [TANG_PMOD_LORA]    = "lora",
 };
 #define NAMES (sizeof(s_names) / sizeof(s_names[0]))
 
@@ -24,6 +25,7 @@ static const char *const s_layouts[] = {
     [TANG_LAYOUT_NONE]      = "none",
     [TANG_LAYOUT_I2S2_OLED] = "i2s2_oled",
     [TANG_LAYOUT_VGA]       = "vga",
+    [TANG_LAYOUT_LORA]      = "lora",
 };
 #define LAYOUTS (sizeof(s_layouts) / sizeof(s_layouts[0]))
 
@@ -171,7 +173,7 @@ static void line_done(tang_ini_t *ini)
     }
     ini->layout = TANG_LAYOUT_NONE;
     ini->layout_bad = true;
-    note(ini, no, true, "unknown layout '%.20s'; use i2s2_oled or vga", value);
+    note(ini, no, true, "unknown layout '%.20s'; use i2s2_oled, vga or lora", value);
 }
 
 void tang_ini_feed(tang_ini_t *ini, const char *bytes, size_t n)
@@ -214,6 +216,12 @@ uint32_t tang_ini_word(uint8_t layout, uint8_t core_id)
         /* The desktop core refuses a word that names the I2S2, and would
          * release the OLED with it (PMOD-006); its PMOD1 stays released. */
         pmod1 = core_id == TANG_INI_CORE_DESKTOP ? TANG_PMOD_NONE : TANG_PMOD_I2S2;
+        break;
+    case TANG_LAYOUT_LORA:
+        /* The LoRa module's five-wire header on PMOD0: pins 8 NRST, 9 TX,
+         * 10 RX.  PMOD1 stays released. */
+        pmod0 = TANG_PMOD_LORA;
+        pmod1 = TANG_PMOD_NONE;
         break;
     case TANG_LAYOUT_VGA:
         /* Right side up, J1 (red, blue) is in PMOD1 and J2 (green, sync) in

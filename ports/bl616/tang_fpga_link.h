@@ -142,6 +142,12 @@ int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
  * within timeout_ms. */
 bool tang_fpga_core_id(uint8_t *id, uint32_t timeout_ms);
 
+/* One 32-bit register of the loaded core, through the CRC-protected extended
+ * endpoint.  False when nothing answered or the core reported a non-zero
+ * status.  Takes the lock for the request and releases it before waiting. */
+bool tang_fpga_read32(uint32_t address, uint32_t *value);
+bool tang_fpga_write32(uint32_t address, uint32_t value);
+
 /* Change the link's rate, for a core that negotiates one (Phosphor's extended
  * protocol switches between 2 and 5 Mbaud around a file stream, EXTCTL-001).
  * The caller holds the lock and has already had the core's agreement: the core

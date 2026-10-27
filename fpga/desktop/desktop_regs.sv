@@ -35,8 +35,23 @@ module desktop_regs (
     output logic [31:0]  i2c_cmd,
     output logic         i2c_cmd_toggle,
     output logic [63:0]  i2c_wdata,
-    output logic [31:0]  i2c_auto
+    output logic [31:0]  i2c_auto,
+    // PMOD UART (personality 8): the register file's side of the LoRa link.
+    output logic [7:0]  uart_tx_data,
+    output logic        uart_tx_push,
+    output logic        uart_flush,
+    output logic        uart_hold,
+    output logic        uart_nrst_low,
+    output logic        uart_loopback,
+    output logic        uart_rx_pop,
+    input  logic [7:0]  uart_rx_data,
+    input  logic [31:0] uart_status
 );
+    logic uart_nrst_r, uart_loopback_r, uart_hold_r;
+    assign uart_nrst_low = uart_nrst_r;
+    assign uart_hold = uart_hold_r;
+    assign uart_loopback = uart_loopback_r;
+
     function automatic [15:0] crc_byte(input [15:0] old,input [7:0] data);
         reg [15:0] c;
         begin
@@ -64,9 +79,13 @@ module desktop_regs (
     wire [3:0] p0=write_data[7:4],p1=write_data[11:8];
     // Each socket none or OLED, or the VGA pair together.  The I2C bus is on
     // the USB-A port and is not a socket personality.
+    // 8 is the LoRa UART on one socket, with the other released.  5 is
+    // deliberately not accepted: that is the Phosphor core's I2S2, and the
+    // same word must not mean two things across cores.
     wire supported_word=(write_data&32'hffffc00f)==0 &&
         (((p0<=1)&&(p1<=1))||
-         ((p0==2)&&(p1==3))||((p0==3)&&(p1==2)));
+         ((p0==2)&&(p1==3))||((p0==3)&&(p1==2))||
+         ((p0==8)&&(p1==0))||((p0==0)&&(p1==8)));
     wire cell_address=address>=32'h200 && address<32'h800 && address[1:0]==0;
     wire [7:0] block_count=packet[47:40];
     wire [31:0] last_address=address+(({24'b0,block_count}-32'd1)<<2);
@@ -111,8 +130,8 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010005; // desktop ABI 1.5: I2C on USB-A
-                32'h08:read_data=32'h0000000f; // none, OLED, VGA J1/J2
+                32'h04:read_data=32'h00010006; // desktop ABI 1.6: PMOD UART
+                32'h08:read_data=32'h0000010f; // none, OLED, VGA J1/J2, UART (8)
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,
                 // Compact 16x8.  Cells keep a stride of 24 in every mode.
@@ -133,6 +152,10 @@ module desktop_regs (
                 32'h148:read_data={i2c_rram[7],i2c_rram[6],i2c_rram[5],i2c_rram[4]};
                 32'h154:read_data=i2c_cmd;
                 32'h158:read_data=i2c_auto;
+                32'h170:read_data={24'b0,uart_tx_data};
+                32'h174:read_data={24'b0,uart_rx_data};
+                32'h178:read_data=uart_status;
+                32'h17c:read_data={28'b0,uart_hold_r,uart_loopback_r,1'b0,uart_nrst_r};
                 32'h160:read_data={i2c_wram[3],i2c_wram[2],i2c_wram[1],i2c_wram[0]};
                 32'h164:read_data={i2c_wram[7],i2c_wram[6],i2c_wram[5],i2c_wram[4]};
                 default:status=4;
@@ -146,6 +169,12 @@ module desktop_regs (
             end else if(address==32'h118) begin
                 // 0 Graphics, 1 Standard, 2 Compact.
                 if(write_data>2)status=6;else read_data=write_data;
+            end else if(address==32'h170) begin
+                // One transmit byte; any value is legal.
+                read_data=write_data;
+            end else if(address==32'h17c) begin
+                // Four control bits: NRST, flush, loopback, hold.
+                if(write_data[31:4]!=0)status=6;else read_data=write_data;
             end else if(address==32'h154) begin
                 // op[1:0], addr[14:8], reg[23:16], len[28:24], start[31]
                 if(write_data[7:2]!=0 || write_data[15] || write_data[30:29] ||
@@ -175,9 +204,12 @@ module desktop_regs (
             i2c_cmd<=0;i2c_cmd_toggle<=0;i2c_auto<=0;
             i2c_wptr<=0;i2c_rptr<=0;i2c_wbusy<=0;i2c_rbusy<=0;
             i2c_wshift<=0;i2c_res_sync<=0;
+            uart_tx_data<=0;uart_tx_push<=0;uart_flush<=0;uart_rx_pop<=0;
+            uart_nrst_r<=0;uart_loopback_r<=0;uart_hold_r<=0;
             for(int i=0;i<8;i=i+1) begin i2c_wram[i]<=0;i2c_rram[i]<=0;end
         end else begin
             oled_cell_we<=0;
+            uart_tx_push<=0;uart_flush<=0;uart_rx_pop<=0;
             // Four bytes of the write window per 32-bit register write.
             if(i2c_wbusy) begin
                 i2c_wram[i2c_wptr]<=i2c_wshift[7:0];
@@ -227,6 +259,7 @@ module desktop_regs (
             end
             case(state)
                 CHECK: begin
+                    if(status==0 && !is_block && opcode==1 && address==32'h174)uart_rx_pop<=1;
                     response[119:16]<={8'h01,(opcode|8'h80),status,packet[95:80],address,read_data};
                     response_ready<=0;reply_crc<=crc_byte(16'hffff,8'h10);seal_index<=0;
                     if(status==0 && is_block) begin apply_index<=0;state<=APPLY;end
@@ -236,6 +269,14 @@ module desktop_regs (
                             else if(address==32'h114)oled_cursor<=write_data[16:0];
                             else oled_font<=write_data[1:0];
                             socket_request<=~socket_request;state<=WAIT_ACK;
+                        end else if(address==32'h170) begin
+                            // The byte is held for the FIFO and survives the reply.
+                            uart_tx_data<=write_data[7:0];uart_tx_push<=1;state<=SEAL;
+                        end else if(address==32'h17c) begin
+                            uart_nrst_r<=write_data[0];uart_loopback_r<=write_data[2];
+                            uart_hold_r<=write_data[3];
+                            if(write_data[1])uart_flush<=1;
+                            state<=SEAL;
                         end else if(address==32'h154) begin
                             i2c_cmd<=write_data;
                             if(write_data[31])i2c_cmd_toggle<=~i2c_cmd_toggle;
