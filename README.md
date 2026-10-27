@@ -328,6 +328,11 @@ Building and flashing are under *Quick start* and *Building requirements*.
   SDK's allocator used to freeze the board instead.
 - **`usbstat` / `usbwatch`** read the USB OTG block. They exist to establish
   facts 11 and 12 below.
+- **`psram`** reads the BL616's efuse device information, and `psram init`
+  brings the PSRAM controller up when the die reports support. It exists to
+  answer one question: whether this part can carry a heap beyond OCRAM and
+  WRAM, and it reads before it configures, because the SDK's own init spins for
+  ever on a part without PSRAM.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
   from a file on the SD, and put a file on the card over the console, with no
   BOOT button.
@@ -559,6 +564,7 @@ for the register interface and regression commands.
     with left-alt pointer mode applied by `tang_key_pointer()`, and hands the
     mouse's movement, buttons and wheel to `tang_pad_pointer()`.
   - `tang_usbstat.c` — `usbstat` and `usbwatch`.
+  - `tang_psram.c` — `psram`, the efuse read and the guarded PSRAM init.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every
   build.
@@ -597,9 +603,13 @@ for the register interface and regression commands.
 These were each established on hardware, and each one cost a debugging
 session. `.ai/core-reference.md` holds the full records and their sources.
 
-1. **`CONFIG_CHERRYUSB_HOST` is required.** With FreeRTOS enabled and only the
-   device stack built, the CDC never enumerates on this board. Enabling the
-   host stack (which brings in the FreeRTOS OSAL) is what fixes it.
+1. **The USB host stack is not needed, and costs 47 KB.** It was once required:
+   with FreeRTOS enabled and only the device stack built, the CDC did not
+   enumerate, and the host option was what compiled the FreeRTOS OSAL on the
+   forked SDK. On SDK 2.3.36 `CONFIG_CHERRYUSB_OSAL` selects the OSAL itself and
+   nothing in the device stack references it, so the console enumerates with no
+   host stack at all. Leaving it out frees 47,236 bytes of `.bss` and the EHCI
+   controller that came with it.
 2. **The SDK's newlib port cannot be used.** `CONFIG_NEWLIB` stops the USB
    device enumerating, with or without its FatFS file layer. The shell's stdio
    is therefore implemented here, over FatFS.
@@ -674,6 +684,13 @@ session. `.ai/core-reference.md` holds the full records and their sources.
     arm's length, at about -76 to -94 dBm, but a connection attempt sometimes
     fails (HCI 0x3E, connection failed to be established) and `blekbd` has to
     be run again.
+18. **This BL616 cannot use PSRAM.** The part is QFN40 with 4 MB of flash, and
+    its efuse reports `psram_info 0`, which the `psram` command reads. The SDK
+    ships a PSRAM driver, the linker template describes a `ram_psram` region of
+    4 MB, and the SoC has a controller for it, but this die has no PSRAM
+    support: `CONFIG_PSRAM` must stay off, because its initialiser spins for
+    ever on a part like this, before the console exists. The heap is OCRAM plus
+    WRAM, and the only way to more of it is to spend less, not to add memory.
 
 ## Diagnostics
 

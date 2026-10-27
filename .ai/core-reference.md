@@ -307,7 +307,7 @@ PMOD-004: "On the merged Phosphor core the socket control register is 0xc0: hold
 PMOD-006: "tangload declares /tinytang.ini's layout to core 0x50 at ABI 1.8+ and 0x54 as each core's own word (tang_ini_word): vga 0x0230 on both, i2s2_oled 0x0510 on Phosphor and 0x0010 (OLED alone) on the desktop core, which refuses i2s2; i2s2_oled on the desktop core is qualified at 0x0010 (core-log entries 22 and 23) and 0x0510 on Phosphor is not; earlier per-socket declarations qualified: I2S2 on PMOD0 0x0050; encoder face up on PMOD1 pins 7-12 needs flip=yes, 0x2400, or 0x2410 with OLED on PMOD0; PmodVGA face up has J1 on PMOD1 and J2 on PMOD0, 0x0230; missing-file release and unknown-module refusal pass; since desktop ABI 1.5 the desktop core 0x54 takes only none/oledrgb per socket or the VGA pair (bitmap 0x0f), refusing any other word whole; its I2C and i2c_uart personalities (6 and 7) were removed, the bus moving to USB-A (BRD-011)"
 PMOD-008: "Reyax RYLR998 at 868/915 MHz, 5-pin header 1 VDD 2 NRST 3 RXD 4 TXD 5 GND, 8N1 115200 default, AT commands answering +OK/+ADDRESS=/+BAND=/+NETWORKID=/+PARAMETER=/+VER=/+CRFOP= and +ERR=1 for an unknown command; its parser needs a command as one back-to-back line; TinyTang has had no transport for it since core-log entry 23"
 BL6-001: "USB_BASE 0x20072000; OTG_CSR +0x80 (ID 21, CROLE 20, SPD 23:22, VBUS_VLD 19, A_SESS 18, B_SESS 17, A_BUS_DROP 5, A_BUS_REQ 4); PDS usb_ctl 0x2000E500 (IDDIG 5, DRVBUS_POL 4)"
-BL6-002: "OCRAM is 320 KB at 0x20FC0000; the PSRAM window is declared but this board has no external RAM"
+BL6-002: "OCRAM is 320 KB at 0x20FC0000 and WRAM 160 KB at 0x21010000; the efuse reports psram_info 0 on this QFN40 part, so it cannot drive PSRAM at all and CONFIG_PSRAM would hang the boot"
 BL6-003: "SDK 2.3.36's mm.h: TLSF heaps OCRAM and WRAM in g_mem_manager; kfree_size(0), kmax_free_size(0) and kmin_free_size() (a true low-water mark, tracking on in defconfig); tang_heap_info() sums total_size"
 BL6-004: "xPortGetFreeHeapSize() and xPortGetMinimumEverFreeHeapSize() do not exist in this build; using them fails at link time"
 BL6-005: "There is an HBN always-on RTC counter (HBN_Enable_RTC_Counter, HBN_Get_RTC_Timer_Val) with a selectable 32 kHz source: a counter, not a calendar, and no battery"
@@ -794,15 +794,18 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - record_id: BL6-002
   kind: SOC
   topic_id: BL6
-  title: "The BL616 has 320 KB of OCRAM and this board fits no external RAM"
-  status: SOURCED
-  verified_date: 2026-10-03
-  statement: "The BL616's on-chip OCRAM is 320 KB at base 0x20FC0000. A PSRAM window is declared in the memory map, but the SDK's mem.h maps PMEM_HEAP to the same internal heap unless the chip is a BL618, so on this part there is a single heap."
-  consequence: "The desktop's 100x30 geometry was chosen to fit: 24,008 bytes per screen buffer against a 320 KB budget. The desktop port reports no external RAM to System Monitor rather than a zero."
+  title: "320 KB of OCRAM plus 160 KB of WRAM, and this die has no PSRAM"
+  status: VERIFIED
+  verified_date: 2026-10-27
+  statement: "The BL616's on-chip OCRAM is 320 KB at base 0x20FC0000 and its WRAM is 160 KB at 0x21010000, contiguous with it. The efuse of the part fitted here reports package 0 (QFN40), flash 2 (4 MB), psram_info 0 (NO) and version 0, so this die cannot drive PSRAM at all -- it is not a board with an unfitted chip, it is a part with no support for one. The SDK nevertheless ships a PSRAM driver and the linker template describes a ram_psram region of CONFIG_PSRAM_LENGTH, 4 MB by default, because both are shared across the family."
+  consequence: "The heap is the OCRAM remainder plus the WRAM remainder, and the WRAM reservation is CONFIG_WRAM_LENGTH, 64 KB when Wi-Fi is not linked, of which 32 KB is registered as a heap. Enabling CONFIG_PSRAM is not an option on this part: board_psram_x8_init() reads the same efuse field and spins in a while(1) when it is zero, before the console exists. Memory work therefore has to spend less rather than add more, which puts the desktop's screen buffers and boot-time fragmentation in scope and rules PSRAM out permanently for this board. The desktop port reports no external RAM to System Monitor rather than a zero."
   sources:
-    - "Bouffalo SDK, drivers/lhal/config/bl616/bl616_memorymap.h: BL616_OCRAM_BASE 0x20FC0000, BL616_OCRAM_END + 320 * 1024"
-    - "Bouffalo SDK, components/mm/mem.h: '#if defined(CONFIG_PSRAM) && defined(BL616) // only for bl618' guards PMEM_HEAP"
-  verification: "Read from the SDK headers. The build's linker output is consistent: g_kmemheap at 0x62fcb63c with a heap region of about 251 KB, and no separate PSRAM heap in use."
+    - "Bouffalo SDK 2.3.36, drivers/lhal/include/bflb_efuse.h: bflb_efuse_device_info_type, the psram_info field and its psram_info_name"
+    - "Bouffalo SDK 2.3.36, bsp/board/bl616dk/board_flash_psram.c: the psram_info == 0 test and its while(1), then psram_winbond_default_init() through the PSRAMB clock and GPIO setup"
+    - "Bouffalo SDK 2.3.36, drivers/lhal/config/bl616/bl616_memorymap.h: BL616_OCRAM_BASE 0x20FC0000 + 320 * 1024, BL616_WRAM_BASE 0x21010000 + 160 * 1024"
+    - "Bouffalo SDK 2.3.36, bsp/board/bl616dk/bl616_common.ld.in: CONFIG_WRAM_LENGTH and CONFIG_RAM_LENGTH (320K + 160K - CONFIG_WRAM_LENGTH), ram_psram at CONFIG_PSRAM_ADDRESS"
+    - "This board: the psram command's read of the efuse (core-log entry 51)"
+  verification: "Read on the board on 2026-10-27 through the psram command, which prints the efuse fields and configures nothing: package 0 QFN40, flash 2 4MB, psram 0 NO, version 0. The SDK sources above are read from the pinned 2.3.36 tree. Revised 2026-10-27 (core-log entry 51): the PSRAM half moved from inference to a measured efuse read, which shows the die has no support rather than that a chip is absent."
 
 - record_id: BL6-003
   kind: SOC

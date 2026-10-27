@@ -1783,3 +1783,35 @@ The memory work continues: read the BL616's efuse device information to establis
 - User Test: PASS
 
 ---
+
+## 51 COMMIT Unreleased 2026-10-27T09:19:11-07:00
+
+#### Coming From:
+
+Unreleased 353556e
+
+#### Purpose:
+
+Establish whether the BL616 supports PSRAM, which decides whether the memory work can add RAM or can only spend less of what it has.
+
+#### Outcome:
+
+`ports/bl616/tang_psram.c` adds a `psram` command that reads the efuse device information and prints it without configuring anything, plus an opt-in `psram init` that refuses to run unless the efuse reports support, because `board_psram_x8_init()` spins in a `while(1)` on a part without PSRAM and does so before the console exists. The command was registered beside `usbstat`, documented in the README, and built clean at `text` 619,582 and `bss` 301,308, 504 bytes more than the previous image, with `tools/check_help_width.py` reporting 141 entries and none over 80 columns. It was flashed with `tools/tinytang_flash.py --yes`, the board was power-cycled, and `psram` answered `package 0 QFN40`, `flash 2 4MB`, `psram 0 NO`, `version 0`: this die has no PSRAM support, which is a capability of the part rather than an unfitted chip, so the SDK's PSRAM driver and the linker's 4 MB `ram_psram` region are unusable here and `CONFIG_PSRAM` must stay off permanently. The heap was unchanged by this cycle at 82,740 bytes free of 133,320 with a 39,212-byte largest block, and the probe itself costs 504 bytes of `.bss`. BL6-002 was revised from an inference about the SDK's `mem.h` into a measured efuse read, and its consequence now records why the option is closed rather than merely absent; the README gained fact 18 for the same reason, and its fact 1 was corrected, which entry 50 had left asserting that the USB host stack is required. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 150 ids in the same order, and validated this entry as number 51 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+PSRAM is closed for this board, so the memory work is now only about spending less, and the static buffers are the target: `s_front` and `s_back` at 28,808 bytes each for a 120x30x8 desktop, `s_shadow` at 14,400 for the same grid, and two 18,364-byte `td_vterm_t` terminal buffers, together about 109 KB of the 301 KB `.bss`. Note that moving a buffer from `.bss` to the heap is now net-neutral -- it frees one and consumes the other -- so only shrinking a buffer or not having it at all gains capacity, which makes the desktop geometry and the second terminal buffer the first questions to answer rather than lazy allocation. Boot-time fragmentation remains the other item, with the largest free block at 39,212 bytes against 82,740 free before anything has run, and `third_party/tinydesk` still carries five modified files that keep every build identity `-dirty`.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_psram.c
+- ports/bl616/tdsh_platform_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---
