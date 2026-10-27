@@ -23,6 +23,13 @@
  * Returns the program's exit code, or 1 when it could not be started. */
 int tang_ae350_run(const char *player_real, const char *data_real);
 
+/* The cartridge the last run reported, from the player's CORE line: 1 for a
+ * colour cartridge, 0 for a monochrome one, -1 when no run has said.  The
+ * TinyGBC window greys the palette row for a colour cartridge, whose picture
+ * the setting cannot touch, and it has to ask before the next launch, not
+ * after it. */
+int tang_ae350_cartridge_cgb(void);
+
 /* Name the file the program may ask for with a "<System> SEND WANT" line: the
  * calculator's link transfer.  A real FatFS path, or NULL for none.  It
  * applies to the next run only; tang_ae350_run clears it when it ends. */

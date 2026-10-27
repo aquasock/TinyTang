@@ -23,6 +23,51 @@ static const char *const s_pad_names[TANG_GBC_CTL_COUNT] = {
     "x", "y", "l", "r", "zl", "zr",
 };
 
+/* The picture's two settings as the file names them, in the player's order. */
+static const char *const s_palette_names[TANG_GBC_PAL_COUNT] = {
+    "off", "auto", "dmg", "pocket", "light", "gbc",
+};
+
+static const char *const s_colour_names[TANG_GBC_COLOUR_COUNT] = {
+    "off", "accurate", "fast",
+};
+
+const char *tang_gbc_palette_name(int palette)
+{
+    if (palette < 0 || palette >= TANG_GBC_PAL_COUNT) {
+        return "?";
+    }
+    return s_palette_names[palette];
+}
+
+const char *tang_gbc_colour_name(int colour)
+{
+    if (colour < 0 || colour >= TANG_GBC_COLOUR_COUNT) {
+        return "?";
+    }
+    return s_colour_names[colour];
+}
+
+static int palette_index(const char *name)
+{
+    for (int i = 0; i < TANG_GBC_PAL_COUNT; i++) {
+        if (strcmp(name, s_palette_names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int colour_index(const char *name)
+{
+    for (int i = 0; i < TANG_GBC_COLOUR_COUNT; i++) {
+        if (strcmp(name, s_colour_names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 const char *tang_gbc_pad_name(int button)
 {
     if (button < 0 || button >= TANG_GBC_CTL_COUNT) {
@@ -97,6 +142,29 @@ static bool apply(void *ctx, const char *section, const char *key,
         }
         s->pad_map[button] = (uint8_t)pad;
         return true;
+    }
+    if (strcmp(section, "video") == 0) {
+        /* [video] is the picture: the palette a monochrome cartridge is drawn
+         * in, and how a colour one's colours are corrected. */
+        if (strcmp(key, "palette") == 0) {
+            const int palette = palette_index(value);
+
+            if (palette < 0) {
+                return false;
+            }
+            s->palette = (uint8_t)palette;
+            return true;
+        }
+        if (strcmp(key, "colour") == 0) {
+            const int colour = colour_index(value);
+
+            if (colour < 0) {
+                return false;
+            }
+            s->colour = (uint8_t)colour;
+            return true;
+        }
+        return false;
     }
     if (strcmp(section, "audio") == 0) {
         return tang_audio_apply(&s->audio, key, value);

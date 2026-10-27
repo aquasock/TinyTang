@@ -1855,9 +1855,18 @@ static int ae350_send_blob(ae350_run_t *run, const ae350_link_t *link,
  * resolved, so this reads no shell session and maps no /root onto /sd:
  * `cmd_ae350run` below resolves the shell's names and calls it, and so does a
  * launch from the desktop's Library page (tang_ae350_run.h). */
+/* What the cartridge turned out to be, from the player's CORE line; -1 until a
+ * run reaches the core, and reset at the start of each run. */
+static int s_cart_cgb = -1;
+
+int tang_ae350_cartridge_cgb(void)
+{
+    return s_cart_cgb;
+}
+
 int tang_ae350_run(const char *player, const char *data)
 {
-    if (player == NULL || player[0] == '\0') {
+    s_cart_cgb = -1;    if (player == NULL || player[0] == '\0') {
         tdsh_printf("usage: ae350run <program.elf> [<file>]\r\n");
         return 1;
     }
@@ -2026,19 +2035,28 @@ int tang_ae350_run(const char *player, const char *data)
             }
             continue;
         }
+        /* The player names the cartridge it loaded in its CORE line, which is
+         * how the window learns that a palette setting cannot touch it. */
+        if (starts_with(run.line, "TinyGBC GB CORE=")) {
+            const char *cgb = strstr(run.line, " CGB=");
+
+            if (cgb != NULL) {
+                s_cart_cgb = (cgb[5] == '1') ? 1 : 0;
+            }
+        }
         if (starts_with(run.line, "TinyGBC SETTINGS WANT ")) {
             /* TinyGBC's blob (TinyGBC firmware/apps/gb_bench/main.cpp,
              * HostSettings): the master volume and the mute, from
-             * /tinygbc.ini, six reserved bytes, then the clock as UTC seconds
-             * since 1970, little-endian, 0 while it has never been set.  The
-             * player runs its time() from that, so a cartridge's own clock
-             * counts real time.  Then the button mapping, one byte per Game
-             * Boy button in the player's pad_joypad[] order, each naming a
+             * /tinygbc.ini, then the picture's palette and colour correction,
+             * which take two of the bytes that were reserved, then the clock as
+             * UTC seconds since 1970, little-endian, 0 while it has never been
+             * set.  The player runs its time() from that, so a cartridge's own
+             * clock counts real time.  Then the button mapping, one byte per
+             * Game Boy button in the player's pad_joypad[] order, each naming a
              * controller button by its index in the player's pad_source[].
-             * The mapping is last because the player keeps its default when
-             * fewer bytes arrive: a player built before the clock asks for two
-             * bytes and gets the first two, and one built before the mapping
-             * asks for sixteen and gets those, both keeping their defaults. */
+             * Anything after the volume and mute is optional to the player: it
+             * keeps its defaults when fewer bytes arrive, which is why nothing
+             * has ever been inserted before them. */
             static tang_gbc_settings_t gbc;
             static uint8_t blob[16 + TANG_GBC_BUTTONS];
             int64_t utc = 0;
@@ -2051,6 +2069,8 @@ int tang_ae350_run(const char *player, const char *data)
             memset(blob, 0, sizeof blob);
             blob[0] = gbc.audio.volume;
             blob[1] = gbc.audio.mute;
+            blob[6] = gbc.palette;
+            blob[7] = gbc.colour;
             if (!tang_clock_now(&utc) || utc < 0) {
                 utc = 0;
             }
@@ -2060,12 +2080,15 @@ int tang_ae350_run(const char *player, const char *data)
             memcpy(blob + 16, gbc.pad_map, TANG_GBC_BUTTONS);
             const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
             rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
-            tdsh_printf("ae350run: settings %s, volume=%u%s, clock %s, %s=%s\r\n",
+            tdsh_printf("ae350run: settings %s, volume=%u%s, clock %s, %s=%s, "
+                        "palette %s, colour %s\r\n",
                         gbc.found ? TANG_GBC_INI_SHOWN : "(defaults)",
                         (unsigned)gbc.audio.volume, gbc.audio.mute ? " muted" : "",
                         utc != 0 ? "sent" : "not set",
                         tang_gbc_button_name(TANG_GBC_A),
-                        tang_gbc_pad_name(gbc.pad_map[TANG_GBC_A]));
+                        tang_gbc_pad_name(gbc.pad_map[TANG_GBC_A]),
+                        tang_gbc_palette_name(gbc.palette),
+                        tang_gbc_colour_name(gbc.colour));
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }

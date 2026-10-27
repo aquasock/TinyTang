@@ -425,7 +425,17 @@ the row to the next controller button, Restore putting the mapping back and Save
 writing it: `p1_<button>` and `p2_<button>` keys in `[input]` of `/tinynes.ini`
 for TinyNES, and one `<button>` key each for TinyGBC's one player in
 `/tinygbc.ini`.  HOME is not offered on either, because a tap of it swaps
-between the game and the desktop.  Audio is one master volume
+between the game and the desktop.  Video is the picture: TinyNES chooses the
+pixel aspect and a palette for its indexed output, while TinyGBC chooses the
+palette a monochrome cartridge is drawn in -- `off`, `auto`, `dmg`, `pocket`,
+`light` or `gbc` -- and how a colour cartridge's colours are corrected, `off`,
+`accurate` or `fast`, in `[video]` of its settings file.  Those reach TinyGBC's
+player as gambatte's own core options, because the fabric's palette registers
+have been dead since the picture began reading the frame buffer; they are read
+while the core loads, so the player asks for them before it loads it.  The
+palette row is greyed when the cartridge selected in the Library is one the
+last run reported as a colour cartridge, whose picture comes from its own data
+and never from a palette.  Audio is one master volume
 for HDMI and the Line Out together, a slider from 0 to 100 percent in 5 percent
 steps with a mute beside it; it is kept in `[audio]` of `/tinynes.ini`, or of
 `/tinygbc.ini` for TinyGBC, and sent to the player when the next game starts, which

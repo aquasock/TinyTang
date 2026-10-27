@@ -41,8 +41,26 @@ enum {
     TANG_GBC_CTL_COUNT,
 };
 
+/* The picture's palette for a monochrome cartridge, and its colour correction
+ * for a colour one.  The numbers are the player's (TinyGBC
+ * firmware/include/tinygbc_video.h) and travel in the settings blob, so the two
+ * lists change together.  Palette 0 and colour 0 are what an unanswered option
+ * has always meant to the core, which is why they are the defaults. */
+enum {
+    TANG_GBC_PAL_OFF, TANG_GBC_PAL_AUTO, TANG_GBC_PAL_DMG,
+    TANG_GBC_PAL_POCKET, TANG_GBC_PAL_LIGHT, TANG_GBC_PAL_GBC,
+    TANG_GBC_PAL_COUNT,
+};
+
+enum {
+    TANG_GBC_COLOUR_OFF, TANG_GBC_COLOUR_ACCURATE, TANG_GBC_COLOUR_FAST,
+    TANG_GBC_COLOUR_COUNT,
+};
+
 typedef struct {
     uint8_t  pad_map[TANG_GBC_BUTTONS]; /* controller button per Game Boy button */
+    uint8_t  palette;                /* [video]: the monochrome palette */
+    uint8_t  colour;                 /* [video]: the colour correction */
     tang_audio_t audio;              /* [audio]: the master volume and mute */
     bool     found;                  /* the file was there to be read */
     uint16_t keys;                   /* how many of its keys were understood */
@@ -60,6 +78,8 @@ bool tang_gbc_load(tang_gbc_settings_t *s, const char *path);
 
 const char *tang_gbc_pad_name(int button);
 const char *tang_gbc_button_name(int button);
+const char *tang_gbc_palette_name(int palette);
+const char *tang_gbc_colour_name(int colour);
 
 #ifdef __cplusplus
 }

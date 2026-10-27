@@ -132,6 +132,17 @@ const int INPUT_TAB = 1;
 const int INPUT_ROWS = 8;
 td_widget_t *s_input_list;
 
+/* The Video page: two rows, the monochrome palette and the colour correction.
+ * The palette row is greyed for a colour cartridge, whose picture the core
+ * takes from its own data and never from a palette setting. */
+const int VIDEO_TAB = 2;
+const int VIDEO_ROWS = 2;
+td_widget_t *s_video_list;
+/* The cartridge the last run actually loaded, and what the player said it was:
+ * 1 colour, 0 monochrome, -1 nothing known. */
+char s_last_cart[TD_PATH_MAX + 8];
+int s_last_cgb = -1;
+
 /* The Saves page: the save state of the cartridge selected in the Library, one
  * file per cartridge that the player writes when L is pressed with HOME in the
  * game (TinyGBC core-log entry 25), read again whenever the page is shown. */
@@ -229,6 +240,17 @@ bool put_mapping(FIL *file)
     return true;
 }
 
+/* One line per picture setting, in the names the parser reads back. */
+bool put_video(FIL *file)
+{
+    char line[48];
+
+    snprintf(line, sizeof line, "palette = %s\ncolour = %s\n",
+             tang_gbc_palette_name(s_set.palette),
+             tang_gbc_colour_name(s_set.colour));
+    return put(file, line);
+}
+
 bool is_named_line(const char *line, const char *key)
 {
     const size_t n = strlen(key);
@@ -242,8 +264,7 @@ bool is_audio_line(const char *line)
     return is_named_line(line, "volume") || is_named_line(line, "mute");
 }
 
-/* A line of [input]: one of the eight Game Boy buttons, e.g. `a = x`. */
-bool is_mapping_line(const char *line)
+/* A line of [input]: one of the eight Game Boy buttons, e.g. `a = x`. */bool is_mapping_line(const char *line)
 {
     for (int i = 0; i < TANG_GBC_BUTTONS; i++) {
         if (is_named_line(line, tang_gbc_button_name(i))) {
@@ -253,10 +274,16 @@ bool is_mapping_line(const char *line)
     return false;
 }
 
-/* Write the mapping and the volume where the file's [input] and [audio]
- * sections are, keeping every line outside them byte for byte, so a
- * hand-written comment or a key belonging to another section survives a save.
- * The two sections this build owns are rewritten whole.  A card with no
+/* A line of [video]: the palette or the colour correction. */
+bool is_video_line(const char *line)
+{
+    return is_named_line(line, "palette") || is_named_line(line, "colour");
+}
+
+/* Write the mapping, the picture and the volume where the file's [input],
+ * [video] and [audio] sections are, keeping every line outside them byte for
+ * byte, so a hand-written comment or a key belonging to another section
+ * survives a save.  Those three sections are rewritten whole.  A card with no
  * /tinygbc.ini yet gets one.  NULL when it wrote, else a short reason. */
 const char *save_settings(void)
 {
@@ -265,8 +292,10 @@ const char *save_settings(void)
     char line[200];
     size_t len = 0;
     bool in_input = false;
+    bool in_video = false;
     bool in_audio = false;
     bool input_done = false;    /* the mapping has been put out */
+    bool video_done = false;    /* ...and the palette and the correction */
     bool audio_done = false;    /* ...and the volume and mute */
     bool ok = true;
     UINT got = 0;
@@ -294,11 +323,16 @@ const char *save_settings(void)
             len = 0;
             if (line[0] == '[') {
                 in_input = strncmp(line, "[input]", 7) == 0;
+                in_video = strncmp(line, "[video]", 7) == 0;
                 in_audio = strncmp(line, "[audio]", 7) == 0;
                 ok = put(&out, line) && put(&out, "\n");
                 if (in_input && !input_done) {
                     ok = ok && put_mapping(&out);
                     input_done = true;
+                }
+                if (in_video && !video_done) {
+                    ok = ok && put_video(&out);
+                    video_done = true;
                 }
                 if (in_audio && !audio_done) {
                     ok = ok && put_audio(&out);
@@ -307,6 +341,7 @@ const char *save_settings(void)
                 continue;
             }
             if ((in_input && is_mapping_line(line)) ||
+                (in_video && is_video_line(line)) ||
                 (in_audio && is_audio_line(line))) {
                 continue;       /* ours, and already out under the header */
             }
@@ -317,12 +352,16 @@ const char *save_settings(void)
     if (ok && len != 0) {
         line[len] = '\0';
         if (!((in_input && is_mapping_line(line)) ||
+              (in_video && is_video_line(line)) ||
               (in_audio && is_audio_line(line)))) {
             ok = put(&out, line) && put(&out, "\n");
         }
     }
     if (ok && !input_done) {
         ok = put(&out, "\n[input]\n") && put_mapping(&out);
+    }
+    if (ok && !video_done) {
+        ok = put(&out, "\n[video]\n") && put_video(&out);
     }
     if (ok && !audio_done) {
         ok = put(&out, "\n[audio]\n") && put_audio(&out);
@@ -386,7 +425,76 @@ void on_mute(td_widget_t *w, void *)
     audio_status();
 }
 
-/* ------------------------------------------------------------------ input */
+/* ------------------------------------------------------------------ video */
+
+/* Whether the palette setting can do anything for the cartridge selected in the
+ * Library: it cannot when that is the cartridge the last run reported as a
+ * colour one, because a colour cartridge's picture comes from its own data and
+ * the core returns before reading the option. A cartridge nothing is known
+ * about -- anything not yet launched, which includes every .zip -- is left
+ * enabled rather than guessed at. */
+bool palette_inert(void)
+{
+    const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
+    char path[TD_PATH_MAX + 8];
+    int n;
+
+    if (s_last_cgb != 1 || s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
+        s_lib_entries[row].is_dir) {
+        return false;
+    }
+    n = snprintf(path, sizeof path, "%s/%s", s_lib_real, s_lib_entries[row].name);
+    return n > 0 && n < static_cast<int>(sizeof path) &&
+           strcmp(path, s_last_cart) == 0;
+}
+
+const char *video_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[48];
+
+    (void)fg;
+    if (index == 0) {
+        snprintf(text, sizeof text, "%-9s %s%s", "Palette",
+                 tang_gbc_palette_name(s_set.palette), s_dirty ? " *" : "");
+        if (palette_inert()) {
+            /* Greyed, and left readable: the name still says what is set. */
+            *fg = td_theme()->dim;
+        }
+        return text;
+    }
+    if (index == 1) {
+        snprintf(text, sizeof text, "%-9s %s%s", "Colour",
+                 tang_gbc_colour_name(s_set.colour), s_dirty ? " *" : "");
+        return text;
+    }
+    return "";
+}
+
+/* Steps the selected row to its next value. The palette row does nothing for a
+ * colour cartridge, so neither does its Change. */
+void on_video_row(td_widget_t *, void *)
+{
+    const int row = s_video_list != nullptr ? td_list_selected(s_video_list) : -1;
+
+    if (row == 0) {
+        if (palette_inert()) {
+            td_widget_set_text(s_status[VIDEO_TAB],
+                               "A colour cartridge draws its own colours.");
+            return;
+        }
+        s_set.palette = (uint8_t)((s_set.palette + 1) % TANG_GBC_PAL_COUNT);
+    } else if (row == 1) {
+        s_set.colour = (uint8_t)((s_set.colour + 1) % TANG_GBC_COLOUR_COUNT);
+    } else {
+        return;
+    }
+    s_dirty = true;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* -------------------------------------------------------------- the input */
 
 /* One row: the Game Boy button and the controller button that answers to it.
  * Activating it steps the mapping to the next controller button, as the
@@ -843,6 +951,10 @@ void launch_task(void *)
     int code = 1;
     if (loaded == TANG_LOAD_OK) {
         code = tang_ae350_run(PLAYER_REAL, s_launch_cart);
+        /* What the player said it loaded, kept for the Video page's greyed
+         * palette row. */
+        snprintf(s_last_cart, sizeof s_last_cart, "%s", s_launch_cart);
+        s_last_cgb = tang_ae350_cartridge_cgb();
         /* Back to the desktop core whatever the run did: its desk layer is
          * what the screen returns to. */
         (void)tang_core_load(DESKTOP_REAL);
@@ -1078,9 +1190,21 @@ void launch(void)
     page_add(INPUT_TAB, td_label(s_win, 1, 13, 0, "Change steps the selected row."));
     page_add(INPUT_TAB, td_label(s_win, 1, 14, 0, "Taken when the next game starts."));
 
-    page_add(2, td_label(s_win, 1, 2, 0, "Video is not implemented yet."));
-    page_add(2, td_label(s_win, 1, 4, 0, "The picture is five columns a"));
-    page_add(2, td_label(s_win, 1, 5, 0, "pixel and five rows a line."));
+    /* Video: the monochrome palette and the colour correction, both taken by
+     * the player when the next game starts. The palette row is greyed for a
+     * colour cartridge, which draws its own colours. */
+    page_add(VIDEO_TAB, td_label(s_win, 1, 1, 0, "Palette is for monochrome cartridges."));
+    s_video_list = td_list(s_win, td_rect(1, 3, -1, VIDEO_ROWS), video_item,
+                           on_video_row, nullptr);
+    /* A list draws nothing until its count is set, whatever its height. */
+    if (s_video_list != nullptr) {
+        td_list_set_count(s_video_list, VIDEO_ROWS);
+    }
+    page_add(VIDEO_TAB, s_video_list);
+    page_add(VIDEO_TAB, td_button(s_win, 1, 7, "Change", on_video_row, nullptr));
+    page_add(VIDEO_TAB, td_button(s_win, 10, 7, "Save", on_save, nullptr));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "Off is the picture before these settings."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 10, 0, "Taken when the next game starts."));
 
     /* Audio: the master volume, its percentage, the mute, and the Save, laid
      * out as the TinyNES app's page is. */

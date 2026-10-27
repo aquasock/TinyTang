@@ -1847,3 +1847,38 @@ The remaining static memory worth moving is the desktop's own grid, and it is a 
 - User Test: PASS
 
 ---
+
+## 53 COMMIT Unreleased 2026-10-27T09:36:18-07:00
+
+#### Coming From:
+
+Unreleased b8768a6
+
+#### Purpose:
+
+Give the TinyGBC window's Video page the two picture settings that do something for this machine -- the palette of a monochrome cartridge and the colour correction of a colour one -- and send them to the player.
+
+#### Outcome:
+
+The aspect setting was deliberately not built: for a 160x144 picture the video unit's `ASPECT` register only picks a width, five columns for 800x720 with square pixels or six for 960x720, so there is no aspect to choose. `ports/bl616/tang_gbc_ini.h` gained the two lists, `TANG_GBC_PAL_*` and `TANG_GBC_COLOUR_*`, whose numbers are the player's own (`TinyGBC firmware/include/tinygbc_video.h`) because they travel in the settings blob, and `ports/bl616/tang_gbc_ini.c` parses them from a new `[video]` section as `palette = off|auto|dmg|pocket|light|gbc` and `colour = off|accurate|fast`; zero means Off in both, which is what a card with no file gets and what the core does anyway. `ports/bl616/tang_fpga_uart.c` fills blob bytes 6 and 7 from them -- the two taken out of the six that were reserved, so the blob stays twenty-four bytes and the clock and the mapping keep their offsets -- and its console line now names the palette and the correction as well as the volume, the clock and the A binding. `tang_ae350_run()` gained `tang_ae350_cartridge_cgb()`, which reads ` CGB=` out of the player's CORE line, is reset at the start of every run and stays -1 when no run reached the core. `ports/bl616/tinygbc_app.cpp`'s Video tab replaces its placeholder with two rows, a Change that steps the selected row and a Save, and `save_settings()` now rewrites `[input]`, `[video]` and `[audio]` while keeping every line outside them byte for byte. The palette row is greyed with `td_theme()->dim` and its Change refuses with a line of explanation when the cartridge selected in the Library is the one the last run reported as a colour cartridge, because a colour cartridge draws its own colours and the player's core returns before reading the palette option at all; a cartridge nothing is known about, which is everything not yet launched and every `.zip`, is left enabled rather than guessed at, since the deck cannot open an archive to read a header. The firmware built as `b8768a6-dirty.e0c2ba0`, 648,960 bytes, SHA-256 `6f4af972de548f02c19b11c34550a9f61f30e3d864491a07a961109db8eab472`, on top of the three commits another agent had just landed on this branch (CherryUSB host stack dropped, PSRAM probed, static memory resized); the first build overlapped that agent's entry 52 commit and was rebuilt once the tree was still, which changed the image hash but not its size. By the user's instruction nothing was flashed and nothing was deployed, so the board still runs `0f896ca-dirty.ad50850` and no part of this cycle has been on hardware. README's window section describes the page, the two keys and why the palette is greyed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 52 were not rewritten, and validated this entry as number 53 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Deployment is the open step and waits on the user: flash this firmware and the player TinyGBC entry 31 built, then judge the six palettes and three corrections on a monitor. Until a colour cartridge has been launched once, its palette row stays enabled, so the greyed state is best checked after playing a `.gbc` and then selecting the same file again. The Video page has no row for the picture's size, by design.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_ae350_run.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gbc_ini.c
+- ports/bl616/tang_gbc_ini.h
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: NOT RUN
+- User Test: NOT RUN
+
+---
