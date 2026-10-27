@@ -1815,3 +1815,35 @@ PSRAM is closed for this board, so the memory work is now only about spending le
 - User Test: N/A
 
 ---
+
+## 52 COMMIT Unreleased 2026-10-27T09:35:09-07:00
+
+#### Coming From:
+
+Unreleased 5867dc3
+
+#### Purpose:
+
+Reclaim the static memory this port sizes itself, now that PSRAM is closed and the heap is the only budget that can be moved.
+
+#### Outcome:
+
+Four allocations were sized down without touching the display grid, the FPGA core or a vendored source file. `TD_VT_SCROLLBACK` went from 12 to 4, because two terminals each held 12 scrollback rows at 3,840 bytes and four was the floor that keeps `td_vterm.h`'s scrollback array non-empty. `TD_MAX_WIDGETS` went from 96 to 64, 32 slots at 148 bytes, accepting that a non-modal window refused slots opens with `incomplete` set rather than failing loudly. The Help app's `char s_text[12288]` became a pointer allocated in `open_chapter()` and freed in `on_close()`, with the view state cleared alongside the free so `list_item()` cannot read a released buffer, which returns the buffer whenever the window is shut instead of reserving it from boot. The Bluetooth HID diagnostic log went from 128 lines to 64. The ELF moved from `text` 619,582 and `bss` 301,308 to `text` 619,758 and `bss` 272,844, a net 28,464 bytes of static RAM for 176 bytes of code, and on the board `crash` reports a heap of 82,740 free of 133,320 with a 39,212-byte largest block before and 111,028 free of 161,608 with a 67,500-byte largest block after -- the largest block being the figure that decides whether a 16 KB task stack can be placed. `tools/check_help_width.py` (141 entries), `tools/tests/test_osd_desk.sh` (88 checks), `test_terminal_lifecycle.sh`, `test_frames.sh` (24 checks) and `test_key.sh` (53 checks) passed, and the image was installed with `tools/tinytang_flash.py --yes` and run after the user's power cycle. The user then opened the desktop with the Bluetooth mouse connected and reported 92 KB free after boot and PASS, which is the test that covers both risky changes: the smaller widget pool across the TinyGBC, TinyNES and Tiny89 windows, and the Help reader's allocate-and-free path across a close and a reopen. TDESK-002 was revised in the same cycle because it described a 100 by 30 desktop at 24,008 bytes a buffer, whereas this port builds 80 by 45 to match `textdisp_wide.sv` and its buffers are 28,808 bytes each. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 150 ids in the same order, and validated this entry as number 52 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The remaining static memory worth moving is the desktop's own grid, and it is a joint firmware and FPGA decision rather than a flag: 80 by 45 costs 57,616 bytes in the two screen buffers, 14,400 in the desk shadow and 36,728 in two terminal grids, so trimming rows to 30 would return about 33,600 bytes and also drop the core's block RAM, at the price of a core rebuild and a board test. Two smaller questions stand beside it: whether the desk layer's terminal and the Terminal app's can share one grid, worth 18,364 bytes if they never need independent buffers, and whether the widget pool at 64 is now near its peak, which the pass above cannot answer because a refused slot is silent. The build identity remains `-dirty` because `third_party/tinydesk` still carries five modified files.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/td_help_app.cpp
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -25,6 +25,7 @@
 // their paragraphs under about 78 characters.
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern "C" {
@@ -60,8 +61,10 @@ int s_chapter_count;
 char s_open_file[FILE_BYTES];      // "" when the contents list is shown
 char s_open_title[TITLE_BYTES];
 
-/* The open chapter, and where each of its lines starts in it. */
-char s_text[CHAPTER_BYTES];
+/* The open chapter, and where each of its lines starts in it.  Allocated when
+ * a chapter is opened and freed when the window closes: 12 KB is a fifth of the
+ * free heap to keep reserved for a window that is nearly always shut. */
+char *s_text;
 uint16_t s_line_offset[MAX_LINES];
 int s_line_count;
 bool s_truncated;
@@ -183,6 +186,13 @@ void open_chapter(int index)
 {
     if (index < 0 || index >= s_chapter_count) {
         return;
+    }
+    if (s_text == nullptr) {
+        s_text = static_cast<char *>(malloc(CHAPTER_BYTES));
+        if (s_text == nullptr) {
+            say("Not enough memory to open a chapter");
+            return;
+        }
     }
     char path[FILE_BYTES + 16];
     snprintf(path, sizeof path, "%s/%s", MANUAL_REAL, s_chapters[index].file);
@@ -310,6 +320,17 @@ void on_close(td_window_t *)
     s_list = nullptr;
     s_heading = nullptr;
     s_foot = nullptr;
+    /* Give the chapter buffer back, and clear the view state with it so
+     * list_item() cannot read a freed buffer after a close. */
+    if (s_text != nullptr) {
+        free(s_text);
+        s_text = nullptr;
+    }
+    s_open_file[0] = '\0';
+    s_open_title[0] = '\0';
+    s_line_count = 0;
+    s_line_offset[0] = 0;
+    s_truncated = false;
 }
 
 void launch(void)

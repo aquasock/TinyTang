@@ -490,7 +490,8 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
  * chain of ATT requests issued one by one (BLE-005), and two chains at once
  * would put that back in doubt. */
 
-#define HID_LOG_LINES     128  /* diagnostic: hold a whole connect cycle */
+#define HID_LOG_LINES      64  /* diagnostic: half a connect cycle is enough to
+                                * see the report flow, and 128 lines cost 12 KB */
 #define HID_LOG_LEN       96
 #define HID_MAX_CHRCS     24
 #define HID_MAX_SUBS      8

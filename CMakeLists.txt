@@ -114,9 +114,16 @@ else()
         third_party/tinydesk/include
         third_party/tinydesk/apps
         third_party/tinydesk/ports/common)
+    # The terminal scrollback and the widget pool are the two pooled
+    # allocations this port can size down without touching the display grid or
+    # the vendored library: 12 rows of scrollback cost 3,840 bytes per terminal
+    # and there are two, and the widget pool is 148 bytes a slot.  Four rows is
+    # the floor that keeps the scrollback array non-empty, and 64 widgets is the
+    # budget the open windows share -- a window refused slots opens with
+    # incomplete set rather than crashing (td_widgets.h).
     sdk_add_compile_definitions(
         -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45
-        -DTD_VT_SCROLLBACK=12 -DTD_MAX_WIDGETS=96)
+        -DTD_VT_SCROLLBACK=4 -DTD_MAX_WIDGETS=64)
     # The Editor allocates its whole buffer and undo history when it opens,
     # about 25 KB at the defaults (16 KB + 8.7 KB).  8 KB files and 2 KB of
     # undo text halve that; larger files open read-only (TDESK-016).

@@ -354,7 +354,7 @@ TDSH-002: "The shell emits a closed set: CR, LF, ESC[2K, ESC[2J, ESC[H, ESC[<n>C
 TDSH-004: "TinyDesk Shell v0.1.6 at e85ad85 (tinydesk-project/tinydesk-shell), C11 and MIT: uScript 1.1.1 (variables, substitution, arithmetic, if/while/for, functions, pipes, redirection; no script arguments); optional columns() and read_byte_timeout() in tdsh_terminal_io_t, 80 columns without either; board.conf numbers are decimal or 0x hex, never octal"
 TDSH-005: "Upstream STANDARDS.md (v0.1.6) binds ports: one prefix for every owned name (this port's is tang, still recorded upstream as not chosen), interface files named tdsh_platform_<platform>.c and the like, no edits inside submodules (carried patches only), pins at release tags, both repositories' host tests passing at the pin, prefixed or subcommand-style command names, and PRs that state the user-visible change, the platforms run on and passing tests"
 TDSH-008: "Upstream's 64-variable 19 KB session and 32 KB stack made desktop scripts fail silently; a carried patch makes the limits overridable and TinyTang uses 48 variables, 32-byte names, 128-byte values and a 16 KB worker stack (8,328 B session, 8,584 B job), with independent copies per script; upstream issue #2"
-TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; the ESP32-C6 uses 80x25 or 256x96, and 100x30 costs 48 KB for the pair"
+TDESK-002: "Screen memory is TD_MAX_COLS x TD_MAX_ROWS x 8 bytes, twice; this port is 80x45 with scrollback 4 and 64 widgets, so 28,808 bytes a buffer and 57,616 for the pair"
 TDESK-003: "TinyDesk's filesystem is ports/common/td_fs_stdio.c, written against stdio, dirent.h and sys/stat.h, so it lands on this port's FatFS syscall layer unmodified"
 TDESK-004: "The Terminal app draws 'No shell backend in this build.' exactly when s_backend is NULL; td_terminal_set_backend() supplies it"
 TDESK-005: "A Terminal backend is td_term_backend_t: start, read, write, user, set_user; the ESP32-C6 reference runs the shell in a task over two FreeRTOS stream buffers"
@@ -1428,11 +1428,12 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   status: VERIFIED
   verified_date: 2026-10-03
   statement: "td_config.h sizes every static pool. Each screen buffer costs TD_MAX_COLS x TD_MAX_ROWS x 8 bytes and there are two of them. The PC defaults are 400 by 150; the ESP-IDF builds set smaller limits, with one ESP32-C6 variant using 256x96 and another 80x25 with TD_VT_SCROLLBACK 12 and TD_MAX_WIDGETS 96. The smallest usable desktop is 40 by 12."
-  consequence: "100x30 costs 24,008 bytes per screen buffer against the BL616's 320 KB, measured in the link map as s_front and s_back. The geometry must divide evenly and the terminal's reported size is clamped to it."
+  consequence: "This port compiles the desktop at 80 by 45, matching the COLS and ROWS parameters of fpga/desktop/textdisp_wide.sv, so each screen buffer is 28,808 bytes and the pair is 57,616; the same grid costs a 14,400-byte desk shadow and two 18,364-byte virtual terminals. It sets TD_VT_SCROLLBACK 4 and TD_MAX_WIDGETS 64, because 12 scrollback rows were 3,840 bytes per terminal and the widget pool is 148 bytes a slot. The geometry must divide evenly and the terminal's reported size is clamped to it, and because the grid is a joint firmware and FPGA constant, changing it means rebuilding the desktop core."
   sources:
     - "third_party/tinydesk/include/tinydesk/td_config.h: the TD_MAX_COLS/TD_MAX_ROWS comment and the pool definitions"
     - "third_party/tinydesk/ports/esp32c6/components/tinydesk/CMakeLists.txt: the two TD_SCREEN_LIMITS settings"
-  verification: "The linker reports s_front and s_back at 0x5dc8 = 24,008 bytes each, which is 100x30x8 exactly."
+    - "This project's CMakeLists.txt: -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45 -DTD_VT_SCROLLBACK=4 -DTD_MAX_WIDGETS=64, and fpga/desktop/textdisp_wide.sv's parameter integer COLS = 80, ROWS = 45"
+  verification: "The linker reports s_front and s_back at 28,808 bytes each, which is 80x45x8 plus the buffer's two int fields, with the three other grid users at 14,400 and 18,364 bytes. Revised 2026-10-27 (core-log entry 52): the geometry in force is 80 by 45 rather than the 100 by 30 this record described, the 24,008-byte figure was from that older geometry, and the scrollback and widget pool were reduced in the same cycle."
 
 - record_id: TDESK-003
   kind: EXTERNAL
