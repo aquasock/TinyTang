@@ -2104,6 +2104,49 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
     return tang_ae350_run(player, NULL);
 }
 
+/* Set UART1's rate without asking the core.
+ *
+ * The link rate is a property of the core as much as of this end, and nothing
+ * negotiates it: a core built for a faster link has to be told nothing, and this
+ * end has to match it or the pair is silent.  That is why this is a command and
+ * not an automatic: changing the rate under a core that did not expect it leaves
+ * the link dead until the core is loaded again, which is a power cycle or a
+ * tangload away and not a fault.
+ *
+ * The rates offered are the ones a core can be built for today.  The BL616's
+ * UART divides a 50 MHz clock with a fractional divider, so these are exact at
+ * this end; the FPGA's side is what has to be checked per core. */
+static int cmd_fpgabaud(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+
+    if (argc < 2) {
+        tdsh_printf("fpgabaud: usage: fpgabaud <rate>"
+                    " (2000000 5000000 12000000 16000000)\r\n");
+        return 1;
+    }
+
+    const unsigned long baud = strtoul(argv[1], NULL, 0);
+    if (baud != 2000000ul && baud != 5000000ul &&
+        baud != 12000000ul && baud != 16000000ul) {
+        tdsh_printf("fpgabaud: %lu is not a rate this build offers\r\n", baud);
+        return 1;
+    }
+
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("fpgabaud: cannot bring up UART1\r\n");
+        return 1;
+    }
+    if (tang_fpga_set_baud((uint32_t)baud) != 0) {
+        tdsh_printf("fpgabaud: could not change the rate\r\n");
+        return 1;
+    }
+
+    tdsh_printf("fpgabaud: UART1 now at %lu baud; the core must be at the same"
+                " rate\r\n", baud);
+    return 0;
+}
+
 /* ------------------------------------------------------------ registration */
 
 static const tdsh_command_t s_fpga_commands[] = {
@@ -2113,6 +2156,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",
       cmd_fmon, 0 },
+    { "fpgabaud", "fpgabaud <rate>", "Set UART1's rate to match the core, without asking it",
+      cmd_fpgabaud, 0 },
     { "fpgar", "fpgar <hex-addr>", "Read one desktop register over UART1",
       cmd_fpgar, 0 },
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",

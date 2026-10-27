@@ -1621,3 +1621,33 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 46 COMMIT Unreleased 2026-10-26T21:42:14-07:00
+
+#### Coming From:
+
+Unreleased bf084e1
+
+#### Purpose:
+
+Add a shell command that sets UART1's rate to match a core built for a faster link, so TinyMaps could measure what the BL616 link can actually carry.
+
+#### Outcome:
+
+TinyMaps found its 2 Mbaud link the ceiling on everything it wants to do next and measured it at 190 kB/s, 95% of that rate's wire time; the question was what a faster rate would deliver, and nothing in this firmware could ask for one. The rate can only be changed by `fpga_debug_set_baud`, which accepts 2 or 5 Mbaud only, lives in Phosphor's file-streamer path, and negotiates with the core through the `0x10` extension family before either end moves. For a bench measurement none of that is wanted: the core is built for one rate and the command should simply match it. `fpgabaud <rate>` therefore calls `tang_fpga_set_baud` directly, offering 2, 5, 12 and 16 Mbaud, and the comment says plainly what the risk is -- changing the rate under a core that did not expect it leaves the link silent until the core is loaded again, which is a `tangload` or a power cycle and not a fault. It was built with the xpack RISC-V compiler against the Bouffalo SDK at its pinned commit, the T-Head toolchain being unnecessary, and flashed over USB with `tinytang_flash.py`; the first two attempts appeared to hang because that tool asks `install ... on /dev/ttyACM0? [y/N]` before it does anything and has no terminal to answer with, and `--yes` is the flag for it. After a power cycle `platform` reported `416ba34-dirty.a98ea86` where it had been `462f6e2-dirty.ec043f4`, and the command answered its usage, accepted `fpgabaud 2000000`, and refused `fpgabaud 3000000` as unoffered. The switch and its recovery were then verified against a real core rather than assumed: TinyMaps loaded and answering at 2 Mbaud went silent on `fpgabaud 12000000` and answered again after `fpgabaud 2000000`, so a mis-set rate costs one command. The rate that matters is 5 Mbaud, and with a TinyMaps build for it the link carried 4 MiB in 9.7 s, 431 kB/s against 190. 12 Mbaud is in the command's list but not in reach of the FPGA side yet: its PHY cannot be clocked fast enough on the clocks TinyMaps has, which TinyMaps records in its own log. The user has not flown this firmware himself, which is why the user test is not claimed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 45 were not rewritten, and validated this entry as number 46 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and one file listed.
+
+#### Next Steps:
+
+Nothing outstanding here; the command is a bench tool and stays deliberately unnegotiated. If a core ever negotiates its own rate, the `0x10` extension's `FPGA_EXT_SET_BAUD` is still the mechanism to implement on both sides, and this command is not a substitute for it -- it exists so a measurement can be taken without it. The Xuantie toolchain was not needed and `tools/fetch-deps.sh --check` still reports the pinned `xuantie-900-gcc` and `oss-cad-suite` entries absent at the paths the manifest expects, while both are present at the paths this build used, so a release cut from this tree would still report those gaps.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
