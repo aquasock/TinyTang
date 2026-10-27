@@ -1882,3 +1882,33 @@ Deployment is the open step and waits on the user: flash this firmware and the p
 - User Test: NOT RUN
 
 ---
+
+## 54 COMMIT Unreleased 2026-10-27T10:02:24-07:00
+
+#### Coming From:
+
+Unreleased e3af2df
+
+#### Purpose:
+
+Deploy entry 53's Video page and settings reply, and record what the board showed.
+
+#### Outcome:
+
+`b8768a6-dirty.e0c2ba0`, 648,960 bytes, SHA-256 `6f4af972de548f02c19b11c34550a9f61f30e3d864491a07a961109db8eab472`, was flashed with `tinytang_flash.py --yes` and `platform` reported that identity after the power cycle. The settings reply carried the new bytes: with `[video]` holding `palette = off` the console said `ae350run: settings /tinygbc.ini, volume=20, clock not set, a=b, palette off, colour off`, and with `palette = dmg` it said `palette dmg`, both launching a monochrome cartridge, and in each case the player answered `TinyGBC GB VIDEO PALETTE=Off COLOUR=Off` or `PALETTE=DMG COLOUR=Off`. The settings request itself is now answered before the player's core line, which is what the ordering the player moved to requires. Two faults belong with the cycle. `ae350run` did not return to the shell after a run whose program stopped without exiting, twice in one session, each time needing a power cycle; the second left `/tinygbc.ini` holding the test value `colour = accurate` and `/root/ae350/tinygbc-carttest.elf`, a frame-limited player used only for these console runs, on the card with the TinyGBC core still loaded, so the board was not handed back in its normal state. And a run of RetroRegen's test cartridge with `colour = accurate` completed over 300 frames, `VIDEO=859e8f71`, but its console capture lost the player's picture line, so a non-zero colour byte has not been seen arriving on the board; on the PC the same setting changes the picture, `e921f6ea` against the uncorrected `aaddaa41`. The user has not yet judged the page or the palettes on a monitor. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 53 were not rewritten, and validated this entry as number 54 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The board needs a power cycle and then its normal state put back: the test player deleted, `/tinygbc.ini` returned to the user's own values without the test one, and the desktop core loaded. Then the user judges the two rows and the greyed palette row. `ae350run` not returning after a run that stops without exiting is now the first fault of its own to chase, ahead of the memory work, because it has cost two power cycles in a day.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
