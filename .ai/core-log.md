@@ -2077,3 +2077,35 @@ The link exists but carries nothing but AT commands, so the next cycle is the fr
 - User Test: N/A
 
 ---
+
+## 60 COMMIT Unreleased 2026-10-27T16:19:13-07:00
+
+#### Coming From:
+
+Unreleased ecc0ca7
+
+#### Purpose:
+
+Let the Tang ask TinyNode questions over the LoRa link, as a client rather than as a Reticulum peer.
+
+#### Outcome:
+
+`ports/bl616/tang_proto.{c,h}` is the node's codec again, moved to C so this firmware can build it, and `tang_lora.c` gained the client around it: it encodes one application message, sends it in frames addressed to the node's module, and waits for a reply whose sequence matches the one it sent. The wait discards anything that is not that reply, because the node shares the radio with its own Reticulum traffic, and a request is tried ten times before failing, 1.2 s apart and 4 s per attempt, reusing the same sequence so a late answer still counts. Three defects of mine made first contact look like a dead radio and each needed a flash to find: the command was first called `tang`, which this firmware already uses for the game ini settings, so it never registered; the command table entry then silently failed to match its search text, shipping a build without the command at all; and the receive loop cleared the reassembly buffer before decoding it, which timed out every request. The rule taken from that is to check the binary for a new command's strings before flashing rather than trusting the build. On the board, with the lora core loaded and the module on PMOD0 across pins 7-12, `node status` returned the node's full text with its own stack reporting 35 known paths, and status, env, gps, ping, time, help and an unknown word all answered with valid CRCs and matching sequences, six of six without a timeout once the retries were in. PROT-011 records the client, its retry policy and why the wait must discard. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 153 ids in the same order, and validated this entry as number 60 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Tang can ask but has no screen: `node` is a console command, so the next cycle is a Messages app that polls on a heartbeat and shows the answers, followed by serving the `messages`, `body` and `send` request types that both ends already define and the node currently answers with "not implemented yet". The core still has to be loaded by hand after every boot, because the boot script names the old one. Ten attempts with a 1.2 s gap means a failing request takes about 50 s to give up, which is fine at a prompt and too long for a UI, so a screen should shorten the attempt count or move the retries off the main loop.
+
+#### Files Modified:
+
+- ports/bl616/tang_lora.c
+- ports/bl616/tang_proto.c
+- ports/bl616/tang_proto.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---

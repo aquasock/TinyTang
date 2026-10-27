@@ -36,6 +36,7 @@
 
 #include "tdsh.h"
 #include "tang_fpga_link.h"
+#include "tang_proto.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -292,11 +293,310 @@ static int cmd_lora(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
+
+/* ------------------------------------------------- the Tang <-> node link --
+ *
+ * The node is a full Reticulum server; the Tang is not a peer on it. The two
+ * exchange application messages (tang_proto.h) inside the LoRa framing the
+ * node already speaks: one header byte, up to 179 bytes per frame, base64 into
+ * the AT field. Frames go to the node's address (1); its replies arrive as
+ * +RCV lines addressed to us.
+ *
+ * The Tang initiates every exchange. Nothing here transmits unprompted.
+ */
+
+#define NODE_ADDRESS   1
+#define FRAME_CHUNK    179
+#define FRAME_MAX_MSG  500
+#define REPLY_TIMEOUT     4000
+#define REQUEST_ATTEMPTS 10
+#define RETRY_GAP_MS      1200
+
+static const char s_b64[] =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static size_t b64_encode(const uint8_t *in, size_t n, char *out)
+{
+	size_t o = 0;
+	for (size_t i = 0; i < n; i += 3) {
+		const uint32_t v = ((uint32_t)in[i] << 16) |
+		                   (i + 1 < n ? ((uint32_t)in[i + 1] << 8) : 0) |
+		                   (i + 2 < n ? in[i + 2] : 0);
+		out[o++] = s_b64[(v >> 18) & 0x3F];
+		out[o++] = s_b64[(v >> 12) & 0x3F];
+		out[o++] = i + 1 < n ? s_b64[(v >> 6) & 0x3F] : '=';
+		out[o++] = i + 2 < n ? s_b64[v & 0x3F] : '=';
+	}
+	out[o] = '\0';
+	return o;
+}
+
+static int b64_value(char c)
+{
+	if (c >= 'A' && c <= 'Z') return c - 'A';
+	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+	if (c >= '0' && c <= '9') return c - '0' + 52;
+	if (c == '+') return 62;
+	if (c == '/') return 63;
+	return -1;
+}
+
+static size_t b64_decode(const char *in, size_t n, uint8_t *out, size_t cap)
+{
+	size_t o = 0;
+	uint32_t acc = 0;
+	int bits = 0;
+	for (size_t i = 0; i < n && in[i] != '='; i++) {
+		const int v = b64_value(in[i]);
+		if (v < 0) continue;
+		acc = (acc << 6) | (uint32_t)v;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			if (o < cap) out[o++] = (uint8_t)((acc >> bits) & 0xFF);
+		}
+	}
+	return o;
+}
+
+/* Send one application message to the node, in as many frames as it needs.
+ * Each frame goes out as one burst: a register round trip is slower than a
+ * character at 115200, so filling the FIFO with the transmitter held and then
+ * releasing it is what keeps the module's AT parser happy (PMOD-009). */
+static bool send_message(const uint8_t *msg, size_t len)
+{
+	uint32_t ctrl;
+	uint8_t nonce = 5;
+	const uint8_t id = 3;
+	for (size_t off = 0; off < len; ) {
+		size_t chunk = len - off;
+		if (chunk > FRAME_CHUNK) chunk = FRAME_CHUNK;
+		const bool more = off + chunk < len;
+
+		uint8_t frame[1 + FRAME_CHUNK];
+		frame[0] = (uint8_t)(((nonce++ & 0x0F) << 4) | (more ? 0x08 : 0) | (id & 0x07));
+		memcpy(frame + 1, msg + off, chunk);
+
+		char body[4 * (1 + FRAME_CHUNK) / 3 + 8];
+		const size_t blen = b64_encode(frame, chunk + 1, body);
+
+		char line[32 + sizeof(body)];
+		const int head = snprintf(line, 32, "AT+SEND=%d,%u,", NODE_ADDRESS, (unsigned)blen);
+		if (head <= 0) return false;
+		memcpy(line + head, body, blen);
+		line[head + blen] = '\0';
+
+		if (!read_ctrl(&ctrl) || !write_reg(REG_CTRL, ctrl | CTRL_FLUSH | CTRL_HOLD))
+			return false;
+		for (size_t i = 0; i < (size_t)head + blen; i++) {
+			if (!send_byte((uint8_t)line[i])) return false;
+		}
+		if (!send_byte('\r') || !send_byte('\n')) return false;
+		if (!write_reg(REG_CTRL, ctrl & ~CTRL_HOLD)) return false;
+
+		/* Wait for the module to accept the frame before the next one. */
+		const uint32_t until = bflb_mtimer_get_time_ms() + 1500;
+		bool ok = false;
+		while (bflb_mtimer_get_time_ms() < until) {
+			uint32_t st = 0, b = 0;
+			if (!read_reg(REG_STATUS, &st)) return false;
+			if (st & ST_RX_AVAIL) {
+				if (!read_reg(REG_RX, &b)) return false;
+				/* Anything the module says here is its +OK; it is not the
+				 * reply, which arrives after the node answers. */
+				if ((b & 0xFF) == 'K') { ok = true; break; }
+			} else {
+				vTaskDelay(pdMS_TO_TICKS(1));
+			}
+		}
+		if (!ok) return false;
+		off += chunk;
+	}
+	return true;
+}
+
+/* Reassembly: frames of one message share an id and arrive until the more
+ * flag clears. Anything stranded is dropped by the caller's timeout. */
+static uint8_t s_rx_buf[FRAME_MAX_MSG];
+static size_t  s_rx_len;
+static int     s_rx_id = -1;
+static bool    s_rx_active;
+
+static void rx_reset(void) { s_rx_len = 0; s_rx_id = -1; s_rx_active = false; }
+
+/* Parse "+RCV=<from>,<length>,<data>,<rssi>,<snr>" and push the frame. */
+static bool rcv_consume(const char *line)
+{
+	if (strncmp(line, "+RCV=", 5) != 0) return false;
+	const char *p = line + 5;
+	char *end = NULL;
+	const long from = strtol(p, &end, 10);
+	if (end == p || *end != ',') return false;
+	p = end + 1;
+	const long chars = strtol(p, &end, 10);
+	if (end == p || *end != ',') return false;
+	p = end + 1;
+	if (chars <= 0 || chars > 240) return false;
+
+	uint8_t frame[1 + FRAME_CHUNK];
+	const size_t got = b64_decode(p, (size_t)chars, frame, sizeof frame);
+	if (got < 1) return false;
+	if (from != NODE_ADDRESS) return false;  /* not our link; keep waiting */
+
+	const uint8_t header = frame[0];
+	if (header & 0x80) {                     /* not our framing: ignore */
+		return true;
+	}
+	const uint8_t id = (uint8_t)(header & 0x07);
+	const bool more = (header & 0x08) != 0;
+	if (!s_rx_active || id != s_rx_id) { rx_reset(); s_rx_active = true; s_rx_id = id; }
+	if (s_rx_len + got - 1 > sizeof s_rx_buf) { rx_reset(); return false; }
+	memcpy(s_rx_buf + s_rx_len, frame + 1, got - 1);
+	s_rx_len += got - 1;
+	return !more;                            /* true when the message is whole */
+}
+
+/* Read until the reply to `seq` arrives, or the window closes. Anything else
+ * that completes -- a Reticulum announce from the node, a message with another
+ * sequence, a body that fails its CRC -- is discarded and the wait continues:
+ * the node shares this radio with its own network. */
+static size_t wait_reply(uint8_t seq, uint8_t *out, size_t cap, uint32_t window_ms)
+{
+	const uint32_t start = bflb_mtimer_get_time_ms();
+	char line[64 + 4 * (1 + FRAME_CHUNK) / 3];
+	size_t line_len = 0;
+	size_t got = 0;
+
+	while (bflb_mtimer_get_time_ms() - start < window_ms) {
+		uint32_t st = 0;
+		if (!read_reg(REG_STATUS, &st)) return 0;
+		if (!(st & ST_RX_AVAIL)) { vTaskDelay(pdMS_TO_TICKS(1)); continue; }
+
+		uint32_t b = 0;
+		if (!read_reg(REG_RX, &b)) return 0;
+		const char c = (char)(b & 0xFF);
+		if (c != '\r' && c != '\n') {
+			if (line_len + 1 < sizeof line) line[line_len++] = c;
+			continue;
+		}
+		if (line_len == 0) continue;
+
+		line[line_len] = '\0';
+		line_len = 0;
+
+		if (!rcv_consume(line)) continue;   /* not ours, or still arriving */
+
+		/* A complete message: take it only if it is the reply we asked for.
+		 * The node transmits its own Reticulum traffic on this radio, so
+		 * anything else has to be discarded and the wait continued. */
+		tang_proto_t in;
+		if (tang_proto_decode(s_rx_buf, s_rx_len, &in) &&
+		    tang_proto_is_reply(in.type) && in.seq == seq) {
+			got = in.length < cap ? in.length : cap;
+			memcpy(out, in.body, got);
+			rx_reset();
+			break;
+		}
+		rx_reset();
+	}
+	return got;
+}
+
+/* One request and its reply. Returns the reply body length, or 0. */
+static size_t tang_request(uint8_t type, const uint8_t *body, uint16_t body_len,
+                           uint8_t *out, uint16_t *out_len)
+{
+	static uint8_t seq = 1;
+	uint8_t msg[FRAME_MAX_MSG];
+	uint8_t reply[FRAME_MAX_MSG];
+
+	const size_t n = tang_proto_encode(type, seq, body, body_len, msg, sizeof msg);
+	if (n == 0) return 0;
+
+	/* The radio is half duplex with no carrier sense, and the node still
+	 * transmits its own Reticulum traffic on it, so a request or its reply can
+	 * collide with something else. The Tang is the initiator, so retrying is
+	 * its job: the same sequence number is reused, which makes a late reply to
+	 * an earlier attempt still valid and a duplicate harmless. */
+	for (int attempt = 0; attempt < REQUEST_ATTEMPTS; attempt++) {
+		/* Drop anything stale so an old reply cannot be read as this one. */
+		uint32_t ctrl;
+		if (read_ctrl(&ctrl)) {
+			uint32_t st = 0;
+			while (read_reg(REG_STATUS, &st) && (st & ST_RX_AVAIL)) {
+				uint32_t b = 0;
+				if (!read_reg(REG_RX, &b)) break;
+			}
+		}
+		rx_reset();
+
+		if (send_message(msg, n)) {
+			const size_t got = wait_reply(seq, reply, sizeof reply, REPLY_TIMEOUT);
+			if (got > 0) {
+				const uint16_t copy = got < *out_len ? (uint16_t)got : *out_len;
+				memcpy(out, reply, copy);
+				*out_len = copy;
+				seq++;
+				return copy;
+			}
+		}
+		if (attempt + 1 < REQUEST_ATTEMPTS) {
+			tdsh_printf("node: no reply, retrying (%d/%d)\r\n",
+			            attempt + 2, REQUEST_ATTEMPTS);
+			vTaskDelay(pdMS_TO_TICKS(RETRY_GAP_MS));
+		}
+	}
+	return 0;
+}
+
+/* ------------------------------------------------------------- commands */
+
+static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
+{
+	(void)session;
+	if (argc < 2) {
+		tdsh_printf("usage: node status        ask the node for its status\r\n");
+		tdsh_printf("       node <command>     run one of the node's commands\r\n");
+		return 1;
+	}
+
+	char body[96];
+	size_t used = 0;
+	for (int i = 1; i < argc; i++) {
+		const size_t n = strlen(argv[i]);
+		if (used + n + 2 >= sizeof body) {
+			tdsh_printf("node: the command is too long\r\n");
+			return 1;
+		}
+		if (used) body[used++] = ' ';
+		memcpy(body + used, argv[i], n);
+		used += n;
+	}
+	body[used] = '\0';
+
+	const bool is_status = strcmp(body, "status") == 0;
+	uint8_t reply[TANG_PROTO_MAX_BODY];
+	uint16_t reply_len = sizeof reply;
+
+	const size_t got = tang_request(is_status ? TANG_REQ_STATUS : TANG_REQ_COMMAND,
+	                                is_status ? NULL : (const uint8_t *)body,
+	                                is_status ? 0 : (uint16_t)used,
+	                                reply, &reply_len);
+	if (got == 0) {
+		tdsh_printf("node: no reply from TinyNode after %d ms\r\n", REPLY_TIMEOUT);
+		return 1;
+	}
+	tdsh_printf("%.*s\r\n", (int)reply_len, (const char *)reply);
+	return 0;
+}
+
 /* ----------------------------------------------------------- registration */
 
 static const tdsh_command_t s_lora_commands[] = {
     { "lora", "lora at|ctrl|loop|read|flush|status|reset|ver",
       "Drive the RYLR998 LoRa module on the PMOD UART", cmd_lora, 0 },
+    { "node", "node status | <command>",
+      "Ask TinyNode for its status or run one of its commands", cmd_tang, 0 },
 };
 
 int tang_lora_register(void)

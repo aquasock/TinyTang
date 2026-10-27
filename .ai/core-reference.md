@@ -338,6 +338,7 @@ PROT-007: "A ROM stream into a core that is not running is discarded with no err
 PROT-008: "A loaded core comes out of reset with the overlay asserted, and while the desktop's wide layer is still disabled the compositor shows the core's legacy 32x28 text page instead - whose store, gowin_dpb_menu.v, is never initialised, so its power-on contents are what appears; the font is initialised, which is why the garbage reads as glyphs; osd clear blanks the page (28 rows of 32 spaces) and is issued after the fpga probe in boot.tdsh and boot-cart.tdsh"
 PROT-009: "hdmi.sv's cx/cy name the pixel sent on the next clock and the stock rgb path is one register deep to match; the wide layer's deeper pipeline must address the store that many pixels ahead, wrapping at frame_width, or pixels 0-2 of each line show the previous line's blanking, which reads cell 0, and cell (0,0)'s glyph column is painted down the left edge"
 PROT-010: "A TinyNES core's AE350 boot ROM takes a program over UART1 at 2 Mbaud: header TNL1, address, length, entry, image CRC-32 and header CRC-32, then 8 KiB blocks each with a CRC-32, each answered ACK 0x06 or NAK 0x15 and a reason; a program asks for a file with TinyNES WANT <addr> <bytes> and takes TNR1, the length and the file the same way; ae350run sends both; after TinyNES LINK the core speaks 0xAA frames, its text in type 0x20, and ae350run hands the link to the desk layer"
+PROT-011: "The Tang's client for the node link: frames addressed to 1, ten attempts 1.2 s apart with the same sequence, and a wait that discards any complete message that is not the reply it asked for -- the node shares the radio with its own Reticulum traffic; the command is `node` because `tang` was taken"
 NEST-001: "nestang's FPGA USB host is low-speed only, 1.5 Mbps, on two GPIO wires with external 15K pull-downs and a 12 MHz clock; its signalling engine is a 1072-byte ROM program"
 NEST-002: "nestang wires only .game_snes from the FPGA host; the keyboard outputs key_modifiers and key1..key4 are unconnected, so a keyboard enumerates and is discarded"
 TCTL-001: "Tang-Control's OSD is the BL616's work: overlay_cursor and overlay_printf are commands 0x04 and 0x05, and navigation is literal bit tests on the joypad word"
@@ -1212,6 +1213,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "TinyNES core-log entry 21: fpga/ae350_soc/desk_link.sv, exts_uart.sv, firmware/apps/nes_bench/main.cpp (TinyNES LINK)"
     - "This project's ports/bl616/ae350_load.c, ae350_load.h, tang_fpga_uart.c (cmd_ae350run) and tools/tests/tb_ae350_load.c"
   verification: "On this board on 2026-10-13 (core-log entry 48): ae350run loaded TinyNES's 625,292-byte player from the card and the player asked for and received Castlevania (USA) (Rev 1) from /root/data/nes, CRC 12a6cb14, and ran to TinyNES EXIT 0; the user then double-clicked .nes files on the desktop, played and returned. The BL616's ELF loader built an image identical to load_ae350.py's from the same file (CRC 4ad53a69). Revised 2026-10-13 (core-log entry 49): link mode added; on this board the user double-clicked a .nes file, toggled TinyDesk over the running game with HOME and back, moved the pointer with the D-pad, and quit to the desktop."
+
+- record_id: PROT-011
+  kind: PROTOCOL
+  topic_id: PROT
+  title: "The Tang's client for the node link: ask, retry, and ignore everything else"
+  status: VERIFIED
+  verified_date: 2026-10-27
+  statement: "ports/bl616/tang_lora.c carries the Tang's side of the node link: it encodes one application message (tang_proto.c, the same codec the node runs), sends it in frames addressed to the node's module (1), and waits for a reply whose sequence matches the one it sent. A request is tried ten times before it reports failure, 1.2 s apart and 4 s per attempt, reusing the same sequence number so a late answer to an earlier attempt still counts. The command is `node`, not `tang`: `tang` already prints the game ini settings in this firmware."
+  consequence: "The wait must discard rather than accept: the node shares this radio with its own Reticulum traffic, so a complete frame from the node that is not a reply to this sequence -- an announce, or a body whose CRC fails -- is thrown away and the wait continues. An earlier version ended the wait on the first complete message and so failed whenever an announce landed mid-exchange; that, plus clearing the reassembly buffer before decoding it, were the two defects that made first-contact testing look like a dead radio. Retrying is the Tang's job because it is the initiator, and the node's answers are idempotent, so the retries cost airtime and nothing else."
+  sources:
+    - "This project's ports/bl616/tang_lora.c: tang_request(), wait_reply(), send_message() and cmd_tang()"
+    - "This project's ports/bl616/tang_proto.{c,h}, the same codec as nano-node/src/tang_proto in TinyNode"
+    - "TinyNode's core-reference FRM-009 and FRM-010, which record the protocol and the address demultiplexing from the node's side"
+  verification: "Measured on the board on 2026-10-27 with the lora core loaded and the module on PMOD0 across pins 7-12: `node status`, `node env`, `node gps`, `node ping`, `node time`, `node help` and an unknown word all returned the node's own text, six of six without a timeout once the retries were in, with the node reporting 35 known paths on its Reticulum stack at the same time."
 
 - record_id: NEST-001
   kind: EXTERNAL
