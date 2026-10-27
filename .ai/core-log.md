@@ -1912,3 +1912,33 @@ None.
 - User Test: NOT RUN
 
 ---
+
+## 55 COMMIT Unreleased 2026-10-27T10:47:46-07:00
+
+#### Coming From:
+
+Unreleased d10ec9f
+
+#### Purpose:
+
+Record that the firmware entry 54 deployed no longer starts a Game Boy game from the TinyGBC window, so that its log does not read as a working deployment.
+
+#### Outcome:
+
+Launching a cartridge from the TinyGBC window shows the fabric's colour bars and returns to TinyDesk without a game. The player is what dies: `/root/saves/last.log` shows launches at 10:33 to 10:35 reaching the player's save and state requests, which is what a working launch does, and launches from 10:37 onward logging `--- run` and nothing more. Two causes are established and one of them is mine. I started `tangload` twice and let my console reader close the port at twenty to twenty-five seconds, when this image takes about thirty-five, so both loads were cut short and a half-loaded FPGA gives exactly this symptom; but after a power cycle and a clean load, which reported `tangload: core loaded` and left `fpga` answering `core 84`, one console `ae350run` still logged `--- run` and stopped, so the configuration is not the whole story. TinyGBC entry 33 carries the detailed account, including that the player's error line never reached the console: from about 10:36 `ae350run` output nothing but its echoed command, where an hour earlier it printed its whole boot sequence. Nothing in this repository changed after entry 54; the firmware and the card's contents are as that entry left them, and the user took the board back and asked that nothing connect to it, which is honoured. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and entries 1 to 54 were not rewritten, and validated this entry as number 55 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+Diagnosis belongs to TinyGBC's entry 33: the benchmark with uCity compiled in through `tools/load_ae350.py --tinytang` first, the CART player second, and the settings ordering as the thing to move if both fail. On this side there is nothing to change until the cause is known; the Video page and the settings reply are in the tree and deployed, and they are not yet exercised.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
