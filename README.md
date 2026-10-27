@@ -326,8 +326,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
   clears it. A hang with interrupts held off leaves no record. It also reports the heap and how much of its stack the last script used.
   An allocation that fails now returns NULL and the command reports it; the
   SDK's allocator used to freeze the board instead.
-- **`usbstat` / `usbwatch` / `usbrole`** read the USB OTG block and switch the
-  OTG connector's role. They exist to establish facts 11 and 12 below.
+- **`usbstat` / `usbwatch`** read the USB OTG block. They exist to establish
+  facts 11 and 12 below.
 - **`tangflash <path>` / `tangput <size> <path>`** reflash the BL616 itself
   from a file on the SD, and put a file on the card over the console, with no
   BOOT button.
@@ -558,7 +558,7 @@ for the register interface and regression commands.
     `tang_osd_desk.c` types the keyboard's boot report,
     with left-alt pointer mode applied by `tang_key_pointer()`, and hands the
     mouse's movement, buttons and wheel to `tang_pad_pointer()`.
-  - `tang_usbstat.c`, `tang_usb_role.c` — `usbstat`, `usbwatch` and `usbrole`.
+  - `tang_usbstat.c` — `usbstat` and `usbwatch`.
   - `tang_jtag_programmer.c`, `tang_jtag_glue.h` — the JTAG programmer.
 - `cmake/tinytang_build_id.cmake` — writes the build identity header on every
   build.

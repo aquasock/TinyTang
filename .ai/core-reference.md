@@ -412,7 +412,7 @@ BLE-016: "Xbox Wireless Controller input Report ID 1 is 16 bytes over GATT: four
 BLE-017: "Xbox Wireless Controller on this host: closed as unsupported on this board. No report has ever arrived; with this board's host traffic matching BlueZ's packet for packet it still stops answering as pairing completes, and the newer controller library in Bouffalo SDK 2.3.36 behaves identically, so the fault is the BL616's binary controller library rather than the host, the SDK version or the radio path"
 BLE-018: "2.3.36's bt_conn_unref ends with BT_ASSERT(old > 0) where the fork was only atomic_dec, and bt_conn_create_le() returns a caller reference only for a newly created connection; releasing one that was not taken asserts in recv_thread and resets the board"
 BLE-019: "The Rii K06 over LE exposes boot keyboard and boot mouse inputs that never notify; its keyboard boot report arrives on report characteristic 0x001E and its touchpad's on 0x002C, so the combo slot routes boot formats by length: 8 bytes keyboard, 3 or 4 mouse"
-TOOL-001: "CONFIG_CHERRYUSB_HOST is required for the CDC to enumerate with FreeRTOS enabled; CONFIG_NEWLIB stops enumeration"
+TOOL-001: "On SDK 2.3.36 the CDC enumerates with no host stack at all: the OSAL comes from CONFIG_CHERRYUSB_OSAL (freertos whenever FREERTOS is on) and the device stack references none of it; CONFIG_NEWLIB stops enumeration"
 TOOL-002: "The Gowin programmer's accepted IDCODEs: GW5A-25 0x0001281b, GW5AT-60 0x0001481b, GWAST-138 0x0001081b, GW5AT-138 0x0001181b, GW2A-18 0x0000081b"
 TOOL-003: "Upstream Bouffalo SDK 2.3.36 (8a3df34c), the fork 7f44f9e kept for rollback; Xuantie V2.6.1 GCC 10.2.0 from Bouffalo's toolchain release archive (its old git repository was rewritten 2026-10-12), oss-cad-suite 20261008 and xPack GCC 15.2.0-1, all three pinned by archive digest in deps.conf; desktop.bin from yosys 0.69+260, nextpnr at 8be8657b and apicula at 04bc3c5, at the script's default seed 3; Gowin EDA 1.9.11.03 for comparison builds (the NES and menu cores it built were retired in core-log entry 25)"
 TOOL-004: "A Gowin bitstream names its device: nestang's console138k project is GW5AST-138B, and build.tcl generates the project from the device name rather than checking one in"
@@ -973,7 +973,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   status: VERIFIED
   verified_date: 2026-10-03
   statement: "The SDK provides usb_hc_low_level_init(), which initialises the PHY, attaches USBH_IRQHandler to interrupt 37, clears PDS_REG_USB_IDDIG to force A-device, and drives USB_A_BUS_DROP_HOV then USB_A_BUS_REQ_HOV to request VBUS. It provides no counterpart. usbh_deinitialize() is only usbh_hub_deinitialize(), a software teardown, so those register settings survive it."
-  consequence: "Bringing the device stack back up after a host session succeeds but leaves the port insisting it is a host, and no host ever enumerates the board. ports/bl616/tang_usb_role.c's port_back_to_device() restores the three bits explicitly: set A_BUS_DROP, clear A_BUS_REQ, set IDDIG."
+  consequence: "Bringing the device stack back up after a host session succeeds but leaves the port insisting it is a host, and no host ever enumerates the board. The sequence that restores it is to set A_BUS_DROP, clear A_BUS_REQ and set IDDIG, leaving DRVBUS_POL as it was found; it lived in ports/bl616/tang_usb_role.c's port_back_to_device(), which core-log entry 50 removed along with the host stack, so this record is now the only place it is written down."
   sources:
     - "Bouffalo SDK, drivers/lhal/src/bflb_usb_v2.c: usb_hc_low_level_init() and the absence of any matching deinit"
     - "Bouffalo SDK, components/usb/cherryusb/core/usbh_core.c: usbh_deinitialize() calling usbh_hub_deinitialize()"
@@ -2208,15 +2208,16 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - record_id: TOOL-001
   kind: TOOLCHAIN
   topic_id: TOOL
-  title: "CONFIG_CHERRYUSB_HOST is required to enumerate; CONFIG_NEWLIB prevents it"
+  title: "The host stack is not needed to enumerate; CONFIG_NEWLIB prevents it"
   status: VERIFIED
-  verified_date: 2026-10-03
-  statement: "With FreeRTOS enabled and only the device stack built, the CDC never enumerates on this board; enabling CONFIG_CHERRYUSB_HOST, which brings in the FreeRTOS OSAL, is what fixes it. Separately, the SDK's newlib port stops the device enumerating, with or without its FatFS file layer."
-  consequence: "Both settings in proj.conf look wrong for a device-only firmware and are deliberate. The shell's stdio is therefore implemented over FatFS in ports/bl616 rather than taken from newlib."
+  verified_date: 2026-10-27
+  statement: "On Bouffalo SDK 2.3.36 the CDC enumerates with the CherryUSB host stack disabled: with CONFIG_CHERRYUSB_HOST off the image carries no usb_osal_* symbols at all and the board still presents itself as ffff:5454. The OSAL is selected by its own Kconfig entry, CONFIG_CHERRYUSB_OSAL, which defaults to freertos whenever FREERTOS is on, and nothing in the device stack references it. Separately, the SDK's newlib port was found to stop the device enumerating, with or without its FatFS file layer."
+  consequence: "The host stack is off in defconfig and left out of the build, which frees 47,236 bytes of .bss and 15,196 bytes of text and removes the EHCI controller, the hub class and both host globals. The earlier requirement described the older forked SDK, where the OSAL was compiled only under CONFIG_CHERRYUSB_HOST; that coupling does not exist in 2.3.36. CONFIG_NEWLIB stays off, and the shell's stdio therefore remains implemented over FatFS in ports/bl616 rather than taken from newlib."
   sources:
-    - "Bouffalo SDK, components/usb/cherryusb/CMakeLists.txt: the host branch adding osal/usb_osal_freertos.c"
-    - "This project's proj.conf: the comments recording the bisection that isolated both facts"
-  verification: "Established by bisection on this board earlier in the project, and recorded in proj.conf; reconfirmed by the firmware running throughout this session."
+    - "Bouffalo SDK 2.3.36, components/usb/Kconfig: config CHERRYUSB_OSAL, default freertos when FREERTOS is on, independent of CHERRYUSB_HOST"
+    - "Bouffalo SDK 2.3.36, components/usb/cherryusb/cherryusb.cmake: the OSAL source added under its own CONFIG_CHERRYUSB_OSAL test, and the host sources under CONFIG_CHERRYUSB_HOST"
+    - "This board: the enumerated console and the ELF symbol tables for both builds (core-log entry 50)"
+  verification: "Measured on 2026-10-27 by building the same tree with and without the host stack, then flashing the host-less image and power-cycling: the CDC enumerated, the console answered and usbstat still read the OTG block. The newlib half of the claim was established earlier by bisection and was not re-tested in this cycle. Revised 2026-10-27 (core-log entry 50): the host-stack requirement was falsified, and the mechanism it was attributed to belongs to the forked SDK."
 
 - record_id: TOOL-002
   kind: TOOLCHAIN
@@ -2513,7 +2514,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-23
+last_reviewed: 2026-10-27
 ```
 
 ---

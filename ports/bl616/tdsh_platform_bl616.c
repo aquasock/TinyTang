@@ -547,10 +547,6 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_usbstat_register();
     if (rc) return rc;
 
-    extern int tang_usb_role_register(void);
-    rc = tang_usb_role_register();
-    if (rc) return rc;
-
     extern int tang_desktop_register(void);
     rc = tang_desktop_register();
     if (rc) return rc;

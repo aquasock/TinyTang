@@ -1749,3 +1749,37 @@ The Video page is the last placeholder in the TinyGBC window, and it has nothing
 - User Test: PASS
 
 ---
+
+## 50 COMMIT Unreleased 2026-10-27T09:13:20-07:00
+
+#### Coming From:
+
+Unreleased 57391f3
+
+#### Purpose:
+
+Establish whether the CherryUSB host stack is still required to enumerate on SDK 2.3.36, and reclaim its RAM if it is not, as the first step of the memory work.
+
+#### Outcome:
+
+`CONFIG_CHERRYUSB_HOST` was disabled in `defconfig`, `ports/bl616/tang_usb_role.c` was deleted along with its three-line registration in `tdsh_platform_bl616.c`, and the two settings were documented; on the same tree the ELF went from `text` 631,186, `data` 10,976 and `bss` 348,040 to `text` 615,990, `data` 10,912 and `bss` 300,804, a saving of 47,236 bytes of static RAM and 15,196 of flash, and the `.bin` from 661,456 to 644,784 bytes. The saving is larger than the 22,244 bytes of the two globals that were the original target because the host branch also carried `usb_hc_ehci.c`: `g_usbhost_bus` 11,148, `g_hub_class` 11,096, `g_framelist` 16,534, `ehci_qtd_pool` 6,432, `ehci_qh_pool` 2,400 and `ep0_request_buffer` 1,298 all went. The hypothesis was then tested on the board: the image was flashed with `tools/tinytang_flash.py --yes`, the board was power-cycled, and it enumerated as `ffff:5454`, answered `platform` with the new identity and reported in `crash` a heap of 82,740 bytes free of 133,320 with a 39,212-byte largest block; `usbstat` still read the OTG block and `usbrole` was gone as intended. That falsifies TOOL-001, which held that the flag was required because the host branch brought in the FreeRTOS OSAL: on 2.3.36 `CONFIG_CHERRYUSB_OSAL` has its own Kconfig default of `freertos` whenever FreeRTOS is on, and with the host stack out the image contains zero `usb_osal_*` symbols and still enumerates, so the OSAL was only ever referenced by the host stack and the requirement described the forked SDK in `proj.conf`. `proj.conf`, `README.md` and the reference were corrected accordingly, TOOL-001 was revised in place and USB-005's consequence now records the three-bit device-mode sequence itself, since the file that held it is gone; the user then opened the desktop and reported it good. `tools/check_help_width.py` (140 entries), `tools/tests/test_tang_flash.sh`, `test_terminal_lifecycle.sh` and `test_script_limits.sh` all passed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same ids in the same order, and validated this entry as number 50 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The memory work continues: read the BL616's efuse device information to establish whether this die supports PSRAM at all, which decides whether the 4 MB `ram_psram` region the SDK and linker already describe is available or whether the remaining work is limited to the display buffers and boot-time fragmentation. Two things are outstanding from this cycle: the board is running the pre-comment build of this code, so a rebuild and one more power cycle would put the committed identity on it, and `third_party/tinydesk` still carries five modified files that keep every build identity `-dirty`.
+
+#### Files Modified:
+
+- README.md
+- defconfig
+- proj.conf
+- ports/bl616/tang_usb_role.c
+- ports/bl616/tdsh_platform_bl616.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

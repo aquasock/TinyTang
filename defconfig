@@ -7,7 +7,13 @@
 CONFIG_FREERTOS=y
 CONFIG_BFLB_LOG=n
 CONFIG_CHERRYUSB=y
-CONFIG_CHERRYUSB_HOST=y
+# The host stack is deliberately off.  It used to be on because the older
+# forked SDK built the FreeRTOS OSAL only under CONFIG_CHERRYUSB_HOST, and the
+# CDC failed to enumerate without it.  On 2.3.36 the OSAL is chosen by
+# CONFIG_CHERRYUSB_OSAL, whose Kconfig default is freertos whenever FREERTOS is
+# on, and nothing in the device stack references it: with the host stack out,
+# the image carries no usb_osal_* symbols at all and still enumerates.  Leaving
+# it out frees 47,236 bytes of .bss (core-log entry 50).
 CONFIG_CHERRYUSB_DEVICE=y
 CONFIG_CHERRYUSB_DEVICE_CDC=y
 CONFIG_CHERRYUSB_DEVICE_CDC_ACM=y
