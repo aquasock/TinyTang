@@ -26,6 +26,27 @@ TITLE_LIMIT = 64
 RECORD_LIMIT = 80
 
 
+def record_lengths(index_path, record_bytes, title_bytes):
+    """Each record's body length, by record number, for the table checks."""
+    lengths = []
+    with open(index_path, "rb") as index:
+        while True:
+            rec = index.read(record_bytes)
+            if len(rec) < record_bytes:
+                break
+            lengths.append(struct.unpack("<I", rec[title_bytes + 8:title_bytes + 12])[0])
+    return lengths
+
+
+def _surname(name):
+    """The same rule the converter sorts authors by: the last word, less a
+    trailing generational suffix."""
+    parts = name.replace(",", " ").split()
+    while parts and parts[-1].rstrip(".").lower() in ("jr", "sr", "ii", "iii", "iv"):
+        parts.pop()
+    return parts[-1] if parts else name
+
+
 def fail(message):
     print(f"check_wiki_pack: {message}", file=sys.stderr)
     return False
@@ -57,6 +78,8 @@ def main(argv=None):
     title_bytes = int(meta.get("title_bytes", TITLE_LIMIT))
     record_bytes = int(meta.get("record_bytes", title_bytes + 16))
     chunks = int(meta.get("chunks", 0))
+    part_bytes = int(meta.get("part_bytes", 56))
+    author_bytes = int(meta.get("author_bytes", 52))
     articles = int(meta.get("articles", -1))
     columns = int(meta.get("line_columns", 78))
     if record_bytes != title_bytes + 16:
@@ -86,6 +109,7 @@ def main(argv=None):
 
     previous = None
     titles = set()
+    reported = 0
     bad = 0
     bodies = 0
     handles = {}
@@ -127,6 +151,12 @@ def main(argv=None):
                              f"({offset}+{length} > {chunk_size[chunk]})")
                     continue
 
+                if not args.quiet and count >= 1000 and i * 10 // count > reported:
+                    reported = i * 10 // count
+                    if reported <= 10 and reported % 1 == 0:
+                        print(f"  checked {i} of {count} records ({reported * 10}%)",
+                              file=sys.stderr)
+
                 if args.sample and i % args.sample:
                     continue
                 handle = handles.get(chunk)
@@ -152,9 +182,81 @@ def main(argv=None):
         for handle in handles.values():
             handle.close()
 
+    # ---- chapter and author tables, if the pack has them
+    lengths = record_lengths(index_path, record_bytes, title_bytes)
+    parts_path = os.path.join(folder, "wiki.parts")
+    parts = 0
+    if os.path.isfile(parts_path):
+        size = os.path.getsize(parts_path)
+        if size % part_bytes:
+            ok = fail(f"wiki.parts is {size} bytes, not a multiple of {part_bytes}")
+            parts = 0
+        else:
+            parts = size // part_bytes
+            if int(meta.get("parts", "0")) != parts:
+                ok = fail(f"wiki.meta claims {meta.get('parts')} chapters, "
+                          f"the table holds {parts}")
+            previous = (-1, -1)
+            with open(parts_path, "rb") as table:
+                for i in range(parts):
+                    row = table.read(part_bytes)
+                    book, offset = struct.unpack("<II", row[:8])
+                    title = row[8:].split(b"\0")[0]
+                    if book >= count:
+                        ok = fail(f"chapter {i} names record {book}, past the index")
+                        break
+                    if (book, offset) <= previous:
+                        ok = fail(f"chapter {i} is out of order or duplicated")
+                        break
+                    previous = (book, offset)
+                    if offset >= lengths[book]:
+                        ok = fail(f"chapter {i} starts at {offset}, past its book's "
+                                  f"{lengths[book]} bytes")
+                        break
+                    if not title:
+                        ok = fail(f"chapter {i} has no title")
+                        break
+    elif int(meta.get("parts", "0")):
+        ok = fail("wiki.meta lists chapters but wiki.parts is missing")
+
+    auth_path = os.path.join(folder, "wiki.auth")
+    authors = 0
+    if os.path.isfile(auth_path):
+        size = os.path.getsize(auth_path)
+        if size % author_bytes:
+            ok = fail(f"wiki.auth is {size} bytes, not a multiple of {author_bytes}")
+        else:
+            authors = size // author_bytes
+            if int(meta.get("authors", "0")) != authors:
+                ok = fail(f"wiki.meta claims {meta.get('authors')} authors, "
+                          f"the table holds {authors}")
+            previous_key = None
+            with open(auth_path, "rb") as table:
+                for i in range(authors):
+                    row = table.read(author_bytes)
+                    book = struct.unpack("<I", row[:4])[0]
+                    name = row[4:].split(b"\0")[0]
+                    if book >= count:
+                        ok = fail(f"author {i} names record {book}, past the index")
+                        break
+                    if not name:
+                        ok = fail(f"author {i} is empty")
+                        break
+                    if any(b < 32 or b > 126 for b in name):
+                        ok = fail(f"author {i} is not printable ASCII: {name[:30]!r}")
+                        break
+                    key = (_surname(name.decode("ascii")).lower(), name.decode("ascii").lower())
+                    if previous_key is not None and key < previous_key:
+                        ok = fail(f"author {i} is out of order: {name.decode('ascii')!r}")
+                        break
+                    previous_key = key
+    elif int(meta.get("authors", "0")):
+        ok = fail("wiki.meta lists authors but wiki.auth is missing")
+
     if not args.quiet or not ok:
+        extra = f", {parts} chapters, {authors} authors" if (parts or authors) else ""
         print(f"check_wiki_pack: {count} records, {bodies} bodies checked in "
-              f"{len(chunk_size)} chunk(s): {'OK' if ok else 'FAILED'}")
+              f"{len(chunk_size)} chunk(s){extra}: {'OK' if ok else 'FAILED'}")
     return 0 if ok else 1
 
 

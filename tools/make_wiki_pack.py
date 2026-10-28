@@ -53,6 +53,7 @@ import os
 import re
 import struct
 import sys
+import time
 import tempfile
 import textwrap
 import unicodedata
@@ -69,6 +70,13 @@ WIKI_LINE_COLS = 78
 DEFAULT_CHUNK_BYTES = 3 * 1024 * 1024 * 1024     # under FAT32's 4 GiB file cap
 DEFAULT_MAX_ARTICLE = 256 * 1024
 DEFAULT_SORT_RECORDS = 100_000
+# A chapter table row: which book, where in its body, and what to call it.
+PART_TITLE_BYTES = 48
+PART_BYTES = 8 + PART_TITLE_BYTES
+# An author row: which book, and who wrote it.  Sorted by surname, found by
+# prefix, so the surname is derived at sort time and the row keeps the full name.
+AUTHOR_NAME_BYTES = 48
+AUTHOR_BYTES = 4 + AUTHOR_NAME_BYTES
 
 # ------------------------------------------------------------------ ZIM format
 
@@ -250,6 +258,20 @@ def clean_title(raw: bytes) -> bytes:
     return text.encode("ascii", "ignore")
 
 
+def title_from_url(url: bytes) -> bytes:
+    """A readable title from a URL when the entry carries none.
+
+    Gutenberg's entries have empty titles and URLs like
+    "Moby Dick; Or, The Whale.2701.html", so the page name, less its extension
+    and its ebook number, is the title.
+    """
+    base = url.rsplit(b"/", 1)[-1]
+    if base.lower().endswith(b".html"):
+        base = base[:-5]
+    base = re.sub(rb"\.\d+$", b"", base)
+    return base.replace(b"_", b" ")
+
+
 def redirect_target(raw: bytes) -> bytes | None:
     """The target path of a libzim redirect page, or None for a real article."""
     match = _REDIRECT_RE.search(raw[:1024])
@@ -364,8 +386,110 @@ def render_article(raw: bytes, max_bytes: int, title: bytes = b"") -> bytes:
 # ------------------------------------------------------------------ pack write
 
 
+def _clock(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds}s"
+
+
+_CHAPTER_RE = re.compile(
+    r"^(?:CHAPTER|Chapter|BOOK|Book|PART|Part|ACT|Scene|CANTO|Canto|SECTION|Section)"
+    r"\b[\s.:]*[IVXLCDMivxlcdm0-9]*")
+
+
+def strip_boilerplate(body: str) -> str:
+    """Remove Project Gutenberg's own header and footer from a book's text.
+
+    The header is the *** START OF THE PROJECT GUTENBERG EBOOK ... *** block;
+    the footer begins at "End of (the) Project Gutenberg ..." or the matching
+    *** END *** marker.  Everything outside those is the book.
+    """
+    if "PROJECT GUTENBERG" not in body.upper():
+        return body
+    lines = body.split("\n")
+
+    start = 0
+    for i, line in enumerate(lines[:300]):
+        upper = line.upper()
+        if "START OF TH" in upper and "PROJECT GUTENBERG" in upper:
+            start = i + 1
+            while start < len(lines) and not lines[start].strip():
+                start += 1
+            break
+
+    # A book carries both a visible "End of Project Gutenberg's ..." line and
+    # the *** END *** marker below it; the footer starts at whichever comes
+    # first, so take the smallest match rather than the last one seen.
+    end = len(lines)
+    for i in range(start, len(lines)):
+        line = lines[i]
+        upper = line.upper()
+        if ("END OF TH" in upper and "PROJECT GUTENBERG" in upper) or \
+                line.startswith("End of Project Gutenberg") or \
+                line.startswith("End of the Project Gutenberg"):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
+def chapters(body: str, limit: int = 500) -> list[tuple[int, str]]:
+    """(offset, title) for each heading a reader could jump to, plus Start.
+
+    Gutenberg texts are regular enough for this to be worth doing in the
+    converter: the reader gets a contents list with no heuristics of its own.
+    """
+    rows: list[tuple[int, str]] = []
+    offset = 0
+    for line in body.split("\n"):
+        text = line[3:] if line.startswith("## ") else line
+        title = text.strip()
+        heading = line.startswith("## ") or _CHAPTER_RE.match(text)
+        if heading and title and len(title) <= PART_TITLE_BYTES:
+            rows.append((offset, title))
+            if len(rows) >= limit:
+                break
+        offset += len(line) + 1
+    if rows and rows[0][0] != 0:
+        rows.insert(0, (0, "Start"))
+    return rows
+
+
+def author_of(html: bytes) -> str:
+    """The author named on a Gutenberg cover page, or ''."""
+    names = re.findall(rb'data-author-name="([^"]+)"', html)
+    if not names:
+        return ""
+    seen: list[str] = []
+    for raw in names:
+        name = " ".join(to_ascii(raw.decode("utf-8", "replace")).split())
+        if name and name not in seen:
+            seen.append(name)
+    return ", ".join(seen)
+
+
+def surname(name: str) -> str:
+    """The sort key for an author: the last word after any trailing suffix."""
+    parts = name.replace(",", " ").split()
+    while parts and parts[-1].rstrip(".").lower() in ("jr", "sr", "ii", "iii", "iv"):
+        parts.pop()
+    return parts[-1] if parts else name
+
+
 def fold(title: bytes) -> bytes:
     return title.strip(b"\0").lower()
+
+
+def _le(*fields: int) -> tuple[int, ...]:
+    """Sort key for packed little-endian fields.
+
+    Comparing the raw bytes of a little-endian integer is not numeric order --
+    256 (00 01) sorts before 1 (01 00) -- and a chapter table that is out of
+    order is a chapter table a binary search cannot read.
+    """
+    return fields
 
 
 def _records(path: str, record_bytes: int):
@@ -436,7 +560,8 @@ class PackWriter:
         name = title[: self.title_bytes].ljust(self.title_bytes, b"\0")
         return name + struct.pack("<IIII", chunk, offset, length, lines)
 
-    def add_article(self, title: bytes, body: bytes, lines: int) -> None:
+    def add_article(self, title: bytes, body: bytes, lines: int):
+        """Write a body and answer (chunk, offset), or None when refused."""
         if self.chunk is None or self.chunk_used + len(body) > self.chunk_limit:
             self._open_chunk()
         offset = self.chunk_used
@@ -445,6 +570,7 @@ class PackWriter:
         self.articles_tmp.write(self._record(title, self.chunk_index, offset,
                                              len(body), lines))
         self.articles += 1
+        return (self.chunk_index, offset)
 
     def add_redirect(self, title: bytes, target: bytes) -> None:
         name = title[: self.title_bytes].ljust(self.title_bytes, b"\0")
@@ -579,6 +705,105 @@ _WIKIMEDIA_PROJECTS = ("wikipedia", "wikivoyage", "wiktionary", "wikibooks",
                        "wikispecies", "wikidata")
 
 
+def _index_positions(out_dir: str, title_bytes: int) -> dict[tuple[int, int], int]:
+    """(chunk, offset) -> record number, from the index that was just written."""
+    record_bytes = title_bytes + 16
+    positions: dict[tuple[int, int], int] = {}
+    path = os.path.join(out_dir, "wiki.idx")
+    with open(path, "rb") as index:
+        number = 0
+        while True:
+            rec = index.read(record_bytes)
+            if len(rec) < record_bytes:
+                break
+            chunk, offset = struct.unpack("<II", rec[title_bytes:title_bytes + 8])
+            positions[(chunk, offset)] = number
+            number += 1
+    return positions
+
+
+def write_parts(out_dir: str, src_path: str, book_where: list[tuple[int, int]],
+                sort_records: int, title_bytes: int) -> int:
+    """Rewrite the chapter table with record numbers and sort it for the reader.
+
+    Rows arrive as (book serial, offset, title); the reader needs (record
+    number, offset, title) ordered by book, so a lookup is one binary search
+    followed by a sequential read of that book's chapters.  The sort is external
+    because a shelf of books with 500 chapters each is a lot of rows.
+    """
+    source = open(src_path, "rb")
+    if source.read(1) == b"":
+        source.close()
+        return 0
+    source.seek(0)
+    # Resolving needs the index's own numbering, which only exists now.
+    positions = _index_positions(out_dir, title_bytes)
+
+    resolved = tempfile.NamedTemporaryFile(prefix="wiki-parts-resolved-",
+                                          suffix=".bin", delete=False)
+    count = 0
+    while True:
+        row = source.read(PART_BYTES)
+        if len(row) < PART_BYTES:
+            break
+        serial, offset = struct.unpack("<II", row[:8])
+        title = row[8:]
+        where = book_where[serial] if serial < len(book_where) else None
+        number = positions.get(where) if where is not None else None
+        if number is None:
+            continue
+        resolved.write(struct.pack("<II", number, offset) + title)
+        count += 1
+    source.close()
+    resolved.close()
+
+    key = lambda rec: _le(int.from_bytes(rec[0:4], "little"),
+                          int.from_bytes(rec[4:8], "little"))
+    runs = _sort_runs(resolved.name, PART_BYTES, key, sort_records)
+    merged, streams = _merge_runs(runs, PART_BYTES, key)
+    try:
+        with open(os.path.join(out_dir, "wiki.parts"), "wb") as out:
+            for rec in merged:
+                out.write(rec)
+    finally:
+        for stream in streams:
+            stream.close()
+        for path in runs:
+            os.unlink(path)
+        os.unlink(resolved.name)
+    return count
+
+
+def write_authors(out_dir: str, authors: dict[bytes, str],
+                  book_ids: dict[bytes, int], book_where: list[tuple[int, int]],
+                  sort_records: int, title_bytes: int) -> int:
+    """One row per book that named an author, ordered by surname.
+
+    Small enough to sort in memory -- the rows are bounded by the number of
+    books, not by the length of the corpus.
+    """
+    if not authors:
+        return 0
+    positions = _index_positions(out_dir, title_bytes)
+
+    rows: list[tuple[str, bytes]] = []
+    for base, name in authors.items():
+        serial = book_ids.get(base)
+        if serial is None or serial >= len(book_where):
+            continue
+        number = positions.get(book_where[serial])
+        if number is None:
+            continue
+        rows.append((name, struct.pack("<I", number) +
+                     name.encode("ascii", "ignore")[:AUTHOR_NAME_BYTES]
+                     .ljust(AUTHOR_NAME_BYTES, b"\0")))
+    rows.sort(key=lambda item: (surname(item[0]).lower(), item[0].lower()))
+    with open(os.path.join(out_dir, "wiki.auth"), "wb") as out:
+        for _name, row in rows:
+            out.write(row)
+    return len(rows)
+
+
 def _default_license(metadata: dict[str, str]) -> str:
     """Kiwix archives do not all carry a License key, so name the terms of the
     source the metadata does identify rather than leaving the pack silent."""
@@ -606,7 +831,8 @@ def read_metadata(zim: Zim) -> dict[str, str]:
 
 
 def write_meta(out_dir: str, metadata: dict[str, str], args, article_count: int,
-               redirect_count: int, chunks: int) -> None:
+               redirect_count: int, chunks: int, parts_count: int = 0,
+               author_count: int = 0) -> None:
     meta = {
         "format": WIKI_MAGIC,
         "format_version": str(WIKI_VERSION),
@@ -625,6 +851,10 @@ def write_meta(out_dir: str, metadata: dict[str, str], args, article_count: int,
         "title_bytes": str(args.title_bytes),
         "record_bytes": str(args.title_bytes + 16),
         "line_columns": str(WIKI_LINE_COLS),
+        "parts": str(parts_count),
+        "part_bytes": str(PART_BYTES),
+        "authors": str(author_count),
+        "author_bytes": str(AUTHOR_BYTES),
         "main_page": args.main_page or "",
     }
     with open(os.path.join(out_dir, "wiki.meta"), "w", encoding="ascii") as f:
@@ -640,7 +870,7 @@ def convert(args) -> int:
           f"{zim.article_count} entries  {zim.cluster_count} clusters", file=sys.stderr)
     os.makedirs(args.out, exist_ok=True)
     for stale in os.listdir(args.out):
-        if re.fullmatch(r"wiki\.(idx|\d{3})", stale):
+        if re.fullmatch(r"wiki\.(idx|parts|auth|\d{3})", stale):
             os.unlink(os.path.join(args.out, stale))
 
     html_mime = {i for i, m in enumerate(zim.mime_types) if m.startswith("text/html")}
@@ -659,28 +889,54 @@ def convert(args) -> int:
     # cluster, which is what makes a 49 GB archive a matter of hours.
     refs = tempfile.NamedTemporaryFile(prefix="wiki-refs-", suffix=".bin", delete=False)
     entries = 0
+    covers = 0
+    cover_bases: set[bytes] = set()
     for i in range(zim.article_count):
         mimetype, ns, cluster, blob_index, url, title, dirent_redirect = zim.dirent(i)
         if ns != "C" or mimetype not in html_mime or dirent_redirect is not None:
             continue
-        refs.write(struct.pack("<III", cluster, blob_index, i))
+        # A Gutenberg cover page is not an article: it is the book's metadata,
+        # and it is read here so its author can be recorded against the book.
+        kind = 1 if b"_cover" in url else 0
+        if kind:
+            cover_bases.add(url.replace(b"_cover", b""))
+        refs.write(struct.pack("<IIIB3x", cluster, blob_index, i, kind))
         entries += 1
+        covers += kind
     refs.close()
 
-    ref_key = lambda rec: (rec[0:4], rec[4:8])
-    runs = _sort_runs(refs.name, 12, ref_key, args.sort_records)
-    merged, streams = _merge_runs(runs, 12, ref_key)
+    ref_key = lambda rec: _le(int.from_bytes(rec[0:4], "little"),
+                              int.from_bytes(rec[4:8], "little"))
+    runs = _sort_runs(refs.name, 16, ref_key, args.sort_records)
+    merged, streams = _merge_runs(runs, 16, ref_key)
 
     kept = skipped_short = 0
+    processed = 0
+    parts = 0
+    started = time.monotonic()
+    # Side tables, resolved against the finished index: a book is known here by
+    # its URL and by where its body landed, and only the index knows the record
+    # number the reader will use.
+    book_ids: dict[bytes, int] = {}
+    book_where: list[tuple[int, int]] = []
+    authors: dict[bytes, str] = {}
+    parts_tmp = tempfile.NamedTemporaryFile(prefix="wiki-parts-", suffix=".bin",
+                                           delete=False)
     try:
         for ref in merged:
-            cluster, blob_index, index = struct.unpack("<III", ref)
+            processed += 1
+            cluster, blob_index, index, kind = struct.unpack("<IIIB3x", ref)
             mimetype, ns, _c, _b, url, title, _r = zim.dirent(index)
-            display = clean_title(title or url.rsplit(b"/", 1)[-1].replace(b"_", b" "))
+            raw = zim.cluster_blob(cluster, blob_index)
+            if kind == 1:
+                name = author_of(raw)
+                if name:
+                    authors[url.replace(b"_cover", b"")] = name
+                continue
+            display = clean_title(title or title_from_url(url))
             if not display:
                 skipped_short += 1
                 continue
-            raw = zim.cluster_blob(cluster, blob_index)
             target = redirect_target(raw)
             if target is not None:
                 # A redirect page: index its title against the target's body,
@@ -689,28 +945,57 @@ def convert(args) -> int:
                 writer.add_redirect(display, clean_title(target))
             else:
                 body = render_article(raw, args.max_article_bytes, display)
-                if len(body.strip()) < args.min_chars:
+                text = strip_boilerplate(body.decode("ascii"))
+                if len(text.strip()) < args.min_chars:
                     skipped_short += 1
                     continue
-                writer.add_article(display, body, max(body.count(b"\n"), 1))
+                body = text.encode("ascii")
+                where = writer.add_article(display, body, max(body.count(b"\n"), 1))
+                if where is not None:
+                    if url not in book_ids:
+                        book_ids[url] = len(book_where)
+                        book_where.append(where)
+                    serial = book_ids[url]
+                    # Only a book gets a chapter table: the archive must carry
+                    # covers at all, and this entry must have one of its own,
+                    # so an encyclopedia's articles do not each sprout a Start row.
+                    outline = chapters(text) if url in cover_bases else []
+                    if len(outline) > 1:
+                        for offset, heading in outline:
+                            parts_tmp.write(struct.pack("<II", serial, offset) +
+                                            heading.encode("ascii", "ignore")
+                                            [:PART_TITLE_BYTES].ljust(PART_TITLE_BYTES, b"\0"))
+                            parts += 1
             kept += 1
             if args.limit and kept >= args.limit:
                 break
-            if kept % 5000 == 0:
-                print(f"  {kept} entries", file=sys.stderr)
+            if processed % 5000 == 0:
+                elapsed = max(time.monotonic() - started, 0.001)
+                rate = processed / elapsed
+                remaining = (entries - processed) / rate if rate > 0 else 0
+                print(f"  {processed}/{entries} entries, {kept} kept, "
+                      f"{rate:.0f}/s, elapsed {_clock(elapsed)}, "
+                      f"eta {_clock(remaining)}", file=sys.stderr)
     finally:
         for stream in streams:
             stream.close()
         for path in runs:
             os.unlink(path)
         os.unlink(refs.name)
+        parts_tmp.close()
 
     if writer.articles + writer.redirects == 0:
         raise ZimError("nothing was converted: the archive has no usable articles")
 
     chunks = writer.chunk_index + 1
     written, resolved = writer.finalize()
-    write_meta(args.out, metadata, args, written, resolved, chunks)
+    parts_written = write_parts(args.out, parts_tmp.name, book_where,
+                                args.sort_records, args.title_bytes)
+    authors_written = write_authors(args.out, authors, book_ids, book_where,
+                                    args.sort_records, args.title_bytes)
+    os.unlink(parts_tmp.name)
+    write_meta(args.out, metadata, args, written, resolved, chunks,
+               parts_written, authors_written)
     zim.close()
     print(f"wrote {written} index records ({resolved} redirects resolved) in "
           f"{chunks} chunk(s) to {args.out}; skipped {skipped_short} short entries",

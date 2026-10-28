@@ -146,6 +146,30 @@ def read_pack(folder):
     return meta, records
 
 
+def read_parts(folder):
+    path = os.path.join(folder, "wiki.parts")
+    if not os.path.isfile(path):
+        return []
+    raw = open(path, "rb").read()
+    rows = []
+    for at in range(0, len(raw), 56):
+        book, offset = struct.unpack("<II", raw[at:at + 8])
+        rows.append((book, offset, raw[at + 8:at + 56].rstrip(b"\0").decode("ascii")))
+    return rows
+
+
+def read_auth(folder):
+    path = os.path.join(folder, "wiki.auth")
+    if not os.path.isfile(path):
+        return []
+    raw = open(path, "rb").read()
+    rows = []
+    for at in range(0, len(raw), 52):
+        book = struct.unpack("<I", raw[at:at + 4])[0]
+        rows.append((book, raw[at + 4:at + 52].rstrip(b"\0").decode("ascii")))
+    return rows
+
+
 def body_of(folder, record):
     _, chunk, offset, length, _ = record
     with open(os.path.join(folder, f"wiki.{chunk:03d}"), "rb") as f:
@@ -185,6 +209,23 @@ def main():
                          b"</head><body><a href=\"./Physics\">Natural science</a>"
                          b"</body></html>")
         css = b"body { color: black; }"
+        # A Project Gutenberg book: empty title (so the URL supplies it),
+        # boilerplate either side, chapters as headings, and a cover page that
+        # is the only place its author is named.
+        book = (b"<html><body>"
+                b"<p>*** START OF THE PROJECT GUTENBERG EBOOK TESTBOOK ***</p>"
+                b"<h2>CHAPTER I. Down the Rabbit-Hole</h2>"
+                b"<p>Alice was beginning to get very tired of sitting by her sister.</p>"
+                b"<h2>CHAPTER II. The Pool of Tears</h2>"
+                b"<p>Curiouser and curiouser, said Alice.</p>"
+                b"<p>End of Project Gutenberg's Testbook, by Lewis Carroll</p>"
+                b"<p>*** END OF THE PROJECT GUTENBERG EBOOK TESTBOOK ***</p>"
+                b"</body></html>")
+        cover = (b"<html><body><h1>Testbook</h1>"
+                 b'<div class="cover-detail author"><p class="label">Author</p>'
+                 b'<p class="label-value"><a class="author-btn" '
+                 b'data-author-name="Lewis Carroll">Lewis Carroll</a></p></div>'
+                 b"</body></html>")
 
         entries = [
             {"ns": "C", "url": "Albert_Einstein", "title": "Albert Einstein",
@@ -204,6 +245,10 @@ def main():
              "blob": redirect_page.replace(b"./Physics", b"./Physics")},
             {"ns": "C", "url": "Zeta", "title": "Zeta", "mime": 1,
              "blob": redirect_page.replace(b"./Physics", b"./Albert_Einstein")},
+            {"ns": "C", "url": "Testbook.42.html", "title": "", "mime": 1,
+             "blob": book},
+            {"ns": "C", "url": "Testbook_cover.42.html", "title": "", "mime": 1,
+             "blob": cover},
         ]
         build_zim(zim, entries, ["text/css", "text/html", "text/plain"],
                   {"Title": "Wikipedia (test)", "Language": "eng",
@@ -222,7 +267,7 @@ def main():
         meta, records = read_pack(pack)
         titles = [r[0] for r in records]
 
-        check(len(records) == 5, f"five records: two articles and three resolved "
+        check(len(records) == 6, f"six records: three articles and three resolved "
                                  f"redirects (got {len(records)}: {titles})")
         check(titles == sorted(titles, key=str.lower),
               f"the index is sorted by folded title ({titles})")
@@ -262,7 +307,7 @@ def main():
               "the article's repeated title heading is dropped")
 
         check(meta.get("format") == "TWP1", "the pack names its format")
-        check(meta.get("articles") == "5", "the metadata counts index records")
+        check(meta.get("articles") == "6", "the metadata counts index records")
         check(meta.get("chunks") == "1", "the metadata counts chunks")
         check(meta.get("main_page") == "Physics", "the main page is recorded")
         check(meta.get("title") == "Wikipedia (test)",
@@ -273,12 +318,79 @@ def main():
         check("Wikipedia" in meta.get("license", ""),
               "the licence names the project the archive came from")
 
+        # ---- a book: boilerplate gone, chapters tabled, author attached
+        check("Testbook" in by_title, f"the book is indexed under its URL's name "
+                                     f"({[t for t in titles]})")
+        if "Testbook" in by_title:
+            text = body_of(pack, by_title["Testbook"])
+            check("START OF THE PROJECT GUTENBERG" not in text,
+                  "the Gutenberg header is stripped")
+            check("End of Project Gutenberg" not in text,
+                  "the Gutenberg footer is stripped")
+            check("Alice was beginning" in text,
+                  "the book's text survives the stripping")
+            # The book opens on a chapter heading, so that heading is the first
+            # row and no separate Start row is added.
+            check(meta.get("parts") == "2",
+                  f"two chapter rows, no filler ({meta.get('parts')})")
+            rows = read_parts(pack)
+            chapters = [r for r in rows if r[2].startswith("CHAPTER")]
+            check(len(chapters) == 2, f"both chapters are tabled ({rows})")
+            for book, offset, title in rows:
+                if title == "Start":
+                    continue          # a marker, not a heading
+                record = by_title.get(records[book][0])
+                if record is None:
+                    check(False, "a chapter names a record that is not in the index")
+                    continue
+                line = body_of(pack, record)[offset:offset + len(title) + 4]
+                check(line.startswith(title) or line.startswith("## " + title),
+                      f"chapter {title!r} starts where the table says ({line[:24]!r})")
+            check(rows[0][1] == 0, "the table's first row starts at the top of a book")
+            authors = read_auth(pack)
+            check(len(authors) == 1 and authors[0][1] == "Lewis Carroll",
+                  f"the cover's author is recorded ({authors})")
+            check(authors and records[authors[0][0]][0] == "Testbook",
+                  "the author names the book, not the cover")
+
         # The pack checker must accept what the converter wrote, and must be
         # the thing that would have caught a line over the reader's width.
         checked = subprocess.run([sys.executable, CHECKER, pack, "--quiet"],
                                  capture_output=True, text=True)
         check(checked.returncode == 0,
               f"the pack checker accepts the pack ({checked.stderr.strip()})")
+
+        # A corpus without cover pages is not a book corpus: no chapter table
+        # and no author table, however many headings its articles have.
+        plain_zim = os.path.join(work, "plain.zim")
+        plain_pack = os.path.join(work, "plain-pack")
+        build_zim(plain_zim, [e for e in entries if b"_cover" not in e["url"].encode()],
+                  ["text/css", "text/html", "text/plain"],
+                  {"Title": "Wikipedia (test)", "Language": "eng"})
+        plain_run = subprocess.run(
+            [sys.executable, CONVERTER, "--zim", plain_zim, "--out", plain_pack],
+            capture_output=True, text=True)
+        check(plain_run.returncode == 0, "the converter runs without covers")
+        if plain_run.returncode == 0:
+            check(not os.path.isfile(os.path.join(plain_pack, "wiki.parts")),
+                  "an archive without covers gets no chapter table")
+            check(not os.path.isfile(os.path.join(plain_pack, "wiki.auth")),
+                  "an archive without covers gets no author table")
+            plain = subprocess.run([sys.executable, CHECKER, plain_pack, "--quiet"],
+                                   capture_output=True, text=True)
+            check(plain.returncode == 0, "the checker accepts a pack with no tables")
+
+        # The checker must refuse a chapter table that points past its book.
+        broken = os.path.join(work, "broken")
+        shutil.copytree(pack, broken)
+        parts_path = os.path.join(broken, "wiki.parts")
+        raw = bytearray(open(parts_path, "rb").read())
+        raw[4:8] = struct.pack("<I", 10 ** 7)      # a chapter offset far past the body
+        open(parts_path, "wb").write(raw)
+        rejected = subprocess.run([sys.executable, CHECKER, broken, "--quiet"],
+                                  capture_output=True, text=True)
+        check(rejected.returncode != 0,
+              "the checker rejects a chapter that starts past its book")
 
         # A second run with a tight article cap must mark the truncation.
         pack2 = os.path.join(work, "pack2")

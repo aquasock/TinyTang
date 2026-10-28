@@ -2399,3 +2399,35 @@ Gutenberg becomes its own app in a later cycle, at the user's direction, and the
 - User Test: PASS
 
 ---
+
+## 69 COMMIT Unreleased 2026-10-28T12:47:31-07:00
+
+#### Coming From:
+
+Unreleased 892b071
+
+#### Purpose:
+
+Give a pack the two tables a book reader needs -- a chapter list and an author index -- and teach the converter to build them from a Gutenberg archive and the checker to verify them.
+
+#### Outcome:
+
+A pack may now carry `wiki.parts` and `wiki.auth` beside `wiki.idx`, both optional and additive, so TWP1 is unchanged and TinyKiwix ignores them. A chapter row is 56 bytes -- the book's record number, the byte offset of the chapter inside its body, and a 48-byte title -- sorted numerically by (book, offset) so a reader finds a book's chapters with one binary search and a sequential read. An author row is 52 bytes -- record number and a 48-byte name -- ordered by surname, derived at sort time, so a reader can find Melville without the row storing the key. The converter gained: stripping of Project Gutenberg's own header block and of the footer that starts at whichever comes first of the `*** END ***` marker and the visible "End of Project Gutenberg's ..." line; chapter detection from `## ` headings and from CHAPTER, BOOK, PART, ACT, SCENE, CANTO and SECTION lines, capped at 500 a book; the author read from the cover page's `data-author-name` attribute, which is the only place a Gutenberg archive names it; and a title taken from the entry's URL less its `.html` and its ebook number when the entry carries none, which is every Gutenberg entry. The tables are resolved against the finished index, because a book's record number exists only after the title sort: rows are collected against the book's URL and the place its body landed, then joined to the index's (chunk, offset) once it is written. Chapters are written only for an archive that carries cover pages and only for an entry that has one, so the Wikipedia packs gain no table. Three defects were found by the tests rather than by reading the code back: the chapter table was sorted by the raw bytes of little-endian integers, which puts 256 before 1 and leaves a table a binary search cannot read; the footer loop took the last marker rather than the first and left the visible Gutenberg footer line in every book; and every article in a pack got a Start row until the cover gate was added. The checker now validates both tables -- counts against `wiki.meta`, rows in order, record numbers inside the index, chapter offsets inside their own book, names printable and ordered by the same surname rule -- and refuses a chapter that starts past its book, which a planted corruption in the test proves. `tools/tests/test_wiki_pack.sh` runs 40 pack checks and 45 converter checks; on the five-book Gutenberg sample the converter produced one book and one author from six HTML entries, dropping four navigation pages under `--min-chars 2000`, with 31 chapters and "Charles A. Lee" attached to the right record, and the checker passed it. The same two tools also gained progress reporting for the long conversions they are now used for: the converter prints the references processed against the archive's total with its rate, elapsed time and estimate every 5000, and the checker prints the percentage of records it has validated. No firmware was built or deployed and nothing on the card changed.
+
+#### Next Steps:
+
+The reader is next: a TinyGutenberg window over these tables -- a Library of shelves, a Contents button reading `wiki.parts`, browsing by surname from `wiki.auth`, and a saved reading position -- and with it the fix for the 32-page history, which still stands as a defect for any article long enough to reach it. Chapter detection needs a real class archive to judge: the sample book is a dictionary, so its "chapters" are the letters of the alphabet, and a shelf of novels will say whether the 48-byte titles and the 500-row cap are right. The full English Wikipedia download is in progress on the GIT drive under `/run/media/vash/GIT/tinytang-scratch` and is unaffected by this cycle; it will be the first pack to write more than one body chunk.
+
+#### Files Modified:
+
+- tools/check_wiki_pack.py
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
