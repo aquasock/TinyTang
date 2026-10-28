@@ -2588,3 +2588,33 @@ The user chooses which shelves to build; the two largest, world history at 40 GB
 - User Test: N/A
 
 ---
+
+## 74 COMMIT Unreleased 2026-10-28T15:09:00-07:00
+
+#### Coming From:
+
+Unreleased 37efa2f
+
+#### Purpose:
+
+Add the shelf script for Library of Congress class H, which the set of wrappers was missing.
+
+#### Outcome:
+
+The eleven wrappers of entry 73 covered the ten largest class archives plus philosophy and religion, and class H -- social sciences -- is not among them, so `tools/shelf-h.sh` did not exist and running it failed with "No such file or directory" rather than anything the script could explain. `tools/shelf-h.sh` is now one of them, on the same pattern as its neighbours: a three-line wrapper over `tools/gutenberg_shelf.sh h`, with a header naming the class (2,823 books in 4.5 GB of archive, about 1.1 GB as a pack), the card path defaulted so a run installs itself, and any other letter still reachable through the generic script. The class was confirmed present in Kiwix's listing as `gutenberg_en_lcc-h_2026-03.zim` before the file was written, and the script was syntax-checked. The same generic script had meanwhile produced the class B shelf the user ran: 3,907 books, 200,407 chapters and 3,907 authors in 1,594 MB of text, in the scratch folder waiting to be installed. Nothing on the board changed and no firmware was built.
+
+#### Next Steps:
+
+The user runs `tools/shelf-h.sh` and installs the class B shelf into `/root/books`; the class Q download is still in progress. Class B's 3,907 books against the catalogue's 6,180 is the same gap class P showed, so the author and bookshelf pages Kiwix counts as articles are roughly a third of a large class archive, which is worth stating in the manual rather than leaving as a surprise. The full English Wikipedia conversion continues in the same scratch folder and is the long pole of the day. The known limits of the reader are unchanged: contents stop at 64 chapters, one saved position for the whole app, no author in a book header, no search inside a book.
+
+#### Files Modified:
+
+- tools/shelf-h.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
