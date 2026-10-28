@@ -21,6 +21,18 @@ Over USB, with the console at a shell prompt:
 The board must be at the shell. If the desktop is running, press F12
 first: bytes sent then are typed into whichever window has focus.
 
+## Syncing a folder
+
+`tools/tinytang_sync.py` is the two-way version of that. It finds the board by
+its USB identity, prints the card's tree, asks which folder to work on, and
+compares it with a mirror kept beside the script in `tang/`. It shows what is
+only on the board, only on the computer, or a different size, and asks which
+way to move the files. Nothing is deleted, and files of the same size are
+treated as equal because the card has no real timestamps.
+
+     pip install pyserial
+     python tools/tinytang_sync.py
+
 ## PMODs
 
 A core drives a socket only if /tinytang.ini says what is seated there,

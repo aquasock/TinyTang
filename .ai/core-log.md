@@ -2648,3 +2648,37 @@ The sync application: a single file using only the standard library and pyserial
 - User Test: N/A
 
 ---
+
+## 76 COMMIT Unreleased 2026-10-28T16:22:06-07:00
+
+#### Coming From:
+
+Unreleased d639aac
+
+#### Purpose:
+
+Write the two-way file sync the user asked for: a single Python tool that finds the board, shows its folders, compares one against a mirror on the computer and moves files in whichever direction is chosen.
+
+#### Outcome:
+
+`tools/tinytang_sync.py` is that tool, and it depends on nothing but the standard library and pyserial. It opens by asking the user to put the board at its console prompt and connect the OTG socket, then finds the board by its USB identity (ffff:5454) rather than by port name, so the same code works on Windows and Linux. It refuses unless the console answers the shell probe, because the sync and the desktop cannot share the console. It reads the card's tree under `/root` with `ls -l` and prints it, asks which folder to work with, and compares it by name and size against a mirror kept in `tang/` beside the script; it then lists what is only on the board, only on the computer, and different in size, says plainly that equal sizes are treated as equal because the card has no real timestamps, and asks which way to move the files -- `tangput` up, `tangget` down -- with a count and a total to confirm before anything moves. Nothing is deleted. Five defects were found and fixed while proving it, four mine and one the shell's: the first parser split `ls -l` on lines, but the shell prints a whole directory on one line, entries separated by two spaces with colour codes around directory names, so the scan found nothing; the scan keyed its paths relative to `/root` while the comparison used the full path, so a folder with two files compared as empty on both sides; a read of a `tangget` body could carry the trailer in the same buffer and wrote 87 bytes for an 18-byte file, which is exactly the class of mistake entry 75 recorded, so the body is now truncated to the announced length; the board's output from one command could still be arriving when the next started, so each command now drains until the line is quiet; and the shell's own `mkdir -p` reports success and creates nothing on this build, measured directly with plain `mkdir` creating the folder and `mkdir -p` not, so the tool makes each level with a plain `mkdir` and ignores the "exists" answer. Verified against the board: two files uploaded, then fetched back into an empty mirror and compared byte for byte, both identical; a locally lengthened file then showed as "size differs" and uploaded; the interactive folder prompt worked without arguments; and a 1 MB file moved in 2.7 s, about 390 KB/s, so the console is faster than the FPGA link that the older estimates were based on. The test artefacts were removed from the card afterwards. `tools/tests/check_tinytang_sync.py` and its wrapper check the two parts that need no board -- the one-line `ls -l` format including a name with spaces and the difference classification -- at 13 checks. The manual gained a "Syncing a folder" section, the README a description beside the other tools, and the manual pack was rebuilt and uploaded in the same cycle.
+
+#### Next Steps:
+
+The user has not run the sync tool yet; its own first test is the one this cycle ends with, but on their side of the cable. The honest limits are in its output rather than hidden: size alone cannot see an edit that keeps the length, files are overwritten in the chosen direction rather than merged, and the console must stay at the shell for the whole session. If it proves useful, the next additions would be a per-file confirmation for size-differing files and a hash check on the files it moves, both of which cost an extra pass over each file. The shell's silent `mkdir -p` is worth a carried patch or a reference note, since any other tool will trip over it. The full English Wikipedia conversion and the class B and Q Gutenberg shelves continue in the background.
+
+#### Files Modified:
+
+- README.md
+- manual/files.md
+- tools/tests/check_tinytang_sync.py
+- tools/tests/test_tinytang_sync.sh
+- tools/tinytang_sync.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---

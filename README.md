@@ -52,6 +52,22 @@ TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
 
 Building and flashing are under *Quick start* and *Building requirements*.
 
+### Syncing files both ways
+
+`tools/tinytang_sync.py` is a small ActiveSync-style tool for moving files in
+either direction over the same console. It asks you to put the board at its
+prompt and plug in the OTG cable, finds the board by its USB identity, prints
+the card's folder tree, asks which folder to work with, and compares it against
+a mirror kept in `tang/` beside the script. It lists what is only on the board,
+only on the computer, or a different size, and asks which way to move the
+files -- `tangput` up and `tangget` down. It needs only pyserial, runs on
+Windows and Linux, and never deletes anything.
+
+```
+pip install pyserial
+python tools/tinytang_sync.py
+```
+
 ## What it does
 
 - **Boots to a console on HDMI and configured VGA.** `/root/scripts/boot.tdsh` loads
