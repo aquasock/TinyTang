@@ -2288,3 +2288,36 @@ The one untested way this receiver could still carry analog stick data is data f
 - User Test: PASS
 
 ---
+## 66 COMMIT Unreleased 2026-10-28T02:22:25-07:00
+
+#### Coming From:
+
+Unreleased dda50fe
+
+#### Purpose:
+
+Make the Classic Controller's d-pad its only pointing input -- the arrow keys normally and the pointer while the right shoulder is held -- drop the sticks the receiver never reports, and correct the diagonals.
+
+#### Outcome:
+
+The user's research into the 8BitDo receiver confirmed what the trace had shown: it does not support analog sticks at all, and mirrors them onto the d-pad, so the four axis bytes are never anything but their resting values and no firmware can recover a position that is not sent. Before that was accepted, the one untested format was tried: `tang_i2c.cpp`'s read path was widened from the engine's eight-byte copy to the whole sixteen-byte window (the read window, the transaction copy, the `tangi2c` length cap and the wiipad read hook), a firmware was built and flashed to ask the receiver for data format 0x02's nine-byte report, and no nine-byte reading was ever taken -- the pad stopped answering after that flash and the change was reverted uncommitted at the user's request, so whether the receiver carries the sticks in format 2 is not established either way, and the pad's failure was not separated from the receiver having lost its Bluetooth link on the power cycle. With the analog path closed, the driver stopped reading the Classic's sticks entirely: its d-pad is the pointing input and the arrows are what it sends, the arrow keys normally, repeating as the keyboard does (500 ms, then 50 ms), and with the right shoulder held -- the keyboard's Alt -- the pointer instead, one cell a poll, with no arrow; at the shell prompt, where there is no pointer, the d-pad is the arrows and the shoulder takes it nowhere, which is what Alt+arrows do there. ZL, ZR, L and R were unmapped at the user's request and left for a later decision, and the shoulders were then swapped so that R is the modifier and L is free. A diagonal fault was ours and not the pad's: the cursor path latched only the direction bit that was new in the poll and dropped the one already held, so adding up while holding right lost the right unless both landed inside one 40 ms poll, which is why two buttons had to be slammed together; the whole held mask is used now, and a test presses right and then adds up. The firmware built at 665,552 bytes, SHA-256 `5aaeb473c57f0d864bff4ec6e68dbed0d7e0492d02004b6b09af14205ef29c85`, was put to the card and flashed, and the user reports the pad working smoothly, the d-pad and the R-held pointer both right, and the diagonals fixed. `test_wiipad` passes at 111 checks -- both decodes including the d-pad and every button bit from the trace, the sticks moving nothing, the key map, the d-pad's two modes, the diagonal, the console arrows, and both swap directions -- and `test_osd_desk` at 92, with `check_help_width.py` at 149 entries. WII-003 and WII-004 record the digital sticks and the user's confirmation, and README and `manual/desktop.md` describe the d-pad's two modes and the buttons left free. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 157 ids in the same order and the catalog listing 18 topics, and validated this entry as number 66 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Data format 0x02 remains untested, and the widening that would let the firmware see its nine bytes is reverted; if it is tried again it must be flashed on its own, with no pointer change beside it, so a silent pad can only mean the wider read, and the receiver's link should be checked before the result is believed. ZL, ZR and L are free and wait on the user's decision. The entry-62 TinyCreature test and the standing items of entry 65 are otherwise unchanged.
+
+#### Files Modified:
+
+- README.md
+- manual/desktop.md
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- tools/tests/tb_wiipad.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

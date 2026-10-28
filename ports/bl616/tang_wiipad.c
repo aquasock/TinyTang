@@ -185,12 +185,10 @@ static const char *dpad_seq(uint32_t dir)
     }
 }
 
-/* The Classic's spare buttons as desktop input: Tab and Shift+Tab for focus,
- * Enter, Escape, the start menu, Page Up and Down, and closing a window.  A
- * press is one key; a d-pad direction repeats while it is held.  On the
- * desktop the d-pad moves the pointer instead, one cell a step, which is what
- * the D-pad of a game controller has always done here (tang_pad.c); at the
- * prompt it is the arrow keys, because there is no pointer to move. */
+/* The Classic's buttons as desktop input.  The d-pad is the keyboard's
+ * arrows: the arrow keys normally, and with the right shoulder held (the
+ * keyboard's Alt) the pointer instead, one cell a poll.  The arrows repeat as
+ * the keyboard's do. */
 static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
                               uint32_t now_ms, tang_wii_keys_t *k,
                               bool console_mode, tang_mouse_t *m)
@@ -199,12 +197,8 @@ static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
 
     if (pressed & TANG_WII_BTN_X)      emit(k, "\x1b", 1);
     if (pressed & TANG_WII_BTN_Y)      emit(k, "\t", 1);
-    if (pressed & TANG_WII_BTN_ZL)     emit(k, "\x1b[Z", 3);
-    if (pressed & TANG_WII_BTN_ZR)     emit(k, "\x11", 1);      /* Ctrl+Q */
     if (pressed & TANG_WII_BTN_PLUS)   emit(k, "\r", 1);
     if (pressed & TANG_WII_BTN_MINUS)  emit(k, "\x1b[21~", 5);  /* F10 */
-    if (pressed & TANG_WII_BTN_L)      emit(k, "\x1b[5~", 4);
-    if (pressed & TANG_WII_BTN_R)      emit(k, "\x1b[6~", 4);
     if ((pressed & TANG_WII_BTN_HOME) && k != NULL) {
         k->toggle = true;
     }
@@ -212,41 +206,42 @@ static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
     const uint32_t dpad = s->btn & (TANG_WII_BTN_UP | TANG_WII_BTN_DOWN |
                                     TANG_WII_BTN_LEFT | TANG_WII_BTN_RIGHT);
     const uint32_t fresh = dpad & ~n->btn_prev;
-    const uint32_t dir = fresh != 0 ? fresh : n->dpad_dir;
-    const bool due = fresh != 0 ||
-                     (dpad != 0 && n->dpad_dir != 0 &&
-                      (int32_t)(now_ms - n->dpad_next_ms) >= 0);
+    const bool cursor = (s->btn & TANG_WII_BTN_R) != 0;
+
     if (dpad == 0) {
         n->dpad_dir = 0;
-    } else if (due) {
-        if (console_mode) {
-            const char *seq = dpad_seq(dir);
-            if (seq != NULL) {
-                emit(k, seq, 3);
-            }
-        } else {
-            /* One cell for the press, then an accelerating step while held, in
-             * counts (tang_pad.h counts 16 to a cell). */
-            int cells = 1;
-            if (fresh == 0) {
-                const uint32_t held = now_ms - n->dpad_start_ms;
-                cells = 1 + (int)(held / TANG_WIIPAD_RAMP_MS);
-                if (cells > TANG_WIIPAD_MAX_CELLS) {
-                    cells = TANG_WIIPAD_MAX_CELLS;
-                }
-            }
-            const int step = TANG_MOUSE_COUNTS_PER_CELL * cells;
-            if (dir & TANG_WII_BTN_UP)    m->dy -= step;
-            if (dir & TANG_WII_BTN_DOWN)  m->dy += step;
-            if (dir & TANG_WII_BTN_LEFT)  m->dx -= step;
-            if (dir & TANG_WII_BTN_RIGHT) m->dx += step;
+        n->dpad_next_ms = 0;
+    } else if (cursor) {
+        /* Alt+arrows: there is no key, the pointer moves instead.  The whole
+         * held mask is used, not the newest bit, so pressing a second
+         * direction while the first is held gives a diagonal -- the d-pad
+         * reports both bits, and latching only the new one meant a diagonal
+         * survived only if both landed in the same poll.  With no pointer to
+         * move -- the shell prompt -- the arrows go nowhere, which is what
+         * Alt+arrows do there too. */
+        if (!console_mode && m != NULL) {
+            const int step = TANG_MOUSE_COUNTS_PER_CELL;
+            if (dpad & TANG_WII_BTN_UP)    m->dy -= step;
+            if (dpad & TANG_WII_BTN_DOWN)  m->dy += step;
+            if (dpad & TANG_WII_BTN_LEFT)  m->dx -= step;
+            if (dpad & TANG_WII_BTN_RIGHT) m->dx += step;
         }
-        if (fresh != 0) {
-            n->dpad_start_ms = now_ms;
+        n->dpad_dir = dpad;
+    } else if (fresh != 0) {
+        /* One arrow at once: opposite directions never both fire. */
+        const char *seq = dpad_seq(fresh);
+        if (seq != NULL) {
+            emit(k, seq, 3);
         }
-        n->dpad_dir = dir;
-        n->dpad_next_ms = now_ms + (fresh != 0 ? TANG_WIIPAD_REPEAT_DELAY_MS
-                                               : TANG_WIIPAD_REPEAT_MS);
+        n->dpad_dir = fresh;
+        n->dpad_next_ms = now_ms + TANG_WIIPAD_ARROW_DELAY_MS;
+    } else if (n->dpad_dir != 0 &&
+               (int32_t)(now_ms - n->dpad_next_ms) >= 0) {
+        const char *seq = dpad_seq(n->dpad_dir);
+        if (seq != NULL) {
+            emit(k, seq, 3);
+        }
+        n->dpad_next_ms = now_ms + TANG_WIIPAD_ARROW_RATE_MS;
     }
 
     n->btn_prev = s->btn;
@@ -258,58 +253,46 @@ void tang_wii_apply(tang_wiipad_t *n, const tang_wii_sample_t *s,
 {
     const bool classic = n->kind == TANG_WII_KIND_CLASSIC;
 
-    if (!n->centered || n->relearn) {
-        if (plausible_center(s->lx)) {
-            n->cx = s->lx;
+    if (!classic) {
+        /* The nunchuck's stick is a real analog axis, so it drives the pointer
+         * -- or the shell's history -- directly.  The Classic's sticks are
+         * not read at all: the receiver mirrors them onto the d-pad and never
+         * reports their axes (WII-004), so the d-pad is that part's pointing
+         * input and keys_from_buttons() handles it. */
+        if (!n->centered || n->relearn) {
+            if (plausible_center(s->lx)) {
+                n->cx = s->lx;
+            }
+            if (plausible_center(s->ly)) {
+                n->cy = s->ly;
+            }
+            n->centered = true;
         }
-        if (plausible_center(s->ly)) {
-            n->cy = s->ly;
-        }
-        n->centered = true;
-    }
-    if (classic && (!n->rcentered || n->relearn)) {
-        if (plausible_center(s->rx)) {
-            n->crx = s->rx;
-        }
-        if (plausible_center(s->ry)) {
-            n->cry = s->ry;
-        }
-        n->rcentered = true;
-    }
-    n->relearn = false;
+        n->relearn = false;
 
-    if (console_mode) {
-        /* There is no pointer to move, so the left stick's vertical axis is
-         * the wheel: pushing away walks back through the history, as wheel-up
-         * does.  One detent per TANG_WIIPAD_WHEEL_MS, and the gate re-arms as
-         * soon as the stick comes back to the middle.  The right stick is not
-         * used here, so the two cannot fight over the history. */
-        const int up = s->ly - n->cy;
-        if (up > TANG_WIIPAD_DZ_8 || up < -TANG_WIIPAD_DZ_8) {
-            if ((int32_t)(now_ms - n->next_wheel_ms) >= 0) {
-                m->wheel += up > 0 ? 1 : -1;
-                n->next_wheel_ms = now_ms + TANG_WIIPAD_WHEEL_MS;
+        if (console_mode) {
+            /* There is no pointer to move, so the stick's vertical axis is
+             * the wheel: pushing away walks back through the history, as
+             * wheel-up does.  One detent per TANG_WIIPAD_WHEEL_MS, and the
+             * gate re-arms as soon as the stick comes back to the middle. */
+            const int up = s->ly - n->cy;
+            if (up > TANG_WIIPAD_DZ_8 || up < -TANG_WIIPAD_DZ_8) {
+                if ((int32_t)(now_ms - n->next_wheel_ms) >= 0) {
+                    m->wheel += up > 0 ? 1 : -1;
+                    n->next_wheel_ms = now_ms + TANG_WIIPAD_WHEEL_MS;
+                }
+            } else {
+                n->next_wheel_ms = now_ms;
             }
         } else {
-            n->next_wheel_ms = now_ms;
+            /* The part reports a larger Y for a push away from the user,
+             * while the mouse counts +y downward (tang_pad.h), so Y is
+             * negated. */
+            m->dx += axis_counts(s->lx, n->cx, TANG_WIIPAD_DZ_8,
+                                 TANG_WIIPAD_FULL_8, TANG_WIIPAD_MAX_COUNTS);
+            m->dy -= axis_counts(s->ly, n->cy, TANG_WIIPAD_DZ_8,
+                                 TANG_WIIPAD_FULL_8, TANG_WIIPAD_MAX_COUNTS);
         }
-    } else {
-        /* The part reports a larger Y for a push away from the user, while
-         * the mouse counts +y downward (tang_pad.h), so Y is negated.  Both
-         * sticks' X grow to the right.  The right stick adds at half the
-         * counts. */
-        int dx = axis_counts(s->lx, n->cx, TANG_WIIPAD_DZ_8, TANG_WIIPAD_FULL_8,
-                             TANG_WIIPAD_MAX_COUNTS);
-        int dy = -axis_counts(s->ly, n->cy, TANG_WIIPAD_DZ_8, TANG_WIIPAD_FULL_8,
-                              TANG_WIIPAD_MAX_COUNTS);
-        if (classic) {
-            dx += axis_counts(s->rx, n->crx, TANG_WIIPAD_DZ_8,
-                              TANG_WIIPAD_FULL_8, TANG_WIIPAD_RIGHT_COUNTS);
-            dy -= axis_counts(s->ry, n->cry, TANG_WIIPAD_DZ_8,
-                              TANG_WIIPAD_FULL_8, TANG_WIIPAD_RIGHT_COUNTS);
-        }
-        m->dx += dx;
-        m->dy += dy;
     }
 
     uint8_t b = 0;

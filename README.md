@@ -117,15 +117,17 @@ Building and flashing are under *Quick start* and *Building requirements*.
   identifies as a Classic and is put into data format 3, which is the format
   it wants and the one TinyNES uses. `wiipad status|raw|center` prints which
   part is fitted and what it reports, and `center` re-learns the rest position
-  while both sticks sit untouched; `nunchuck` is an alias. On a Classic the
-  d-pad moves the pointer a cell a press and accelerates while held, up to
-  the nunchuck's own speed -- a stick on a receiver that reports it as a
-  d-pad still feels analog -- and at the prompt, where there is no pointer,
-  it is the arrow keys. The spare buttons are keys
-  the desktop already understands: Y is Tab and ZL Shift+Tab, X is Escape, +
-  is Enter, - opens the start menu, L and R are Page Up and Page Down, ZR
-  closes the focused window, and Home switches the screen between the desktop
-  and whatever core is running.
+  while both sticks sit untouched; `nunchuck` is an alias. A Classic's d-pad
+  works as the keyboard's arrows work here: the arrow keys normally, and with
+  the R shoulder held -- the keyboard's Alt -- it moves the pointer instead,
+  a cell a poll. The sticks themselves are not used: a receiver for the
+  NES/SNES Classic mirrors them onto the d-pad and never reports their axes,
+  so on such a pad the stick and the d-pad are the same input. The other
+  buttons are keys the desktop already understands: Y is Tab, X is Escape, +
+  is Enter, - opens the start menu, and Home switches the screen between the
+  desktop and whatever core is running. ZL, ZR and L are left unmapped for
+  now. A diagonal needs no special timing: pressing a second direction while
+  the first is held is a diagonal, because the whole held mask is used.
 - **The mouse at the console prompt.** With the desktop not running the wheel
   scrolls the shell's own history -- one detent is one Up or Down, so wheel up
   once recalls the last command -- and a left click presses Enter on the line

@@ -75,16 +75,14 @@ extern "C" {
  * many milliseconds. */
 #define TANG_WIIPAD_WHEEL_MS 140
 
-/* A held d-pad repeats: one cell for the press, then a step every
- * TANG_WIIPAD_REPEAT_MS after TANG_WIIPAD_REPEAT_DELAY_MS, with the step
- * growing one cell for every TANG_WIIPAD_RAMP_MS held up to
- * TANG_WIIPAD_MAX_CELLS.  Digital input therefore starts precise and
- * accelerates to the nunchuck's own six cells a poll, which is what the
- * receiver's digital mapping of an analog stick otherwise cannot give. */
-#define TANG_WIIPAD_REPEAT_DELAY_MS 150
-#define TANG_WIIPAD_REPEAT_MS        40
-#define TANG_WIIPAD_RAMP_MS         200
-#define TANG_WIIPAD_MAX_CELLS         6
+/* The Classic's d-pad is its only pointing input: the receiver maps the pad's
+ * analog sticks onto it and never reports their axes (WII-004), so the driver
+ * reads no sticks on that part.  It works as the keyboard's arrows work here:
+ * normally they are the arrow keys, and with the right shoulder held they
+ * move the pointer instead, one cell a poll.  The arrows repeat as the
+ * keyboard's do: this long before the first repeat, then this often. */
+#define TANG_WIIPAD_ARROW_DELAY_MS 500
+#define TANG_WIIPAD_ARROW_RATE_MS   50
 
 /* The bytes a poll may produce for the desktop's input, and the screen-switch
  * request Home makes (it is not a key: the layer's toggle is firmware-side). */
@@ -155,8 +153,7 @@ typedef struct {
     uint8_t  buttons;      /* the pointer buttons last reported */
     uint32_t btn_prev;     /* the key buttons held at the last report */
     uint32_t dpad_dir;     /* the d-pad direction repeating, 0 when none */
-    uint32_t dpad_next_ms; /* when the next repeat is due */
-    uint32_t dpad_start_ms;/* when the direction was pressed, for the ramp */
+    uint32_t dpad_next_ms; /* when the next arrow repeat is due */
     uint32_t next_try_ms;  /* when to retry a failed wake-up or read */
     uint32_t next_wheel_ms;
     uint32_t next_id_ms;   /* when to re-read the identity */
