@@ -253,8 +253,16 @@ def to_ascii(text: str) -> str:
 
 
 def clean_title(raw: bytes) -> bytes:
-    """A display title, ASCII, whitespace-collapsed, with underscores expanded."""
+    """A display title: ASCII, whitespace-collapsed, underscores expanded.
+
+    Gutenberg's own titles carry MARC subfield markers -- "Title : $b subtitle",
+    "Name ; $c statement" -- which are cataloguing punctuation, not part of the
+    name a reader should see.
+    """
     text = raw.decode("utf-8", "replace").replace("_", " ")
+    text = re.sub(r"\s*:\s*\$b\s*", ": ", text)
+    text = re.sub(r"\s*;\s*\$c\s*", "; ", text)
+    text = re.sub(r"\s*[:;]\s*$", "", text)
     text = " ".join(to_ascii(text).split())
     return text.encode("ascii", "ignore")
 
@@ -270,7 +278,13 @@ def title_from_url(url: bytes) -> bytes:
     if base.lower().endswith(b".html"):
         base = base[:-5]
     base = re.sub(rb"\.\d+$", b"", base)
-    return base.replace(b"_", b" ")
+    base = base.replace(b"_", b" ")
+    # Gutenberg's URLs carry MARC subfield markers: "Title : $b subtitle" and
+    # "Author ; $c statement".  They are punctuation, not part of the title.
+    base = re.sub(rb"\s*:\s*\$b\s*", b": ", base)
+    base = re.sub(rb"\s*;\s*\$c\s*", b"; ", base)
+    base = re.sub(rb"\s*[/:]\s*$", b"", base)
+    return base
 
 
 def redirect_target(raw: bytes) -> bytes | None:

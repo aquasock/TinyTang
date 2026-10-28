@@ -2515,3 +2515,36 @@ The manual pack is a copy: its chapters exist twice on the card, as Markdown in 
 - User Test: PASS
 
 ---
+
+## 72 COMMIT Unreleased 2026-10-28T14:41:41-07:00
+
+#### Coming From:
+
+Unreleased 881df07
+
+#### Purpose:
+
+Give a Gutenberg shelf a script the user can run per class, and take Gutenberg's MARC cataloguing markers out of book titles.
+
+#### Outcome:
+
+`tools/gutenberg_shelf.sh <class>` builds one shelf from one Library of Congress class archive: it reads the Kiwix listing for the newest `gutenberg_en_lcc-<class>_<date>.zim`, downloads it resumably, checks it against the archive's own MD5 trailer, converts it with the two settings a book archive needs (`--min-chars 2000` to drop the author, bookshelf and home pages each archive carries beside its books, and `--max-article-bytes 2097152` because a novel is 300 to 700 KB), and verifies the pack with every record and a sampled body read. Each stage prints its progress -- bytes, percentage, rate and estimate for the download, a percentage for the hash, the converter's own entries/rate/estimate, a percentage for the check -- and each stops the chain rather than letting a bad archive become a bad pack. With `CARD` set and mounted it installs the result into `$CARD/root/books/<name>`, and when the card is not mounted it says so and leaves the pack in the scratch folder instead of writing into a mountpoint. `tools/shelf-b.sh` and `tools/shelf-q.sh` are one-line wrappers for philosophy and religion and for science, each setting the card path so the run finishes with the shelf installed; the class list is in `manual/gutenberg.md` and any other letter works with the same script. The same cycle fixed what a reader sees on a Gutenberg shelf: the archive's titles carry MARC subfield markers, so a book listed as "A philosophicall essay for the reunion of the languages : $b or, The art of knowing all by the mastery of one" now reads "A philosophicall essay for the reunion of the languages: or, The art of knowing all by the mastery of one", because `clean_title()` turns ` : $b ` into `: ` and `; $c ` into `; ` and trims a trailing one. That marker lives in the dirent's own title, not only in its URL, which is why cleaning the URL fallback alone left it in place. The card's class-P shelf was rebuilt with the fix and re-verified: 18 books, 940 chapters, 18 authors. The script was exercised end to end on class PF (12.6 MB, 20 books, 501 chapters) including the install step, and that test shelf was then removed from the card so only class P remains. The pack contract and converter tests pass at 40 and 52 checks. No firmware was built or deployed, and nothing on the board changed.
+
+#### Next Steps:
+
+The user runs `tools/shelf-b.sh` and `tools/shelf-q.sh`; their results become the next cycle's content record, and between them they will be the largest packs the Gutenberg reader has been tried with (philosophy and religion is 6.4 GB of archive, science 17.7 GB, each roughly a quarter of that as a pack). The class list and the meaning of each letter belong in `manual/gutenberg.md` rather than only in a conversation. The known limits of the reader are unchanged and still worth a cycle of their own: contents stop at 64 chapters, one saved position for the whole app, no author in a book header, and no search inside a book. The full English Wikipedia download continues under `/run/media/vash/GIT/tinytang-scratch` and had not finished at this entry.
+
+#### Files Modified:
+
+- tools/gutenberg_shelf.sh
+- tools/make_wiki_pack.py
+- tools/shelf-b.sh
+- tools/shelf-q.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
