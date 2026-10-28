@@ -10,6 +10,7 @@
 #include "tang_pad.h"
 #include "tang_key.h"
 #include "tang_ble.h"
+#include "tang_nunchuck.h"
 #include "tdsh_bl616.h"
 
 /* The console writer matches this string byte for byte to keep the query off
@@ -513,6 +514,10 @@ static void desk_poll(void)
      * frame for whatever program is running under the layer. */
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
+    /* The nunchuck beside the Bluetooth mouse: one pointer, and the same
+     * wheel for the shell's history.  It reads the desktop core's I2C bus, so
+     * it does nothing while another core holds the fabric. */
+    (void)tang_nunchuck_poll(&mouse, !s_pointer);
     pointer_frame(&mouse);
 
     /* The keyboard beside it, from the same report the desktop types from, so
@@ -612,6 +617,7 @@ static void desk_poll_hidden(void)
 {
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
+    (void)tang_nunchuck_poll(&mouse, false);
     pointer_frame(&mouse);
 
     /* After the pointer, so a keystroke and a pointer move arriving in the
@@ -692,6 +698,7 @@ int tang_osd_desk_set(bool on)
     palette_init();
     s_in_head = s_in_tail = 0;
     tang_pad_reset(&s_pad, TANG_DESK_COLS, TANG_DESK_ROWS);
+    tang_nunchuck_reset();
     tang_key_reset(&s_ble.kbd);
     td_vterm_init(&s_vt, TANG_DESK_COLS, TANG_DESK_ROWS);
     s_vt.reply = desk_reply;

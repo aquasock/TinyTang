@@ -34,6 +34,7 @@ extern "C" {
 #include "bflb_mtimer.h"
 #include "tang_clock.h"
 #include "tang_fpga_link.h"
+#include "tang_nunchuck.h"
 int tdsh_printf(const char *fmt, ...);
 bool tang_core_i2c_bus(void);
 }
@@ -704,6 +705,28 @@ extern "C" bool tang_clock_hw_write(uint8_t reg, const uint8_t *buf, unsigned n)
 extern "C" uint64_t tang_clock_hw_ms(void)
 {
     return bflb_mtimer_get_time_ms();
+}
+
+// ---- the nunchuck's hardware (tang_nunchuck.h) ----
+
+extern "C" bool tang_nunchuck_hw_ready(void)
+{
+    return tang_core_i2c_bus() && tang_fpga_link_open() == 0 && !tang_fpga_pipe_open();
+}
+
+extern "C" bool tang_nunchuck_hw_read(uint8_t reg, uint8_t *buf, unsigned n)
+{
+    return n >= 1 && n <= 8 && transaction(OP_READ, TANG_NUNCHUCK_ADDR, reg, n, nullptr, buf);
+}
+
+extern "C" bool tang_nunchuck_hw_write(uint8_t reg, const uint8_t *buf, unsigned n)
+{
+    return n >= 1 && n <= 8 && transaction(OP_WRITE, TANG_NUNCHUCK_ADDR, reg, n, buf, nullptr);
+}
+
+extern "C" uint32_t tang_nunchuck_hw_ms(void)
+{
+    return (uint32_t)bflb_mtimer_get_time_ms();
 }
 
 extern "C" void tang_i2c_mux_for_game_core(void)

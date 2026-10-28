@@ -10,8 +10,10 @@ the BL616, over whatever core is loaded.
 - The close box in the title bar closes it.
 - The taskbar at the bottom lists open windows and the start menu.
 
-Keyboard and mouse come over Bluetooth. The pointer appears when a
-mouse is paired; until then the keyboard alone drives everything.
+Keyboard and mouse come over Bluetooth, and a Wii nunchuck on the USB-A
+adapter drives the same pointer: the stick moves it, Z is the left button
+and C the right. The pointer appears when a mouse is paired; without
+either, the keyboard alone drives everything.
 
 ## F12
 

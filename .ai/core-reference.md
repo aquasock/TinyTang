@@ -118,6 +118,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 - topic_id: TOOL
   name: "Toolchain behaviour"
   description: "Bouffalo SDK, CherryUSB, Gowin programmer, and RISC-V toolchain behaviour that affects correctness, plus the provenance and licence of code vendored into this project."
+
+- topic_id: WII
+  name: "Wii extension controllers"
+  description: "The controllers on the USB-A port's Wii adapter: how one is woken and identified, the nunchuck's report and its use as the pointer, and the Classic Controller's different format."
 ```
 
 ---
@@ -273,6 +277,9 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What is on the FPGA module's JTAG and UART header? | PSX | PSX-004 |
 | What memory is on this board? | PSX | PSX-005 |
 | How do I tell whether a core is loaded, and what is a core ID? | PSX | PSX-006 |
+| How is a Wii extension controller woken, and what does it send before that? | WII | WII-001 |
+| What does a nunchuck report, and how is it mapped to the desktop's pointer? | WII | WII-002 |
+| Why does a Classic Controller not work as a pointer? | WII | WII-003 |
 
 ---
 
@@ -434,6 +441,9 @@ TOOL-019: "tang_key.c translates the Bluetooth keyboard's HID usages into the AN
 TOOL-020: "Output printed before tangload has no raster to appear on, because the board draws nothing until a core is programmed, and osd desk on mirrors the console from that point forward rather than replaying it, so boot narration the user must read has to come after the core is loaded -- a line placed before tangload is reachable only by someone already attached to the USB console"
 TOOL-021: "On the GW5AST-138C, SPINE17-21 and SPINE23 clock only while select ports in the logic tiles at rows 27/81, columns 92-94 hold VSS: the vendor ties SPINE19's (27,94)/(81,94) CLK0 and CLK1 to VSS, apicula asked for VCC, which the .fse cannot express, and the placer put logic there, so every open-flow clk through those spines was dead until apicula 04bc3c5 and nextpnr 8be8657b; an open-flow core with clk on SPINE18 now runs"
 TOOL-022: "The desktop core's source list lives in both fpga/desktop/build.tcl and tools/desktop_open/synth.ys, so a new .sv must be added to each; missing from synth.ys fails loudly with unknown module, missing from build.tcl breaks only the Gowin path"
+WII-001: "A Wii extension controller at 0x52 on the extension bus, 400 kHz, is woken by writing 0x55 to register 0xF0 and 0x00 to 0xFB, which also disables encryption; until then its data reads return 0xff, as this nunchuck's first read did"
+WII-002: "The nunchuck's six bytes at 0x00 are stick X, stick Y, accelerometer X/Y/Z and a last byte whose bits 0 and 1 are Z and C, active low; measured on this part, center 123/131 with 98 counts of travel each way and Y growing upward"
+WII-003: "A Classic Controller identifies as 00 00 A4 20 01 01 with data format 0x01 at 0xFE, packs a 6-bit left stick into bits 5:0 of bytes 0 and 1 with the right stick in bits 7:6, and holds 15 buttons in bytes 4 and 5, so it is not a nunchuck report"
 ```
 
 ---
@@ -670,7 +680,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "TinyNES, .ai/core-reference.md records WII-001 and WII-002 at b5e1899, and fpga/ae350_soc/wii_pads.sv (SCL read-back, 1 ms timeout, CONVERT_US 200)"
     - "Adafruit DS3231 Precision RTC Breakout and Wii Nunchuck Breakout Adapter (4836) product pages, as carried in this file's earlier PMOD-007 and TinyNES WII-002"
     - "This project's fpga/desktop/i2c_master.sv, fpga/desktop/desktop_pmod.sv, fpga/desktop/desktop.cst, tools/tests/sim/tb_i2c_master.sv, tools/tests/sim/tb_desktop_pmod.sv, ports/bl616/tang_i2c.cpp, ports/bl616/tang_clock.c and ports/bl616/phosphor/pmod_sockets.cpp"
-  verification: "On this board on 2026-10-23 (core-log entry 23), with the adapter and the DS3231 on one STEMMA QT chain: the first ABI 1.5 core, whose engine did not read SCL, reached the DS3231 but NACKed the controller's wake-up; with SCL read-back the wake-up writes ACKed and every read gave 0xff; with STOP, 200 us and a separate read, desktop.bff603129045.bin read the identity 00 00 A4 20 01 01 and data a0 20 10 62 ff ff, byte 5 going to bf while the user held B, while scans found only 0x68. The DS3231 had lost its time (OSF set, 2000-01-01), was set with tangi2c rtc set, then held UTC across reboots and a TinyNES session, and the user set the zone in Date & time and accepted the desktop clock across a reboot. tb_i2c_master and tb_desktop_pmod failed on each of six planted engine faults. The pin voltage with both boards' pull-ups was not measured. Revised 2026-10-24 (core-log entry 41): a PCA9548A switch was placed between the port and the devices, so both are now reached through a channel; BRD-012 records the switch. Revised 2026-10-25 (core-log entry 44): a crossed replacement cable produced a NACK at every address with the chain fitted and working before and after, which establishes that the crossing and not a fault behind it silences the bus, and that the engine cannot report the difference."
+  verification: "On this board on 2026-10-23 (core-log entry 23), with the adapter and the DS3231 on one STEMMA QT chain: the first ABI 1.5 core, whose engine did not read SCL, reached the DS3231 but NACKed the controller's wake-up; with SCL read-back the wake-up writes ACKed and every read gave 0xff; with STOP, 200 us and a separate read, desktop.bff603129045.bin read the identity 00 00 A4 20 01 01 and data a0 20 10 62 ff ff, byte 5 going to bf while the user held B, while scans found only 0x68. The DS3231 had lost its time (OSF set, 2000-01-01), was set with tangi2c rtc set, then held UTC across reboots and a TinyNES session, and the user set the zone in Date & time and accepted the desktop clock across a reboot. tb_i2c_master and tb_desktop_pmod failed on each of six planted engine faults. The pin voltage with both boards' pull-ups was not measured. Revised 2026-10-24 (core-log entry 41): a PCA9548A switch was placed between the port and the devices, so both are now reached through a channel; BRD-012 records the switch. Revised 2026-10-25 (core-log entry 44): a crossed replacement cable produced a NACK at every address with the chain fitted and working before and after, which establishes that the crossing and not a fault behind it silences the bus, and that the engine cannot report the difference. Revised 2026-10-28 (core-log entry 63): a genuine nunchuck on the adapter answered ff ff ff ff ff ff for its data until it was woken with 0x55 to 0xF0 and 0x00 to 0xFB, then reported normally; that is a sleeping part (WII-001), and it is distinct from the Classic Controller result above, which came after its wake-up ACKed on an engine that read with a repeated START. The nunchuck is now read as the desktop pointer (WII-002)."
 
 - record_id: BRD-012
   kind: BOARD
@@ -684,7 +694,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "TI PCA9548A datasheet SCPS143G (Rev. G, March 2021), sections 1, 3, 8.4 to 8.6 and 9.2.1"
     - "This project's ports/bl616/tang_i2c_mux.c, ports/bl616/tang_i2c_mux.h, ports/bl616/tang_i2c.cpp and ports/bl616/tdsh_tang_flash.c"
     - "The Adafruit PCA9548A breakout in use, unmodified, its address pins left low"
-  verification: "On this board on 2026-10-24 (core-log entry 41) with the switch in place: the firmware before this cycle found 0x70 and no RTC, and the new one reports the switch, scans channel 0 with 0x52, channel 1 with 0x1c, channel 6 with 0x68 and the others with only the switch, reads 0x3d at 0x1c/0x0f after `tangi2c mux 1`, and set and read back the DS3231 through channel 6 with OSF clear and the clock showing the correct local time. The first build's `tangi2c mux` status deselected the bus it was reporting; it was corrected before the deployed build. The pull-up rail and the pin voltage with the switch fitted were not measured. Revised 2026-10-25 (core-log entry 44): the magnetometer is off the bench, channel 1 is unassigned, and channel 7 holds an MLX90614 at 0x5a that ACKs its address and returns 00 for registers 0x03, 0x06, 0x07 and 0x0e while the DS3231 read 35 28 21 07 25 10 26 through the same engine; the firmware now names the channels wii, rtc and ir only. Revised 2026-10-26 (core-log entry 45): the user removed the MLX90614 permanently and fitted the MCP23017 solenoid board on channel 7, where `tangi2c scan` found 0x20 alone; the firmware's map is unchanged."
+  verification: "On this board on 2026-10-24 (core-log entry 41) with the switch in place: the firmware before this cycle found 0x70 and no RTC, and the new one reports the switch, scans channel 0 with 0x52, channel 1 with 0x1c, channel 6 with 0x68 and the others with only the switch, reads 0x3d at 0x1c/0x0f after `tangi2c mux 1`, and set and read back the DS3231 through channel 6 with OSF clear and the clock showing the correct local time. The first build's `tangi2c mux` status deselected the bus it was reporting; it was corrected before the deployed build. The pull-up rail and the pin voltage with the switch fitted were not measured. Revised 2026-10-25 (core-log entry 44): the magnetometer is off the bench, channel 1 is unassigned, and channel 7 holds an MLX90614 at 0x5a that ACKs its address and returns 00 for registers 0x03, 0x06, 0x07 and 0x0e while the DS3231 read 35 28 21 07 25 10 26 through the same engine; the firmware now names the channels wii, rtc and ir only. Revised 2026-10-26 (core-log entry 45): the user removed the MLX90614 permanently and fitted the MCP23017 solenoid board on channel 7, where `tangi2c scan` found 0x20 alone; the firmware's map is unchanged. Revised 2026-10-28 (core-log entry 63): channel 0's adapter now carries a Wii nunchuck, which ports/bl616/tang_nunchuck.c reads at 0x52 on every desk poll while the desktop core is loaded; 0x52 still routes to channel 0 by address, so the nunchuck and the RTC on channel 6 leave each other alone."
 
 - record_id: BRD-013
   kind: BOARD
@@ -2529,6 +2539,47 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "This project's tools/desktop_open/synth.ys: the read_slang argument list"
   verification: "Observed on 2026-10-27: adding pmod_uart.sv to build.tcl alone still failed synthesis with `unknown module 'pmod_uart'` until it was added to synth.ys as well."
 
+- record_id: WII-001
+  kind: EXTERNAL
+  topic_id: WII
+  title: "A Wii extension controller is woken by two register writes, and answers 0xff until it is"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "A Wii extension controller answers at 7-bit address 0x52 on the Wii's extension bus, which WiiBrew gives as 400 kHz. The documented wake-up is a write of 0x55 to register 0xF0 followed by a write of 0x00 to 0xFB; WiiBrew calls this the new initialisation, says it works on all extensions including third-party wireless ones, and says it leaves the extension bytes unencrypted, so no 0x17 transform is needed. A part that has not been woken answers 0xff for its data reads."
+  consequence: "ports/bl616/tang_nunchuck.c sends those two writes on the first poll after the desktop layer starts, and again whenever a six-byte data read comes back all 0xff -- which is what a controller replugged under power looks like. 0xff is therefore a sleeping part to be retried, never an absent one. The engine underneath (BRD-011) reads the way this protocol expects: it writes the register, sends STOP, waits 200 us and reads separately, and it waits for SCL to rise before timing the high half, which covers the part's clock stretching. The 100 kHz the engine runs at is an implementation choice, below the bus's rating."
+  sources:
+    - "WiiBrew, Wiimote/Extension Controllers, sections Registers / Initialization and Identification (The New Way), fetched 2026-10-28"
+    - "TinyNES's WII-001 as carried by this file's BRD-011: wake-up 0x55 to 0xF0 and 0x00 to 0xFB, six bytes at 0xFA"
+    - "This project's ports/bl616/tang_nunchuck.c and ports/bl616/tang_i2c.cpp"
+  verification: "On this board on 2026-10-28 (core-log entry 63), with a genuine nunchuck on the Adafruit adapter: tangi2c read 52 00 6 returned ff ff ff ff ff ff before any wake-up, and the same read returned 7b 81 b2 7e 88 eb after tangi2c write 52 F0 55 and tangi2c write 52 FB 00, with nothing else changed. This is not the same symptom as the Classic Controller's 0xff in BRD-011, which came from an engine that read with a repeated START after that part's wake-up ACKed."
+
+- record_id: WII-002
+  kind: EXTERNAL
+  topic_id: WII
+  title: "The nunchuck's six-byte report, and the values measured on this part"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "With encryption disabled by the wake-up, a nunchuck returns six bytes at register 0x00: stick X, stick Y, then three accelerometer bytes, then a last byte whose bit 0 is Z and bit 1 is C, both active low. On the part fitted here the stick reads 0x7b (123) at rest on X and 0x83 (131) on Y, and travels to 0x18 (24) at full left, 0xdd (221) at full right, 0x21 (33) at full down and 0xe5 (229) at full up: about 98 counts each way on both axes. Y increases upward, the opposite of the mouse convention. Z and C were each confirmed held, not tapped."
+  consequence: "ports/bl616/tang_nunchuck.c learns the center from the first resting sample after a wake-up, refuses a center outside 88 to 168 so a held stick cannot become the zero, and maps each axis with an 8-count dead zone and a squared response to at most 96 counts a poll -- six cells on the 80x45 grid at 16 counts to a cell (tang_pad.h). Y is negated so a push away from the user moves the pointer up. Z is the mouse's left button and C the right; at the shell prompt the vertical axis becomes wheel detents, one per 140 ms, so the stick walks the shell's history as the Bluetooth mouse's wheel does. The accelerometer bytes are neither decoded nor used."
+  sources:
+    - "WiiBrew, Wiimote/Extension Controllers, Data format code (0x00 is the nunchuck's), fetched 2026-10-28"
+    - "This board's console on 2026-10-28: thirty-two readings of tangi2c read 52 00 6 taken while each stick direction and each button was held (core-log entry 63)"
+    - "This project's ports/bl616/tang_nunchuck.c and ports/bl616/tang_pad.h"
+  verification: "Measured on the board on 2026-10-28 (core-log entry 63) by holding one state per run of reads: center 7b 83, full left 18, full right dd, full down 21, full up e5, Z dropping bit 0 of byte 5 to 0, C dropping bit 1. The host test tools/tests/tb_nunchuck.c checks the decode and the mapping against these values, with checks for the dead zone, both directions of both axes, the Y inversion, the buttons and the console wheel gate."
+
+- record_id: WII-003
+  kind: EXTERNAL
+  topic_id: WII
+  title: "A Classic Controller reports a different six-byte format, and is not a nunchuck"
+  status: SOURCED
+  verified_date: 2026-10-28
+  statement: "A Classic Controller identifies as 00 00 A4 20 01 01 in the six bytes at 0xFA (the Pro as 01 00 A4 20 01 01), with data format code 0x01 at 0xFE. Its default report, format 0x01, is six bytes: bits 5:0 of byte 0 are the left stick's X and bits 5:0 of byte 1 its Y, both 6-bit values, with the right stick's high bits in bits 7:6 of the same bytes; bytes 2 and 3 carry the right stick's low bits and the two analog triggers; bytes 4 and 5 are 15 buttons, active low, with d-pad up as bit 0 and d-pad left as bit 1 of byte 5. Formats 0x02 and 0x03 widen the sticks to 10 bits and add bytes."
+  consequence: "A nunchuck decoder applied to a Classic reads its centered stick (about 31) as hard over on both axes and its d-pad as Z and C, so ports/bl616/tang_nunchuck.c identifies the part at 0xFA after each wake-up and refuses anything that is not a nunchuck. Pointing with a Classic is possible -- its left stick and its A and B buttons would do -- but needs its own decode and a bench pass for the 6-bit centers, so it is not attempted yet."
+  sources:
+    - "WiiBrew, Wiimote/Extension Controllers, Identification (the identity table) and Data format code (0x00 nunchuck, 0x01 Classic), fetched 2026-10-28"
+    - "WiiBrew, Wiimote/Extension Controllers/Classic Controller, Data Format 0x01 (the bit table for the six bytes), fetched 2026-10-28"
+  verification: "Sourced only. The Classic readings in BRD-011 were taken on 2026-10-23 on the repeated-START engine and predate this record, and the identification path added in core-log entry 63 has been exercised against a nunchuck, not a Classic; the guard is covered by the host test with a recorded identity, not on hardware."
+
 ```
 
 ---
@@ -2562,7 +2613,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-27
+last_reviewed: 2026-10-28
 ```
 
 ---

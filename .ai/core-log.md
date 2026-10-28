@@ -2177,3 +2177,41 @@ For handoff, the firmware and final four-file bundle are already installed. Wake
 - User Test: NOT RUN
 
 ---
+## 63 COMMIT Unreleased 2026-10-28T00:28:25-07:00
+
+#### Coming From:
+
+Unreleased 238296a
+
+#### Purpose:
+
+Make the Wii nunchuck on the board's USB-A adapter drive TinyDesk's pointer, with Z and C as its buttons and the stick as the shell's history at the prompt.
+
+#### Outcome:
+
+The part was characterized on the bench before any code: `tangi2c read 52 00 6` returned `ff ff ff ff ff ff` until 0x55 was written to 0xF0 and 0x00 to 0xFB, after which the same read returned live data, so a Wii extension controller answers 0xff until it is woken rather than when it is absent; BRD-011's Classic Controller had sent 0xff after its wake-up ACKed on the older repeated-START engine, so that was the read shape and not this, and the record now separates the two. Holding one state per run of reads measured the part: center 0x7b/0x83 (123/131), full left 0x18, full right 0xdd, full down 0x21 and full up 0xe5, about 98 counts each way with Y growing upward, and Z as bit 0 and C as bit 1 of byte 5, both active low. `ports/bl616/tang_nunchuck.{c,h}` is the driver: it sends the two wake-up writes on the first poll after the layer starts and again whenever a read comes back all 0xff, reads the identity at 0xFA once per wake-up and refuses a part that is not a nunchuck because a Classic's 6-bit stick would read as hard over and its d-pad as the buttons, learns the center from the first resting sample with an 88 to 168 bound, and maps each axis with an 8-count dead zone and a squared response to 96 counts a poll -- six cells on the 80x45 grid at 16 counts to a cell -- with Y negated so a push away moves the pointer up. Z and C merge into the left and right buttons of the same `tang_mouse_t` the Bluetooth mouse fills, and at the shell prompt the vertical axis becomes wheel detents, one per 140 ms, so the stick walks the shell's history as the mouse's wheel does. `tang_i2c.cpp` supplies the read, write and millisecond hooks on the same `transaction()` path as the RTC, which routes 0x52 to the switch's channel 0 by address; `tang_osd_desk.c` polls it beside the Bluetooth mouse in both the shown and the hidden path and resets it when the layer starts; `tdsh_platform_bl616.c` registers `nunchuck status|raw|center`. `tools/tests/tb_nunchuck.c` and `test_nunchuck.sh` pass at 51 checks -- the decode, the identity, the dead zone, all four directions, the Y inversion, the buttons and their edges, the console wheel gate, center learning and its refusal, the wake-up and 0xff retry, and a Classic being refused -- and `tb_osd_desk.c` gained three wiring checks for 92. `test_pad`, `test_i2c_mux`, `test_clock`, `test_ini`, `test_key` and `test_frames` pass and `check_help_width.py` reports 147 entries with none over 80 columns. The firmware built with the local SDK 2.3.36 and the Xuantie toolchain at 661,424 bytes, SHA-256 `35dd962cd5d9a887f536801cdda6d083b9d5efb949131107997fe848f29eaa9a`, with no warning outside `tang_jtag_programmer.c`, and `strings` finds the command and its text in the image. It was put to the card and flashed with `tangflash`, the board was power-cycled and `platform` reported `238296a-dirty.c12ea87`; `nunchuck status` then read ready with center 123/130 and report `7b 82 b1 85 8f 83`, pushing the stick at the prompt recalled the shell's history in order, and the user reports the pointer, its direction, the dead zone, Z dragging a window and C working, and passes the cycle. `.ai/core-reference.md` gained the WII topic with WII-001 (the wake-up, VERIFIED), WII-002 (the report and the values measured on this part, VERIFIED) and WII-003 (the Classic's format, SOURCED), and BRD-011 and BRD-012 carry dated revisions. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 156 ids in the same order and the catalog listing 18 topics, and validated this entry as number 63 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+A Classic Controller would need its own decode, its format now recorded in WII-003, and a bench pass for the centers of its 6-bit axes; the accelerometer is unused and should stay so, because tilt is too noisy to aim with. The dead zone, the 98-count full scale and the 96-count ceiling are the tunables if the feel wants changing, all in `tang_nunchuck.h`. Nothing else is outstanding from this cycle: the RTC on channel 6 and the nunchuck on channel 0 leave each other alone, and the standing items of entry 62 are unchanged.
+
+#### Files Modified:
+
+- README.md
+- manual/desktop.md
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_nunchuck.c
+- ports/bl616/tang_nunchuck.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tdsh_platform_bl616.c
+- tools/tests/tb_nunchuck.c
+- tools/tests/tb_osd_desk.c
+- tools/tests/test_nunchuck.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
