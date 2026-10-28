@@ -68,6 +68,7 @@ void td_tinycreature_register(void); /* tinycreature_app.cpp: the Celtic scene *
 void td_bluetooth_register(void);  /* td_bluetooth_app.c */
 void td_help_register(void);       /* td_help_app.cpp: TinyHelp, the card's manual */
 void td_kiwix_register(void);      /* td_kiwix_app.cpp: TinyKiwix, the offline encyclopedia */
+void td_gutenberg_register(void);  /* td_gutenberg_app.cpp: TinyGutenberg, books on the card */
 
 /* The desktop's root is the card -- the same filesystem the shell uses, so
  * both see the same files. */
@@ -231,6 +232,7 @@ void td_apps_register_all(void)
     td_tinycreature_register(); /* tinycreature_app.cpp: TinyCreature */
     td_help_register();        /* td_help_app.cpp: the TinyHelp reader */
     td_kiwix_register();       /* td_kiwix_app.cpp: the TinyKiwix reader */
+    td_gutenberg_register();   /* td_gutenberg_app.cpp: the TinyGutenberg reader */
     td_update_register();       /* td_update_app.c: from the card, not the network */
     td_bluetooth_register();    /* td_bluetooth_app.c: Settings' Bluetooth button */
     td_about_register();

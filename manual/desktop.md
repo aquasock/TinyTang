@@ -34,6 +34,7 @@ playing, and back again.
      Terminal   a shell inside a window
      TinyHelp   this manual
      TinyKiwix  an offline encyclopedia
+     TinyGutenberg  books on the card
      Phosphor   music
      TinyNES    games, and their settings
      TinyCreature  the Celtic land

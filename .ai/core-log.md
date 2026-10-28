@@ -2431,3 +2431,42 @@ The reader is next: a TinyGutenberg window over these tables -- a Library of she
 - User Test: N/A
 
 ---
+
+## 70 COMMIT Unreleased 2026-10-28T14:04:33-07:00
+
+#### Coming From:
+
+Unreleased 10d43d0
+
+#### Purpose:
+
+Add TinyGutenberg, a desktop reader for Project Gutenberg books that uses the pack's chapter and author tables, and move the pack plumbing both readers use into one module.
+
+#### Outcome:
+
+TinyGutenberg is a second reader over the same pack format, because a book is read rather than looked up: the Library lists shelves, a shelf's books browse by title or, through the swap button, by author surname, an author's row lists that author's books, and a book opens with a Contents button that reads `wiki.parts` and jumps to a chapter. The reading position -- shelf, book record number and page -- is written to `/root/gutenberg.pos` when the book is left and when the window closes, and the app opens on it, so a book resumes where it stopped. The same 12 KB page buffer as TinyKiwix is used, and the page history gained the fix that had been standing since entry 68: past the 32 remembered page starts, `Page Up` now walks back from the top of the body instead of jumping to an offset that was never recorded, which a 1.1 MB book reaches at about ninety pages; TinyKiwix received the same fix. Pack discovery, metadata, index records and the title search moved out of TinyKiwix into `ports/bl616/td_pack.c` and `td_pack.h`, which hold no state and take the caller's FatFS handle, so both apps can have a shelf open at once; TinyKiwix was refactored onto it and behaves as before. The user's first test found a fault this cycle then had to fix: opening one book froze the board, and the crash record read `store access fault, mcause 0x38000007, mepc 0xa0039370, mtval 0x00000000, task shell` -- a write through a null pointer, which was `f_read` being handed `nullptr` for its bytes-read count in the chapter-table binary search, so it wrote the count to address zero. The same pass fixed a second fault of the kind this project has met before: the author's book list called `td_pack_record()` while its rows were being drawn, putting FatFS inside a draw callback where TinyHelp's first version hard-faulted, so those titles are now read when the list is built. String copies out of the fixed-width chapter and author rows are bounded, because a 48-byte field can fill with no terminator. A test shelf was converted from Kiwix's Library of Congress class P (38 MB): 18 books, 938 chapters, 18 authors, 9.6 MB, placed at `/root/wiki/gutenberg-p` and passing the checker; the manual gained `gutenberg.md` with the two converter settings a book archive needs -- a two-megabyte article cap, since a novel is 300 to 700 KB, and `--min-chars 2000`, which drops the author, bookshelf and home pages each archive carries beside its books -- and the three chapters were put on the card with `tinytang_put.py`. Tests: the pack contract at 40 checks and the converter at 45, `test_osd_desk` 92, `test_wiipad` 111, `check_help_width.py` 149 entries with none over 80 columns. The firmware built as 678,128 bytes at SHA-256 `e769347b26728ad40f29b3a9bb310d4ae3d794b3d5599fe1bf27945f4f75408c`, the crashing build was flashed, diagnosed and replaced by that one, the user power-cycled and reported the shelf, both browsing paths, the chapter list, the resume and the long book all working; `platform` then read `10d43d0-dirty.9fd7786`, `crash` recorded no exception in the run, and the heap stood at 76,912 bytes free of 140,488 with a 29,504-byte largest block.
+
+#### Next Steps:
+
+The size floor that drops a Gutenberg archive's navigation pages is a guess: class P's archive produced 18 books from a catalogue that claims 39, so the threshold must be re-examined against a shelf where the right count is known, and a book shorter than 2000 characters would be lost to it. The contents list stops at 64 chapters, which a book with hundreds would truncate silently. `gutenberg.pos` holds one position for one book, so opening another replaces it; a position per book would need a small table. The book header does not yet name the author, though `wiki.auth` has it, and the author search scans the table rather than indexing it. The full English Wikipedia download continues under `/run/media/vash/GIT/tinytang-scratch` and still has not been converted; the standing items of entry 69 are otherwise unchanged.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- manual/gutenberg.md
+- manual/index.md
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_gutenberg_app.cpp
+- ports/bl616/td_kiwix_app.cpp
+- ports/bl616/td_pack.c
+- ports/bl616/td_pack.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

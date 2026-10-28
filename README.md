@@ -61,7 +61,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor, TinyNES, TinyGBC,
-  Tiny89, TinyCreature, TinyKiwix and About. Quitting returns to
+  Tiny89, TinyCreature, TinyKiwix, TinyGutenberg and About. Quitting returns to
   the prompt. Opening a text file (double-click or Enter) shows it in the
   Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
   cartridge is not opened at all, because cartridges start from the TinyNES
@@ -94,6 +94,14 @@ Building and flashing are under *Quick start* and *Building requirements*.
   (a handful of card reads, however many articles there are), opens a title,
   and pages through long articles a page at a time. Tables, images and non-Latin scripts are dropped, and the
   pack keeps Wikipedia's CC BY-SA terms in its own metadata.
+- **TinyGutenberg reads Project Gutenberg books.** A shelf is a pack built from
+  one of Kiwix's Gutenberg archives, which are cut by Library of Congress class.
+  Because a book is read rather than looked up, this is its own app: books
+  browse by title or by author surname, a book's chapters come from the pack's
+  chapter table, and your page is kept in `/root/gutenberg.pos` so reopening the
+  app resumes where you stopped. Books are converted with a two-megabyte
+  article cap and a size floor that drops the archive's own author, bookshelf
+  and home pages.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
   core keeps running underneath, and while TinyDesk is up the controllers are
   gated away from the game. It works at the console, in the desktop and during
