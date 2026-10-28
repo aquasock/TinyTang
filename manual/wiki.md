@@ -1,8 +1,15 @@
-# TinyKiwix: an encyclopedia on the card
+# TinyWiki: an encyclopedia on the card
 
-TinyKiwix reads an offline encyclopedia: Kiwix's ZIM archives, converted on a
-computer into a text pack that lives on the card. It is a reader, like
-TinyHelp, and it holds no network code at all.
+TinyWiki reads an offline encyclopedia: Kiwix's ZIM archives, converted on a
+computer into a text pack that lives on the card. It holds no network code at
+all.
+
+This manual is itself a pack. The chapters in `/root/manual` are turned into
+one by `tools/make_wiki_pack.py --markdown`, so the manual sits in the same
+Library as any encyclopedia and is read by the same window.
+
+Packs live in `/root/wiki`. Book shelves live in `/root/books` and belong to
+TinyGutenberg, so the two apps never show each other's packs.
 
 ## Why the archive is converted first
 
@@ -49,7 +56,7 @@ twice.
 
 ## Choosing a pack
 
-TinyKiwix opens on the list of packs on the card, one row each: the title the
+TinyWiki opens on the list of packs on the card, one row each: the title the
 pack names itself, and the folder it is in, which is what tells two packs of
 the same project apart. Enter opens the one under the cursor, and Refresh
 re-reads the folder so a pack copied onto the card appears without a reboot.

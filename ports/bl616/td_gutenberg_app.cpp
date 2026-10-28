@@ -3,7 +3,7 @@
 //
 // A *shelf* is a pack folder under /root/wiki made by tools/make_wiki_pack.py
 // from a Kiwix Gutenberg archive (one ZIM per Library of Congress class), so
-// the Library here lists shelves exactly as TinyKiwix lists encyclopedias.
+// the Library here lists shelves exactly as TinyWiki lists encyclopedias.
 //
 // What makes this a different app rather than another view: a book is long, so
 // it needs a contents list, a place to keep your page, and a way to look up an
@@ -16,7 +16,7 @@
 // number and the page -- written when you leave a book and when the window
 // closes, and offered back the next time the app opens.
 //
-// The pack plumbing is td_pack.c, shared with TinyKiwix.
+// The pack plumbing is td_pack.c, shared with TinyWiki.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,7 +151,7 @@ bool pack_dir(char *out, size_t cap)
     {
         return false;
     }
-    td_pack_dir_of(s_packs[s_pack_open].folder, out, cap);
+    td_pack_dir_of(TD_PACK_BOOKS_ROOT, s_packs[s_pack_open].folder, out, cap);
     return true;
 }
 
@@ -661,7 +661,7 @@ void show_library(void)
     s_pack_open = -1;
     index_close();
     sync_buttons();
-    set_text(s_head, "Shelves on the card");
+    set_text(s_head, "Book shelves");
     td_list_set_count(s_list, s_pack_count);
     td_list_select(s_list, 0);
     char text[48];
@@ -671,7 +671,7 @@ void show_library(void)
     td_widget_focus(s_list);
     if (s_pack_count == 0)
     {
-        say("No shelf: make one with tools/make_wiki_pack.py");
+        say("No book shelf: make one into /root/books");
     }
 }
 
@@ -776,7 +776,7 @@ bool open_shelf(int index)
         return false;
     }
     char dir[96];
-    td_pack_dir_of(s_packs[index].folder, dir, sizeof dir);
+    td_pack_dir_of(TD_PACK_BOOKS_ROOT, s_packs[index].folder, dir, sizeof dir);
     if (!td_pack_meta_read(dir, &s_meta))
     {
         say("That shelf's metadata is unreadable");
@@ -1107,7 +1107,7 @@ void on_primary(td_widget_t *, void *)
     switch (s_mode)
     {
     case MODE_LIBRARY:
-        s_pack_count = td_pack_scan(s_packs, TD_PACK_MAX);
+        s_pack_count = td_pack_scan(TD_PACK_BOOKS_ROOT, s_packs, TD_PACK_MAX);
         td_list_set_count(s_list, s_pack_count);
         td_list_select(s_list, 0);
         return;
@@ -1202,7 +1202,7 @@ void launch(void)
     s_foot = td_label(s_win, 0, -1, 0, "");
     td_widget_set_color(s_foot, td_theme()->dim, TD_COLOR_DEFAULT);
 
-    s_pack_count = td_pack_scan(s_packs, TD_PACK_MAX);
+    s_pack_count = td_pack_scan(TD_PACK_BOOKS_ROOT, s_packs, TD_PACK_MAX);
     show_library();
 }
 

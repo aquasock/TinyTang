@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// TinyKiwix: offline encyclopedias on the card, read in the desktop.
+// TinyWiki: offline encyclopedias on the card, read in the desktop.
 //
 // A pack is a folder of text converted on a host by tools/make_wiki_pack.py
 // from a Kiwix/openZIM archive; that script explains why the archive itself
@@ -16,7 +16,7 @@
 // Inside a pack, the title index is binary-searched by prefix and an article is
 // paged through a 12 KB window, allocated when an article is opened and freed
 // when the window closes.  Every FatFS call happens while something is being
-// loaded, never in a draw callback: TinyHelp's first version read the card
+// loaded, never in a draw callback: an earlier reader here read the card
 // inside the list's draw path and hard-faulted the board.
 //
 // The pack plumbing -- discovery, metadata, index records, the title search --
@@ -38,7 +38,7 @@ namespace {
 
 constexpr int LIST_ROWS = 48;          // titles kept in RAM for the browse list
 constexpr int TITLE_BYTES = 44;        // what the list keeps of each title
-constexpr int PAGE_BYTES = 12288;      // one page of article text, as TinyHelp
+constexpr int PAGE_BYTES = 12288;      // one page of article text
 constexpr int MAX_PAGE_LINES = 512;
 constexpr int LINE_BYTES = 160;
 constexpr int WINDOW_COLS = 76;
@@ -239,7 +239,7 @@ bool open_pack(int index)
         return false;
     }
     char dir[96];
-    td_pack_dir_of(s_packs[index].folder, dir, sizeof dir);
+    td_pack_dir_of(TD_PACK_ROOT, s_packs[index].folder, dir, sizeof dir);
     if (!td_pack_meta_read(dir, &s_meta))
     {
         say("That pack's metadata is unreadable");
@@ -317,7 +317,7 @@ void read_page(void)
     char dir[96];
     if (s_pack_open >= 0)
     {
-        td_pack_dir_of(s_packs[s_pack_open].folder, dir, sizeof dir);
+        td_pack_dir_of(TD_PACK_ROOT, s_packs[s_pack_open].folder, dir, sizeof dir);
         snprintf(path, sizeof path, "%s/%s", dir, name);
     }
     else
@@ -612,7 +612,7 @@ void on_find(td_widget_t *, void *)
         say("Open a pack first");
         return;
     }
-    (void)td_inputbox("TinyKiwix", "Title starts with", "", on_find_done, nullptr);
+    (void)td_inputbox("TinyWiki", "Title starts with", "", on_find_done, nullptr);
 }
 
 /* Page Up by one screen: the previous page of an article, or the previous
@@ -667,7 +667,7 @@ void on_primary(td_widget_t *, void *)
 {
     if (s_mode == MODE_LIBRARY)
     {
-        s_pack_count = td_pack_scan(s_packs, TD_PACK_MAX);
+        s_pack_count = td_pack_scan(TD_PACK_ROOT, s_packs, TD_PACK_MAX);
         td_list_set_count(s_list, s_pack_count);
         td_list_select(s_list, 0);
         note_rows();
@@ -717,7 +717,7 @@ void launch(void)
         return;
     }
     td_window_desc_t d = {};
-    d.title = "TinyKiwix";
+    d.title = "TinyWiki";
     d.rect = td_rect(-1, -1, 80, 40);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 46;
@@ -739,15 +739,15 @@ void launch(void)
     s_foot = td_label(s_win, 0, -1, 0, "");
     td_widget_set_color(s_foot, td_theme()->dim, TD_COLOR_DEFAULT);
 
-    s_pack_count = td_pack_scan(s_packs, TD_PACK_MAX);
+    s_pack_count = td_pack_scan(TD_PACK_ROOT, s_packs, TD_PACK_MAX);
     show_library();
 }
 
-const td_app_t s_app = {"TinyKiwix", launch, "W"};
+const td_app_t s_app = {"TinyWiki", launch, "W"};
 
 } // namespace
 
-extern "C" void td_kiwix_register(void)
+extern "C" void td_wiki_register(void)
 {
     (void)td_app_register(&s_app);
 }

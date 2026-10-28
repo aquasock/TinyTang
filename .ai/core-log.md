@@ -2470,3 +2470,48 @@ The size floor that drops a Gutenberg archive's navigation pages is a guess: cla
 - User Test: PASS
 
 ---
+
+## 71 COMMIT Unreleased 2026-10-28T14:35:18-07:00
+
+#### Coming From:
+
+Unreleased 8beaf45
+
+#### Purpose:
+
+Retire TinyHelp, rename the encyclopedia reader to TinyWiki, turn the board's manual into an ordinary pack, and give each reader its own folder so neither lists the other's packs.
+
+#### Outcome:
+
+TinyHelp is gone: `ports/bl616/td_help_app.cpp` was deleted with its registration, its CMake entry and every reference in the README and the manual, and no `TinyHelp` string survives in the image. The encyclopedia reader is now TinyWiki -- `ports/bl616/td_wiki_app.cpp`, `td_wiki_register()`, and the start-menu and window titles -- and its manual chapter was renamed `manual/wiki.md` with its text brought along; TinyGutenberg keeps its own name and its e-book shape. The manual stopped being a special case: the Markdown chapters in `/root/manual` are now turned into an ordinary pack by a new `tools/make_wiki_pack.py --markdown` mode, which promotes `# ` headings to the reader's `## `, wraps paragraphs and list items to the column budget without doubling their bullets, folds accents per line, keeps indented blocks and drops code fences; the result sits at `/root/wiki/manual`, ten chapters in 15 KB, read by TinyWiki like any encyclopedia, so editing a chapter is editing a file on the card and running the converter rather than rebuilding firmware. Two flaws in that new mode were found by the tests before it ever ran on the board: `to_ascii()` folds newlines into spaces, which is right for one HTML block and produced a 3,700-column single-line chapter, and list items were being given a second bullet of their own. Each reader also has its own folder now: `td_pack_scan()` and `td_pack_dir_of()` take the root as an argument, TinyWiki reads `/root/wiki` and TinyGutenberg reads `/root/books`, and the shelf was moved there on the card with an on-board `cp` and removed from `/root/wiki`. I had first built this as a `kind` field in `wiki.meta` with each app filtering on it, and that was withdrawn at the user's direction -- two folders are the distinction, and no metadata is needed to express it -- so the field, the filter and the converter's `--kind` flag are not in the tree. Tests: the pack contract at 40 checks and the converter at 52, the new ones covering a Markdown folder end to end, a chapter's accents and column width, and that a manual pack has no chapter or author table. The firmware built as 678,080 bytes at SHA-256 `9667c9987424e78c4eab99ef509869a038bf11458a0a26fc5fd88b63a19e69e7`, 48 bytes smaller than entry 70's image because an app left it, `tinytang_flash.py --yes` committed it, the user power-cycled and reported both lists correct -- TinyWiki showing the manual and the three encyclopedia packs, TinyGutenberg showing only the book shelf -- and passed the cycle; a post-cycle `platform` read was not taken because the board was off USB by then.
+
+#### Next Steps:
+
+The manual pack is a copy: its chapters exist twice on the card, as Markdown in `/root/manual` and as articles in `/root/wiki/manual`, and the converter has to be run again after a chapter is edited -- worth a note in the manual, or a script that does both. TinyGutenberg's reading position names a shelf folder and was left pointing at `gutenberg-p`, which kept its name when it moved, so a reader who had a page saved should confirm it still resumes. The class-P shelf holds 18 books where the catalogue claims 39 because navigation and author pages are dropped by `--min-chars 2000`; that threshold still needs settling against a shelf whose true count is known. The full English Wikipedia download under `/run/media/vash/GIT/tinytang-scratch` continues and has not been converted; the standing items of entry 70 are otherwise unchanged.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- manual/gutenberg.md
+- manual/index.md
+- manual/wiki.md (renamed from manual/kiwix.md)
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_gutenberg_app.cpp
+- ports/bl616/td_help_app.cpp (removed)
+- ports/bl616/td_pack.c
+- ports/bl616/td_pack.h
+- ports/bl616/td_wiki_app.cpp (renamed from ports/bl616/td_kiwix_app.cpp)
+- ports/bl616/td_wiki_pack.h
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+- tools/tests/tb_wiki_pack.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

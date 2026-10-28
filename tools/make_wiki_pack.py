@@ -47,6 +47,7 @@ converted pack is a derivative of the archive's content and keeps those terms.
 from __future__ import annotations
 
 import argparse
+import glob
 import heapq
 import lzma
 import os
@@ -457,6 +458,68 @@ def chapters(body: str, limit: int = 500) -> list[tuple[int, str]]:
     return rows
 
 
+def markdown_title(text: str, fallback: str) -> str:
+    """A chapter's own name: its first level-one heading, else its file name."""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return fallback
+
+
+def markdown_body(text: str) -> str:
+    """Markdown into the page format the reader draws.
+
+    The reader strips `## ` headings and the emphasis markers itself, so a
+    chapter is stored as written: headings promoted to `## `, paragraphs wrapped
+    to the column budget, list items keeping their bullet, indented blocks
+    keeping their indent, and fenced code fences dropped because the reader has
+    no reason to show them.
+    """
+    lines: list[str] = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        # Folded per line: to_ascii() turns newlines into spaces, which is right
+        # for one HTML block and wrong for a whole chapter.
+        stripped = to_ascii(line.lstrip())
+        if stripped.startswith("```"):
+            continue
+        if stripped.startswith("# ") or stripped.startswith("## "):
+            lines.append("## " + stripped.lstrip("#").strip())
+            lines.append("")
+            continue
+        if not stripped:
+            lines.append("")
+            continue
+        if stripped.startswith("- ") or stripped.startswith("* ") or \
+                re.match(r"^\d+\. ", stripped):
+            # The bullet is the line's own; only the wrap width and the
+            # continuation indent are ours.
+            marker = "- "
+            body_text = stripped[2:] if stripped[:2] in ("- ", "* ") else stripped
+            wrapped = textwrap.wrap(body_text, width=WIKI_LINE_COLS - len(marker),
+                                    break_long_words=True, break_on_hyphens=False)
+            for i, piece in enumerate(wrapped or [""]):
+                lines.append((marker if i == 0 else "  ") + piece)
+            continue
+        if line.startswith("    "):
+            wrapped = textwrap.wrap(stripped, width=WIKI_LINE_COLS - 4,
+                                    break_long_words=True, break_on_hyphens=False)
+            lines.extend("    " + piece for piece in (wrapped or [""]))
+            continue
+        lines.extend(textwrap.wrap(stripped, width=WIKI_LINE_COLS,
+                                   break_long_words=True, break_on_hyphens=False))
+        lines.append("")
+
+    folded: list[str] = []
+    for line in lines:
+        if not line and folded and not folded[-1]:
+            continue
+        folded.append(line)
+    while folded and not folded[-1]:
+        folded.pop()
+    return "\n".join(folded) + "\n" if folded else ""
+
+
 def author_of(html: bytes) -> str:
     """The author named on a Gutenberg cover page, or ''."""
     names = re.findall(rb'data-author-name="([^"]+)"', html)
@@ -844,7 +907,8 @@ def write_meta(out_dir: str, metadata: dict[str, str], args, article_count: int,
         "description": metadata.get("Description", ""),
         "license": (args.license or metadata.get("License")
                     or _default_license(metadata)),
-        "source_archive": os.path.basename(args.zim),
+        "source_archive": (os.path.basename(args.zim) if args.zim
+                           else os.path.basename(os.path.normpath(args.markdown))),
         "articles": str(article_count),
         "redirects": str(redirect_count),
         "chunks": str(chunks),
@@ -862,6 +926,50 @@ def write_meta(out_dir: str, metadata: dict[str, str], args, article_count: int,
             if not str(meta[key]):
                 continue
             f.write(f"{key} = {' '.join(str(meta[key]).split())}\n")
+
+
+def convert_markdown(args) -> int:
+    """A folder of Markdown chapters into a pack: the board's own manual."""
+    files = sorted(glob.glob(os.path.join(args.markdown, "*.md")))
+    if not files:
+        raise ZimError(f"no .md files in {args.markdown}")
+    os.makedirs(args.out, exist_ok=True)
+    for stale in os.listdir(args.out):
+        if re.fullmatch(r"wiki\.(idx|parts|auth|\d{3})", stale):
+            os.unlink(os.path.join(args.out, stale))
+
+    writer = PackWriter(args.out, args.chunk_bytes, args.title_bytes,
+                        args.sort_records)
+    kept = 0
+    for path in files:
+        text = open(path, encoding="utf-8", errors="replace").read()
+        base = os.path.basename(path)
+        heading = markdown_title(text, base[:-3].replace("_", " "))
+        title = clean_title(to_ascii(heading).encode("ascii", "ignore"))
+        if not title:
+            continue
+        body = markdown_body(text).encode("ascii", "replace")
+        if len(body.strip()) < args.min_chars:
+            continue
+        writer.add_article(title, body, max(body.count(b"\n"), 1))
+        kept += 1
+        print(f"  {base} -> {title.decode('ascii')}", file=sys.stderr)
+    if kept == 0:
+        raise ZimError("no chapter produced any text")
+
+    chunks = writer.chunk_index + 1
+    written, resolved = writer.finalize()
+    metadata = {
+        "Title": args.title or "TinyTang manual",
+        "Language": "eng",
+        "Creator": "TinyTang",
+        "Publisher": "TinyTang",
+        "Description": "The board's own manual, as a pack",
+    }
+    write_meta(args.out, metadata, args, written, resolved, chunks, 0, 0)
+    print(f"wrote {written} chapters in {chunks} chunk(s) to {args.out}",
+          file=sys.stderr)
+    return written
 
 
 def convert(args) -> int:
@@ -1005,7 +1113,8 @@ def convert(args) -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--zim", required=True, help="source .zim archive")
+    ap.add_argument("--zim", help="source .zim archive")
+    ap.add_argument("--markdown", help="a folder of Markdown chapters instead of an archive")
     ap.add_argument("--out", required=True, help="pack folder, e.g. /root/wiki on the card")
     ap.add_argument("--limit", type=int, default=0, help="stop after N entries")
     ap.add_argument("--min-chars", type=int, default=0,
@@ -1019,11 +1128,18 @@ def main(argv=None) -> int:
     ap.add_argument("--title", default="", help="override the pack title")
     ap.add_argument("--license", default="", help="override the licence line")
     ap.add_argument("--main-page", default="", help="title the reader opens first")
+    ap.add_argument("--kind", default="articles", choices=("articles", "books", "manual"),
+                    help="what the pack is for; each reader lists only its own kind")
     args = ap.parse_args(argv)
     if args.title_bytes < 8 or args.title_bytes > 255:
         ap.error("--title-bytes must be between 8 and 255")
+    if bool(args.zim) == bool(args.markdown):
+        ap.error("give exactly one of --zim or --markdown")
     try:
-        convert(args)
+        if args.markdown:
+            convert_markdown(args)
+        else:
+            convert(args)
     except ZimError as exc:
         print(f"make_wiki_pack: {exc}", file=sys.stderr)
         return 1

@@ -1,18 +1,20 @@
 # TinyGutenberg: books on the card
 
 TinyGutenberg reads Project Gutenberg books from a shelf on the card. It is a
-separate app from TinyKiwix because a book is not an article: you read one for
+separate app from TinyWiki because a book is not an article: you read one for
 hours, so it needs a contents list, a place to keep your page, and a way to
 find an author.
 
 ## Making a shelf
 
 Books come from Kiwix's Gutenberg archives, which are cut by Library of
-Congress class, so one archive is one shelf:
+Congress class, so one archive is one shelf. Shelves live in `/root/books`,
+which is TinyGutenberg's own folder: `/root/wiki` holds the encyclopedias that
+TinyWiki reads, so neither app lists the other's packs.
 
     tools/make_wiki_pack.py \
         --zim gutenberg_en_lcc-p_2026-03.zim \
-        --out /run/media/vash/TINYTANG/root/wiki/gutenberg-p \
+        --out /run/media/vash/TINYTANG/root/books/gutenberg-p \
         --min-chars 2000 --max-article-bytes 2097152
 
 Two of those settings differ from an encyclopedia. The article cap allows two
@@ -35,7 +37,7 @@ checked by `tools/check_wiki_pack.py`.
 
 ## Using the window
 
-    Shelves    pick a shelf, as TinyKiwix picks a pack
+    Shelves    pick a shelf, as TinyWiki picks a pack
     Titles     the shelf's books in title order
     Authors    the same books by surname; Enter lists that author's books
     Find...    type the first letters of a title, or of a surname

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// TinyKiwix pack format: constants and the pure parts of reading wiki.idx.
+// TinyWiki pack format: constants and the pure parts of reading wiki.idx.
 //
 // tools/make_wiki_pack.py writes the pack; this header is the firmware's side
 // of that contract and is kept free of FatFS so the host test can check it.

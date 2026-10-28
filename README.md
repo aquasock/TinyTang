@@ -61,7 +61,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor, TinyNES, TinyGBC,
-  Tiny89, TinyCreature, TinyKiwix, TinyGutenberg and About. Quitting returns to
+  Tiny89, TinyCreature, TinyWiki, TinyGutenberg and About. Quitting returns to
   the prompt. Opening a text file (double-click or Enter) shows it in the
   Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
   cartridge is not opened at all, because cartridges start from the TinyNES
@@ -81,7 +81,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
   console, reached through a bridge over two ring buffers, so a command typed
   into a desktop window runs as it would at the console. One user and one
   session by design.
-- **TinyKiwix reads an offline encyclopedia.** Wikipedia is available as
+- **TinyWiki reads an offline encyclopedia, and this manual.** Wikipedia is available as
   Kiwix `.zim` archives, and this board cannot open one directly: a ZIM stores
   its articles in compressed clusters of about a megabyte, and unpacking one
   needs that much window against 320 KB of RAM. `tools/make_wiki_pack.py`
@@ -95,7 +95,9 @@ Building and flashing are under *Quick start* and *Building requirements*.
   and pages through long articles a page at a time. Tables, images and non-Latin scripts are dropped, and the
   pack keeps Wikipedia's CC BY-SA terms in its own metadata.
 - **TinyGutenberg reads Project Gutenberg books.** A shelf is a pack built from
-  one of Kiwix's Gutenberg archives, which are cut by Library of Congress class.
+  one of Kiwix's Gutenberg archives, which are cut by Library of Congress class
+  and kept in `/root/books`, its own folder -- `/root/wiki` belongs to
+  TinyWiki, so neither app lists the other's packs.
   Because a book is read rather than looked up, this is its own app: books
   browse by title or by author surname, a book's chapters come from the pack's
   chapter table, and your page is kept in `/root/gutenberg.pos` so reopening the
@@ -230,13 +232,12 @@ Building and flashing are under *Quick start* and *Building requirements*.
   retained under `/root/scripts/diagnostics/` on the card for earlier bring-up work
   and are not the normal launch path; their fixed declarations predate
   `/tinytang.ini`.
-- **The TinyHelp app** in the desktop's start menu reads the board's manual from
-  `/root/manual`: `index.md` lists the chapters as `- [Title](file.md)` and
-  each chapter is a Markdown file shown one line per desktop row. It has a
-  Contents page, coloured headings, and nothing is held but one chapter at a
-  time, so a chapter of any size costs a few kilobytes. It exists because the
-  editor's buffer is 16 KB and a manual outgrows it, and because a reader can
-  have a contents page where an editor cannot.
+- **This manual is a pack.** The chapters in `/root/manual` are Markdown, and
+  `tools/make_wiki_pack.py --markdown /root/manual --out .../root/wiki/manual`
+  turns them into an ordinary pack, so TinyWiki opens the manual the same way
+  it opens an encyclopedia: one article per chapter, the chapter list from the
+  pack's own index. Editing a chapter is editing a file on the card and running
+  the converter again; nothing needs rebuilding.
 - **The Phosphor app** in the desktop's start menu is a player for `/root/media/music`,
   with two tabs. **Player** holds a sorted list of the playable files, the
   title and status of the current track, a progress bar (WAV and FLAC, whose

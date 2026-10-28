@@ -144,14 +144,12 @@ else()
                                ports/bl616/tiny89_app.cpp
                                # TinyCreature: its fixed Celtic scene launcher.
                                ports/bl616/tinycreature_app.cpp
-                               # TinyHelp: the manual's Markdown chapters, on the card.
-                               ports/bl616/td_help_app.cpp
                                # The pack plumbing both readers share: discovery,
                                # metadata, index records and the title search.
                                ports/bl616/td_pack.c
-                               # TinyKiwix: an offline encyclopedia pack, built
+                               # TinyWiki: an offline encyclopedia pack, built
                                # from a Kiwix archive by tools/make_wiki_pack.py.
-                               ports/bl616/td_kiwix_app.cpp
+                               ports/bl616/td_wiki_app.cpp
                                # TinyGutenberg: books on the card, chaptered and
                                # resumed, from a Gutenberg archive.
                                ports/bl616/td_gutenberg_app.cpp

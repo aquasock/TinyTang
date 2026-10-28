@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Pack plumbing shared by TinyKiwix and TinyGutenberg: see td_pack.h.
+// Pack plumbing shared by TinyWiki and TinyGutenberg: see td_pack.h.
 #include "td_pack.h"
 
 #include <stdio.h>
@@ -128,15 +128,15 @@ bool td_pack_meta_read(const char *dir, td_pack_meta_t *meta)
     return true;
 }
 
-void td_pack_dir_of(const char *folder, char *out, size_t cap)
+void td_pack_dir_of(const char *root, const char *folder, char *out, size_t cap)
 {
     if (folder == NULL || folder[0] == '\0')
     {
-        snprintf(out, cap, "%s", TD_PACK_ROOT);
+        snprintf(out, cap, "%s", root);
     }
     else
     {
-        snprintf(out, cap, "%s/%s", TD_PACK_ROOT, folder);
+        snprintf(out, cap, "%s/%s", root, folder);
     }
 }
 
@@ -159,7 +159,7 @@ static bool add_pack(td_pack_entry_t *out, int max, int *count, const char *fold
     return true;
 }
 
-int td_pack_scan(td_pack_entry_t *out, int max)
+int td_pack_scan(const char *root, td_pack_entry_t *out, int max)
 {
     int count = 0;
     if (out == NULL || max <= 0)
@@ -169,14 +169,14 @@ int td_pack_scan(td_pack_entry_t *out, int max)
 
     char path[96];
     FILINFO info;
-    snprintf(path, sizeof path, "%s/wiki.meta", TD_PACK_ROOT);
+    snprintf(path, sizeof path, "%s/wiki.meta", root);
     if (f_stat(path, &info) == FR_OK && (info.fattrib & AM_DIR) == 0)
     {
-        (void)add_pack(out, max, &count, "", TD_PACK_ROOT);
+        (void)add_pack(out, max, &count, "", root);
     }
 
     DIR handle;
-    if (f_opendir(&handle, TD_PACK_ROOT) == FR_OK)
+    if (f_opendir(&handle, root) == FR_OK)
     {
         FILINFO entry;
         FRESULT result;
@@ -191,7 +191,7 @@ int td_pack_scan(td_pack_entry_t *out, int max)
             {
                 continue;
             }
-            snprintf(dir, sizeof dir, "%s/%s", TD_PACK_ROOT, entry.fname);
+            snprintf(dir, sizeof dir, "%s/%s", root, entry.fname);
             (void)add_pack(out, max, &count, entry.fname, dir);
         }
         (void)f_closedir(&handle);

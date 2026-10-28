@@ -380,6 +380,38 @@ def main():
                                    capture_output=True, text=True)
             check(plain.returncode == 0, "the checker accepts a pack with no tables")
 
+        # A folder of Markdown chapters becomes a pack: this is how the board's
+        # own manual is read now that TinyHelp is gone.
+        md = os.path.join(work, "md")
+        os.makedirs(md)
+        with open(os.path.join(md, "index.md"), "w", encoding="utf-8") as f:
+            f.write("# Book of tests\n\n- [One](one.md)\n")
+        with open(os.path.join(md, "one.md"), "w", encoding="utf-8") as f:
+            f.write("# One\n\nA paragraph long enough that the size floor keeps it, "
+                    "with an accent: caf\u00e9.\n\n- a bullet item\n")
+        md_pack = os.path.join(work, "md-pack")
+        md_run = subprocess.run(
+            [sys.executable, CONVERTER, "--markdown", md, "--out", md_pack,
+             "--title", "A test manual"], capture_output=True, text=True)
+        check(md_run.returncode == 0,
+              f"the converter runs on Markdown ({md_run.stderr.strip()})")
+        if md_run.returncode == 0:
+            meta_md, records_md = read_pack(md_pack)
+            names = [r[0] for r in records_md]
+            check(len(records_md) == 2, f"one record per chapter ({names})")
+            check("One" in names and "Book of tests" in names,
+                  f"chapters are named from their headings ({names})")
+            check(meta_md.get("title") == "A test manual",
+                  "the pack takes the title it was given")
+            body = body_of(md_pack, records_md[names.index("One")])
+            check("caf\u00e9".encode("ascii", "replace").decode() not in body or
+                  "cafe" in body, "a chapter's accents are folded")
+            check(all(len(line) <= 78 for line in body.splitlines()),
+                  "a chapter is wrapped to the reader's columns")
+            md_checked = subprocess.run([sys.executable, CHECKER, md_pack, "--quiet"],
+                                        capture_output=True, text=True)
+            check(md_checked.returncode == 0, "the checker accepts a manual pack")
+
         # The checker must refuse a chapter table that points past its book.
         broken = os.path.join(work, "broken")
         shutil.copytree(pack, broken)

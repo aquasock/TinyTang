@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Host checks for the TinyKiwix pack contract (ports/bl616/td_wiki_pack.h).
+// Host checks for the TinyWiki pack contract (ports/bl616/td_wiki_pack.h).
 //
 // The pack is written by tools/make_wiki_pack.py and read on the board, so the
 // record layout and the title order have to agree on both sides; the converter
