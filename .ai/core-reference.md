@@ -122,6 +122,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 - topic_id: WII
   name: "Wii extension controllers"
   description: "The controllers on the USB-A port's Wii adapter: how one is woken and identified, the nunchuck's report and its use as the pointer, and the Classic Controller's different format."
+
+- topic_id: KIWI
+  name: "Kiwix offline archives"
+  description: "The openZIM container Kiwix publishes, how its clusters are compressed and where redirects hide, the trims a Wikipedia download comes in, and the FAT32 limits a converted pack on this card must respect."
 ```
 
 ---
@@ -281,6 +285,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What does a nunchuck report, and how is it mapped to the desktop's pointer? | WII | WII-002 |
 | Why does a Classic Controller not work as a pointer? | WII | WII-003 |
 | Why does an 8BitDo receiver look dead or stuck on the extension bus? | WII | WII-004 |
+| Can the board open a Kiwix .zim archive directly? | KIWI | KIWI-001 |
+| Why is a TinyKiwix pack one big text file plus wiki.NNN chunks? | KIWI | KIWI-004, KIWI-001 |
+| How do ZIM redirects such as "USA" survive the conversion? | KIWI | KIWI-002 |
+| Which Wikipedia trim should be downloaded, and how big is it? | KIWI | KIWI-003 |
 
 ---
 
@@ -446,6 +454,10 @@ WII-001: "A Wii extension controller at 0x52 on the extension bus, 400 kHz, is w
 WII-002: "The nunchuck's six bytes at 0x00 are stick X, stick Y, accelerometer X/Y/Z and a last byte whose bits 0 and 1 are Z and C, active low; measured on this part, center 123/131 with 98 counts of travel each way and Y growing upward"
 WII-003: "A Classic Controller identifies as 00 00 A4 20 01 01 with data format 0x01 at 0xFE, packs a 6-bit left stick into bits 5:0 of bytes 0 and 1 with the right stick in bits 7:6, and holds 15 buttons in bytes 4 and 5, so it is not a nunchuck report; measured here at 32/32 left and 16/16 right with both X axes growing to the right, A on byte 5 bit 4 and B on bit 6, and L and R on byte 4 bits 5 and 1"
 WII-004: "An 8BitDo receiver for the NES/SNES Classic identifies as a Classic at 0x52 but sends a fixed 84 86 86 86 00 00 in data format 1; after the host writes 0x03 to 0xFE it reports eight bytes with four centred 8-bit axes and working buttons, which is why TinyNES selects format 3"
+KIWI-001: "A ZIM is an 80-byte header, MIME list, three 8-byte pointer tables and clusters of about 1 MB compressed as none (1), XZ (4) or Zstandard (5); one cluster's window is ~1 MB against 320 KB of OCRAM, so the board converts packs on a host and never opens a .zim"
+KIWI-002: "libzim writes most redirects as text/html meta-refresh pages (1,221 of 1,323 HTML entries in wikipedia_en_100); the converter reads the refresh target and re-points the redirect's title at the target's body"
+KIWI-003: "Kiwix's 2026-10-28 English Wikipedia listing: all_maxi 119 GB, all_nopic 49 GB, all_mini 13 GB, top_nopic 2.6 GB, top_mini 283 MB, en-simple_all_nopic 1.0 GB; a nopic archive converts to about half its size in text"
+KIWI-004: "The card is FAT32, which caps a file at 4 GiB, so a pack writes bodies into wiki.000, wiki.001 ... cut at 3 GiB with each article wholly inside one chunk, and keeps one wiki.idx of 80-byte records"
 ```
 
 ---
@@ -2595,6 +2607,56 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "TinyNES's fpga/ae350_soc/wii_pads.sv: the wake-up, the 0x03 write to 0xFE and the packing of a format-3 report back into format 1's bytes"
     - "This board's console on 2026-10-28: the receiver's identity, its frozen format-1 block, and the format-3 report with each button held (core-log entry 65)"
   verification: "Measured on this board on 2026-10-28 with the receiver on the Adafruit adapter and an 8BitDo SN30 paired to it: 84 86 86 86 00 00 was returned across a dozen reads and a replug with no pad input reflected; tangi2c write 52 FE 03 was accepted (the identity then read 00 00 A4 20 03 01) and 84 86 86 86 00 00 ff ff followed, with ef, bf, f7 and df appearing as A, B, X and Y were held. The remaining button bits (ZL, ZR, plus, minus, Home, L, R and the d-pad) are the sourced format-3 table and were not each held on this board. The stick extremes in format 3 could not be measured: a run with only the left stick moved changed the d-pad bits and left every axis byte at 132/134, which is the receiver mapping the stick to the d-pad rather than reporting it. The driver therefore uses the nunchuck's 8-bit dead zone and full scale for a Classic until a genuine one has been measured in format 3."
+
+- record_id: KIWI-001
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "A ZIM archive keeps its data in compressed clusters of about a megabyte, too large a window for this board"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "openZIM's format document defines an 80-byte header holding the magic number 72173914, the major and minor version, a UUID, the entry and cluster counts, the positions of the path pointer, title pointer, cluster pointer and MIME list tables, the main page and layout page indexes and the checksum position, followed by the MIME list of NUL-terminated strings ended by an empty string. A path pointer and a cluster pointer are each 8 bytes; a directory entry is MIME type (u16), parameter length (u8), namespace (u8) and revision (u32), then for content a cluster number (u32) and a blob number (u32) or, when revision is 0xFFFFFFFF, the redirect's index instead, followed by the URL and the title as NUL-terminated strings. Namespace C holds content, M metadata and W well-known entries. Content lives in clusters whose first byte carries the compression in its low four bits -- 1 none, 4 XZ/LZMA2, 5 Zstandard, with 2 and 3 retired -- and a fifth bit that widens the blob offsets from 4 to 8 bytes, followed by one offset per blob plus a final end offset; the document states clusters are typically about 1 MB, and the offsets are measured from the first byte after the info byte. The last 16 bytes of the file are an MD5 of everything before them."
+  consequence: "Unpacking one cluster needs its whole back-reference window resident, and Zstandard cannot decode a frame with truncated history, so a native reader would need about 1 MB against this board's 320 KB of OCRAM with no PSRAM (BL6-002) and a largest free heap block under 70 KB (core-log entry 52). TinyKiwix therefore reads a pack that tools/make_wiki_pack.py converts on a host and never opens a .zim; the converter implements exactly this subset, including the offset base and compression codes 1, 4 and 5."
+  sources:
+    - "openZIM, ZIM file format, https://wiki.openzim.org/wiki/ZIM_file_format, fetched 2026-10-28 (header field table, directory entries, cluster information byte, namespaces, checksum)"
+  verification: "Implemented and exercised on 2026-10-28 by tools/make_wiki_pack.py against wikipedia_en_100_2026-08 (9,337 entries, 113 clusters) and wikipedia_en-simple_all_nopic_2026-09 (405,539 entries, 4,676 clusters), both read as format 6.3 with Zstandard clusters. The offset base was pinned by the invariant that the first cluster offset equals the offset table's own size, after an off-by-one in it produced shifted text. The XZ path (compression 4) is implemented from the document and untested, no such archive being at hand."
+
+- record_id: KIWI-002
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "libzim stores most redirects as small HTML pages carrying a meta refresh, not as redirect entries"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "Published Kiwix archives carry MediaWiki redirects in two shapes: directory entries with revision 0xFFFFFFFF, and, far more often, ordinary text/html content whose body is a few hundred bytes of `<meta http-equiv=\"refresh\" content=\"0;URL='./Target#Anchor'\">` followed by an anchor. In wikipedia_en_100_2026-08, 1,221 of 1,323 HTML entries were such pages against 102 real articles -- the trim named 'top 100' is 102 articles plus its redirects -- and the simple-English archive produced 4,732 redirect titles that resolved to an article in the same pack."
+  consequence: "The converter reads the refresh target out of the page, indexes the redirect's own title against the target, and after both streams are sorted re-points it at the target's (chunk, offset, length), so '50 states' opens the 'List of states and territories of the United States' text without storing it again. A redirect whose target is absent from the pack is dropped rather than left dangling. A pack built from a trim with many redirects is therefore mostly alias names, which is what the simple-English pack shows: 289,768 index records against 285,036 article bodies."
+  sources:
+    - "This machine, 2026-10-28: the raw blobs of wikipedia_en_100_2026-08 read through tools/make_wiki_pack.py"
+    - "The counts above, taken from the same two archives during the conversion"
+  verification: "Observed on 2026-10-28: the page for '50 states' is 284 bytes and its body is the meta refresh to ./List_of_states_and_territories_of_the_United_States#States, and 'Yucatan jaguar' is the same shape pointing at ./Jaguar#Taxonomic_history. The 1,221 and 102 counts come from scanning every HTML entry of that archive for the refresh marker; the 4,732 from the conversion of the simple-English archive, where the join found each target."
+
+- record_id: KIWI-003
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "Kiwix publishes Wikipedia in maxi, nopic, mini and top-N trims from 283 MB to 119 GB"
+  status: SOURCED
+  verified_date: 2026-10-28
+  statement: "Kiwix's download listing for English Wikipedia on 2026-10-28: wikipedia_en_all_maxi 119 GB and 115 GB (2026-08, 2026-02), wikipedia_en_all_nopic 49 GB and 48 GB (2026-06, 2026-03), wikipedia_en_all_mini 13 GB and 12 GB, wikipedia_en_top1m_nopic 16 GB, wikipedia_en_top_nopic 2.6 GB and 2.1 GB, wikipedia_en_top_mini 283 MB and 316 MB, wikipedia_en_100 318 MB, and the separate simple-English set wikipedia_en-simple_all_nopic 1.0 GB, all_mini 506 MB and all_maxi 2.9 GB. 'Nopic' strips the images, 'mini' keeps only article introductions, and 'maxi' keeps images."
+  consequence: "A nopic archive is the right source for this reader: images cannot be shown on an 80x45 character display anyway. The measured conversion of the 1.09 GB simple-English archive produced a 545 MB pack for 289,768 records, about 1,880 bytes an article, so the 49 GB English nopic archive is expected to land near 24 GB of text -- inside this card's 118 GB free, but needing about 75 GB of scratch on the host for the archive and its output, and several hours of conversion."
+  sources:
+    - "https://download.kiwix.org/zim/wikipedia/, directory listing fetched 2026-10-28"
+  verification: "The sizes are the listing's own, read on 2026-10-28; the 49 GB English figure is the case the user wants and has not been converted. The conversion ratio is measured, not assumed: 1,094,936,257 bytes of archive became 544,372,949 bytes of text plus a 23 MB index in the cycle recorded as core-log entry 67, and the same run's checksum was verified against the archive's own MD5 before conversion. Extrapolating a ratio across wikis of very different article length is a lead, not a fact."
+
+- record_id: KIWI-004
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "FAT32 caps a file at 4 GiB, so a pack is a set of wiki.NNN chunks rather than one file"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "The card is one vfat volume of 120 GB. FAT32 permits at most 4 GiB in a single file, whatever the volume size, and a directory is limited to 65,534 entries."
+  consequence: "tools/make_wiki_pack.py writes article bodies into wiki.000, wiki.001 and so on, cutting at 3 GiB (--chunk-bytes) with every article wholly inside one chunk, and records (chunk, offset, length, lines) in a fixed 80-byte index record. One file per article was rejected: a 7-million-article wiki would exceed the directory limit and consume a 4 KiB cluster per article in slack. The index stays a single file -- 560 MB at 7 million records -- and the reader opens only the chunk a record names."
+  sources:
+    - "This card, read as /dev/sdc1 on 2026-10-28: 120G, vfat"
+    - "Microsoft's FAT32 specification for the 4 GiB file-size limit"
+  verification: "The volume and its limit are facts of this card. The split is implemented and exercised only at one chunk: every pack built so far fits in wiki.000, so a record naming wiki.001 has not yet been produced or read on the board, and is the first thing a 49 GB pack would have to prove."
 
 ```
 

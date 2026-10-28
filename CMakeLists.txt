@@ -146,6 +146,9 @@ else()
                                ports/bl616/tinycreature_app.cpp
                                # TinyHelp: the manual's Markdown chapters, on the card.
                                ports/bl616/td_help_app.cpp
+                               # TinyKiwix: an offline encyclopedia pack, built
+                               # from a Kiwix archive by tools/make_wiki_pack.py.
+                               ports/bl616/td_kiwix_app.cpp
                                # The USB-A I2C bus client and `tangi2c` command.
                                ports/bl616/tang_i2c.cpp
                                ${TDSH_CORE_SOURCES}

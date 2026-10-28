@@ -33,6 +33,7 @@ playing, and back again.
      Files      browse the card, open and rename
      Terminal   a shell inside a window
      TinyHelp   this manual
+     TinyKiwix  an offline encyclopedia
      Phosphor   music
      TinyNES    games, and their settings
      TinyCreature  the Celtic land

@@ -2321,3 +2321,45 @@ Data format 0x02 remains untested, and the widening that would let the firmware 
 - User Test: PASS
 
 ---
+
+## 67 COMMIT Unreleased 2026-10-28T11:15:16-07:00
+
+#### Coming From:
+
+Unreleased d1f40df
+
+#### Purpose:
+
+Add TinyKiwix, a desktop reader for an offline encyclopedia pack that a host tool converts from a Kiwix/openZIM archive, with the tool that builds the pack and the one that checks it.
+
+#### Outcome:
+
+The cycle added TinyKiwix, a desktop window that reads an offline encyclopedia from `/root/wiki`, and the two host tools that make and check that pack. A Kiwix `.zim` cannot be read on the board: openZIM stores entries in clusters of about a megabyte compressed with Zstandard or XZ, and decoding one needs that much back-reference window against 320 KB of OCRAM with no PSRAM (BL6-002) and a largest free heap block under 70 KB after entry 52, so `tools/make_wiki_pack.py` reads the archive on a host -- standard library only, `compression.zstd` for current archives and `lzma` for older ones -- keeps namespace C's `text/html` entries, folds them into wrapped ASCII at 78 columns, drops tables, MathML and reference superscripts, resolves the redirect pages libzim writes as `<meta http-equiv="refresh">` by re-pointing the redirect's title at its target's body, and writes `wiki.meta`, an `wiki.idx` of 80-byte records sorted by folded title, and body chunks cut at 3 GiB for FAT32's 4 GiB file limit. Three defects of mine were found by measurement rather than by reading the code back: the cluster offset base was one byte off, which fed every article the previous blob's last byte and was pinned down by the invariant that the first offset equals the offset table's size; visiting entries in archive order reached a cluster different from the previous one for 99.8% of them, a fresh megabyte of decompression each, so entries are now sorted by cluster through an external sort before any body is read; and the resolved-redirect stream leaves the join in target order, not its own title order, which left six titles out of order and broke the binary search for them, so it is re-sorted by its own title before the final merge and a test with two redirects sorting opposite to their targets covers it. `tools/check_wiki_pack.py` validates a whole folder -- sortedness, duplicate titles, chunk bounds, offsets inside chunks, printable ASCII, line counts and column widths -- and caught headings running 79 to 81 columns because the `## ` marker was added after the text had been truncated to the column budget. `ports/bl616/td_kiwix_app.cpp` binary-searches the index by title, which costs a handful of card reads at any archive size, opens a title, and pages through the body 12 KB at a time in a buffer allocated when an article is first opened and freed when the window closes, the same cost as TinyHelp; the user's first finding was that a page could not be turned backwards, so the paging controls are Page Up and Page Down in both views -- of titles and of an article, in the same two places -- with a Back button to the list, and the reader remembers where each page began, 32 pages being more than the converter's 256 KB article cap can produce at 12 KB a page. The measured content: the 1,094,936,257-byte simple-English archive, whose own MD5 was verified before conversion, became 544,372,949 bytes of text and 289,768 records with 4,732 redirects resolved, and the checker passed every record and every body in 14 seconds. `tools/tests/test_wiki_pack.sh` runs 30 checks on the record contract and 28 on the converter over a synthetic archive built byte for byte in the test, and the redirect order, the heading width and the MathML leakage were each shown to fail it once reintroduced, while the cluster order and the offset base were found against the published archives and are not covered by the synthetic archive; 27 of the 28 host suites pass, the exception being `tools/tests/test_phosphor_catalog.sh`, red since entry 41 and untouched here. The firmware built as 669,744 bytes at SHA-256 `33be5da0e2341a7966390e05a084d1ce2505fd8e5ad09c89b9239ff0e195da5b`, `tinytang_flash.py --yes` staged and committed it as `tangflash: OK committing`, the user power-cycled, opened TinyKiwix, searched, read and paged, and reported it working; a post-cycle `platform` read was not taken because the board had left USB, so the deployed identity rests on the staged image's hash and on the user's test of a user interface that exists only in that build. `.ai/core-reference.md` gained the KIWI topic with four records -- the container and its cluster cost, the redirect pages, the published trims and sizes, and the FAT32 chunking -- and the routing table and fast lookup index name them.
+
+#### Next Steps:
+
+The 49 GB English archive is the stated goal and is not converted: it needs about 75 GB of scratch on the host for the archive and its output and several hours of conversion, and its pack would be the first to use a second body chunk, a path no pack has exercised -- a two-chunk pack whose article is read from `wiki.001` on the board is the thing to prove before that run. Redirects stored as directory entries rather than refresh pages are skipped, non-Latin articles convert to almost nothing and survive only if they clear `--min-chars`, images and SVGs cannot be shown on a character display at all, and search is by title prefix only, a full-text index having no design yet. `tools/tests/test_phosphor_catalog.sh` remains red from entry 41 and is still its own cycle, and the standing items of entry 66 are otherwise unchanged.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- manual/index.md
+- manual/kiwix.md
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/td_kiwix_app.cpp
+- ports/bl616/td_wiki_pack.h
+- tools/check_wiki_pack.py
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+- tools/tests/tb_wiki_pack.c
+- tools/tests/test_wiki_pack.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

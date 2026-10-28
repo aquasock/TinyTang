@@ -61,7 +61,7 @@ Building and flashing are under *Quick start* and *Building requirements*.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor, TinyNES, TinyGBC,
-  Tiny89, TinyCreature and About. Quitting returns to
+  Tiny89, TinyCreature, TinyKiwix and About. Quitting returns to
   the prompt. Opening a text file (double-click or Enter) shows it in the
   Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
   cartridge is not opened at all, because cartridges start from the TinyNES
@@ -81,6 +81,17 @@ Building and flashing are under *Quick start* and *Building requirements*.
   console, reached through a bridge over two ring buffers, so a command typed
   into a desktop window runs as it would at the console. One user and one
   session by design.
+- **TinyKiwix reads an offline encyclopedia.** Wikipedia is available as
+  Kiwix `.zim` archives, and this board cannot open one directly: a ZIM stores
+  its articles in compressed clusters of about a megabyte, and unpacking one
+  needs that much window against 320 KB of RAM. `tools/make_wiki_pack.py`
+  therefore reads the archive on a computer -- standard library only -- and
+  writes a text pack to `/root/wiki`: a sorted title index, ASCII article text
+  wrapped to the screen, and redirects resolved to the article they name. The
+  window searches that index by title (a handful of card reads, however many
+  articles there are), opens a title, and pages through long articles a
+  screen at a time. Tables, images and non-Latin scripts are dropped, and the
+  pack keeps Wikipedia's CC BY-SA terms in its own metadata.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
   core keeps running underneath, and while TinyDesk is up the controllers are
   gated away from the game. It works at the console, in the desktop and during
