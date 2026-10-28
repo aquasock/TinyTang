@@ -156,6 +156,77 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
+/* --------------------------------------------------------------- tangget */
+
+/* The mirror of tangput: send a file's bytes down the console so a host can
+ * take it away.  `cat` and `head` are text and are cut short by the console
+ * plumbing, which is no use for a save, a ROM or an image; this is raw bytes
+ * with no line endings of their own. */
+static int cmd_tangget(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    if (argc < 2) {
+        tdsh_printf("usage: tangget <path> [offset [length]]\r\n");
+        return 1;
+    }
+    // The bytes go out over the USB console; the OLED shell has no host on it.
+    if (tdsh_bl616_route_current()) {
+        tdsh_printf("tangget: run it from the USB console\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("tangget: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+    FIL file;
+    if (f_open(&file, real, FA_READ) != FR_OK) {
+        tdsh_printf("tangget: cannot open %s\r\n", argv[1]);
+        return 1;
+    }
+    const uint32_t total = (uint32_t)f_size(&file);
+    uint32_t offset = argc > 2 ? (uint32_t)strtoul(argv[2], NULL, 0) : 0;
+    uint32_t length = argc > 3 ? (uint32_t)strtoul(argv[3], NULL, 0) : 0;
+    // A range that runs off the end is shortened, not refused: a host that asks
+    // for the rest of a file asks for more than it knows is left.
+    if (offset > total) {
+        offset = total;
+    }
+    if (length == 0 || length > total - offset) {
+        length = total - offset;
+    }
+    if (offset != 0 && f_lseek(&file, offset) != FR_OK) {
+        (void)f_close(&file);
+        tdsh_printf("tangget: cannot seek to %u\r\n", offset);
+        return 1;
+    }
+
+    /* The header is text so a host can read the length before the bytes; raw
+     * mode stops the console's status probe eating the first one. */
+    tdsh_printf("tangget: %u bytes at %u of %u\r\n", length, offset, total);
+    tdsh_bl616_console_set_raw(true);
+    uint32_t done = 0;
+    while (done < length) {
+        uint32_t chunk = length - done;
+        if (chunk > FW_SECTOR_SIZE) {
+            chunk = FW_SECTOR_SIZE;
+        }
+        UINT got = 0;
+        if (f_read(&file, s_sector, chunk, &got) != FR_OK || got == 0) {
+            break;
+        }
+        if (!tdsh_bl616_console_write_raw(s_sector, got)) {
+            break;
+        }
+        done += got;
+    }
+    tdsh_bl616_console_set_raw(false);
+    (void)f_close(&file);
+
+    tdsh_printf("tangget: sent %u of %u bytes\r\n", done, length);
+    return done == length ? 0 : 1;
+}
+
 /* ------------------------------------------------------------- tangload */
 
 /* The vendored Gowin JTAG programmer (ports/bl616/tang_jtag_programmer.c).
@@ -243,6 +314,8 @@ static const tdsh_command_t s_tang_flash_commands[] = {
       cmd_tangflash, 0 },
     { "tangput",   "tangput <size> <path>", "Receive raw bytes over the console into a file",
       cmd_tangput, 0 },
+    { "tangget",   "tangget <path> [offset [length]]", "Send a file's bytes down the console",
+      cmd_tangget, 0 },
     { "tangload",  "tangload <path>", "Program the FPGA with a core image from the SD",
       cmd_tangload, 0 },
 };

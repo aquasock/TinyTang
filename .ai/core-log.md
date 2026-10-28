@@ -2618,3 +2618,33 @@ The user runs `tools/shelf-h.sh` and installs the class B shelf into `/root/book
 - User Test: N/A
 
 ---
+
+## 75 COMMIT Unreleased 2026-10-28T15:49:55-07:00
+
+#### Coming From:
+
+Unreleased ea7272c
+
+#### Purpose:
+
+Give the console a way to send a file back to the host, and correct a false diagnosis made while testing it.
+
+#### Outcome:
+
+`tangget <path> [offset [length]]` sends a file's raw bytes down the USB console, the mirror of `tangput`: it refuses outside the USB console, prints one text header naming the length, offset and file size, enters the console's raw mode so the status probe cannot eat a byte, streams 512-byte chunks through `tdsh_bl616_console_write_raw` -- which blocks until USB has taken each packet rather than dropping it -- and ends with a sent line. A range past the end is shortened rather than refused, so "the rest of this file" always works. It was written because `cat` and `head` are text and are cut off around 4 KB by the console plumbing, which leaves a host no way to pull a save, a ROM or an image, and a two-way sync cannot be built on one direction. Measured on the board: 15,134 bytes in 0.08 s, about 190 KB/s. The cycle's larger result is a correction. Testing `tangget` appeared to reveal that `tangput` shifted every uploaded file by two bytes -- the card's copy reading as a CR, an LF and then the file's first 363 bytes of 365 -- and on that evidence a drain of the input ring was added to `tangput`, built and flashed. It was wrong. The two phantom bytes were the `tangget` header's own CRLF, which my host-side test had left in the buffer by matching the header up to its last digit; the same mistake, made three times, also produced a convincing synthetic experiment where every terminator yielded a leading CRLF. Measured again with the header's line ending consumed, three files came back byte-identical -- the manual pack's 365-byte `wiki.meta`, its 800-byte `wiki.idx` and its 15,134-byte `wiki.000` -- so `tangput` and `tangget` were both correct from the start, and the manual pack on the card was never damaged. The speculative drain was reverted rather than kept, because a fix for a bug that does not exist leaves a comment in the source that is not true; the firmware was rebuilt without it and flashed, and the round trip was repeated on that build with the same three files, two of them again byte-identical. The lesson is recorded for the sync application that comes next: `tangget`'s header is text, its line ending is not part of the file, and any client must consume the whole line before reading bytes.
+
+#### Next Steps:
+
+The sync application: a single file using only the standard library and pyserial, which finds the board by its USB identity, refuses unless the console answers the shell probe, walks `/root` with `ls -l` into a tree, asks for a folder, mirrors it beside the script, compares by name and size, and asks which direction to move files -- `tangput` up and `tangget` down. Its first test must be the one that cost this hour: reading a `tangget` body must consume the header's CRLF and then exactly the announced number of bytes, checked against a file whose contents are known. The full English Wikipedia conversion and the class B and Q Gutenberg shelves continue in the background.
+
+#### Files Modified:
+
+- ports/bl616/tdsh_tang_flash.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---
