@@ -516,9 +516,15 @@ static void desk_poll(void)
     (void)tang_ble_mouse(&mouse);
     /* The Wii pad beside the Bluetooth mouse: one pointer, and the same
      * wheel for the shell's history.  It reads the desktop core's I2C bus, so
-     * it does nothing while another core holds the fabric. */
-    (void)tang_wiipad_poll(&mouse, !s_pointer);
+     * it does nothing while another core holds the fabric.  Its spare buttons
+     * come back as the keys the desktop already understands. */
+    tang_wii_keys_t padkeys;
+    memset(&padkeys, 0, sizeof padkeys);
+    (void)tang_wiipad_poll(&mouse, !s_pointer, &padkeys);
     pointer_frame(&mouse);
+    if (padkeys.n > 0) {
+        desk_in_push(padkeys.keys, (size_t)padkeys.n);
+    }
 
     /* The keyboard beside it, from the same report the desktop types from, so
      * that a program under the layer sees the keys whether or not the desktop
@@ -580,7 +586,7 @@ static void desk_poll(void)
         tang_key_absorb(&s_ble.kbd, brep[0], &brep[2]);
     }
 
-    if (pad_toggle || key_toggle) {
+    if (pad_toggle || key_toggle || padkeys.toggle) {
         (void)tang_osd_toggle();
     }
 }
@@ -617,7 +623,7 @@ static void desk_poll_hidden(void)
 {
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
-    (void)tang_wiipad_poll(&mouse, false);
+    (void)tang_wiipad_poll(&mouse, false, NULL);
     pointer_frame(&mouse);
 
     /* After the pointer, so a keystroke and a pointer move arriving in the

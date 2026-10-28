@@ -139,9 +139,10 @@ void tang_wiipad_reset(void)
     memset(&g_wiipad, 0, sizeof g_wiipad);
 }
 
-bool tang_wiipad_poll(tang_mouse_t *out, bool console_mode)
+bool tang_wiipad_poll(tang_mouse_t *out, bool console_mode, tang_wii_keys_t *k)
 {
     g_wiipad_console = console_mode;
+    (void)k;
     if (!g_wiipad_live) {
         return false;
     }

@@ -13,9 +13,11 @@ the BL616, over whatever core is loaded.
 Keyboard and mouse come over Bluetooth, and a Wii nunchuck or Classic
 Controller on the USB-A adapter drives the same pointer: the nunchuck's
 stick or the Classic's left stick moves it, the Classic's right stick moves
-it more slowly, Z or L is the left button and C or R the right. The pointer
-appears when a mouse is paired; without either, the keyboard alone drives
-everything.
+it more slowly, Z or A is the left button and C or B the right. On a Classic
+the d-pad moves the pointer a cell at a time, and the other buttons are keys:
+Y and ZL move the focus forward and back, X cancels, + is Enter, - opens the
+start menu, L and R page up and down, and Home switches the screen. The pointer appears when a
+mouse is paired; without either, the keyboard alone drives everything.
 
 ## F12
 

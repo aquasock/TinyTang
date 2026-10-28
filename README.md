@@ -106,16 +106,26 @@ Building and flashing are under *Quick start* and *Building requirements*.
   The nunchuck's stick is a velocity control -- push to move, release to stop,
   with a squared response so the middle of the travel is fine control -- Z is
   the left button and C the right. The Classic's left stick does the same, its
-  right stick moves the pointer at half the speed for fine work, and L and R
-  are the left and right buttons, a firm squeeze counting even before the
-  trigger's click. At the console prompt the left stick's vertical axis
+  right stick moves the pointer at half the speed for fine work, and A and B
+  are the left and right buttons. At the console prompt the left stick's vertical axis
   becomes the wheel, so pushing up recalls the last command the way wheel-up
   does, and the left button presses Enter. They are read through the desktop
   core's own I2C engine, so they need that core loaded and do nothing while
   another core holds the fabric; a part the driver does not recognise is
-  refused rather than decoded as the wrong packing. `wiipad status|raw|center`
-  prints which part is fitted and what it reports, and `center` re-learns the
-  rest position while both sticks sit untouched; `nunchuck` is an alias.
+  refused rather than decoded as the wrong packing. A wireless receiver made
+  for the NES/SNES Classic -- an 8BitDo one, say -- works the same way: it
+  identifies as a Classic and is put into data format 3, which is the format
+  it wants and the one TinyNES uses. `wiipad status|raw|center` prints which
+  part is fitted and what it reports, and `center` re-learns the rest position
+  while both sticks sit untouched; `nunchuck` is an alias. On a Classic the
+  d-pad moves the pointer a cell a press and accelerates while held, up to
+  the nunchuck's own speed -- a stick on a receiver that reports it as a
+  d-pad still feels analog -- and at the prompt, where there is no pointer,
+  it is the arrow keys. The spare buttons are keys
+  the desktop already understands: Y is Tab and ZL Shift+Tab, X is Escape, +
+  is Enter, - opens the start menu, L and R are Page Up and Page Down, ZR
+  closes the focused window, and Home switches the screen between the desktop
+  and whatever core is running.
 - **The mouse at the console prompt.** With the desktop not running the wheel
   scrolls the shell's own history -- one detent is one Up or Down, so wheel up
   once recalls the last command -- and a left click presses Enter on the line

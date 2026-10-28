@@ -2253,3 +2253,38 @@ Two corrections the user asked for come first: the Classic's right stick X moves
 - User Test: PASS
 
 ---
+## 65 COMMIT Unreleased 2026-10-28T02:02:16-07:00
+
+#### Coming From:
+
+Unreleased eb87f67
+
+#### Purpose:
+
+Correct the Classic Controller's pointer -- its right stick's sense, and A and B as the buttons -- put the driver in the data format a wireless receiver needs, and give the controller's spare buttons the desktop keys the user chose.
+
+#### Outcome:
+
+The user's use of the pointer established that the Classic's right stick X was inverted, so its sign was flipped, and the left and right buttons moved from the L and R shoulders to A and B. A third-party receiver then showed a fault worth more than the two: an 8BitDo receiver for the NES/SNES Classic, with an SN30 Pro paired to it, identified as a Classic Controller and returned a fixed `84 86 86 86 00 00` in data format 1 across a dozen reads and a replug, which the format-1 decode read as a permanently deflected stick with every button down -- the console's history being walked continuously. Writing 0x03 to 0xFE was accepted and the format-3 report followed the pad, so the driver now selects format 3 when it adopts a Classic, reads eight bytes, accepts an identity whose format byte is 0x01 or 0x03, and decodes format 3's eight bytes with 8-bit axes; TinyNES's `wii_pads.sv` has selected format 3 for every controller all along, which is why the pads worked under the game cores and not here. The Classic's button bits were then confirmed live with the new `wiipad trace` command, which samples at the poll rate and prints a report only when it changes: A, B, X, Y, +, -, L, R, ZL, ZR, Home and all four d-pad directions each appeared on their own bit, and the d-pad's diagonals landed on the right bit pairs. The key map the user approved is in: Y is Tab, ZL Shift+Tab, X Escape, plus is Enter, minus the start menu, L and R Page Up and Down, ZR closes the focused window, and Home is the screen switch; the d-pad moves the pointer instead of sending arrows, one cell a press and accelerating while held to the nunchuck's six cells a poll, because the project's game-controller D-pad has always moved the pointer and because a pad whose stick the receiver reports as a d-pad would otherwise have no pointer at all; at the shell prompt the d-pad is still the arrow keys. A stick-only trace settled the analog question in the negative for this hardware: moving the SN30 Pro's left stick changed the d-pad bits and left all four axis bytes at 132/134, so the receiver presents the pad as a digital Classic and the sticks never reach the bus as axes. The firmware built at 665,552 bytes, SHA-256 `4fe986beff03a470e951de09142a8c36b8df3709a32fe7922ff2de5be7f7ca58`, was put to the card and flashed, and the user reports the button map correct, the d-pad moving the pointer, and the stick still feeling digital, which is what the receiver makes it. `test_wiipad` passes at 108 checks -- both decodes, the format-3 selection, the key map, the d-pad's pointer step and ramp, the console arrows, and both swap directions -- `test_osd_desk` at 92 and `check_help_width.py` at 149 entries. WII-003 and WII-004 carry the format-3 and receiver findings, and README and `manual/desktop.md` describe both parts and the key map. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 157 ids in the same order and the catalog listing 18 topics, and validated this entry as number 65 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The one untested way this receiver could still carry analog stick data is data format 0x02, the nine-byte report with 10-bit axes and 8-bit triggers (WII-003), which the firmware cannot see today because `tang_i2c.cpp` copies at most eight bytes out of the engine's sixteen-byte read window and `tangi2c` refuses a length over eight; widening the window and trying format 0x02 against this receiver is the next experiment, and if its axes are flat there too the receiver is digital by design and WII-004 says so for good. The key map's ZR (Ctrl+Q) and the start-menu keys were confirmed from the table and the trace but not each exercised in the desktop. The standing items of entry 64 are otherwise unchanged.
+
+#### Files Modified:
+
+- README.md
+- manual/desktop.md
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_wiipad.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
