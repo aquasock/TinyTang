@@ -1,8 +1,10 @@
 #!/bin/bash
-# Class q (science) -> a TinyGutenberg shelf, installed on the card if it is mounted.
+# Class q (science) -> a TinyGutenberg shelf.
+# 3,663 books in 17.7 GB of archive, about 4.4 GB as a pack.
 #
-# Same shape as the Wikipedia run: find the newest archive, verify its MD5,
-# convert it with the book settings, check every record.  See the class list in
-# manual/gutenberg.md for the other letters.
+# Same four stages as the Wikipedia run: newest archive, MD5 check, convert
+# with the book settings, verify the pack.  Installs into /root/books on the
+# card when the card is mounted; otherwise the pack waits in the scratch folder.
+# Any other Library of Congress letter works with tools/gutenberg_shelf.sh <class>.
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CARD=${CARD:-/run/media/vash/TINYTANG} exec "$here/gutenberg_shelf.sh" q "$@"

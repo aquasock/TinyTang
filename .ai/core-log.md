@@ -2548,3 +2548,43 @@ The user runs `tools/shelf-b.sh` and `tools/shelf-q.sh`; their results become th
 - User Test: N/A
 
 ---
+
+## 73 COMMIT Unreleased 2026-10-28T14:47:56-07:00
+
+#### Coming From:
+
+Unreleased 47477e8
+
+#### Purpose:
+
+Give each of the ten largest Gutenberg class archives its own one-command script so the user can choose which shelves to build.
+
+#### Outcome:
+
+`tools/shelf-<class>.sh` now exists for the ten largest classes -- world history, fine arts, children's fiction, science, English literature, American literature, technology, United States history, local history of the Americas and general works -- with philosophy and religion beside them from entry 72, eleven scripts in all. Each is a wrapper of the same three lines over `tools/gutenberg_shelf.sh`, so the download, the MD5 check, the book-shaped conversion, the pack check and the install into `/root/books` all behave identically whichever one is run; only the class letter differs. Each script's header states what the class holds, how many books the Kiwix catalogue lists in it and how large the archive is, with the pack estimated at a quarter of that, which is the ratio class P measured (38.6 MB of archive to 9.5 MB of pack). The eleven letters were each confirmed present in Kiwix's listing before the scripts were written, and every script was syntax-checked; `tools/shelf-q.sh` and `tools/shelf-b.sh` were regenerated with the same header so the set is uniform. No firmware was built or deployed and nothing on the card changed.
+
+#### Next Steps:
+
+The user chooses which shelves to build; the two largest, world history at 40 GB of archive and fine arts at 23 GB, are hours of downloading each, while philosophy and religion at 6.4 GB and the two literature classes at 16 GB are the moderate ones. Whatever gets built becomes the next cycle's content record, and the science and history shelves would be the largest packs this reader has opened. The known limits of the reader are unchanged: contents stop at 64 chapters, one saved position for the whole app, no author in a book header, no search inside a book. The full English Wikipedia download continues under `/run/media/vash/GIT/tinytang-scratch`.
+
+#### Files Modified:
+
+- tools/shelf-a.sh
+- tools/shelf-b.sh
+- tools/shelf-d.sh
+- tools/shelf-e.sh
+- tools/shelf-f.sh
+- tools/shelf-n.sh
+- tools/shelf-pr.sh
+- tools/shelf-ps.sh
+- tools/shelf-pz.sh
+- tools/shelf-q.sh
+- tools/shelf-t.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
