@@ -270,6 +270,8 @@ def main():
         check(meta.get("language") == "eng", "the language comes from the archive")
         check("CC BY-SA" in meta.get("license", ""),
               "a Wikipedia archive with no License key still names its terms")
+        check("Wikipedia" in meta.get("license", ""),
+              "the licence names the project the archive came from")
 
         # The pack checker must accept what the converter wrote, and must be
         # the thing that would have caught a line over the reader's width.

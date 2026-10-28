@@ -102,6 +102,24 @@ int main(void)
     check(wiki_chunk_valid(2, 3), "the last chunk of three is valid");
     check(!wiki_chunk_valid(3, 3), "one past the last chunk is not");
 
+    // Library folder names: a pack is a folder under /root/wiki, and the name
+    // has to survive being stored without becoming another folder's name.
+    check(wiki_pack_dir_ok("simple"), "a plain folder name is a pack candidate");
+    check(wiki_pack_dir_ok("wikipedia-en-simple"), "hyphens are fine");
+    check(wiki_pack_dir_ok("gutenberg books"), "spaces are fine");
+    check(!wiki_pack_dir_ok(""), "an empty name is not a pack");
+    check(!wiki_pack_dir_ok("."), "the current directory is not a pack");
+    check(!wiki_pack_dir_ok(".."), "the parent directory is not a pack");
+    check(!wiki_pack_dir_ok(".Trash-1000"), "a hidden entry is not a pack");
+    check(!wiki_pack_dir_ok(NULL), "a null name is not a pack");
+    char wide[WIKI_PACK_NAME_BYTES + 8];
+    memset(wide, 'x', sizeof wide);
+    wide[WIKI_PACK_NAME_BYTES - 1] = '\0';
+    check(wiki_pack_dir_ok(wide), "a name one byte short of the limit fits");
+    wide[WIKI_PACK_NAME_BYTES - 1] = 'x';
+    wide[WIKI_PACK_NAME_BYTES] = '\0';
+    check(!wiki_pack_dir_ok(wide), "a name at the limit is refused rather than cut");
+
     printf("wiki pack: %d checks, %d failed\n", s_checks, s_failed);
     return s_failed == 0 ? 0 : 1;
 }

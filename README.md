@@ -88,9 +88,11 @@ Building and flashing are under *Quick start* and *Building requirements*.
   therefore reads the archive on a computer -- standard library only -- and
   writes a text pack to `/root/wiki`: a sorted title index, ASCII article text
   wrapped to the screen, and redirects resolved to the article they name. The
-  window searches that index by title (a handful of card reads, however many
-  articles there are), opens a title, and pages through long articles a
-  screen at a time. Tables, images and non-Latin scripts are dropped, and the
+  window opens on a Library of the packs under `/root/wiki`, one folder each,
+  and opens one at a time: packs are whole corpora chosen for a purpose, so
+  their indexes are never merged. Inside a pack it searches the index by title
+  (a handful of card reads, however many articles there are), opens a title,
+  and pages through long articles a page at a time. Tables, images and non-Latin scripts are dropped, and the
   pack keeps Wikipedia's CC BY-SA terms in its own metadata.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
   core keeps running underneath, and while TinyDesk is up the controllers are

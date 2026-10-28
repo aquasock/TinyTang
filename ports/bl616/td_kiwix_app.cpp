@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: MIT
-// TinyKiwix: an offline encyclopedia on the card, read in the desktop.
+// TinyKiwix: offline encyclopedias on the card, read in the desktop.
 //
-// The card holds a pack built by tools/make_wiki_pack.py from a Kiwix/openZIM
-// archive.  That script explains why the archive itself cannot be read here: a
-// ZIM cluster is compressed as a whole and needs about a megabyte of window,
-// against 320 KB of OCRAM and a largest free heap block under 70 KB.
+// A pack is a folder of text converted on a host by tools/make_wiki_pack.py
+// from a Kiwix/openZIM archive; that script explains why the archive itself
+// cannot be read here (a ZIM cluster needs about a megabyte of decompression
+// window against 320 KB of OCRAM).
 //
-// A pack is `wiki.meta`, a `wiki.idx` of fixed-size records sorted by folded
-// title, and one or more `wiki.NNN` body chunks.  This window binary-searches
-// the index by title and pages through a body a window at a time, so neither
-// the article count nor an article's length is bounded by RAM: only the page
-// buffer is, and it is the same 12 KB TinyHelp uses.
+// The window opens on a Library of the packs under /root/wiki, the way the
+// TinyNES and TinyGBC windows open on their cartridge libraries.  One pack is
+// opened at a time and holds the window until Back returns to the Library:
+// packs are whole corpora chosen for a purpose -- simple English, full English,
+// a travel guide, a dictionary -- so their indexes are never merged.  Two packs
+// of the same project would otherwise answer one search with the same article
+// twice.
 //
-// Every FatFS call happens while a list, a page or the index is being loaded --
-// never in a draw callback.  TinyHelp's first version read the card inside the
-// list's draw path and hard-faulted the board when the window opened; the same
-// rule holds here.
+// Inside a pack, the title index is binary-searched by prefix and an article is
+// paged through a 12 KB window, allocated when an article is opened and freed
+// when the window closes.  Every FatFS call happens while something is being
+// loaded, never in a draw callback: TinyHelp's first version read the card
+// inside the list's draw path and hard-faulted the board.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,15 +41,23 @@ constexpr int LIST_ROWS = 48;          // titles kept in RAM for the browse list
 constexpr int TITLE_BYTES = 44;        // what the list keeps of each title
 constexpr int PAGE_BYTES = 12288;      // one page of article text, as TinyHelp
 constexpr int MAX_PAGE_LINES = 512;
-// Where each page began, so Prev can undo a More.  A pack caps an article at
-// 256 KB, which is 22 pages at 12 KB, so 32 entries cover every pack this
-// converter writes; a longer one simply stops remembering, and Prev can only
-// walk back as far as it recorded.
-constexpr int MAX_PAGE_STARTS = 32;
 constexpr int LINE_BYTES = 160;
 constexpr int WINDOW_COLS = 76;
 constexpr int META_TITLE_BYTES = 44;
 constexpr int META_LICENSE_BYTES = 72;
+constexpr int MAX_PACKS = 16;          // folders under /root/wiki plus the root
+// Where each page began, so Page Up can undo a Page Down.  A pack caps an
+// article at 256 KB, which is 22 pages at 12 KB, so 32 entries cover every pack
+// the converter writes; a longer one simply stops remembering.
+constexpr int MAX_PAGE_STARTS = 32;
+
+constexpr BYTE AM_VOLUME_LABEL = 0x08;
+
+enum mode_t {
+    MODE_LIBRARY,   // choosing a pack
+    MODE_TITLES,    // browsing a pack's index
+    MODE_ARTICLE,   // reading one article
+};
 
 struct meta_t {
     char title[META_TITLE_BYTES];
@@ -58,13 +69,24 @@ struct meta_t {
     uint16_t record_bytes;
 };
 
+struct pack_t {
+    char folder[WIKI_PACK_NAME_BYTES];   // "" for a pack sitting at /root/wiki
+    char title[META_TITLE_BYTES];
+    uint32_t articles;
+};
+
 td_window_t *s_win;
 td_widget_t *s_list;
 td_widget_t *s_head;
 td_widget_t *s_foot;
-td_widget_t *s_primary;    // Find... / More
-td_widget_t *s_second;     // Prev / Back
-td_widget_t *s_third;      // Next (browse only)
+td_widget_t *s_primary;    // Refresh (library) / Back (pack)
+td_widget_t *s_second;     // Page Up
+td_widget_t *s_third;      // Page Down
+
+mode_t s_mode;
+pack_t s_packs[MAX_PACKS];
+int s_pack_count;
+int s_pack_open;                       // -1 while the Library is shown
 
 meta_t s_meta;
 FIL s_index;
@@ -75,7 +97,6 @@ uint32_t s_first;                      // index of the first title in the list
 int s_count;                           // titles loaded
 char s_titles[LIST_ROWS][TITLE_BYTES];
 
-bool s_article;                        // false: browsing titles, true: reading
 char s_open_title[TITLE_BYTES];
 char *s_page;                          // one page of text, malloc'd on first use
 uint16_t s_line_offset[MAX_PAGE_LINES];
@@ -87,7 +108,7 @@ uint32_t s_cursor;                     // bytes of the body already paged
 uint32_t s_total;                      // body length
 bool s_more;                           // another page follows
 uint16_t s_page_no;
-uint32_t s_page_at[MAX_PAGE_STARTS];    // byte offset of each page's first line
+uint32_t s_page_at[MAX_PAGE_STARTS];   // byte offset of each page's first line
 int s_page_count;
 
 void set_text(td_widget_t *w, const char *text)
@@ -128,32 +149,25 @@ int read_line(FIL *file, char *out, int cap)
 
 /* ---------------------------------------------------------------- metadata */
 
-void meta_defaults(void)
+void meta_defaults(meta_t *meta)
 {
-    memset(&s_meta, 0, sizeof s_meta);
-    s_meta.title_bytes = WIKI_TITLE_BYTES_DEFAULT;
-    s_meta.record_bytes = WIKI_RECORD_BYTES(WIKI_TITLE_BYTES_DEFAULT);
-    snprintf(s_meta.title, sizeof s_meta.title, "Wikipedia");
+    memset(meta, 0, sizeof *meta);
+    meta->title_bytes = WIKI_TITLE_BYTES_DEFAULT;
+    meta->record_bytes = WIKI_RECORD_BYTES(WIKI_TITLE_BYTES_DEFAULT);
+    snprintf(meta->title, sizeof meta->title, "Wikipedia");
 }
 
-void copy_value(char *dst, size_t cap, const char *value)
+/* Read a pack's wiki.meta.  Used both for the pack the window is bound to and,
+ * at Library time, for each folder's display title. */
+bool meta_read(const char *dir, meta_t *meta)
 {
-    while (*value == ' ' || *value == '\t')
-    {
-        ++value;
-    }
-    snprintf(dst, cap, "%s", value);
-}
-
-void meta_load(void)
-{
-    meta_defaults();
-    char path[64];
-    snprintf(path, sizeof path, "%s/%s", WIKI_REAL, META_NAME);
+    meta_defaults(meta);
+    char path[96];
+    snprintf(path, sizeof path, "%s/%s", dir, META_NAME);
     FIL file;
     if (f_open(&file, path, FA_READ) != FR_OK)
     {
-        return;
+        return false;
     }
     char line[LINE_BYTES];
     while (read_line(&file, line, sizeof line) >= 0)
@@ -175,45 +189,132 @@ void meta_load(void)
         {
             *--end = '\0';
         }
+        while (*value == ' ' || *value == '\t')
+        {
+            ++value;
+        }
         if (strcmp(key, "title") == 0)
         {
-            copy_value(s_meta.title, sizeof s_meta.title, value);
+            snprintf(meta->title, sizeof meta->title, "%s", value);
         }
         else if (strcmp(key, "license") == 0)
         {
-            copy_value(s_meta.license, sizeof s_meta.license, value);
+            snprintf(meta->license, sizeof meta->license, "%s", value);
         }
         else if (strcmp(key, "main_page") == 0)
         {
-            copy_value(s_meta.main_page, sizeof s_meta.main_page, value);
+            snprintf(meta->main_page, sizeof meta->main_page, "%s", value);
         }
         else if (strcmp(key, "articles") == 0)
         {
-            s_meta.articles = (uint32_t)strtoul(value, nullptr, 10);
+            meta->articles = (uint32_t)strtoul(value, nullptr, 10);
         }
         else if (strcmp(key, "chunks") == 0)
         {
-            s_meta.chunks = (uint32_t)strtoul(value, nullptr, 10);
+            meta->chunks = (uint32_t)strtoul(value, nullptr, 10);
         }
         else if (strcmp(key, "title_bytes") == 0)
         {
             unsigned long v = strtoul(value, nullptr, 10);
             if (v >= 8 && v <= WIKI_MAX_TITLE_BYTES)
             {
-                s_meta.title_bytes = (uint16_t)v;
-                s_meta.record_bytes = WIKI_RECORD_BYTES(s_meta.title_bytes);
+                meta->title_bytes = (uint16_t)v;
+                meta->record_bytes = WIKI_RECORD_BYTES(meta->title_bytes);
             }
         }
         else if (strcmp(key, "record_bytes") == 0)
         {
             unsigned long v = strtoul(value, nullptr, 10);
-            if (v == (unsigned long)s_meta.title_bytes + WIKI_RECORD_OVERHEAD)
+            if (v == (unsigned long)meta->title_bytes + WIKI_RECORD_OVERHEAD)
             {
-                s_meta.record_bytes = (uint16_t)v;
+                meta->record_bytes = (uint16_t)v;
             }
         }
     }
     (void)f_close(&file);
+    return true;
+}
+
+/* -------------------------------------------------------------------- packs */
+
+void pack_dir(int index, char *out, size_t cap)
+{
+    if (s_packs[index].folder[0] == '\0')
+    {
+        snprintf(out, cap, "%s", WIKI_REAL);
+    }
+    else
+    {
+        snprintf(out, cap, "%s/%s", WIKI_REAL, s_packs[index].folder);
+    }
+}
+
+bool add_pack(const char *folder, const char *dir)
+{
+    if (s_pack_count >= MAX_PACKS)
+    {
+        return false;
+    }
+    meta_t meta;
+    if (!meta_read(dir, &meta))
+    {
+        return false;
+    }
+    pack_t &pack = s_packs[s_pack_count++];
+    snprintf(pack.folder, sizeof pack.folder, "%s", folder);
+    snprintf(pack.title, sizeof pack.title, "%s", meta.title);
+    pack.articles = meta.articles;
+    return true;
+}
+
+/* The Library: the pack at /root/wiki if there is one, then every folder there
+ * that holds a wiki.meta.  Sorted by folder name with the root pack first, so
+ * the list does not depend on the order FAT hands entries back. */
+void packs_load(void)
+{
+    s_pack_count = 0;
+    char path[96];
+    char dir[96];
+
+    snprintf(path, sizeof path, "%s/%s", WIKI_REAL, META_NAME);
+    FILINFO info;
+    if (f_stat(path, &info) == FR_OK && (info.fattrib & AM_DIR) == 0)
+    {
+        (void)add_pack("", WIKI_REAL);
+    }
+
+    DIR handle;
+    if (f_opendir(&handle, WIKI_REAL) == FR_OK)
+    {
+        FILINFO entry;
+        FRESULT result;
+        while ((result = f_readdir(&handle, &entry)) == FR_OK && entry.fname[0] != '\0')
+        {
+            if ((entry.fattrib & (AM_DIR | AM_HID | AM_SYS | AM_VOLUME_LABEL)) != AM_DIR)
+            {
+                continue;
+            }
+            if (!wiki_pack_dir_ok(entry.fname))
+            {
+                continue;
+            }
+            snprintf(dir, sizeof dir, "%s/%s", WIKI_REAL, entry.fname);
+            (void)add_pack(entry.fname, dir);
+        }
+        (void)f_closedir(&handle);
+    }
+
+    for (int i = 1; i < s_pack_count; ++i)
+    {
+        pack_t moving = s_packs[i];
+        int j = i - 1;
+        while (j >= 0 && strcasecmp(s_packs[j].folder, moving.folder) > 0)
+        {
+            s_packs[j + 1] = s_packs[j];
+            --j;
+        }
+        s_packs[j + 1] = moving;
+    }
 }
 
 /* ------------------------------------------------------------------- index */
@@ -227,11 +328,11 @@ void index_close(void)
     }
 }
 
-bool index_open(void)
+bool index_open(const char *dir)
 {
     index_close();
-    char path[64];
-    snprintf(path, sizeof path, "%s/%s", WIKI_REAL, INDEX_NAME);
+    char path[96];
+    snprintf(path, sizeof path, "%s/%s", dir, INDEX_NAME);
     if (f_open(&s_index, path, FA_READ) != FR_OK)
     {
         return false;
@@ -288,19 +389,20 @@ uint32_t lower_bound(const char *prefix)
 
 /* ---------------------------------------------------------------------- UI */
 
+void sync_buttons(void);
+
 void apply_mode(void)
 {
-    /* The two paging buttons keep their places in both views: Page Up and
-     * Page Down mean "the previous / next page of whatever is in front of
-     * you", which is the list of titles or the article.  Only the leftmost
-     * button changes: Find... while browsing, Back while reading. */
-    if (s_article)
+    /* Page Up and Page Down keep their places in all three views: they mean
+     * "the page before / after whatever is in front of you".  Only the
+     * leftmost button changes -- Refresh in the Library, Back inside a pack. */
+    if (s_mode == MODE_LIBRARY)
     {
-        set_text(s_primary, "Back");
+        set_text(s_primary, "Refresh");
     }
     else
     {
-        set_text(s_primary, "Find...");
+        set_text(s_primary, "Back");
     }
     set_text(s_second, "Page Up");
     set_text(s_third, "Page Down");
@@ -310,7 +412,14 @@ void apply_mode(void)
 void note_rows(void)
 {
     char text[64];
-    if (s_article)
+    if (s_mode == MODE_LIBRARY)
+    {
+        snprintf(text, sizeof text, "%d pack%s", s_pack_count,
+                 s_pack_count == 1 ? "" : "s");
+        say(text);
+        return;
+    }
+    if (s_mode == MODE_ARTICLE)
     {
         snprintf(text, sizeof text, "page %u%s", (unsigned)s_page_no,
                  s_more ? "" : ", end of article");
@@ -352,16 +461,66 @@ void load_window(uint32_t first)
     td_list_select(s_list, 0);
 }
 
-void show_list(void)
+void show_library(void)
 {
-    s_article = false;
+    s_mode = MODE_LIBRARY;
+    s_pack_open = -1;
+    index_close();
+    sync_buttons();
+    set_text(s_head, "Packs on the card");
+    td_list_set_count(s_list, s_pack_count);
+    td_list_select(s_list, 0);
+    note_rows();
+    td_widget_focus(s_list);
+    if (s_pack_count == 0)
+    {
+        say("No pack: put one in /root/wiki, or make one with make_wiki_pack.py");
+    }
+}
+
+void show_titles(void)
+{
+    s_mode = MODE_TITLES;
     s_page_no = 0;
     s_line_count = 0;
-    apply_mode();
+    sync_buttons();
     set_text(s_head, s_meta.title);
     load_window(s_first);
     note_rows();
     td_widget_focus(s_list);
+}
+
+bool open_pack(int index)
+{
+    if (index < 0 || index >= s_pack_count)
+    {
+        return false;
+    }
+    char dir[96];
+    pack_dir(index, dir, sizeof dir);
+    if (!meta_read(dir, &s_meta))
+    {
+        say("That pack's metadata is unreadable");
+        return false;
+    }
+    if (!index_open(dir) || s_meta.articles == 0)
+    {
+        say("That pack's index is unreadable");
+        index_close();
+        return false;
+    }
+    s_pack_open = index;
+    s_first = 0;
+    if (s_meta.main_page[0] != '\0')
+    {
+        s_first = lower_bound(s_meta.main_page);
+        if (s_first >= s_meta.articles)
+        {
+            s_first = 0;
+        }
+    }
+    show_titles();
+    return true;
 }
 
 /* ---------------------------------------------------------------- article */
@@ -376,7 +535,7 @@ void open_article(const wiki_record_t *record)
         say("That article is empty");
         return;
     }
-    s_article = true;
+    s_mode = MODE_ARTICLE;
     snprintf(s_open_title, sizeof s_open_title, "%s", record->title);
     s_chunk = record->chunk;
     s_body_offset = record->offset;
@@ -385,7 +544,7 @@ void open_article(const wiki_record_t *record)
     s_page_no = 1;
     s_page_count = 1;
     s_page_at[0] = 0;
-    apply_mode();
+    sync_buttons();
     set_text(s_head, s_open_title);
     read_page();
     td_widget_focus(s_list);
@@ -412,8 +571,17 @@ void read_page(void)
     }
     char name[24];
     snprintf(name, sizeof name, "wiki.%03u", (unsigned)s_chunk);
-    char path[64];
-    snprintf(path, sizeof path, "%s/%s", WIKI_REAL, name);
+    char path[96];
+    char dir[96];
+    if (s_pack_open >= 0)
+    {
+        pack_dir(s_pack_open, dir, sizeof dir);
+        snprintf(path, sizeof path, "%s/%s", dir, name);
+    }
+    else
+    {
+        snprintf(path, sizeof path, "%s/%s", WIKI_REAL, name);
+    }
     FIL file;
     if (f_open(&file, path, FA_READ) != FR_OK)
     {
@@ -518,7 +686,6 @@ int leading_title_rows(void)
     {
         return 0;
     }
-    // Skip the heading and the blank line the converter leaves under it.
     int skip = 1;
     if (s_line_count > 1 && s_page[s_line_offset[1]] == '\0')
     {
@@ -570,7 +737,31 @@ bool prepare_line(const char *in)
 
 const char *list_item(td_widget_t *, int index, int *fg, void *)
 {
-    if (s_article)
+    if (s_mode == MODE_LIBRARY)
+    {
+        *fg = td_theme()->accent;
+        if (index < 0 || index >= s_pack_count)
+        {
+            return "";
+        }
+        // The folder is what tells two packs of the same project apart, so it
+        // is shown beside the title the pack names itself with.
+        if (s_packs[index].folder[0] != '\0')
+        {
+            snprintf(s_line, sizeof s_line, "%s  [%s]", s_packs[index].title,
+                     s_packs[index].folder);
+        }
+        else
+        {
+            snprintf(s_line, sizeof s_line, "%s", s_packs[index].title);
+        }
+        if (static_cast<int>(strlen(s_line)) > WINDOW_COLS)
+        {
+            s_line[WINDOW_COLS] = '\0';
+        }
+        return s_line;
+    }
+    if (s_mode == MODE_ARTICLE)
     {
         if (index < 0 || index >= s_line_count)
         {
@@ -623,7 +814,12 @@ void prev_page(void)
 void on_choose(td_widget_t *, void *)
 {
     const int index = td_list_selected(s_list);
-    if (s_article)
+    if (s_mode == MODE_LIBRARY)
+    {
+        (void)open_pack(index);
+        return;
+    }
+    if (s_mode == MODE_ARTICLE)
     {
         more_page();
         return;
@@ -646,28 +842,36 @@ void on_find_done(const char *text, void *)
     }
     char prefix[TITLE_BYTES];
     snprintf(prefix, sizeof prefix, "%s", text);
-    s_article = false;
-    apply_mode();
+    s_mode = MODE_TITLES;
+    sync_buttons();
     set_text(s_head, s_meta.title);
     load_window(lower_bound(prefix));
     note_rows();
 }
 
-void on_find(td_widget_t *, void *)
+void find_prompt(void)
 {
     if (s_meta.articles == 0)
     {
-        say("No pack on the card");
+        say("Open a pack first");
         return;
     }
     (void)td_inputbox("TinyKiwix", "Title starts with", "", on_find_done, nullptr);
 }
 
-void on_second(td_widget_t *, void *)
+/* Page Up by one screen: the previous page of an article, or the previous
+ * window of titles, or up the pack list. */
+void page_up(void)
 {
-    if (s_article)
+    if (s_mode == MODE_ARTICLE)
     {
         prev_page();
+        return;
+    }
+    if (s_mode == MODE_LIBRARY)
+    {
+        int selected = td_list_selected(s_list);
+        td_list_select(s_list, selected > LIST_ROWS ? selected - LIST_ROWS : 0);
         return;
     }
     if (s_first == 0)
@@ -679,11 +883,18 @@ void on_second(td_widget_t *, void *)
     note_rows();
 }
 
-void on_third(td_widget_t *, void *)
+void page_down(void)
 {
-    if (s_article)
+    if (s_mode == MODE_ARTICLE)
     {
         more_page();
+        return;
+    }
+    if (s_mode == MODE_LIBRARY)
+    {
+        int selected = td_list_selected(s_list);
+        int last = s_pack_count > 0 ? s_pack_count - 1 : 0;
+        td_list_select(s_list, selected + LIST_ROWS < last ? selected + LIST_ROWS : last);
         return;
     }
     uint32_t next = s_first + (uint32_t)LIST_ROWS;
@@ -696,15 +907,42 @@ void on_third(td_widget_t *, void *)
     note_rows();
 }
 
-void on_primary(td_widget_t *w, void *user)
+void on_primary(td_widget_t *, void *)
 {
-    if (s_article)
+    if (s_mode == MODE_LIBRARY)
     {
-        show_list();
+        packs_load();
+        td_list_set_count(s_list, s_pack_count);
+        td_list_select(s_list, 0);
+        note_rows();
+        return;
     }
-    else
+    if (s_mode == MODE_ARTICLE)
     {
-        on_find(w, user);
+        show_titles();
+        return;
+    }
+    show_library();
+}
+
+void on_second(td_widget_t *, void *) { page_up(); }
+void on_third(td_widget_t *, void *) { page_down(); }
+
+/* A button on the window: Find... is added by the Library once a pack is open,
+ * because a title search belongs to a pack and not to the list of packs. */
+td_widget_t *s_find;
+
+void on_find_button(td_widget_t *, void *) { find_prompt(); }
+
+/* The one place a mode change updates the buttons: captions, and whether a
+ * title search is offered at all (it belongs to a pack, not to the list of
+ * packs). */
+void sync_buttons(void)
+{
+    apply_mode();
+    if (s_find != nullptr)
+    {
+        td_widget_set_visible(s_find, s_mode != MODE_LIBRARY);
     }
 }
 
@@ -717,13 +955,16 @@ void on_close(td_window_t *)
     s_primary = nullptr;
     s_second = nullptr;
     s_third = nullptr;
+    s_find = nullptr;
     index_close();
     if (s_page != nullptr)
     {
         free(s_page);
         s_page = nullptr;
     }
-    s_article = false;
+    s_mode = MODE_LIBRARY;
+    s_pack_open = -1;
+    s_pack_count = 0;
     s_count = 0;
     s_first = 0;
     s_line_count = 0;
@@ -753,30 +994,15 @@ void launch(void)
     s_head = td_label(s_win, 0, 0, 0, "");
     s_list = td_list(s_win, td_rect(0, 1, -1, -4), list_item, on_choose, nullptr);
     td_scrollbar(s_win, -1, 1, -4, s_list);
-    s_primary = td_button(s_win, 0, -3, "Find...", on_primary, nullptr);
-    s_second = td_button(s_win, 12, -3, "Prev", on_second, nullptr);
-    s_third = td_button(s_win, 24, -3, "Next", on_third, nullptr);
+    s_primary = td_button(s_win, 0, -3, "Refresh", on_primary, nullptr);
+    s_second = td_button(s_win, 12, -3, "Page Up", on_second, nullptr);
+    s_third = td_button(s_win, 24, -3, "Page Down", on_third, nullptr);
+    s_find = td_button(s_win, 38, -3, "Find...", on_find_button, nullptr);
     s_foot = td_label(s_win, 0, -1, 0, "");
     td_widget_set_color(s_foot, td_theme()->dim, TD_COLOR_DEFAULT);
 
-    meta_load();
-    if (!index_open() || s_meta.articles == 0)
-    {
-        set_text(s_head, s_meta.title);
-        td_list_set_count(s_list, 0);
-        say("No pack on the card: make one with tools/make_wiki_pack.py");
-        return;
-    }
-    s_first = 0;
-    if (s_meta.main_page[0] != '\0')
-    {
-        s_first = lower_bound(s_meta.main_page);
-        if (s_first >= s_meta.articles)
-        {
-            s_first = 0;
-        }
-    }
-    show_list();
+    packs_load();
+    show_library();
 }
 
 const td_app_t s_app = {"TinyKiwix", launch, "W"};

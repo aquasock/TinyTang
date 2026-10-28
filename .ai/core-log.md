@@ -2363,3 +2363,39 @@ The 49 GB English archive is the stated goal and is not converted: it needs abou
 - User Test: PASS
 
 ---
+
+## 68 COMMIT Unreleased 2026-10-28T12:14:15-07:00
+
+#### Coming From:
+
+Unreleased 6315b05
+
+#### Purpose:
+
+Give TinyKiwix a Library of the packs on the card, opened one at a time, so a pack is a folder under `/root/wiki` rather than the single fixed location it was.
+
+#### Outcome:
+
+TinyKiwix now opens on a Library, as the TinyNES and TinyGBC windows open on their libraries: one row per pack, showing the title the pack names itself with and, when it has one, its folder in brackets, with `Refresh` to re-read the folder, `Page Up`/`Page Down` to move through it, Enter to open the pack under the cursor, and `Find...` offered only once a pack is open, because a title search belongs to a pack and not to the list of packs. Packs are discovered as the pack sitting at `/root/wiki` itself -- which is where the first one was left, so the card needed no surgery -- and then every folder there holding a `wiki.meta`, sorted by folder name with the root pack first so the list does not depend on the order FAT returns entries; `wiki_pack_dir_ok()` in `td_wiki_pack.h` rejects `.`, `..`, hidden names and names too long to store without becoming another folder's name. One pack is open at a time and `Back` walks titles to Library, article to titles; the merged search I had proposed was dropped at the user's direction after looking at what Kiwix actually publishes -- about 3,000 archives across 16 collections, in which one project appears as four depths, many languages and topic cuts, so a merged index would answer every search twice over. The converter gained nothing structural but its licence default now names the Wikimedia project it recognises (`Wikivoyage`, `Wiktionary`, `Wikibooks`, and the rest of the family) instead of falling back to "see the source archive". Wikivoyage Europe was converted as the second pack and placed at `/root/wiki/voyage-europe`: 80 MB of archive became 10,268 index records and 93 MB of text with 1,062 redirects resolved, and `tools/check_wiki_pack.py` passed every record and body, as it does for the 289,768-record simple-English pack beside it. Tests: `tools/tests/test_wiki_pack.sh` now runs 40 checks on the pack contract -- the folder-name rule included -- and 29 on the converter, all passing, and 27 of 28 host suites pass with `tools/tests/test_phosphor_catalog.sh` still red from entry 41. The firmware built as 669,776 bytes at SHA-256 `3d815ce542cbe9cc4cec360ff4dfecdc12e74c01c1cb7f64bffb9c2949dcd109`, `tinytang_flash.py --yes` committed it as `tangflash: OK committing`, the user power-cycled with the card in the board, opened both packs, moved between them and between pages, and reported the build a pass. Two findings for later were established while answering questions about the archive catalogue: the reader remembers only 32 page starts, so a body of about 85 pages or more would make `Page Up` past that point read a stale entry and jump to the article's beginning while labelling it a later page -- unreachable at the converter's 256 KB article cap, which is about 22 pages, but reachable the moment that cap is raised -- and Kiwix's Project Gutenberg archives hold each book as a `text/html` entry beside an EPUB and a cover page inside a 206 GB web application, so a Gutenberg pack would need a cover-page filter and a much larger article cap, which the user chose to take as a separate app rather than as part of this reader.
+
+#### Next Steps:
+
+Gutenberg becomes its own app in a later cycle, at the user's direction, and the work it needs is now understood: skip the `_cover` HTML entries each book carries, raise `--max-article-bytes` to about 2 MB because a novel is 300 to 700 KB of text, and expect 25 to 40 GB from the 80,656 English books or one Library of Congress class at a time. Before any cap increase, the 32-page history must be fixed -- a larger table or a re-walk from the start of the body -- or `Page Up` will lie. Increasing the cap costs no board RAM (a page is 12 KB whatever the article's length) but makes a 1 MB book 85 page turns, so `PAGE_BYTES` and a "line X of Y" footer are worth revisiting with it. zimgit packs, PhET and TED are not article corpora and stay unusable here: each is a web application of WASM, JSON and PDFs behind two HTML shells. The standing items of entry 67 are otherwise unchanged.
+
+#### Files Modified:
+
+- README.md
+- manual/kiwix.md
+- ports/bl616/td_kiwix_app.cpp
+- ports/bl616/td_wiki_pack.h
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+- tools/tests/tb_wiki_pack.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

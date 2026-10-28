@@ -289,6 +289,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why is a TinyKiwix pack one big text file plus wiki.NNN chunks? | KIWI | KIWI-004, KIWI-001 |
 | How do ZIM redirects such as "USA" survive the conversion? | KIWI | KIWI-002 |
 | Which Wikipedia trim should be downloaded, and how big is it? | KIWI | KIWI-003 |
+| Do Kiwix's Gutenberg archives hold readable book text? | KIWI | KIWI-005 |
+| Which Kiwix collections are web apps rather than articles? | KIWI | KIWI-006 |
 
 ---
 
@@ -458,6 +460,8 @@ KIWI-001: "A ZIM is an 80-byte header, MIME list, three 8-byte pointer tables an
 KIWI-002: "libzim writes most redirects as text/html meta-refresh pages (1,221 of 1,323 HTML entries in wikipedia_en_100); the converter reads the refresh target and re-points the redirect's title at the target's body"
 KIWI-003: "Kiwix's 2026-10-28 English Wikipedia listing: all_maxi 119 GB, all_nopic 49 GB, all_mini 13 GB, top_nopic 2.6 GB, top_mini 283 MB, en-simple_all_nopic 1.0 GB; a nopic archive converts to about half its size in text"
 KIWI-004: "The card is FAT32, which caps a file at 4 GiB, so a pack writes bodies into wiki.000, wiki.001 ... cut at 3 GiB with each article wholly inside one chunk, and keeps one wiki.idx of 80-byte records"
+KIWI-005: "Kiwix's Project Gutenberg archives wrap each book in a 206 GB web application: the full text is a text/html entry beside an EPUB and a cover page, so the converter can read books but must skip the cover entries and a novel needs a far larger article cap than 256 KB"
+KIWI-006: "zimgit, PhET and TED archives are applications rather than articles: the two zimgit packs inspected hold 366 SVG, 212 JavaScript, 167 JSON and 15 WebAssembly entries with PDFs and exactly two empty-titled HTML shells, so no text reaches this reader"
 ```
 
 ---
@@ -2657,6 +2661,33 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "This card, read as /dev/sdc1 on 2026-10-28: 120G, vfat"
     - "Microsoft's FAT32 specification for the 4 GiB file-size limit"
   verification: "The volume and its limit are facts of this card. The split is implemented and exercised only at one chunk: every pack built so far fits in wiki.000, so a record naming wiki.001 has not yet been produced or read on the board, and is the first thing a 49 GB pack would have to prove."
+
+- record_id: KIWI-005
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "Kiwix's Gutenberg archives hold each book as HTML beside an EPUB and a cover page inside a 206 GB application"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "The English Project Gutenberg archive is far larger than a text corpus: gutenberg_en_all_2025-11.zim is 206 GB and the 2023-08 edition 72 GB, while the catalogue counts 80,656 books in it and 290,194 across 103 Gutenberg ZIMs in all languages, the rest being cut by Library of Congress class. Inside, each book is three entries in one web application: the full text as a text/html entry, an application/epub+zip file, and a cover page that is also text/html; the application itself contributes hundreds of kilobytes of JavaScript, a dozen fonts and stylesheets, and whatever scans, audio or video make up the bulk of the 206 GB. Measured on gutenberg_ale_all_2025-09.zim, five books in 2,092,566 bytes: the dictionary's text entry is 32,355 bytes of HTML rendering to 19,907 bytes of ASCII ending 'End of Project Gutenberg's Alaska Indian Dictionary', its cover entry is 32,108 bytes of HTML rendering to 374 bytes of navigation, and its EPUB is 85,943 bytes."
+  consequence: "The converter can read Gutenberg books, because the text is text/html, but three things must change for it: the cover entries carry their book's title with a _cover suffix in the URL and would otherwise become near-duplicate index rows, the 256 KB article cap cuts a novel of 300 to 700 KB mid-chapter, and the pack would be 25 to 40 GB of text rather than the archive's 206 GB of media. The user chose to make Gutenberg its own application rather than widen this reader, so none of it is implemented."
+  sources:
+    - "https://download.kiwix.org/zim/gutenberg/, directory listing fetched 2026-10-28"
+    - "https://library.kiwix.org/catalog/v2/entries?q=gutenberg, fetched 2026-10-28 (articleCount and mediaCount per ZIM)"
+    - "gutenberg_ale_all_2025-09.zim, 2,092,566 bytes, downloaded and read on 2026-10-28"
+  verification: "Read on 2026-10-28: the archive's own entries were enumerated by MIME type and size, and the book's text entry was rendered with tools/make_wiki_pack.py to confirm it holds the whole work rather than a landing page. The 80,656 and 290,194 counts are the Kiwix catalogue's articleCount fields; the 206 GB and 72 GB are the directory listing's sizes for the two English editions. The per-book average that follows from 206 GB over 80,656 books, 2.6 MB, is mostly media and is not text."
+
+- record_id: KIWI-006
+  kind: EXTERNAL
+  topic_id: KIWI
+  title: "zimgit, PhET and TED archives are applications, not article text"
+  status: VERIFIED
+  verified_date: 2026-10-28
+  statement: "Some Kiwix collections package an offline web application rather than prose. The two zimgit packs inspected are typical: zimgit-water_en_2024-08.zim (20,924,451 bytes, 'Water Treatment Library', 'Resources about water collection and purification', tagged preppers) and zimgit-knots_en_2024-08.zim ('A Library of Knots') each contain 366 image/svg entries, 212 JavaScript, 167 JSON, 15 WebAssembly, 17 text/plain, 9 CSS and 7 to 11 PDFs, and exactly two text/html entries, named home and home.html, both with empty titles. Their content is rendered by the application at runtime from the JSON, WASM and PDFs."
+  consequence: "No article text reaches TinyKiwix from these packs: a converted zimgit pack would be two rows titled from their URLs and nothing to read. The same reasoning excludes PhET (interactive simulations) and TED (video), which is why the Library is for article corpora -- the Wikimedia projects, Stack Exchange, iFixit and similar -- and not for whatever Kiwix publishes."
+  sources:
+    - "zimgit-water_en_2024-08.zim, 20,924,451 bytes, and zimgit-knots_en_2024-08.zim, downloaded from download.kiwix.org and read on 2026-10-28"
+    - "https://download.kiwix.org/zim/other/, directory listing fetched 2026-10-28"
+  verification: "Both archives were downloaded on 2026-10-28 and their entries counted by MIME type with tools/make_wiki_pack.py's reader; the two HTML entries were listed with their URLs and titles. The PhET and TED statements are the catalogue's own descriptions and the presence of video and simulation content in their ZIMs, not a read of those archives."
 
 ```
 

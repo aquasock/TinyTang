@@ -22,6 +22,7 @@
 #define WIKI_RECORD_OVERHEAD 16
 #define WIKI_RECORD_BYTES(title_bytes) ((title_bytes) + WIKI_RECORD_OVERHEAD)
 #define WIKI_MAX_TITLE_BYTES 255
+#define WIKI_PACK_NAME_BYTES 32
 
 typedef struct
 {
@@ -82,6 +83,20 @@ static inline bool wiki_record_parse(const uint8_t *raw, uint16_t title_bytes,
     out->length = wiki_le32(raw + title_bytes + 8);
     out->lines = wiki_le32(raw + title_bytes + 12);
     return out->title[0] != '\0';
+}
+
+/* True when a directory name under /root/wiki may be a pack: a pack is a folder
+ * holding wiki.meta, but hidden and pseudo entries are never one, and a name
+ * too long to store would be truncated into a different folder's name. */
+static inline bool wiki_pack_dir_ok(const char *name)
+{
+    size_t length;
+    if (name == NULL || name[0] == '\0' || name[0] == '.')
+    {
+        return false;
+    }
+    length = strlen(name);
+    return length > 0 && length < WIKI_PACK_NAME_BYTES;
 }
 
 /* True when the record's chunk number is one the pack can name (wiki.NNN). */

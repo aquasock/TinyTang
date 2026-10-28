@@ -572,14 +572,22 @@ class PackWriter:
 # ------------------------------------------------------------------------ main
 
 
+# Wikimedia projects whose text is CC BY-SA 4.0, named so a pack without a
+# License key of its own still states the terms it is under.
+_WIKIMEDIA_PROJECTS = ("wikipedia", "wikivoyage", "wiktionary", "wikibooks",
+                       "wikiquote", "wikisource", "wikinews", "wikiversity",
+                       "wikispecies", "wikidata")
+
+
 def _default_license(metadata: dict[str, str]) -> str:
     """Kiwix archives do not all carry a License key, so name the terms of the
     source the metadata does identify rather than leaving the pack silent."""
     title = (metadata.get("Title", "") + " " + metadata.get("Name", "")).lower()
-    if "wikipedia" in title:
-        return ("CC BY-SA 4.0 -- Wikipedia text, "
-                "https://creativecommons.org/licenses/by-sa/4.0/ "
-                "(not stated in the archive metadata)")
+    for project in _WIKIMEDIA_PROJECTS:
+        if project in title:
+            return (f"CC BY-SA 4.0 -- {project.capitalize()} text, "
+                    "https://creativecommons.org/licenses/by-sa/4.0/ "
+                    "(not stated in the archive metadata)")
     return "see the source archive"
 
 
