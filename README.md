@@ -101,18 +101,21 @@ Building and flashing are under *Quick start* and *Building requirements*.
   button and wheel are passed on too. All of them drive the same pointer. The pointer exists only while
   the desktop runs: at the bare console it is not drawn and does not move,
   and the mouse is the shell's instead (next bullet).
-- **A Wii nunchuck as the pointer.** A nunchuck on the Adafruit adapter in the
-  populated USB-A port drives the same pointer: the stick is a velocity
-  control -- push to move, release to stop, and a squared response so the
-  middle of the travel is fine control -- Z is the left button and C the
-  right. At the console prompt its vertical axis becomes the wheel, so pushing
-  up recalls the last command the way wheel-up does, and Z presses Enter. It
-  is read through the desktop core's own I2C engine, so it needs that core
-  loaded and does nothing while another core holds the fabric. A Classic
-  Controller on the same adapter is recognised and refused, because its report
-  packs the stick in six bits and would read as hard over. `nunchuck
-  status|raw|center` prints what the part reports, and `center` re-learns the
-  stick's rest position while it sits untouched.
+- **A Wii controller as the pointer.** A nunchuck or a Classic Controller on
+  the Adafruit adapter in the populated USB-A port drives the same pointer.
+  The nunchuck's stick is a velocity control -- push to move, release to stop,
+  with a squared response so the middle of the travel is fine control -- Z is
+  the left button and C the right. The Classic's left stick does the same, its
+  right stick moves the pointer at half the speed for fine work, and L and R
+  are the left and right buttons, a firm squeeze counting even before the
+  trigger's click. At the console prompt the left stick's vertical axis
+  becomes the wheel, so pushing up recalls the last command the way wheel-up
+  does, and the left button presses Enter. They are read through the desktop
+  core's own I2C engine, so they need that core loaded and do nothing while
+  another core holds the fabric; a part the driver does not recognise is
+  refused rather than decoded as the wrong packing. `wiipad status|raw|center`
+  prints which part is fitted and what it reports, and `center` re-learns the
+  rest position while both sticks sit untouched; `nunchuck` is an alias.
 - **The mouse at the console prompt.** With the desktop not running the wheel
   scrolls the shell's own history -- one detent is one Up or Down, so wheel up
   once recalls the last command -- and a left click presses Enter on the line

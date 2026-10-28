@@ -126,32 +126,32 @@ bool tang_ble_mouse(tang_mouse_t *out)
     return g_mouse_live;
 }
 
-/* The nunchuck, modelled as one more source of the same mouse.  The driver
- * has its own test (tools/tests/tb_nunchuck.c); here it only has to be the
+/* The Wii pad, modelled as one more source of the same mouse.  The driver
+ * has its own test (tools/tests/tb_wiipad.c); here it only has to be the
  * same shape the desk layer calls. */
-static tang_mouse_t g_nunchuck;
-static bool         g_nunchuck_live;
-static bool         g_nunchuck_console;   /* the mode the last poll was asked for */
+static tang_mouse_t g_wiipad;
+static bool         g_wiipad_live;
+static bool         g_wiipad_console;   /* the mode the last poll was asked for */
 
-void tang_nunchuck_reset(void)
+void tang_wiipad_reset(void)
 {
-    g_nunchuck_live = false;
-    memset(&g_nunchuck, 0, sizeof g_nunchuck);
+    g_wiipad_live = false;
+    memset(&g_wiipad, 0, sizeof g_wiipad);
 }
 
-bool tang_nunchuck_poll(tang_mouse_t *out, bool console_mode)
+bool tang_wiipad_poll(tang_mouse_t *out, bool console_mode)
 {
-    g_nunchuck_console = console_mode;
-    if (!g_nunchuck_live) {
+    g_wiipad_console = console_mode;
+    if (!g_wiipad_live) {
         return false;
     }
-    out->buttons |= g_nunchuck.buttons;
-    out->pressed |= g_nunchuck.pressed;
-    out->dx += g_nunchuck.dx;
-    out->dy += g_nunchuck.dy;
-    out->wheel += g_nunchuck.wheel;
-    g_nunchuck.dx = g_nunchuck.dy = g_nunchuck.wheel = 0;
-    g_nunchuck.pressed = 0;
+    out->buttons |= g_wiipad.buttons;
+    out->pressed |= g_wiipad.pressed;
+    out->dx += g_wiipad.dx;
+    out->dy += g_wiipad.dy;
+    out->wheel += g_wiipad.wheel;
+    g_wiipad.dx = g_wiipad.dy = g_wiipad.wheel = 0;
+    g_wiipad.pressed = 0;
     return true;
 }
 
@@ -582,18 +582,18 @@ int main(void)
               "a button held when the mouse dropped was not released");
         g_mouse.buttons = 0;
 
-        /* The nunchuck is one more source of the same pointer: the desk task
+        /* The Wii pad is one more source of the same pointer: the desk task
          * merges it beside the Bluetooth mouse and tells it which mode it is
          * in, so a stick in console mode drives the shell's history. */
-        g_nunchuck_live = true;
+        g_wiipad_live = true;
         const int nx0 = s_pad.x;
-        g_nunchuck.dx = 16;                      /* one cell right */
+        g_wiipad.dx = 16;                      /* one cell right */
         desk_poll();
         read_typed(got, sizeof(got));
-        check(strncmp(got, "\x1b[<35;", 6) == 0, "the nunchuck did not move the pointer");
-        check(s_pad.x == nx0 + 1, "16 nunchuck counts did not move one cell");
-        check(!g_nunchuck_console, "the nunchuck was read in console mode while pointing");
-        g_nunchuck_live = false;
+        check(strncmp(got, "\x1b[<35;", 6) == 0, "the wiipad did not move the pointer");
+        check(s_pad.x == nx0 + 1, "16 wiipad counts did not move one cell");
+        check(!g_wiipad_console, "the wiipad was read in console mode while pointing");
+        g_wiipad_live = false;
 
         /* Console mode: the mouse moves nothing and sends no pointer report,
          * and the wheel and the click belong to the shell instead. */
@@ -605,7 +605,7 @@ int main(void)
         read_typed(got, sizeof(got));
         check(got[0] == '\0', "the mouse sent reports in console mode");
         check(s_pad.x == x1, "the mouse moved the pointer in console mode");
-        check(g_nunchuck_console, "the nunchuck was not told the console owns the input");
+        check(g_wiipad_console, "the wiipad was not told the console owns the input");
 
         /* At the prompt the wheel is Up and Down over the shell's history:
          * one detent is one arrow, because the editor steps one entry. */

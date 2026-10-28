@@ -2215,3 +2215,41 @@ A Classic Controller would need its own decode, its format now recorded in WII-0
 - User Test: PASS
 
 ---
+## 64 COMMIT Unreleased 2026-10-28T01:08:36-07:00
+
+#### Coming From:
+
+Unreleased 92f2004
+
+#### Purpose:
+
+Make the Classic Controller drive the same pointer as the nunchuck, its left stick at the nunchuck's scale, its right stick at half, and its L and R shoulders as the buttons.
+
+#### Outcome:
+
+The part was measured on the bench before the decode was written: `tangi2c read 52 FA 6` returned `00 00 a4 20 01 01`, the identity and format code WII-003 recorded, and `tangi2c read 52 00 6` at rest returned `a0 20 10 61 ff ff`, which under format 0x01 is a left stick at 32/32, a right stick at 16/16 and every button released. Holding each state for a run of reads gave the left stick 5 at full left, 54 at full right, 58 at full up and 6 at full down, the right stick 28 and 4 on its X and 28 and 3 on its Y, and the shoulders byte 4 bit 5 and bit 1 with the digital click closing at about 29 of 31 on the analog trigger. `ports/bl616/tang_nunchuck.{c,h}` became `ports/bl616/tang_wiipad.{c,h}` because it now serves two parts: the identity at 0xFA chooses the packing, the nunchuck's 8-bit stick or the Classic's format 0x01 with a 6-bit left stick, a 5-bit right stick split across bytes 0 to 2 and the shoulders in byte 4, and the driver refuses a part it does not know rather than decoding one as the other. The left stick keeps the nunchuck's dead zone and 96-count ceiling, the right stick adds at 48 counts with its X negated, and both add into the one pointer; the left stick's vertical axis remains the console wheel and the right stick is left out of it. The identity is re-read every five seconds while a part reports and an unsupported part is retried every two, so a controller swapped under power is picked up without a reboot. The console command is `wiipad status|raw|center`, with `nunchuck` kept as an alias, and status prints which part is fitted and both centers. `tools/tests/tb_wiipad.c` and `test_wiipad.sh` pass at 89 checks -- the nunchuck and Classic decodes against the recorded bytes, the identities including a guitar being refused, both mappings, the analog-trigger threshold, the buttons and their edges, the console wheel, center learning for both sticks, and the swap and unsupported paths -- while `tb_osd_desk.c` stays at 92 with the renamed hooks and `check_help_width.py` reports 148 entries. The firmware built at 661,440 bytes, SHA-256 `393c77a999fe72ff43d660ec57f10c646f47a1bd8c41bbff196e726a27445684`, with no warning outside `tang_jtag_programmer.c`, was put to the card and flashed with `tangflash`, and the user power-cycled and tested it: the controller works, with the left stick, the right stick at half speed, the shoulders and the console wheel, and the user asks for two changes, that the right stick's X is inverted in use and that the left and right buttons move from the L and R shoulders to A and B. WII-003 is now VERIFIED with these readings, WII-001, WII-002 and BRD-012 follow the rename, and README and `manual/desktop.md` describe both parts. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and records naming the same 156 ids in the same order and the catalog listing 18 topics, and validated this entry as number 64 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Two corrections the user asked for come first: the Classic's right stick X moves the pointer the wrong way and its sense has to be flipped, and the left and right buttons move from the L and R shoulders to A and B. The buttons the remap frees, and the spare face and d-pad buttons, invite a small key map for the desktop -- Tab and Shift+Tab for focus, Enter, Escape, the arrows, Page Up and Page Down and F6 are all understood by TinyDesk (WM and widgets) -- which is its own cycle once the user picks the mapping. The standing items of entry 63 are otherwise unchanged.
+
+#### Files Modified:
+
+- README.md
+- manual/desktop.md
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tdsh_platform_bl616.c
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_wiipad.c
+- tools/tests/test_wiipad.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -10,10 +10,12 @@ the BL616, over whatever core is loaded.
 - The close box in the title bar closes it.
 - The taskbar at the bottom lists open windows and the start menu.
 
-Keyboard and mouse come over Bluetooth, and a Wii nunchuck on the USB-A
-adapter drives the same pointer: the stick moves it, Z is the left button
-and C the right. The pointer appears when a mouse is paired; without
-either, the keyboard alone drives everything.
+Keyboard and mouse come over Bluetooth, and a Wii nunchuck or Classic
+Controller on the USB-A adapter drives the same pointer: the nunchuck's
+stick or the Classic's left stick moves it, the Classic's right stick moves
+it more slowly, Z or L is the left button and C or R the right. The pointer
+appears when a mouse is paired; without either, the keyboard alone drives
+everything.
 
 ## F12
 
