@@ -60,7 +60,8 @@ Building and flashing are under *Quick start* and *Building requirements*.
   commands, redirection and scripts, plus the Tang commands below.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
-  Monitor, Task Manager, Log, Settings, Counter, Phosphor and About. Quitting returns to
+  Monitor, Task Manager, Log, Settings, Counter, Phosphor, TinyNES, TinyGBC,
+  Tiny89, TinyCreature and About. Quitting returns to
   the prompt. Opening a text file (double-click or Enter) shows it in the
   Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
   cartridge is not opened at all, because cartridges start from the TinyNES
@@ -399,14 +400,36 @@ firmware's own files stay at the top of the card.
 | `/root/scripts/` | `boot.tdsh`, run at power-up, and the other scripts; bring-up scripts in `diagnostics/` |
 | `/root/cores/console138k/` | FPGA core images for `tangload`; the desktop core is `tinytang.bin`, with its `.fs` gzipped beside it as `tinytang.fs.gz` for openFPGALoader, which the board does not read |
 | `/root/media/nes/` | NES cartridges, opened on the desktop to play on TinyNES |
+| `/root/media/tinycreature/` | TinyCreature's user-derived scene; version one uses `celtic.tcl` |
 | `/root/media/music/` | tracks for `phosphor play` and the Phosphor app |
-| `/root/ae350/` | AE350 programs, `tinyphosphor-play.tpi` among them |
+| `/root/ae350/` | AE350 programs, including `tinycreature-play.elf` |
 | `/root/ble/bonds.bin` | Bluetooth pairings |
 | `/root/saves/nes/` | battery saves, one `.sav` per cartridge, written by `ae350run` |
 | `/root/demos/` | the OLED demos |
 | `/root/Desktop/` | the desktop's icons |
 | `/tinytang.ini`, `/crash.log`, `/tinydesk_tz` | the PMOD layout, the crash record and the time zone |
 | `/tinytang-upload.bin` | `tinytang_flash.py`'s staged firmware |
+
+### TinyCreature
+
+The **TinyCreature** app starts the fixed Celtic scene built by the
+TinyCreature repository. Its Launch page checks for the core, player and scene,
+then starts them in-process: it loads
+`/root/cores/console138k/tinycreature.bin`, runs
+`/root/ae350/tinycreature-play.elf` with
+`/root/media/tinycreature/celtic.tcl`, and restores `tinytang.bin` when the
+player exits. No shell script or worker task is in the launch path. The
+Controls page records the mouse gestures; F12 or Escape ends TinyCreature and
+returns to TinyDesk. Unlike a TinyNES or TinyGBC session, F12 exits rather than
+showing an overlay because the TinyCreature core does not carry the desktop
+layer.
+
+The source land and level script come from the user's copy of Black & White
+and are not distributed. TinyCreature's `tools/build_launcher.sh` creates the
+four-file card bundle locally, and its explicit `--deploy` form installs it.
+The app does not offer an arbitrary land library yet: plants are compiled from
+the Celtic script, so another landscape is not interchangeable with this
+player.
 
 ### Cartridges
 

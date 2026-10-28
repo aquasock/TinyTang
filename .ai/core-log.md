@@ -2109,3 +2109,71 @@ The Tang can ask but has no screen: `node` is a console command, so the next cyc
 - User Test: N/A
 
 ---
+## 61 COMMIT Unreleased 2026-10-27T18:41:00-07:00
+
+#### Coming From:
+
+Unreleased dfc7bdc
+
+#### Purpose:
+
+Answer a program's request for the board's clock at launch, so an emulated calculator with no clock chip of its own can show the real date.
+
+#### Outcome:
+
+`ports/bl616/tang_clock.h` and `tang_clock.c` gained `tang_clock_zone()`, which reads the desktop's zone from `/tinydesk_tz` once with the bound check the existing readers use, answers 0 when the file is missing and on the host build, and is now the one reader: `ae350_zone()` in `tang_fpga_uart.c` returns it rather than parsing the file a third time, so the time stamps on the card's save log and the clock handed to a core cannot disagree. `tang_fpga_uart.c` gained a `Tiny89 SETTINGS WANT <address> <room>` answer in `tang_ae350_run()`'s line loop, sending six bytes over the boot ROM's load protocol the way the BIOS and a save state already travel: UTC seconds since 1970 as a little-endian 32-bit value, then the desktop's zone as a signed little-endian 16-bit count of minutes east of UTC. It follows TinyGBC's clock in that same table exactly, including the rule that a board which does not know the time sends zero rather than a date it invented, and the launch logs `ae350run: settings, clock sent|not set, zone <n> minutes` so the console says which happened. The first design was a desk-layer frame instead, `FPGA_CMD_TIME 0x18` sent beside the keyboard's `0x17`, and it was written and host-tested; it was dropped because carrying it needs three new read-only registers in the core's fabric, and that netlist change pushed the pixel clock onto clock-bridge spines nobody has measured, so the core would not pack at any of sixteen swept seeds (Tiny89's core-log entry 21 has the seeds and the gate). The frame, its sender in `tang_osd_desk.c` and the stand-in clock in `tools/tests/tb_osd_desk.c` were removed, leaving that suite at its 88 checks and `test_clock.sh` at 35930. The firmware builds with the local SDK 2.3.36 and toolchain to 657,232 bytes at SHA-256 `78020302b370da6289da70b08aefd3d6a6d988f0494dcf9e82c96ef2ffcb8a9d`, and entry 60's lesson was applied rather than restated: `strings` finds `Tiny89 SETTINGS WANT ` and the clock log line in the image, so the handler is in the build rather than only in the source. It was deployed: `tangflash` staged the image from the card after a `tinytang_put`, committed it and the board came back on its own, with `platform` reporting `dfc7bdc-dirty.1fc8e8c`, the identity the tree generated. On the board the handler answered a real request (`ae350run: settings, clock sent, zone -420 minutes`, then Tiny89's program printed `Tiny89 CLOCK 1793152387 -420`), the RTC having been read first with `tangi2c rtc` because the DS3231 is reached through the desktop core's I2C engine and a launch that replaces that core before reading it leaves `tang_clock_now()` with no offset. The user reports the cycle passing. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 61 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The blob is now an ABI between this firmware and Tiny89's program, and the fields after the first six bytes are free for a later cycle to use, so anything added must be appended rather than inserted; the six bytes themselves must not move, since a program that asks for them reads the UTC seconds little-endian at offset zero. The zone is read once and kept, so a change to `/tinydesk_tz` reaches a running program at its next launch rather than during a session, which matches how the desktop's own clock treats it. If a core ever needs the clock corrected while it runs, the frame in this entry's history is the shape to come back to, and its blocker is a measurement of the `SPINE19` and `SPINE27` clock bridges rather than anything in this repository. The next cycle that touches a launch path should confirm on the board that `ae350run` reports `clock sent` with the desktop's own zone, which is the one half of this that no host test covers.
+
+#### Files Modified:
+
+- ports/bl616/tang_clock.c
+- ports/bl616/tang_clock.h
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
+## 62 COMMIT Unreleased 2026-10-27T18:49:13-07:00
+
+#### Coming From:
+
+Unreleased dfc7bdc
+
+#### Purpose:
+
+Add a native TinyCreature app that starts its matched Celtic player without a shell worker and restores TinyDesk when the player exits.
+
+#### Outcome:
+
+`ports/bl616/tinycreature_app.cpp` is a 54 by 18 TinyDesk window with Launch and Controls pages: it checks the installed core, player and fixed `celtic.tcl`, starts an 8 KiB task that calls the same `tang_core_load()` and `tang_ae350_run()` implementations as the other apps, and reloads `tinytang.bin` after every run that reached the TinyCreature core; the page names missing artifacts, the controls record the three mouse gestures and F12 or Escape, and no arbitrary land browser is offered because TinyCreature still compiles Celtic's plant table into this player. The app is registered with the desktop and the build, its manual chapter and README record the four card paths and the fact that F12 exits rather than overlays a core with no desktop layer, and the generic AE350 line parser now accepts `TinyCreature WANT`, `TinyCreature LINK` and `TinyCreature EXIT` alongside the three existing product names without adding TinyCreature to the save channels it does not use. The local SDK 2.3.36 build with the Xuantie toolchain passed, compiled the new C++ unit without a warning, produced a 661,376-byte `tinytang_bl616.bin` at SHA-256 `389b8a149a470d0deb0325239d014f6eb42ca84046e67036355acd75986a2e6f`, and strings in the image confirm the app title and its player and scene paths. The AE350 loader, frame, keyboard, desktop-input, core-load, clock and carried TinyDesk suites pass at 26, 24, 53, 88, all, 35,930 and 10 checks respectively; the clock result also confirms the pending entry 61 changes underneath this cycle were preserved. That firmware was flashed, power-cycled and confirmed as `dfc7bdc-dirty.c00cc02`; TinyCreature's core, compressed bitstream, player and Celtic scene were installed with matching sizes. The diagnostic launch reached `TinyCreature WANT` and `TinyCreature LINK`, and F12 stopped the player, but its first build reset before the EXIT text crossed the link; TinyCreature's rebuilt drain fix was installed and work stopped before it or this native app was exercised, so this entry records deployment but not a user-test pass. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff including entry 61, confirmed `.ai/core.md`, `.ai/core-reference.md` and all settled entries are unchanged, and validated this entry as number 62 of 100 with exactly six sections, one-sentence Purpose, prose, eligible paths and allowed Status values.
+
+#### Next Steps:
+
+For handoff, the firmware and final four-file bundle are already installed. Wake one paired keyboard once, then check the app's ready state, launch, live mouse input, Escape exit, desktop restoration and repeat launch; also confirm the rebuilt player now delivers `TinyCreature EXIT 0` without the five-minute silence timeout. TinyCreature's existing flickering-band and sticky-grab defects remain outside this firmware cycle.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- manual/index.md
+- manual/tinycreature.md
+- ports/bl616/tang_ae350_run.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinycreature_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

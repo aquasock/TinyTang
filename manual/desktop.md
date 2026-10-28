@@ -29,6 +29,7 @@ playing, and back again.
      TinyHelp   this manual
      Phosphor   music
      TinyNES    games, and their settings
+     TinyCreature  the Celtic land
      Settings   display, Bluetooth, time
 
 ## Menus and dialogs

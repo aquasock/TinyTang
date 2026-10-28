@@ -6,6 +6,7 @@
 #include "tang_clock.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #ifdef TANG_CLOCK_HOST
 #define CLOCK_LOCK()   do { } while (0)
@@ -13,6 +14,7 @@
 #else
 #include "FreeRTOS.h"
 #include "task.h"
+#include "ff.h"
 /* Only the state is copied inside; the bus is never touched here (TOOL-015). */
 #define CLOCK_LOCK()   taskENTER_CRITICAL()
 #define CLOCK_UNLOCK() taskEXIT_CRITICAL()
@@ -201,6 +203,47 @@ bool tang_clock_now(int64_t *utc)
     }
     *utc = ms >= 0 ? ms / 1000 : -((-ms + 999) / 1000);
     return true;
+}
+
+/* ----------------------------------------------------------- the zone ----
+ *
+ * /tinydesk_tz holds the zone as seconds east of UTC, which is what the
+ * desktop's own Date & time page writes and what the shell's tangi2c and the
+ * AE350 save log's time stamps already read.  It is read once: it changes only
+ * when a user changes it, and every time frame wants it.  A missing or
+ * unreadable file leaves 0, which is UTC -- the same answer the other two
+ * readers give. */
+
+long tang_clock_zone(void)
+{
+    static long zone;
+    static bool known;
+
+    if (known) {
+        return zone;
+    }
+    known = true;
+#ifndef TANG_CLOCK_HOST
+    {
+        FIL file;
+        char buf[16];
+        UINT got = 0;
+
+        if (f_open(&file, "/sd/tinydesk_tz", FA_READ) == FR_OK) {
+            if (f_read(&file, buf, sizeof buf - 1, &got) == FR_OK && got > 0) {
+                buf[got] = '\0';
+                const long v = strtol(buf, NULL, 10);
+                /* A zone is under a day either way; anything else is a bad
+                 * file. */
+                if (v > -86400 && v < 86400) {
+                    zone = v;
+                }
+            }
+            (void)f_close(&file);
+        }
+    }
+#endif
+    return zone;
 }
 
 bool tang_clock_set(int64_t utc)

@@ -142,6 +142,8 @@ else()
                                # TinyGBC: the cartridge library and its core.
                                ports/bl616/tinygbc_app.cpp
                                ports/bl616/tiny89_app.cpp
+                               # TinyCreature: its fixed Celtic scene launcher.
+                               ports/bl616/tinycreature_app.cpp
                                # TinyHelp: the manual's Markdown chapters, on the card.
                                ports/bl616/td_help_app.cpp
                                # The USB-A I2C bus client and `tangi2c` command.

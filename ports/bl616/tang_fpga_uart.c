@@ -1040,14 +1040,17 @@ static bool starts_with(const char *s, const char *prefix)
 }
 
 /* The program this deck runs names itself in what it prints: TinyNES's player
- * says "TinyNES WANT ...", TinyGBC's "TinyGBC WANT ...".  One set of parsers
- * serves both, so a line is matched against the name it carries and then past
- * it, and the caller reads the same fields either way.  The NVRAM and STATE
- * channels below serve every product; each product's settings request is its
- * own, because each blob is that player's ABI. */
+ * says "TinyNES WANT ...", TinyGBC's "TinyGBC WANT ...", and TinyCreature's
+ * fixed scene names itself the same way. One set of parsers serves them, so a
+ * line is matched against the name it carries and then past it, and the caller
+ * reads the same fields either way. The NVRAM and STATE channels below serve
+ * products that keep files; each product's settings request is its own,
+ * because each blob is that player's ABI. */
 static const char *ae350_past_name(const char *line)
 {
-    static const char *const names[] = { "TinyNES ", "TinyGBC ", "Tiny89 " };
+    static const char *const names[] = {
+        "TinyNES ", "TinyGBC ", "Tiny89 ", "TinyCreature "
+    };
 
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (starts_with(line, names[i])) {
@@ -1205,32 +1208,12 @@ static const char *s_ae350_dest_kind = "save";
 
 /* The desktop's time zone, seconds east of UTC.  It is the same file the
  * desktop reads (/tinydesk_tz, td_desktop_bl616.c) and the shell's tangi2c
- * reads; a missing or unreadable file is UTC, not an error. */
+ * reads; a missing or unreadable file is UTC, not an error.  tang_clock.c
+ * holds the one reader, which the core-directed time frame also needs, so this
+ * is a name for it here rather than a second copy of the parse. */
 static long ae350_zone(void)
 {
-    static long zone;
-    static bool known;
-    FIL file;
-    char buf[16];
-    UINT got = 0;
-
-    if (known) {
-        return zone;
-    }
-    known = true;
-    if (f_open(&file, "/sd/tinydesk_tz", FA_READ) != FR_OK) {
-        return zone;
-    }
-    if (f_read(&file, buf, sizeof buf - 1, &got) == FR_OK && got > 0) {
-        buf[got] = '\0';
-        const long v = strtol(buf, NULL, 10);
-        /* A zone is under a day either way; anything else is a bad file. */
-        if (v > -86400 && v < 86400) {
-            zone = v;
-        }
-    }
-    (void)f_close(&file);
-    return zone;
+    return tang_clock_zone();
 }
 
 /* Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm), so the
@@ -1749,7 +1732,7 @@ static void ae350_save_byte(uint8_t byte)
     s_ae350_save_line_len = 0;
 }
 
-/* After "TinyNES LINK": the core answers in frames now, so the link goes back
+/* After "<product> LINK": the core answers in frames now, so the link goes back
  * to everyone (the desk layer draws, its task reads the joypad report) and the
  * program's text is read out of FPGA_RESP_AE350_TEXT frames.  The caller holds
  * the lock and the pipe flag on entry and gets them back on return.  The game
@@ -2146,6 +2129,46 @@ int tang_ae350_run(const char *player, const char *data)
                         tang_gbc_pad_name(gbc.pad_map[TANG_GBC_A]),
                         tang_gbc_palette_name(gbc.palette),
                         tang_gbc_colour_name(gbc.colour));
+            if (rc != AE350_OK) {
+                tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
+            }
+            continue;
+        }
+        if (starts_with(run.line, "Tiny89 SETTINGS WANT ")) {
+            /* Tiny89's blob (Tiny89 firmware/apps/tiemu_smoke/main.c): UTC
+             * seconds since 1970 as a little-endian 32-bit value, then the
+             * desktop's zone as a signed little-endian 16-bit count of minutes
+             * east of UTC, zero for the seconds while the RTC has never been
+             * set.  The calculator's own clock chip is not fitted in that
+             * core's fabric, so this is the only date it gets; its emulated
+             * clock counts the seconds from here on its own timer, which is
+             * why one blob per launch is enough.  Same shape as TinyGBC's
+             * clock above and the same rule: a board that does not know the
+             * time sends zero rather than inventing one. */
+            static uint8_t blob[6];
+            int64_t utc = 0;
+            unsigned long address = 0, room = 0;
+            bool known;
+            if (sscanf(run.line + 21, "%lx %lx", &address, &room) != 2 || room < 1) {
+                tdsh_printf("ae350run: the settings request is malformed\r\n");
+                continue;
+            }
+            known = tang_clock_now(&utc) && utc > 0 && utc <= 0xffffffffll;
+            const int32_t zone_min = (int32_t)(tang_clock_zone() / 60);
+            memset(blob, 0, sizeof blob);
+            if (known) {
+                const uint32_t secs = (uint32_t)utc;
+                blob[0] = (uint8_t)secs;
+                blob[1] = (uint8_t)(secs >> 8);
+                blob[2] = (uint8_t)(secs >> 16);
+                blob[3] = (uint8_t)(secs >> 24);
+            }
+            blob[4] = (uint8_t)zone_min;
+            blob[5] = (uint8_t)((uint16_t)zone_min >> 8);
+            const size_t sending = room < sizeof blob ? (size_t)room : sizeof blob;
+            rc = ae350_send_blob(&run, &link, address, blob, sending, &reason);
+            tdsh_printf("ae350run: settings, clock %s, zone %ld minutes\r\n",
+                        known ? "sent" : "not set", (long)zone_min);
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending the settings: %s\r\n", ae350_error(rc));
             }

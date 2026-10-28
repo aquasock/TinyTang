@@ -13,13 +13,14 @@
 #ifndef TANG_AE350_RUN_H
 #define TANG_AE350_RUN_H
 
-/* Send <player_real> to the TinyNES core's AE350 and run it, sending
+/* Send <player_real> to an AE350 core and run it, sending
  * <data_real> when the program asks for a file and following its output until
  * it exits.  Both are FatFS paths the port mounts ("/sd/root/..."), already
  * resolved: this does not read a shell session, so it does not map /root onto
  * /sd.  <data_real> may be NULL for a program that wants no file.  Blocks for
- * the whole session -- through the game, past `TinyNES LINK` and until the
- * program exits -- so call it from a task of its own, not from the desktop's.
+ * the whole session -- through the game, past `<product> LINK` and until the
+ * program's `<product> EXIT` -- so call it from a task of its own, not from
+ * the desktop's.
  * Returns the program's exit code, or 1 when it could not be started. */
 int tang_ae350_run(const char *player_real, const char *data_real);
 

@@ -41,6 +41,13 @@ bool tang_clock_now(int64_t *utc);
  * offset.  False, with nothing changed, when an RTC is reachable but refuses
  * the write; with no RTC the running clock alone is set. */
 bool tang_clock_set(int64_t utc);
+/* The desktop's zone, seconds east of UTC, from /tinydesk_tz -- the same file
+ * the desktop's Date & time page and the shell's tangi2c read.  Read once and
+ * kept; a missing or unreadable file is 0 (UTC), not an error.  A core that
+ * wants to show the desktop's wall clock needs it beside tang_clock_now(),
+ * which is UTC. */
+long tang_clock_zone(void);
+
 /* Read the RTC now. */
 tang_clock_sync_t tang_clock_sync(void);
 /* A core was loaded or replaced: sync on the next call. */
