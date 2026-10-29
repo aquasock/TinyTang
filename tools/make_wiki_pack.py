@@ -871,9 +871,14 @@ def write_authors(out_dir: str, authors: dict[bytes, str],
         number = positions.get(book_where[serial])
         if number is None:
             continue
-        rows.append((name, struct.pack("<I", number) +
-                     name.encode("ascii", "ignore")[:AUTHOR_NAME_BYTES]
-                     .ljust(AUTHOR_NAME_BYTES, b"\0")))
+        # The row stores at most AUTHOR_NAME_BYTES of the name, so the sort key
+        # is taken from what is stored: sorting by the full name and cutting it
+        # afterwards leaves the table in an order its own rows do not have, and
+        # a reader's binary search would disagree with what it can see.
+        stored = (name.encode("ascii", "ignore")[:AUTHOR_NAME_BYTES]
+                  .decode("ascii", "ignore").rstrip())
+        rows.append((stored, struct.pack("<I", number) +
+                     stored.encode("ascii").ljust(AUTHOR_NAME_BYTES, b"\0")))
     rows.sort(key=lambda item: (surname(item[0]).lower(), item[0].lower()))
     with open(os.path.join(out_dir, "wiki.auth"), "wb") as out:
         for _name, row in rows:

@@ -2682,3 +2682,34 @@ The user has not run the sync tool yet; its own first test is the one this cycle
 - User Test: N/A
 
 ---
+
+## 77 COMMIT Unreleased 2026-10-28T17:02:59-07:00
+
+#### Coming From:
+
+Unreleased 2b1255f
+
+#### Purpose:
+
+Correct the author table's ordering, which the pack checker rejected on the class B shelf, and hand the project over with what is running and what is owed.
+
+#### Outcome:
+
+Checking the class B shelf before handing it over found it failing its own check: `author 40 is out of order`, on a name the table had stored as "Archibald B. D. (Archibald Browning Drysdale) Al". The cause was mine and general -- `write_authors()` sorted rows by the surname of the whole author name and then truncated that name to the 48 bytes a row holds, so a long name lost its surname to the cut and the table came out in an order its own contents do not have, which a reader's binary search would disagree with. The sort key is now taken from the stored string, and a trailing space left by the cut is stripped. The converter test gained a second book whose author is long enough for the cut to fall inside the given names, and the assertion that the checker accepted the pack is what catches it: with the fix reverted the checker reports the out-of-order author and two checks fail, with the fix in place all 57 pass. Class B was rebuilt from the cached 6.0 GB archive and now passes in full -- 3,907 books, 200,407 chapters, 3,907 authors, 1.6 GB of text -- and waits in the scratch folder for the card. The state being handed over: the board runs the firmware flashed in entry 75 with `tangget` (`ea7272c-dirty.e2bc14a` at its last read), the card is in the board rather than the computer, `/root/wiki` holds the pack at the root (simple English), `voyage-europe`, `wikimed` and `manual`, and `/root/books` holds `gutenberg-p`; the sync tool of entry 76 is committed and the user was about to try it; the English Wikipedia conversion is still running with 11 GB of text written; the class Q archive finished downloading at 18.0 GB but has not been converted, the script having stopped between its stages; and the class B shelf is rebuilt and verified but not installed. No firmware was built or flashed in this cycle and nothing on the board or the card changed.
+
+#### Next Steps:
+
+First, what a fresh session should not have to rediscover: the class Q shelf needs converting from the archive already on disk (`./tools/gutenberg_shelf.sh q` resumes at the conversion), and class B needs installing into `/root/books` when the card is next in the computer. The Wikipedia conversion is the only long job still running and its output folder is `/run/media/vash/GIT/tinytang-scratch/wikipedia-en-all`; when it finishes it must be checked and copied, and it will be the first pack with more than one body chunk, a path nothing has read on hardware. The sync tool is committed but unproven by the user; the two UX questions open on it are whether the tree should print in full (2,112 lines) and whether size-differing files should be confirmed one by one. The shell's `mkdir -p` reporting success while creating nothing is recorded in entry 76 and deserves either a carried patch or a note in the reference, since any tool that assumes it will fail silently. The reader limits of entry 71 stand -- 64 chapters a book, one saved position, no author in a book header, no search inside a book -- as do the older standing items from entry 66 onwards, among them the nine-byte Wii format experiment, the unmapped ZL, ZR and L, the TinyCreature test of entry 62, LoRa framing and a screen for it, the MCP23017 proposal, the save log's rotation, `FF_FS_NORTC` with a `get_fattime()`, the failed core load that leaves `tang_core_i2c_bus()` cleared, the dependency check's fork paths, the card's stale `/bl616-firmware.bin`, and `v0.1.0`'s pre-release status.
+
+#### Files Modified:
+
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

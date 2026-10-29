@@ -249,6 +249,14 @@ def main():
              "blob": book},
             {"ns": "C", "url": "Testbook_cover.42.html", "title": "", "mime": 1,
              "blob": cover},
+            # An author whose name is longer than the 48-byte row: the table
+            # must be ordered by what it stores, not by what it had to cut.
+            {"ns": "C", "url": "Longbook.43.html", "title": "", "mime": 1,
+             "blob": book.replace(b"TESTBOOK", b"LONGBOOK")},
+            {"ns": "C", "url": "Longbook_cover.43.html", "title": "", "mime": 1,
+             "blob": cover.replace(
+                 b"Lewis Carroll",
+                 b"Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Zulu")},
         ]
         build_zim(zim, entries, ["text/css", "text/html", "text/plain"],
                   {"Title": "Wikipedia (test)", "Language": "eng",
@@ -267,7 +275,7 @@ def main():
         meta, records = read_pack(pack)
         titles = [r[0] for r in records]
 
-        check(len(records) == 6, f"six records: three articles and three resolved "
+        check(len(records) == 7, f"seven records: four articles and three resolved "
                                  f"redirects (got {len(records)}: {titles})")
         check(titles == sorted(titles, key=str.lower),
               f"the index is sorted by folded title ({titles})")
@@ -307,7 +315,7 @@ def main():
               "the article's repeated title heading is dropped")
 
         check(meta.get("format") == "TWP1", "the pack names its format")
-        check(meta.get("articles") == "6", "the metadata counts index records")
+        check(meta.get("articles") == "7", "the metadata counts index records")
         check(meta.get("chunks") == "1", "the metadata counts chunks")
         check(meta.get("main_page") == "Physics", "the main page is recorded")
         check(meta.get("title") == "Wikipedia (test)",
@@ -331,11 +339,15 @@ def main():
                   "the book's text survives the stripping")
             # The book opens on a chapter heading, so that heading is the first
             # row and no separate Start row is added.
-            check(meta.get("parts") == "2",
-                  f"two chapter rows, no filler ({meta.get('parts')})")
+            # Two books, two chapters each, and no filler rows.
+            check(meta.get("parts") == "4",
+                  f"two books of two chapters ({meta.get('parts')})")
             rows = read_parts(pack)
-            chapters = [r for r in rows if r[2].startswith("CHAPTER")]
-            check(len(chapters) == 2, f"both chapters are tabled ({rows})")
+            per_book = {}
+            for book, _offset, title in rows:
+                per_book.setdefault(book, []).append(title)
+            check(len(per_book) == 2 and all(len(v) == 2 for v in per_book.values()),
+                  f"each book tables its own two chapters ({per_book})")
             for book, offset, title in rows:
                 if title == "Start":
                     continue          # a marker, not a heading
@@ -348,10 +360,18 @@ def main():
                       f"chapter {title!r} starts where the table says ({line[:24]!r})")
             check(rows[0][1] == 0, "the table's first row starts at the top of a book")
             authors = read_auth(pack)
-            check(len(authors) == 1 and authors[0][1] == "Lewis Carroll",
-                  f"the cover's author is recorded ({authors})")
-            check(authors and records[authors[0][0]][0] == "Testbook",
-                  "the author names the book, not the cover")
+            check(len(authors) == 2, f"both authors are recorded ({authors})")
+            check(any(a[1] == "Lewis Carroll" for a in authors),
+                  f"the short name is stored whole ({authors})")
+            check(all(len(a[1]) <= 48 for a in authors),
+                  "no author name runs past its 48-byte row")
+            check(any(records[a[0]][0] == "Testbook" for a in authors),
+                  "each author names a book, not a cover")
+            # The long name loses its surname to the 48-byte row; the table must
+            # still be ordered by what it stores, or the checker says so.
+            long_names = [a[1] for a in authors if a[1].startswith("Aaa")]
+            check(len(long_names) == 1 and long_names[0].endswith("Aaa"),
+                  f"the long name is cut inside its given names ({long_names})")
 
         # The pack checker must accept what the converter wrote, and must be
         # the thing that would have caught a line over the reader's width.
