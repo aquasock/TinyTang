@@ -2873,3 +2873,35 @@ The manual pack on the card, `/root/wiki/manual`, is built from these chapters a
 - User Test: PASS
 
 ---
+
+## 83 COMMIT Unreleased 2026-10-30T16:20:00-07:00
+
+#### Coming From:
+
+Unreleased 03b3fd4
+
+#### Purpose:
+
+Read the capacitive touch sensor the user fitted on the switch's channel 7 in place of the solenoid board, through the existing desktop core and a console command.
+
+#### Outcome:
+
+The part is Adafruit's 12-Key Capacitive Touch Sensor Breakout, an MPR121 at 0x5a, and the reference's identification of product 1982 as an MLX90614 was wrong: `tangi2c scan` found 0x5a alone on channel 7, and a register read returned the same byte for every register asked -- 0x00, 0x01, 0x02, 0x1e, 0x2b, 0x5b, 0x5d and 0x5e all gave 0x01 while writes reported success and changed nothing observable. That is the behaviour of a part that clears its register pointer on a STOP, and `fpga/desktop/i2c_master.sv` says in its own header that this engine never issues a repeated START: it sends STOP, waits 200 us and reads, which the DS3231 keeps its pointer across and which a Wii controller requires. A combined-format read was then built and measured rather than assumed: a `cmd_sr` bit in the command word, a jump straight from the register byte to a repeated START, then a four-phase START holding each level a half period, then the same at 50 kHz, then a 200 us settle with SCL held low. Each passes `tools/tests/sim/tb_i2c_master.sv`, and each fails on the board against both the MPR121 and the DS3231, reporting `nack seq 2` or a stall after `seq 1`; that work was removed from the RTL rather than left in, because a capability that does not work on the hardware it was written for is a trap. What was kept is the instrumentation it produced: for any command that is not a scan, the engine's last state and sequence number are latched into the scan registers that `tangi2c status` already reads, which is how the failure point was pinned down at all. The sensor is reached the other way round: writes carry their register in the same transaction and land normally, so `ports/bl616/tang_i2c.cpp` gained `tangtouch`, which writes Adafruit's own init sequence -- soft reset 0x80=63, electrodes off 0x5e=00, the filter and charge blocks at 0x2b-0x35, debounce 0x5b=00, 0x5c=10, 0x5d=20, twelve touch/release threshold pairs at 0x41-0x5a of 12 and 6 counts, then 0x5e=8c to start twelve electrodes -- and then polls the touch status at 0x00, two bytes, one bit per electrode. Every access re-selects channel 7 and is retried up to four times, because only 0x52 and 0x68 are routed by address and the desk clock's RTC read moves the switch to channel 6 once a second, which is what produced the occasional NACK during the probe. The command takes no argument or `status` for the current mask, `init` to run the sequence again, and `watch [s]` to poll at 20 Hz and print only on change. On the hardware, with the firmware built at 682,272 bytes, SHA-256 `23ea13b33c087ec5...`, and `platform` reading `03b3fd4-dirty.d2a1b15`: `tangtouch init` reported twelve electrodes enabled, `tangtouch` read `0x0000 none` with nothing touching, a finger on a pad gave `0x0001 E0` across sixteen consecutive polls and lifting it returned `0x0000 none` across ten, and `tangtouch watch 45` logged `none`, `0x0001 E0`, `none`, `0x0001 E0`, `none` as the finger landed and lifted twice, which the user reports as passing. Along the way the desk RTC lost its time during probe work -- an `sr` read pointed at 0x68 can leave the engine writing the read address into the part's registers -- and was set again from the host; the user measured 3.1 V on the coin cell, and the time has since survived two power cycles with OSF clear, so the loss is attributed to that probing rather than to the cell. README gained a `tangtouch` bullet beside `tangi2c`; `.ai/core-reference.md` gains BRD-015 for the part and the STOP-read constraint, BRD-012's channel 7 contents and index line now name the MPR121, and its verification records that the October device answering 0x5a was this cap-touch board and not an IR thermometer. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's YAML blocks parse with the routing table, the index and the records naming the same 150 ids in the same order, and validated this entry as number 83 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The console command is the boundary for this cycle; a TinyDesk window over the same twelve electrodes is the next step if the sensor is to be a control surface, and it should reuse `tangtouch`'s init and poll paths rather than its own. Only E0 was exercised on hardware, so which pad maps to which electrode still has to be established before an app can label twelve keys, and the sensor should be re-initialised with nothing touching whenever it is fitted or moved, since it calibrates at start-up. The engine's STOP-only read is now recorded as a constraint rather than a defect: any future part that clears its pointer on STOP is read through whichever register a pointer-less read reaches, or not at all, and the combined-format attempt should not be rebuilt without a scope to show what the bus actually does. The solenoid board and BRD-013/BRD-014 remain in the reference as history but are no longer fitted.
+
+#### Files Modified:
+
+- README.md
+- fpga/desktop/i2c_master.sv
+- ports/bl616/tang_i2c.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

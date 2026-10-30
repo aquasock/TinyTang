@@ -742,6 +742,160 @@ extern "C" void tang_i2c_mux_for_game_core(void)
     (void)mux_select(TANG_I2C_MUX_CH_WII);
 }
 
+
+/* --------------------------------------------------------- touch sensor --
+ * Adafruit's MPR121 12-key capacitive breakout on the switch's channel 7, at
+ * its factory address 0x5A.  The part clears its register pointer on a STOP,
+ * so through this engine's STOP-based read only the register a pointer-less
+ * read lands on can be read -- the touch status at 0x00.  Writes carry their
+ * register in the same transaction and are unaffected, so the chip is
+ * configured by writing Adafruit's own init sequence and then polled at 0x00.
+ *
+ * Every access re-selects the channel: only 0x52 and 0x68 are routed by
+ * address, so anything else stays on whichever channel the switch was left on,
+ * and the desk clock's RTC read moves it to channel 6 once a second.
+ */
+#define TOUCH_ADDR       0x5A
+#define TOUCH_CH         TANG_I2C_MUX_CH_IR
+#define TOUCH_REG_TOUCH  0x00
+
+static bool s_touch_ready = false;
+
+static bool touch_write(uint8_t reg, const uint8_t *data, unsigned n)
+{
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (!mux_select(TOUCH_CH)) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
+        }
+        if (transaction(OP_WRITE, TOUCH_ADDR, reg, n, data, nullptr)) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    return false;
+}
+
+static bool touch_read(uint8_t reg, uint8_t *data, unsigned n)
+{
+    for (int attempt = 0; attempt < 4; attempt++) {
+        if (!mux_select(TOUCH_CH)) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
+        }
+        if (transaction(OP_READ, TOUCH_ADDR, reg, n, nullptr, data)) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(3));
+    }
+    return false;
+}
+
+static bool touch_write1(uint8_t reg, uint8_t value)
+{
+    return touch_write(reg, &value, 1);
+}
+
+// Adafruit's own begin(): soft reset, filters, charge time, debounce, the two
+// configuration registers, the twelve touch/release threshold pairs, then the
+// electrode configuration that starts the chip.  The thresholds are 12 counts
+// to touch and 6 to release, the library's defaults.
+static bool touch_begin(void)
+{
+    uint8_t thresholds[24];
+    for (int i = 0; i < 12; i++) {
+        thresholds[i * 2 + 0] = 0x0C;
+        thresholds[i * 2 + 1] = 0x06;
+    }
+
+    if (!touch_write1(0x80, 0x63)) return false;      // soft reset
+    vTaskDelay(pdMS_TO_TICKS(2));
+    if (!touch_write1(0x5E, 0x00)) return false;      // electrodes off
+    if (!touch_write(0x2B, (const uint8_t[]){0x01, 0x01, 0x0E, 0x00}, 4)) return false;
+    if (!touch_write(0x2F, (const uint8_t[]){0x01, 0x05, 0x01, 0x00}, 4)) return false;
+    if (!touch_write(0x33, (const uint8_t[]){0x00, 0x00, 0x00}, 3)) return false;
+    if (!touch_write1(0x5B, 0x00)) return false;      // debounce
+    if (!touch_write1(0x5C, 0x10)) return false;      // config1
+    if (!touch_write1(0x5D, 0x20)) return false;      // config2
+    for (int block = 0; block < 3; block++) {
+        if (!touch_write((uint8_t)(0x41 + block * 8), thresholds + block * 8, 8)) return false;
+    }
+    if (!touch_write1(0x5E, 0x8C)) return false;      // 12 electrodes, started
+    vTaskDelay(pdMS_TO_TICKS(10));
+    s_touch_ready = true;
+    return true;
+}
+
+static bool touch_status(uint16_t *touched)
+{
+    if (!s_touch_ready && !touch_begin()) return false;
+    uint8_t b[2] = {0, 0};
+    if (!touch_read(TOUCH_REG_TOUCH, b, 2)) return false;
+    *touched = (uint16_t)(b[0] | (b[1] << 8));
+    return true;
+}
+
+static void touch_print(uint16_t touched)
+{
+    tdsh_printf("touch: 0x%04x", (unsigned)touched);
+    if (touched == 0) {
+        tdsh_printf(" none\r\n");
+        return;
+    }
+    tdsh_printf(" ");
+    for (int i = 0; i < 12; i++) {
+        if (touched & (1u << i)) tdsh_printf("E%d ", i);
+    }
+    tdsh_printf("\r\n");
+}
+
+int command_touch(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    bus_lock lock;
+    if (!tang_core_i2c_bus()) {
+        tdsh_printf("touch: the loaded core has no I2C bus (the desktop core, ABI 1.5+)\r\n");
+        return 1;
+    }
+
+    const char *what = argc >= 2 ? argv[1] : "status";
+
+    if (std::strcmp(what, "init") == 0) {
+        s_touch_ready = false;
+        if (!touch_begin()) {
+            tdsh_printf("touch: the sensor did not take its configuration "
+                        "(is the MPR121 on channel 7 at 0x5A?)\r\n");
+            return 1;
+        }
+        tdsh_printf("touch: configured, %d electrodes enabled\r\n", 12);
+        return 0;
+    }
+
+    if (std::strcmp(what, "watch") == 0) {
+        const int seconds = (argc >= 3) ? std::atoi(argv[2]) : 10;
+        const int limit = (seconds > 0 && seconds <= 120) ? seconds : 10;
+        uint16_t last = 0xFFFF;
+        const uint32_t end = bflb_mtimer_get_time_ms() + (uint32_t)limit * 1000u;
+        while ((int32_t)(end - bflb_mtimer_get_time_ms()) > 0) {
+            uint16_t now = 0;
+            if (touch_status(&now) && now != last) {
+                touch_print(now);
+                last = now;
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        return 0;
+    }
+
+    uint16_t touched = 0;
+    if (!touch_status(&touched)) {
+        tdsh_printf("touch: no answer from the MPR121 at 0x5A on channel 7\r\n");
+        return 1;
+    }
+    touch_print(touched);
+    return 0;
+}
+
 extern "C" int tang_i2c_register(void)
 {
     if (s_bus == nullptr) {
@@ -750,6 +904,8 @@ extern "C" int tang_i2c_register(void)
     static const tdsh_command_t commands[] = {
         {"tangi2c", "tangi2c scan|read <a> <r> <n>|write <a> <r> <b...>|rtc [set|sync]|auto",
          "USB-A I2C bus: scan, read, write, RTC, mux", command, 0},
+        {"tangtouch", "tangtouch [status|init|watch [s]]",
+         "MPR121 cap-touch sensor on channel 7", command_touch, 0},
     };
     return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));
 }

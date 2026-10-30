@@ -329,6 +329,22 @@ python tools/tinytang_sync.py
   sets the RTC in UTC and `tangi2c rtc sync` rereads it.  `tangi2c auto` is
   refused while the switch is fitted, because the engine's once-a-second read
   cannot select a channel.
+- **`tangtouch [status | init | watch [s]]`** reads the cap-touch sensor on the
+  switch's channel 7: Adafruit's MPR121 12-key breakout at its factory address
+  `0x5A`. The part clears its register pointer on a STOP, so through this
+  engine's STOP-based read only the register a pointer-less read lands on can be
+  read -- the touch status at `0x00`, two bytes, one bit per electrode. Writes
+  carry their register in the same transaction and are unaffected, so the chip
+  is configured with Adafruit's own sequence (soft reset, filters, charge time,
+  debounce, the two configuration registers, twelve touch/release threshold
+  pairs at 12/6 counts, then the electrode configuration that starts it) and
+  polled at `0x00`. `tangtouch` configures on first use and prints the mask and
+  the electrodes that are set, `init` runs the sequence again, and `watch [s]`
+  polls at 20 Hz and prints only on change, so a capture with four lines in it
+  is two touches. Every access re-selects channel 7 and retries, because only
+  `0x52` and `0x68` are routed by address and the desk clock's RTC read moves
+  the switch once a second.
+
 - **The desktop clock** is the DS3231's UTC, read when the desktop core is
   loaded and about hourly after that (`ports/bl616/tang_clock.c`), shown in
   the zone the Date & time window keeps in `/tinydesk_tz`. Root can set the

@@ -320,6 +320,18 @@ always @(posedge clk) begin
                 sda_low <= 1'b0;
                 state   <= S_DONE;
             end else if (tick) begin
+                // Instrumentation for a command that is not a scan: the scan
+                // registers are read back by `tangi2c status`, and a scan does
+                // not need them while a read or write is running, so they carry
+                // the engine's last state and sequence number for anything
+                // else.  They freeze the moment the command ends, which is the
+                // tick that also raises nack or valid, so what is read back is
+                // where the engine stopped rather than where it finished.
+                // Added 2026-10-30 while chasing a part that would not read.
+                if (op_q != OP_SCAN && !nack_q && !valid_q) begin
+                    scan_addr_q  <= {3'b0, state};
+                    scan_count_q <= {3'b0, seq};
+                end
                 case (state)
                     S_IDLE: ;
                     S_GAP: ;        // timed by gap_cnt, not the tick
