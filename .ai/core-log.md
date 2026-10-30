@@ -2743,3 +2743,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 79 COMMIT Unreleased 2026-10-29T19:59:42-07:00
+
+#### Coming From:
+
+Unreleased c7ba1a5
+
+#### Purpose:
+
+Record the Tang's first exchange with the node since its relay command gained a state line, and the console wedge this same command produced earlier in the session.
+
+#### Outcome:
+
+With the board in two-wire and `/root/cores/console138k/tinytang-lora.bin` loaded, `tangload` applied the file's `layout = lora` as `0xc0 = 0x0080: pmod0 lora, pmod1 none`, so the ABI 1.6 core came up with the PMOD UART rather than the ABI 1.5 core `boot.tdsh` loads. `lora ver` then answered `+VER=RYLR998_REYAX_V1.2.4` on the first try, and `node status` returned the node's compact reply in full -- `TinyNode 2026-10-30 02:52:41Z`, `up 0h5m`, `wifi 10.10.0.35 -48 dBm`, `heap 157 KB`, `paths 58` and `relay 1111`, the last being the line TinyNode's entry 5 added -- reading the four channel states from a node whose relays were closed. The request was answered on its third attempt, with `node: no reply, retrying (2/10)` and `(3/10)` printed first, which is the lossy link PROT-011's ten attempts and 1.2 s gaps exist for, and the command returned to the shell prompt, so `node` is usable on this build when the link is healthy. The same command had wedged the console earlier in the session, before the module was re-seated: it printed nothing, answered no status probe for more than six minutes, and needed a power cycle. Two unbounded waits in `tang_request()` are the candidates and are recorded here rather than fixed, because each needs its own cycle: the stale-byte drain at the top of every attempt loops while the receive FIFO has anything in it, so a module streaming noise never lets it finish, and `read_reg()` takes the FPGA link through `tang_fpga_lock()` with no bound, so any holder blocks it for ever. The board was left with the LoRa core loaded and the layout declared; a power cycle returns it to `tinytang.bin` and the ABI 1.5 core. Nothing was built, flashed or changed in this repository for this cycle, and no reference record needed revising: PROT-011 already describes the client's retry policy, and the compact reply's contents are the node's fact, recorded in TinyNode's reference. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 79 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The `node` command's two unbounded waits are the next cycle on this side and they are small: bound the stale-byte drain by a byte count or a deadline, hold the link with `tang_fpga_lock_within()` across the whole request and reply rather than a transaction at a time, and cap the retry policy's total time so a dead module cannot hold the console. After that, `boot.tdsh` should load the core that `/tinytang.ini` asks for instead of always naming `tinytang.bin`, since every LoRa session currently begins with a manual `tangload`. The other standing items are unchanged, including the English Wikipedia conversion that has no index and must restart, and the class B and Q shelves that are built or downloaded but not installed.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
