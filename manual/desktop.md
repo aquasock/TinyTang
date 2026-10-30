@@ -37,6 +37,7 @@ playing, and back again.
      Phosphor   music
      TinyNES    games, and their settings
      TinyCreature  the Celtic land
+     TinyNode   the Arduino's relays, and its sensors
      Settings   display, Bluetooth, time
 
 ## Menus and dialogs

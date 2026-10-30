@@ -32,10 +32,12 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 #include "bflb_mtimer.h"
 
 #include "tdsh.h"
 #include "tang_fpga_link.h"
+#include "tang_node.h"
 #include "tang_proto.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -591,21 +593,50 @@ static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
 	body[used] = '\0';
 
 	const bool is_status = strcmp(body, "status") == 0;
-	uint8_t reply[TANG_PROTO_MAX_BODY];
-	uint16_t reply_len = sizeof reply;
+	char reply[TANG_PROTO_MAX_BODY];
 
-	const size_t got = tang_request(is_status ? TANG_REQ_STATUS : TANG_REQ_COMMAND,
-	                                is_status ? NULL : (const uint8_t *)body,
-	                                is_status ? 0 : (uint16_t)used,
-	                                reply, &reply_len,
-	                                REQUEST_ATTEMPTS, REPLY_TIMEOUT);
-	if (got == 0) {
+	const int got = tang_node_ask(is_status ? TANG_REQ_STATUS : TANG_REQ_COMMAND,
+	                              is_status ? NULL : (const uint8_t *)body,
+	                              is_status ? 0 : (uint16_t)used,
+	                              (char *)reply, sizeof reply,
+	                              REQUEST_ATTEMPTS, REPLY_TIMEOUT);
+	if (got < 0) {
 		tdsh_printf("node: no reply from TinyNode after %d attempts of %d ms\r\n",
 		            REQUEST_ATTEMPTS, REPLY_TIMEOUT);
 		return 1;
 	}
-	tdsh_printf("%.*s\r\n", (int)reply_len, (const char *)reply);
+	tdsh_printf("%s\r\n", (const char *)reply);
 	return 0;
+}
+
+/* One caller at a time: the console command and a window's request would
+ * otherwise interleave frames on a half-duplex link and read each other's
+ * replies.  The lock is taken without waiting, so a caller is told it is busy
+ * rather than being parked behind a request that can take half a minute. */
+static SemaphoreHandle_t s_node_lock;
+
+int tang_node_ask(uint8_t type, const uint8_t *body, uint16_t len,
+                  char *out, size_t cap, int attempts, uint32_t timeout_ms)
+{
+	if (out == NULL || cap < 2 || attempts <= 0) {
+		return -1;
+	}
+	if (s_node_lock == NULL) {
+		s_node_lock = xSemaphoreCreateMutex();
+	}
+	if (s_node_lock != NULL && xSemaphoreTake(s_node_lock, 0) != pdTRUE) {
+		return -1;                      /* someone else is on the link */
+	}
+
+	uint16_t got = (uint16_t)(cap - 1);
+	const size_t n = tang_request(type, body, len, (uint8_t *)out, &got,
+	                              attempts, timeout_ms);
+	out[got] = '\0';
+
+	if (s_node_lock != NULL) {
+		xSemaphoreGive(s_node_lock);
+	}
+	return n == 0 ? -1 : (int)got;
 }
 
 /* ----------------------------------------------------------- registration */

@@ -66,6 +66,7 @@ void td_tinygbc_register(void);    /* tinygbc_app.cpp: TinyGBC, the cartridge li
 void td_tiny89_register(void);     /* tiny89_app.cpp: Tiny89, the calculator library */
 void td_tinycreature_register(void); /* tinycreature_app.cpp: the Celtic scene */
 void td_bluetooth_register(void);  /* td_bluetooth_app.c */
+void td_tinynode_register(void);   /* tinynode_app.cpp: the node relay and sensor window */
 void td_wiki_register(void);       /* td_wiki_app.cpp: TinyWiki, the offline encyclopedia */
 void td_gutenberg_register(void);  /* td_gutenberg_app.cpp: TinyGutenberg, books on the card */
 
@@ -233,6 +234,7 @@ void td_apps_register_all(void)
     td_gutenberg_register();   /* td_gutenberg_app.cpp: the TinyGutenberg reader */
     td_update_register();       /* td_update_app.c: from the card, not the network */
     td_bluetooth_register();    /* td_bluetooth_app.c: Settings' Bluetooth button */
+    td_tinynode_register();     /* tinynode_app.cpp: TinyNode relays and sensors */
     td_about_register();
     td_datetime_install_clock();
     td_session_init();

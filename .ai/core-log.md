@@ -2837,3 +2837,39 @@ Repair the host test entry 75's `tangget` left uncompilable, and make the boot s
 - User Test: PASS
 
 ---
+
+## 82 COMMIT Unreleased 2026-10-29T21:43:31-07:00
+
+#### Coming From:
+
+Unreleased 2eb1dad
+
+#### Purpose:
+
+Give the desktop a TinyNode window -- four relay checkboxes and one Update that syncs the node's sensors -- and fix the app registry that had been silently dropping the last three apps registered.
+
+#### Outcome:
+
+`ports/bl616/tinynode_app.cpp` is the window: four checkboxes labelled by what each conductor of the switched cable carries (`Relay 1 - VBUS` through `Relay 4 - GND`), an **Update** button and a status line over a list of the node's reply. Ticking a box sends `relay <digits>`; the node's `relay states updated` keeps it, anything else puts the box back to the last states the node confirmed and shows its words, and a click made while a request is out is refused rather than queued. Update sends one `status`, and the reply's twelve lines fill the list -- GPS, position, magnetometer, heading, environment, PPS, radio and relay -- with the `relay` line setting the checkboxes, so one press syncs the whole window. Every request runs in its own 4 KiB task over a new `ports/bl616/tang_node.h`, which exposes `tang_node_ask()` with a caller-supplied attempt and timeout budget; the console's `node` command is now its first caller, and a lock taken without waiting keeps a window and the console from interleaving frames on the half-duplex link. The window's budget is three attempts of four seconds, shorter than the console's ten, because a control surface that locks up for a minute is worse than one that says it failed. The first build failed to link because the TinyDesk C headers need an `extern "C"` wrapper inside a `.cpp` file, which `tinycreature_app.cpp` does and this file did not. The app then did not appear in the start menu, and the cause was a real defect: TinyDesk's registry holds `TD_MAX_APPS` 16 entries and answers -1 past that without saying anything, while this port registers nineteen -- so the last three, Update, Bluetooth and TinyNode, had never reached the menu, which means the Bluetooth window has been silently missing since the app list passed sixteen some cycles ago. `CMakeLists.txt` now sets `-DTD_MAX_APPS=24` beside the other `TD_` limits, at the cost of one pointer a slot. The firmware built at 682,240 bytes, SHA-256 `cf350496c881c824eb8941d9adcafa206a6cffb96c0efd8029438adc945eb7f8`, with no warning in the new or changed files; `check_help_width.py` reported 150 entries with none over 80 columns, `test_tang_flash.sh` passed and `test_osd_desk.sh` passed at 92 checks. It was staged and committed with `tinytang_flash.py`, the user power-cycled, and the board came up on the ABI 1.6 core with `layout = lora` applied by `boot.tdsh`; the user opened the window, pressed Update, saw the block, and reports the cycle passing. README gained a bullet describing the window and `manual/desktop.md` lists TinyNode among the apps. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 82 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The manual pack on the card, `/root/wiki/manual`, is built from these chapters and now lacks the TinyNode paragraph, so `tools/make_wiki_pack.py --markdown` should be run and the pack put back on the card. The window's sensor list is a plain read-only list; individual refresh buttons for `env`, `mag`, `pps` and the rest exist as node commands and could become rows if the block ever proves too coarse. The registry's silent refusal is worth a line in the reference as a port hazard rather than only in this log, and the remaining standing items are unchanged, beginning with the English Wikipedia conversion that has no index and must restart.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- README.md
+- manual/desktop.md
+- ports/bl616/tang_lora.c
+- ports/bl616/tang_node.h
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tinynode_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -78,7 +78,7 @@ python tools/tinytang_sync.py
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
   windows, a taskbar and a start menu, with Terminal, Files, Editor, System
   Monitor, Task Manager, Log, Settings, Counter, Phosphor, TinyNES, TinyGBC,
-  Tiny89, TinyCreature, TinyWiki, TinyGutenberg and About. Quitting returns to
+  Tiny89, TinyCreature, TinyWiki, TinyGutenberg, TinyNode and About. Quitting returns to
   the prompt. Opening a text file (double-click or Enter) shows it in the
   Editor, and `.tdsh` scripts open there and run from their menu; a `.nes`
   cartridge is not opened at all, because cartridges start from the TinyNES
@@ -94,6 +94,17 @@ python tools/tinytang_sync.py
   window is busy is refused rather than queued. A scan that would start the
   radio needs 32 KB of heap free. The button is TinyTang's, from the carried patch
   `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`.
+- **The TinyNode window drives the Arduino's relays and reads its sensors.**
+  The node answers over the LoRa link, so the window is a control surface on
+  what it already speaks: four checkboxes for the relay outputs, whose digits
+  follow the switched cable (1 VBUS, 2 D-, 3 D+, 4 GND), and one **Update**
+  button that fetches the node's `status`. That single reply carries the GPS
+  fix, position, magnetometer vector and heading, temperature and humidity, the
+  PPS measure, the radio's counters and the relay states, so one press syncs
+  the whole window -- the checkboxes included, from the `relay` line. Each
+  request runs in its own task with three attempts of four seconds, so the
+  desktop keeps drawing; the work needs the LoRa-capable core and
+  `layout = lora`, which `boot.tdsh` now sets up.
 - **The Terminal window runs the shell.** It is the same session as the
   console, reached through a bridge over two ring buffers, so a command typed
   into a desktop window runs as it would at the console. One user and one
