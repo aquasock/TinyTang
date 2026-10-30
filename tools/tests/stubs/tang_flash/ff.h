@@ -4,6 +4,7 @@
 #define STUB_TANG_FLASH_FF_H
 typedef struct { int open; } FIL;
 typedef unsigned UINT;
+typedef unsigned long FSIZE_t;
 typedef int FRESULT;
 #define FR_OK 0
 #define FA_READ 1
@@ -13,4 +14,7 @@ FRESULT f_open(FIL *fp, const char *path, int mode);
 FRESULT f_read(FIL *fp, void *buf, UINT n, UINT *got);
 FRESULT f_write(FIL *fp, const void *buf, UINT n, UINT *wrote);
 FRESULT f_close(FIL *fp);
+/* cmd_tangget() reads a file's size and may seek into it. */
+FSIZE_t f_size(FIL *fp);
+FRESULT f_lseek(FIL *fp, FSIZE_t ofs);
 #endif

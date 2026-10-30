@@ -71,7 +71,8 @@ python tools/tinytang_sync.py
 ## What it does
 
 - **Boots to a console on HDMI and configured VGA.** `/root/scripts/boot.tdsh` loads
-  `tinytang.bin`, turns the desktop layer on, and stops at the shell prompt
+  `tinytang-lora.bin` (falling back to `tinytang.bin` when the card has no such
+  file), turns the desktop layer on, and stops at the shell prompt
   (`root@tinytang:~#`) drawn on the screen. The board has the shell's built-in
   commands, redirection and scripts, plus the Tang commands below.
 - **`desktop`** runs TinyDesk on that console: overlapping draggable text-mode
@@ -574,8 +575,12 @@ core, its keyboard link and its scripts were retired in core-log entry 25;
 ### What the board boots
 
 `/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
-line -- `tinytang.bin` -- probes it, applies `/tinytang.ini`, enables the desktop
-layer and stops at the prompt. Removing or renaming the file boots to a plain
+line -- `tinytang-lora.bin`, the desktop core that carries the PMOD UART, with
+`tinytang.bin` as the fallback when the card does not have it -- probes it,
+applies `/tinytang.ini`, enables the desktop layer and stops at the prompt. The
+newer core takes every socket word the older one did, so a card declaring
+`layout = lora` has its radio from power-up rather than after a manual
+`tangload`. Removing or renaming the file boots to a plain
 prompt with no core loaded; the FPGA then stays on the core it configured itself with, and
 the screen shows a TangCore splash (fact 14).
 

@@ -83,6 +83,11 @@ FRESULT f_write(FIL *fp, const void *buf, UINT n, UINT *wrote)
     return FR_OK;
 }
 FRESULT f_close(FIL *fp) { (void)fp; return FR_OK; }
+/* tangget asks a file's size and seeks into it.  The seek is recorded so a
+ * test can see where a range read would have started; nothing here reads. */
+static unsigned long g_seek;
+FSIZE_t f_size(FIL *fp) { (void)fp; return 0; }
+FRESULT f_lseek(FIL *fp, FSIZE_t ofs) { (void)fp; g_seek = ofs; return FR_OK; }
 const char *tang_fw_update_open(tang_fw_update_t *u, const char *real_path) { (void)u; (void)real_path; return "not in this test"; }
 const char *tang_fw_update_step(tang_fw_update_t *u, bool *done) { (void)u; *done = true; return "not in this test"; }
 void tang_fw_update_commit(tang_fw_update_t *u) { (void)u; abort(); }

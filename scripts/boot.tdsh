@@ -28,7 +28,16 @@
 # /tinytang.ini automatically, just as Phosphor does. The first version supports
 # none or a complete vga_j1/vga_j2 pair; other modules remain released at boot.
 # Build it with tools/build_desktop_core_open.sh, as BUILDING.md describes.
-CORE=/root/cores/console138k/tinytang.bin
+# The core that boots is the one carrying the PMOD UART.  Desktop ABI 1.6
+# accepts every socket word the older build did -- none, oledrgb, a complete
+# VGA pair -- and adds personality 8, the LoRa UART, so a card whose
+# /tinytang.ini says `layout = lora` gets its radio from power-up instead of
+# after a manual tangload.  The older image stays as the fallback for a card
+# that does not carry the newer one.
+CORE=/root/cores/console138k/tinytang-lora.bin
+if test ! -f "$CORE"
+    CORE=/root/cores/console138k/tinytang.bin
+endif
 
 # The core is named at the "loaded" line below, not up here.  Until tangload has
 # programmed the FPGA the board has no raster, and `osd desk on` starts showing
@@ -74,7 +83,7 @@ osd desk on
 # Stop here, at a loaded core, a displayed prompt and a live console.  The
 # desktop is the only thing that draws into the layer as a window manager, so
 # starting it from here would take the console before the user asked.
-echo "boot: tinytang.bin loaded - type 'desktop' to bring up TinyDesk"
+echo "boot: core loaded - type 'desktop' to bring up TinyDesk"
 
 # The mouse works at this prompt too: the wheel scrolls the shell's history and
 # a left click presses Enter.  Wheel up once recalls the last command and a

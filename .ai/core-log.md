@@ -2804,3 +2804,36 @@ The floating-line experiment is still worth running whenever the module is next 
 - User Test: PASS
 
 ---
+
+## 81 COMMIT Unreleased 2026-10-29T20:51:52-07:00
+
+#### Coming From:
+
+Unreleased 6818372
+
+#### Purpose:
+
+Repair the host test entry 75's `tangget` left uncompilable, and make the boot script load the desktop core that carries the PMOD UART so a card declaring the LoRa layout has its radio from power-up.
+
+#### Outcome:
+
+`tools/tests/stubs/tang_flash/ff.h` gained the `FSIZE_t` type and the `f_size()` and `f_lseek()` declarations that `cmd_tangget()` uses, and `tools/tests/tb_tang_flash.c` implements both, recording the seek offset; the test compiles again and reports `test_tang_flash: all checks passed`. Both the call site at `ports/bl616/tdsh_tang_flash.c:198` and the missing declarations existed at the commit entry 80 started from, so the breakage was inherited rather than introduced, and the test still only compiles `tangget` without exercising it. `scripts/boot.tdsh` now sets `CORE=/root/cores/console138k/tinytang-lora.bin` with a fallback to `tinytang.bin` when that file is absent, because desktop ABI 1.6 accepts every socket word the older build did -- none, oledrgb and a complete VGA pair -- and adds personality 8, the LoRa UART; the two README passages that describe what the board boots name the same file and the fallback. The script was uploaded to the card with `tinytang_put.py` at 5,184 bytes and the user power-cycled, after which the chain needed no manual step: `platform` read `tinytang defe652-dirty.9d0c0d1`, `fpga` reported core 84 answering on UART1 at 2 Mbaud, `tangini` reported `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared` where the same power-up used to give ABI 1.5 with `0xc0 = 0x0000`, `lora ver` answered `+VER=RYLR998_REYAX_V1.2.4` on the first try and `node status` returned the node's six-line reply -- including `relay 1111` -- on its first attempt. No firmware was built or flashed this cycle: it was a script, a test stub, a harness and documentation, and the running image is entry 80's. The user reports the cycle passing, and `.ai/core-reference.md` needed no revision because PMOD-006 already records which socket words each core ABI accepts and the card's boot file is state rather than an external fact. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 81 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+`tangget` is still only compiled by its host test, never run by one: a test that drives the range header and the seek through the stub, the way `tangget`'s own host-side lesson in entry 75 was learned, is the obvious next small cycle. The floating-line experiment remains the one test that would confirm the bound entry 80 added, and it needs the module out of its socket. Beyond those two, the standing list is unchanged and the largest item is still the English Wikipedia conversion, whose output has no index and must restart before it can be checked or copied.
+
+#### Files Modified:
+
+- README.md
+- scripts/boot.tdsh
+- tools/tests/stubs/tang_flash/ff.h
+- tools/tests/tb_tang_flash.c
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
