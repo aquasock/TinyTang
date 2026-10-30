@@ -312,6 +312,15 @@ static int cmd_lora(tdsh_session_t *session, int argc, char **argv)
 #define REQUEST_ATTEMPTS 10
 #define RETRY_GAP_MS      1200
 
+/* Anything stale is swept before each attempt so an old reply cannot be read
+ * as this one, but only so much of it: the receive FIFO holds 512 bytes, and
+ * a module whose line is streaming -- a floating receive pin does exactly
+ * that -- keeps it full, so a sweep that ended only when the FIFO fell empty
+ * would never let the request finish.  Past a full FIFO this is not a stale
+ * reply any more, and the attempt has to go ahead and fail. */
+#define STALE_DRAIN_BYTES 512
+#define STALE_DRAIN_MS     20
+
 static const char s_b64[] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -502,9 +511,12 @@ static size_t wait_reply(uint8_t seq, uint8_t *out, size_t cap, uint32_t window_
 	return got;
 }
 
-/* One request and its reply. Returns the reply body length, or 0. */
+/* One request and its reply.  The budget is the caller's: a prompt can afford
+ * ten patient attempts, a window or a script cannot, and the same code serves
+ * both.  Returns the reply body length, or 0. */
 static size_t tang_request(uint8_t type, const uint8_t *body, uint16_t body_len,
-                           uint8_t *out, uint16_t *out_len)
+                           uint8_t *out, uint16_t *out_len,
+                           int attempts, uint32_t reply_timeout_ms)
 {
 	static uint8_t seq = 1;
 	uint8_t msg[FRAME_MAX_MSG];
@@ -518,12 +530,16 @@ static size_t tang_request(uint8_t type, const uint8_t *body, uint16_t body_len,
 	 * collide with something else. The Tang is the initiator, so retrying is
 	 * its job: the same sequence number is reused, which makes a late reply to
 	 * an earlier attempt still valid and a duplicate harmless. */
-	for (int attempt = 0; attempt < REQUEST_ATTEMPTS; attempt++) {
-		/* Drop anything stale so an old reply cannot be read as this one. */
+	for (int attempt = 0; attempt < attempts; attempt++) {
+		/* Drop anything stale so an old reply cannot be read as this one,
+		 * within a bound: see the note on STALE_DRAIN_BYTES. */
 		uint32_t ctrl;
 		if (read_ctrl(&ctrl)) {
-			uint32_t st = 0;
-			while (read_reg(REG_STATUS, &st) && (st & ST_RX_AVAIL)) {
+			const uint32_t until = bflb_mtimer_get_time_ms() + STALE_DRAIN_MS;
+			for (int i = 0; i < STALE_DRAIN_BYTES; i++) {
+				if ((int32_t)(bflb_mtimer_get_time_ms() - until) >= 0) break;
+				uint32_t st = 0;
+				if (!read_reg(REG_STATUS, &st) || !(st & ST_RX_AVAIL)) break;
 				uint32_t b = 0;
 				if (!read_reg(REG_RX, &b)) break;
 			}
@@ -531,7 +547,7 @@ static size_t tang_request(uint8_t type, const uint8_t *body, uint16_t body_len,
 		rx_reset();
 
 		if (send_message(msg, n)) {
-			const size_t got = wait_reply(seq, reply, sizeof reply, REPLY_TIMEOUT);
+			const size_t got = wait_reply(seq, reply, sizeof reply, reply_timeout_ms);
 			if (got > 0) {
 				const uint16_t copy = got < *out_len ? (uint16_t)got : *out_len;
 				memcpy(out, reply, copy);
@@ -540,9 +556,9 @@ static size_t tang_request(uint8_t type, const uint8_t *body, uint16_t body_len,
 				return copy;
 			}
 		}
-		if (attempt + 1 < REQUEST_ATTEMPTS) {
+		if (attempt + 1 < attempts) {
 			tdsh_printf("node: no reply, retrying (%d/%d)\r\n",
-			            attempt + 2, REQUEST_ATTEMPTS);
+			            attempt + 2, attempts);
 			vTaskDelay(pdMS_TO_TICKS(RETRY_GAP_MS));
 		}
 	}
@@ -581,9 +597,11 @@ static int cmd_tang(tdsh_session_t *session, int argc, char **argv)
 	const size_t got = tang_request(is_status ? TANG_REQ_STATUS : TANG_REQ_COMMAND,
 	                                is_status ? NULL : (const uint8_t *)body,
 	                                is_status ? 0 : (uint16_t)used,
-	                                reply, &reply_len);
+	                                reply, &reply_len,
+	                                REQUEST_ATTEMPTS, REPLY_TIMEOUT);
 	if (got == 0) {
-		tdsh_printf("node: no reply from TinyNode after %d ms\r\n", REPLY_TIMEOUT);
+		tdsh_printf("node: no reply from TinyNode after %d attempts of %d ms\r\n",
+		            REQUEST_ATTEMPTS, REPLY_TIMEOUT);
 		return 1;
 	}
 	tdsh_printf("%.*s\r\n", (int)reply_len, (const char *)reply);

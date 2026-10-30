@@ -2773,3 +2773,34 @@ None.
 - User Test: N/A
 
 ---
+
+## 80 COMMIT Unreleased 2026-10-29T20:43:48-07:00
+
+#### Coming From:
+
+Unreleased defe652
+
+#### Purpose:
+
+Bound the two waits that could leave the Tang's `node` client spinning, and hold the FPGA link across a register transaction instead of only across its transmit.
+
+#### Outcome:
+
+The stale-byte sweep at the top of every retry attempt in `ports/bl616/tang_lora.c` is now bounded at 512 bytes and 20 ms: the receive FIFO holds 512, so past that a stream is not a stale reply and the attempt has to fail instead of chasing it, which is the condition a floating receive line creates. The retry budget became the caller's, `tang_request(..., attempts, reply_timeout_ms)`, with the console passing the same ten attempts of 4000 ms it always had, and the failure line now reads `node: no reply from TinyNode after 10 attempts of 4000 ms`. `ports/bl616/tang_fpga_uart.c` gained a re-entrant lock: the existing mutex is now paired with an owner task handle and a depth counter, so a caller that holds the link across a whole exchange can call the register helpers inside that hold without deadlocking against itself while another task still waits, which is what EXTCTL-005 asks for and what a bare FreeRTOS mutex cannot do. `fpga_ext_read32()` and `fpga_ext_write32()` take the link with `tang_fpga_lock_within(100 ms)` and hold it across the frame and its reply, with that reply wait bounded at 500 ms; before this they released it immediately after the transmit, which is exactly the overtaking window the record names. The firmware built at 678,096 bytes, SHA-256 `96fc841964f82d73e62d4b8bc1db9cd548df1b0c0927d0521ce24053126d9810`, with no warning in either changed file, and the host suite stayed green where it was already green: `test_osd_desk.sh` 92 checks, `test_clock.sh` 35,930 checks with none failed, `test_desktop_link.sh` 18 checks and `check_help_width.py` 150 entries with none over 80 columns. One test was found broken independently of this cycle: `test_tang_flash.sh` no longer compiles because `tdsh_tang_flash.c:198` calls `f_lseek` and the FatFS stub in `tools/tests/stubs` does not declare it, and both the call and the missing stub exist at the commit this cycle started from, so entry 75's `tangget` is the likely author rather than this work; the test was left untouched because fixing it is its own boundary. It was staged and committed with `tinytang_flash.py` and the user power-cycled; `platform` then read `tinytang defe652-dirty.9d0c0d1`. On the hardware, with `tinytang-lora.bin` loaded and `layout = lora` declared, `node status` returned the node's six-line reply on its first attempt with no retries, which is the best this link has behaved; with the UART's internal loopback on -- a synthetic backlog in the receive FIFO at every attempt, the closest thing to a streaming line that can be made without unplugging anything -- the command ran all ten attempts and returned to the prompt with the new failure line, after which loopback was turned off and the control register read back zero. The harness itself gave up waiting for the prompt at twenty seconds and left the board alone rather than typing into a running command, and a following call waited, collected the error line and turned the loopback off, so the board was never wedged. What this cycle does not do is prove the original wedge: reproducing it needs a receive line that streams continuously, which needs the module out of its socket, and the guarantee here is bounded failure rather than a demonstrated cause. The user reports the build passing. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 80 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The floating-line experiment is still worth running whenever the module is next out of its socket: if the console wedges then, the bound is not complete and the drain's own read path needs looking at; if it fails in about a minute, EXTCTL-005's fix is confirmed where it matters. Two smaller items are ready to schedule: `tools/tests/stubs` needs an `f_lseek` declaration so `test_tang_flash.sh` compiles again, and `scripts/boot.tdsh` should load the core `/tinytang.ini` asks for instead of always naming `tinytang.bin`, so a LoRa session stops starting with a manual `tangload`. The rest of the standing list is unchanged, beginning with the English Wikipedia conversion that has no index and must restart.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_lora.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

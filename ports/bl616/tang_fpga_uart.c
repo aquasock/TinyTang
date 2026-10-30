@@ -122,6 +122,8 @@ static struct bflb_device_s *s_uart;
 static bool                 s_uart_ready;
 static uint32_t             s_baud = FPGA_UART_BAUD;
 static SemaphoreHandle_t    s_tx_lock;
+static TaskHandle_t         s_lock_owner;   /* who holds it, for re-entry */
+static uint32_t             s_lock_depth;
 
 static uint8_t           s_rx_ring[FPGA_RX_RING_SIZE];
 static volatile uint32_t s_rx_head;
@@ -206,17 +208,42 @@ void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2)
 
 /* The transmit lock.  A FreeRTOS mutex rather than a critical section:
  * interrupts stay enabled, because the RX interrupt is what keeps the core's
- * replies from overflowing the 32-byte FIFO. */
+ * replies from overflowing the 32-byte FIFO.
+ *
+ * It is re-entrant by owner.  A caller that holds the link across a whole
+ * request and its reply -- which EXTCTL-005 requires, or the reply can be
+ * overtaken -- calls the register helpers inside that hold, and those helpers
+ * take it again; a plain FreeRTOS mutex would deadlock the task against
+ * itself.  The depth is counted per owner instead, so one task nests freely
+ * while another still waits. */
 void tang_fpga_lock(void)
 {
-    if (s_tx_lock) {
-        xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    if (!s_tx_lock) {
+        return;
     }
+    const TaskHandle_t me = xTaskGetCurrentTaskHandle();
+    if (s_lock_owner == me) {
+        s_lock_depth++;
+        return;
+    }
+    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    s_lock_owner = me;
+    s_lock_depth = 1;
 }
 
 void tang_fpga_unlock(void)
 {
-    if (s_tx_lock) {
+    if (!s_tx_lock) {
+        return;
+    }
+    if (s_lock_owner != xTaskGetCurrentTaskHandle()) {
+        return;                     /* not ours to give */
+    }
+    if (s_lock_depth > 0) {
+        s_lock_depth--;
+    }
+    if (s_lock_depth == 0) {
+        s_lock_owner = NULL;
         xSemaphoreGive(s_tx_lock);
     }
 }
@@ -232,7 +259,17 @@ bool tang_fpga_lock_within(uint32_t ms)
     if (!s_tx_lock) {
         return false;
     }
-    return xSemaphoreTake(s_tx_lock, pdMS_TO_TICKS(ms)) == pdTRUE;
+    const TaskHandle_t me = xTaskGetCurrentTaskHandle();
+    if (s_lock_owner == me) {
+        s_lock_depth++;
+        return true;
+    }
+    if (xSemaphoreTake(s_tx_lock, pdMS_TO_TICKS(ms)) != pdTRUE) {
+        return false;
+    }
+    s_lock_owner = me;
+    s_lock_depth = 1;
+    return true;
 }
 
 /* Set by cmd_fpgapipe and by ae350run's load, and read by the desk layer so it
@@ -446,6 +483,14 @@ static uint16_t fpga_crc16(uint16_t crc, uint8_t data)
  * covers the type byte and the first twelve payload bytes.  The reply is 15
  * bytes and carries the register in bytes 9..12, big-endian, with the core's
  * status in byte 2 (0 = ok).  Caller need not hold the lock. */
+/* One register transaction's budget.  The acquisition is bounded so a caller
+ * that never gives the link back -- a host pipe, a load, a stuck task -- fails
+ * this read instead of blocking the caller for ever, and the hold covers the
+ * reply as well as the frame, because releasing it after the transmit lets
+ * another caller's frame overtake the answer (EXTCTL-005). */
+#define FPGA_REG_LOCK_MS   100u
+#define FPGA_REG_REPLY_MS  500u
+
 static bool fpga_ext_read32(uint32_t address, uint32_t *value, uint8_t *status)
 {
     uint8_t req[14];
@@ -461,13 +506,13 @@ static bool fpga_ext_read32(uint32_t address, uint32_t *value, uint8_t *status)
     req[12] = (uint8_t)(crc >> 8);
     req[13] = (uint8_t)crc;
 
-    tang_fpga_lock();
+    if (!tang_fpga_lock_within(FPGA_REG_LOCK_MS)) return false;
     const int sent = tang_fpga_frame(0x10, req, sizeof(req));
+    uint8_t rep[16];
+    const int got = sent == 0 ? tang_fpga_wait(0x10, rep, sizeof(rep), FPGA_REG_REPLY_MS) : 0;
     tang_fpga_unlock();
     if (sent != 0) return false;
-
-    uint8_t rep[16];
-    if (tang_fpga_wait(0x10, rep, sizeof(rep), 500) != 15) return false;
+    if (got != 15) return false;
     if (status) *status = rep[2];
     if (value)
         *value = ((uint32_t)rep[9] << 24) | ((uint32_t)rep[10] << 16) |
@@ -497,13 +542,13 @@ static bool fpga_ext_write32(uint32_t address, uint32_t value, uint8_t *status)
     req[12] = (uint8_t)(crc >> 8);
     req[13] = (uint8_t)crc;
 
-    tang_fpga_lock();
+    if (!tang_fpga_lock_within(FPGA_REG_LOCK_MS)) return false;
     const int sent = tang_fpga_frame(0x10, req, sizeof(req));
+    uint8_t rep[16];
+    const int got = sent == 0 ? tang_fpga_wait(0x10, rep, sizeof(rep), FPGA_REG_REPLY_MS) : 0;
     tang_fpga_unlock();
     if (sent != 0) return false;
-
-    uint8_t rep[16];
-    if (tang_fpga_wait(0x10, rep, sizeof(rep), 500) != 15) return false;
+    if (got != 15) return false;
     if (status) *status = rep[2];
     return true;
 }
