@@ -146,7 +146,8 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What is the onboard USB debug bridge? | BRD | BRD-004 |
 | Does the board need a particular power input? | BRD | BRD-005 |
 | How is a 1S 18650 connected to J5 and charged? | BRD | BRD-010 |
-| What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006 |
+| What decides whether the board comes up one-wire or two-wire? | BRD | BRD-006, USB-009 |
+| How can one-wire or two-wire be chosen on the bench without moving the power cables? | USB | USB-009 |
 | Can one-wire and two-wire run together? | BRD | BRD-007 |
 | Can a Raspberry Pi HAT go on the dock's 40-pin headers? | BRD | BRD-008 |
 | How is the BL616 recovered if a firmware stops it before USB comes up? | BRD | BRD-009 |
@@ -310,7 +311,7 @@ BRD-002: "SD is gated behind GPIO 16 held high; without it f_mount returns FR_NO
 BRD-003: "The USB-A ports are FPGA pins, all LVCMOS33: H13/G13 (usb1, the populated port) and M15/M16 (usb2, whose 0R links are not fitted on a stock dock), each with 15 kOhm pull-downs on the dock; since desktop ABI 1.5 H13/G13 is the desktop core's I2C bus (BRD-011)"
 BRD-004: "The onboard debug bridge is a SIPEED FT2232 (0403:6010, product 'USB Debugger'), a separate USB path from the BL616's CDC"
 BRD-005: "The board has two power inputs and runs on either; a power cycle is unplugging both and restoring power first"
-BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered"
+BRD-006: "Which firmware the BL616 runs is chosen at a cold power-up: with the power input it runs TinyTang and the CDC (two-wire); on the OTG cable alone it comes up as the vendor's FT2232 USB Debugger (one-wire) and TinyTang does not run; removing the power cable from a running board changes nothing, since the OTG cable keeps it powered. Revised 2026-10-29: the mode is not decided by the power input alone -- with the board powered through the OTG cable, making all four conductors at once lands on the FT2232 while making GND and VBUS first and the data pair after the boot lands on the CDC (USB-009)"
 BRD-007: "One-wire and two-wire cannot be combined: by the user's account the board's modules are powered from one input or the other, never both, and making the two work together was tried at length in the earlier projects without success; no written record of that work was found"
 BRD-008: "The dock's two 2x20 2.54 mm headers are the SDRAM connectors J9 (SDRAM0) and J10 (SDRAM1), MiSTer-style: FPGA I/O on pins 1-10, 13-28 and 31-40, +5 V on pin 11, ground on pin 12; they are not Raspberry Pi headers, and a Pi HAT fitted directly would put the board's 5 V on a HAT signal and short eight FPGA pins through the HAT's ground pins"
 BRD-009: "The BL616 has a BOOT button inside the case for its ROM bootloader, which then enumerates as 349b:6160 on /dev/ttyACM0; a first install or a recovery writes only the application at 0x40000 with BLFlashCommand --write, never make flash, which would overwrite Sipeed's loader at 0x0"
@@ -343,6 +344,7 @@ USB-005: "There is no host deinit in the SDK: usbh_deinitialize() is software-on
 USB-006: "CherryUSB fires USBD_EVENT_CONFIGURED on enumeration and USBD_EVENT_DISCONNECTED when the host goes away: the usable host-present signal"
 USB-007: "An IN packet leaves only when the host reads, which it does only while a program has the port open; enumerated but unread, the console's old flush spun a million yields per packet and stalled every writer, including the desktop on HDMI. Writes now require DTR and wait at most 50 ms"
 USB-008: "Starting the Bluetooth radio takes the BL616's USB device down while the CPU keeps running, and re-asserting its clock with GLB_Set_USB_CLK_From_WIFIPLL plus a device re-init brings the console back as a fresh ffff:5454 with no power cycle (tdsh_bl616_console_restart())"
+USB-009: "A USB-C to USB-C cable with its four conductors switched by relays, and CC spliced permanently, chooses the mode at a cold start: all four contacts made at once enumerates the SIPEED FT2232 (0403:6010, ttyUSB0/1, one-wire), while GND and VBUS first and the data pair after the boot enumerates the TinyTang CDC (ffff:5454, two-wire) at high speed on the same host port, about 7 s between the old device leaving and the new one arriving"
 FLS-002: "Application at 0x40000 up to 0xE0000 bytes, staging at 0x120000 up to the vendor data record at 0x200000; boot header magic at 0x00/0x08/0x64, body length at 0x84, CRC-32 of the first 252 bytes at 0xFC; the commit runs from .tcm_code with interrupts off; the vendor loader boots images over 0x80000; a soft reset lands in the vendor loader, so a reflash needs a power cycle"
 FLS-003: "A watchdog reset, like a software reset, lands in the vendor loader and comes up as the FT2232, so only a power cycle (which scrambles RAM) brings TinyTang back; the crash recorder keeps its record in the last flash sector, 0x3FF000"
 FLS-004: "The BL616 loader at 0x0 is not TangCore 0.9's bl616_fpga_partner_console138k.bin (60,741 of 88,672 bytes differ); full backups of the BL616 and FPGA flashes are in /run/media/vash/GIT/Tang-Console-138K-backups with SHA256SUMS.txt"
@@ -624,12 +626,13 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   title: "One-wire or two-wire is chosen at a cold power-up by which input powers the board"
   status: INFERRED
   verified_date: 2026-10-05
-  statement: "The two modes TCTL-005 names are two different programs on the BL616, and only one runs at a time. A cold power-up with the dedicated power input connected, with or without the OTG cable, runs this project's firmware, and the host sees the TinyTang CDC (ffff:5454). A cold power-up with the OTG cable alone comes up instead as SIPEED's 'USB Debugger' FT2232 (0403:6010, serial 2025041420), with interface 0 as /dev/ttyUSB0 and interface 1 as /dev/ttyUSB1, and the CDC absent. Removing the power cable from a board already running TinyTang changes nothing: the OTG cable keeps it powered (BRD-005), the CDC stays enumerated under the same device number, and the console keeps answering. The same FT2232 is what a soft reset reaches after tangflash (FLS-002)."
-  consequence: "Switching between the modes is a full power cycle -- both cables out, then the power input for two-wire or the OTG cable alone for one-wire -- and it restarts the FPGA as well as the BL616, so the FPGA comes back on the core it loads by itself (DEV-006) whichever mode follows. In one-wire nothing of TinyTang runs: no shell, no boot.tdsh, so no menu core, no desktop layer, no desktop, no keyboard handling and no F12, and HDMI shows the TangCore splash. Which signal the vendor loader reads to make the choice is not known; the power input's VBUS is the obvious candidate and has not been tested."
+  statement: "The two modes TCTL-005 names are two different programs on the BL616, and only one runs at a time. A cold power-up with the dedicated power input connected, with or without the OTG cable, runs this project's firmware, and the host sees the TinyTang CDC (ffff:5454). A cold power-up with the OTG cable alone comes up instead as SIPEED's 'USB Debugger' FT2232 (0403:6010, serial 2025041420), with interface 0 as /dev/ttyUSB0 and interface 1 as /dev/ttyUSB1, and the CDC absent. Removing the power cable from a board already running TinyTang changes nothing: the OTG cable keeps it powered (BRD-005), the CDC stays enumerated under the same device number, and the console keeps answering. The same FT2232 is what a soft reset reaches after tangflash (FLS-002). With the board powered through the OTG cable and that cable's conductors switched on the bench, which of the two appears also depends on the order the conductors are made at the cold start: all four at once gives the FT2232, while VBUS and GND first and the data pair attached after the boot give the CDC (USB-009)."
+  consequence: "Switching between the modes is a full power cycle -- both cables out, then the power input for two-wire or the OTG cable alone for one-wire -- and it restarts the FPGA as well as the BL616, so the FPGA comes back on the core it loads by itself (DEV-006) whichever mode follows. In one-wire nothing of TinyTang runs: no shell, no boot.tdsh, so no menu core, no desktop layer, no desktop, no keyboard handling and no F12, and HDMI shows the TangCore splash. Which signal the vendor loader reads to make the choice is not known; the power input's VBUS is the obvious candidate and has not been tested. The bench result above takes VBUS-presence off the table as the whole answer, since both modes were reached with the same supply; a race between the FT2232 and the BL616 for the port, decided by whether the data pair is present when each comes up, is the lead and is not established."
   sources:
     - "Observed on this board, 2026-10-05: lsusb and udevadm on the host after each change; the TinyTang status probe (TOOL-011) before and after the power cable was removed"
+    - "Observed on this board, 2026-10-29: host USB traces during relay-sequenced cold starts (USB-009)"
     - "TCTL-005: Tang-Control's names for the modes"
-  verification: "Each path observed once on 2026-10-05: power cable removed while running (CDC stayed as device 36, probe answered 1); cold start on the OTG cable alone (FT2232 enumerated, CDC absent, user saw the TangCore splash); cold start with both cables (CDC back as device 38, probe answered 1). Two-wire cold starts with both cables have come back as TinyTang throughout this project. Inferred rather than verified because the selection mechanism has no source and each one-wire start was seen once."
+  verification: "Each path observed once on 2026-10-05: power cable removed while running (CDC stayed as device 36, probe answered 1); cold start on the OTG cable alone (FT2232 enumerated, CDC absent, user saw the TangCore splash); cold start with both cables (CDC back as device 38, probe answered 1). Two-wire cold starts with both cables have come back as TinyTang throughout this project. Inferred rather than verified because the selection mechanism has no source and each one-wire start was seen once. Revised 2026-10-29 (core-log entry 78): with the board powered through the switched OTG cable, `0000` then `1111` produced the FT2232 and `0000` then `1001` then `1111` produced the CDC, each direction run twice on the same host port, so which input supplies the board is not the only selector; the mechanism stays inferred."
 
 - record_id: BRD-007
   kind: BOARD
@@ -1065,6 +1068,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "This project's ports/bl616/tang_ble.c: the call after the stack comes up, and the flash-crumb diagnostic that established it (removed in core-log entry 32)"
     - "core-log entries 27 to 30"
   verification: "Established on the board on 2026-10-11: the crumbs showed ble_start_ex completing every step while the heartbeat advanced, and the console re-enumerated as a new device after the restart, then survived a full blescan and two device pairings."
+
+- record_id: USB-009
+  kind: USB
+  topic_id: USB
+  title: "A relay-switched USB-C cable chooses one-wire or two-wire at a cold start"
+  status: VERIFIED
+  verified_date: 2026-10-29
+  statement: "A USB-C to USB-C cable cut in half, with VBUS, GND, D+ and D- routed through a four-channel opto relay module and CC spliced permanently, was used to power and connect the board's OTG connector. The cable carries five conductors: thick red VBUS, thick grey GND, thin green D+, thin white D- and thin yellow CC; colour is not standardised in a C-to-C cable, so the reliable tells are that the two power conductors are thicker and that D+ and D- are twisted together as a pair while CC runs alone. With the board cold-started while all four contacts are made at once, the host enumerates SIPEED's FT2232 USB Debugger (0403:6010) with /dev/ttyUSB0 and /dev/ttyUSB1 and no CDC, which is one-wire. With GND and VBUS made first, the board left a few seconds to boot, and D+ and D- made after that, the host enumerates the TinyTang CDC (ffff:5454, SerialNumber 0.1.3) and the shell answers at the prompt, which is two-wire. Both devices arrive on the same host port, and a 0000-to-1111 cycle and a 0000-to-1001-to-1111 cycle each moved the port between the two in about 7 s, the old device disconnecting first. Both enumerations were at high speed, so the relay contacts and the splice carry 480 Mbps here."
+  consequence: "The mode can be chosen at a cold start without moving either power cable, by keeping the data pair open while the board powers up and closing it afterwards; opening the VBUS contact is itself the power cycle that makes it a cold start. Two things follow for anyone repeating it: CC must never be switched, because a C-to-C link applies no VBUS at all until CC reports a sink, and relay contacts plus a splice on the data pair are electrically hostile even though they carried high speed on this bench. An A-to-C cable is not equivalent: it carries four insulated conductors and a bare shield drain, with the 56 kOhm CC pull-up inside the C plug rather than in the cable, so a splice that rejoins only the four conductors is complete."
+  sources:
+    - "Observed on this bench, 2026-10-29: journalctl -k USB traces on the host, lsusb and /dev/serial/by-id after each relay sequence"
+    - "TinyNode's core-log entry 4 and its BRD-005 for the relay channels on D9..D12 and their digit order"
+    - "BRD-006 for the two modes and what runs in each"
+  verification: "Four transitions observed on 2026-10-29 on host port 1-2: 18:15:17 the CDC left and 18:15:51 the CDC enumerated; 18:17:39 the CDC left and 18:17:46 the FT2232 enumerated, both after relay sequences the user ran at the bench, and the user repeated both sequences successfully. The board's dedicated power input state was not separately recorded during these runs, so which input was supplying the board in each case rests on the bench setup rather than on a measurement."
 
 - record_id: FLS-002
   kind: FLASH
@@ -2722,7 +2739,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-28
+last_reviewed: 2026-10-29
 ```
 
 ---

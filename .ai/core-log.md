@@ -2713,3 +2713,33 @@ First, what a fresh session should not have to rediscover: the class Q shelf nee
 - User Test: N/A
 
 ---
+
+## 78 COMMIT Unreleased 2026-10-29T18:22:28-07:00
+
+#### Coming From:
+
+Unreleased 93c6186
+
+#### Purpose:
+
+Record what a relay-switched USB-C cable showed about how this board chooses one-wire or two-wire, since the chosen mechanism in BRD-006 turned out not to be the whole answer.
+
+#### Outcome:
+
+The bench arrangement was a USB-C to USB-C cable cut in half, with VBUS, GND, D+ and D- switched by a four-channel relay module driven from the TinyNode's Arduino on D9..D12 and CC spliced permanently, in place of moving the cables between power-up attempts. The cable carries five conductors: thick red VBUS, thick grey GND, thin green D+, thin white D- and thin yellow CC, with colour not standardised in a C-to-C cable and the twisted pair, not the colour, being the reliable way to pick the data pair. With all four contacts made while the board cold-started, the host enumerated SIPEED's FT2232 USB Debugger (0403:6010) with /dev/ttyUSB0 and /dev/ttyUSB1 and no CDC, which is one-wire; with GND and VBUS made first, a few seconds left for the board to boot, and the data pair made after that, the host enumerated the TinyTang CDC (ffff:5454, SerialNumber 0.1.3) and `platform` answered `bl616/freertos, tinytang ea7272c-dirty.e2bc14a` at the shell prompt, which is two-wire. The host traces show the transitions on one port, the old device leaving at 18:17:39 and the FT2232 arriving at 18:17:46 and the reverse at 18:15:17 and 18:15:51, each about seven seconds apart, and both enumerations were at high speed, so the relay contacts and the splice carried 480 Mbps. The user ran both sequences and reported each mode working. Because both modes were reached with the same supply, the power input cannot be the only selector, which contradicts BRD-006 as it stood; the record was revised in place rather than rewritten, its statement and consequence now say that the order the conductors are made at the cold start decides the outcome too, and its verification ends with the revision note naming this entry. A new USB-009 records the switched-cable method, its five conductors, the CC rule that a C-to-C link applies no VBUS until CC reports a sink, and the contrast with an A-to-C cable, which carries four insulated conductors plus a bare shield drain and hides its 56 kOhm CC pull-up inside the C plug, so a splice that rejoins only the four is complete and a spliced A-to-C that delivered power but no data was a broken conductor rather than a missing CC. The routing table gained a row for choosing the mode on the bench and its existing row now names USB-009 beside BRD-006, the fast lookup index carries the new record in order, and the reference's last_reviewed date moved to 2026-10-29. The relay command itself and its hardware are recorded in TinyNode's core-log entry 4 and its BRD-005. No file in this repository changed, nothing was built or flashed here, and the core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and no settled entry was rewritten, checked that the reference's six YAML blocks parse with the index and the records naming the same 154 ids in the same order, and validated this entry as number 78 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+The mechanism is still not established, and the record says so: the next test is to repeat both sequences with the board's dedicated power input certainly disconnected and then certainly connected, three runs each, which separates a rule from a race between the FT2232 and the BL616 for the port. If it is a race, a fixed delay between VBUS and the data pair is the thing worth measuring, because the seven-second gap the traces show is longer than either device needs to enumerate. The relay command is otherwise in place on the node side and reachable from the Tang's console as `node relay 0000`.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
