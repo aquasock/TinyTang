@@ -2937,3 +2937,33 @@ Give `tangget` the host coverage entry 81 left it without, driving its range ari
 - User Test: N/A
 
 ---
+
+## 85 COMMIT Unreleased 2026-10-30T21:27:30-07:00
+
+#### Coming From:
+
+Unreleased 22046eb
+
+#### Purpose:
+
+Build the class Q Gutenberg shelf that had been downloaded but never converted, and put it and class B on the card so TinyGutenberg has a science shelf beside philosophy and religion.
+
+#### Outcome:
+
+The Q archive `gutenberg_en_lcc-q_2026-03.zim` was 17,970,908,446 bytes but its own header names `checksumPos` 17,724,714,254, so 246,194,176 bytes of junk followed the 16-byte MD5 trailer; the MD5 of the first 17,724,714,254 bytes is `e1e5ec8ff8ea11596752d977ef961147`, exactly the value stored at that offset, so the content was complete and only the tail was wrong. The file was truncated to 17,724,714,270 bytes, which makes content plus trailer the whole file and makes the trailer rule the shelf script checks true again. Conversion was then run directly as `tools/make_wiki_pack.py --zim gutenberg_en_lcc-q_2026-03.zim --out gutenberg-q --min-chars 2000 --max-article-bytes 2097152` -- the script's own book settings -- and not through `tools/gutenberg_shelf.sh`, because that script's first stage always resumes the download, which would have put the junk back. The pack is 810,991,958 bytes in one chunk: `wiki.000` 804,257,566, `wiki.parts` 6,436,584, `wiki.idx` 180,240, `wiki.auth` 117,156 and `wiki.meta` 412, holding 2,253 books, 114,939 chapters and 2,253 authors with description Science and source date 2026-03-06. Fewer books than class B's 3,907 is correct rather than lost: the archive carries 5,947 `text/html` entries, of which 2,319 are `_cover` pages the converter consumes to record the author, 1,352 fall under the 2,000-character floor and 2,253 become records, with 23 left unfiled as redirect or untitled pages, and Q spends its 17.7 GB on 90,392 JPEG, 29,563 PNG and 15,567 SVG entries rather than more books. `tools/check_wiki_pack.py` passed on the scratch copy and again on the card copy after the copy, which is 3907 and 2253 records respectively with 196 and 113 bodies sampled; every one of the ten files was then compared with `cmp` against its source and is byte-identical. Both shelves are installed at `/root/books/gutenberg-b` and `/root/books/gutenberg-q` on the 477 GB card, which stands at 4.5 GB used, beside the existing 18-book `gutenberg-p` sample; the user reports the result passing. Worth recording as a defect rather than a fact of these archives: the shelf script's second stage hashes everything but the last 16 bytes and compares that against the last 16, which is true only when the file ends at its trailer, so the same 246 MB of junk blocked this shelf and the English Wikipedia archive's 1.01 GB does the same; reading `checksumPos` from the header and hashing exactly those bytes is the fix, and it is left for its own cycle. No file in this repository changed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 85 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and `None.` in Files Modified.
+
+#### Next Steps:
+
+`tools/gutenberg_shelf.sh`'s verify stage should take `checksumPos` from the ZIM header and hash that many bytes instead of everything but the last 16, which would have converted this archive without the hand truncation and would let the English Wikipedia archive be verified at all; it is a small change to one heredoc and deserves its own cycle with a planted-junk test. The card's `/root/wiki/manual` still predates the TinyNode paragraph in `manual/desktop.md`, and fixing it needs the card mounted again. Two host tests remain red from the baseline taken in entry 84: `test_desktop_core.sh` asserts desktop ABI 1.5 and the PMOD UART window as unknown where the core answers 1.6, and `test_phosphor_catalog.sh` lacks `-I ports/bl616` and then trips the opendir assertion entry 41 recorded. The remaining standing items are unchanged, beginning with the MPR121 pad-to-electrode map that entry 83 left as the sensor's next step and the English Wikipedia conversion that has no index and must restart.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
