@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# tangput's route refusal and tangload's single programmer
-# (tools/tests/tb_tang_flash.c), with FreeRTOS replaced by POSIX threads.
+# tangput's route refusal, tangget's range and seek, and tangload's single
+# programmer (tools/tests/tb_tang_flash.c), with FreeRTOS replaced by POSIX
+# threads.
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -7,6 +7,7 @@ typedef unsigned UINT;
 typedef unsigned long FSIZE_t;
 typedef int FRESULT;
 #define FR_OK 0
+#define FR_DISK_ERR 1   /* FatFs's own value: a failed seek, or a card error */
 #define FA_READ 1
 #define FA_WRITE 2
 #define FA_CREATE_ALWAYS 8

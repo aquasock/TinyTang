@@ -2905,3 +2905,35 @@ The console command is the boundary for this cycle; a TinyDesk window over the s
 - User Test: PASS
 
 ---
+
+## 84 COMMIT Unreleased 2026-10-30T19:43:03-07:00
+
+#### Coming From:
+
+Unreleased 207f9af
+
+#### Purpose:
+
+Give `tangget` the host coverage entry 81 left it without, driving its range arithmetic, its seek and its raw window through the card's stub instead of only compiling the call site.
+
+#### Outcome:
+
+`tools/tests/tb_tang_flash.c` now fakes enough of the card for `cmd_tangget()` to run: a 9,472-byte image whose bytes move with their offset, so a misplaced seek or a repeated chunk cannot compare equal, `f_size()` and `f_read()` reading it from a cursor that `f_lseek()` moves and records, `tdsh_bl616_console_write_raw()` collecting the payload, and `tdsh_bl616_console_set_raw()` tracing the raw window as `[` opened, `]` closed, `X` a raw write outside one and `T` text printed inside one, which no header may be; `FR_DISK_ERR` was added to `tools/tests/stubs/tang_flash/ff.h` with FatFs's own value for a refused seek. Twelve cases now run: the whole file in three chunks with no seek and one closed raw window, an inside range where the header names the range and the seek lands on it, an offset with no length crossing a chunk edge, a length running past the end shortened rather than refused, an offset past the end clamped so nothing is sent and nothing is refused, a refused seek reported with nothing on the wire, a short read that ends the transfer and still closes the raw window before its message, the route refusal before the card is touched, an open failure, a bad path, and the usage line. Three planted faults were each caught: seeking never instead of at the offset, the length clamp written against `total` instead of `total - offset`, and the raw window closed before the payload, so the assertions bite rather than merely pass. The firmware rebuilt from this tree at 682,272 bytes, SHA-256 `3ca6ace4d76109458bfaa1f921f236183711a341d8857b0b00d317116b7916b9`, with the only warnings in it the vendored `ports/bl616/tang_jtag_programmer.c` ones that were already there; nothing in it changed, so nothing was deployed and the board still runs entry 83's `03b3fd4-dirty.d2a1b15`, which `platform` confirmed at the shell prompt. The host suite was re-baselined as this cycle's first step: 28 of the 30 scripts pass, and the two that do not are red for reasons this cycle neither caused nor fixed and are named in Next Steps. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 84 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+`tools/tests/test_desktop_core.sh` has been red since the desktop core reached ABI 1.6: its testbench still asserts version `0x00010005` at address 4 and still expects the PMOD UART window 0x170-0x17c to be unknown addresses, while `fpga/desktop/desktop_regs.sv` answers `0x00010006`, publishes bitmap `0x0000010f` and decodes that window, so the sim fails at its second transaction and the port's FPGA-side host test has not checked the registers it now runs; updating it is its own cycle. `tools/tests/test_phosphor_catalog.sh` fails in two stages: the harness lacks `-I ports/bl616`, so `td_phosphor_app.cpp` cannot find `tang_core_load.h`, and with that include added the binary aborts on `f_opendir("/sd/root/media/music")`, which is the defect entry 41 recorded. `tools/tests/test_fat_rename.sh` is committed without its executable bit and fails with "Permission denied" when run the documented way, though `bash tools/tests/test_fat_rename.sh` passes its 16 checks, so a one-line mode fix is owed. The standing list is otherwise unchanged, beginning with the MPR121 pad-to-electrode map that entry 83 left as the sensor's next step, the manual pack that lacks the TinyNode paragraph, and the English Wikipedia conversion that has no index and must restart.
+
+#### Files Modified:
+
+- tools/tests/stubs/tang_flash/ff.h
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_tang_flash.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
