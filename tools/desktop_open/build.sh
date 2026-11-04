@@ -267,7 +267,83 @@ log ""
 log "=== 4. provenance stamp ==="
 cp -f "$out/desktop.bin" "$out/desktop.$BINHASH.bin"
 cp -f "$out/desktop.fs"  "$out/desktop.$FSHASH.fs"
+
+# ------------------------------------------------------------ provenance
+# The stamp names the artefact; it says nothing about what made it.  Two
+# bitstreams can carry the same design at different placements, and until
+# 2026-11-03 the only way to find out which core was current was to hash
+# candidates off the card and compare them with file mtimes.  So every build
+# writes the tuple it was made from beside the artefact, and
+# tools/check_desktop_provenance.py compares two of these.
+#
+# The device database is compiled INTO nextpnr (its CMake turns
+# chipdb-GW5AST-138C.bba into a .bin the binary links), so the binary's
+# sha256 is the one token that pins nextpnr's source, the compiler that built
+# it, apicula's architecture tables and the exact database together.  The
+# packer reads the msgpack from the apicula tree at run time, so that digest
+# is recorded too: the two are different questions and both bite.
+#
+# `built_at` is the only line that differs between two builds of the same
+# tuple, and the checker ignores it.  Everything else must match.
+prov() { printf '%s\n' "$1"; }
+sha_or_unknown() { [[ -f "$1" ]] && sha256sum "$1" | cut -d' ' -f1 || printf 'absent'; }
+git_or_unknown() { local d=$1; shift; git -C "$d" "$@" 2>/dev/null || printf 'unknown'; }
+# `cmd | head -1 || echo unknown` is a trap: head succeeds on empty input, so the
+# fallback never runs and the field comes out blank.  A blank field then differs
+# from another build's blank field only by luck.  nextpnr needs its interpreter
+# environment unsullied and does die here -- oss-cad-suite's environment sets a
+# PYTHONHOME its embedded interpreter cannot use (see pnr.sh) -- so an empty
+# answer is the expected case, not an edge one.
+# The stream varies by tool: nextpnr prints its version on stderr, yosys and
+# python on stdout.  Take whichever one answered rather than assuming.
+first_line_or_unknown() {
+    local v
+    v=$("$@" 2>&1 | head -1)
+    printf '%s' "${v:-unknown}"
+}
+# The binary pnr.sh will actually run, resolved the same way it resolves it.
+if [[ -n ${NEXTPNR_BUILD:-} ]]; then
+    nextpnr_bin=${NEXTPNR_HIMBAECHEL:-$NEXTPNR_BUILD/nextpnr-himbaechel}
+else
+    nextpnr_bin=${NEXTPNR_HIMBAECHEL:-$NPNR/nextpnr-himbaechel}
+fi
+# source.sha256 is written beside the staging directory, not inside it.
+stage_parent=$(dirname "$tree")
+# The two submodule trees are always dirty here, because the carried patches
+# are applied to them at every configure.  Counting them would make every
+# build look modified; they are identified by their own gitlink instead.
+repo=$(cd "$here/../.." && pwd)
+tt_status=$( ( git -C "$repo" status --porcelain 2>/dev/null || true ) \
+             | grep -v -e '^ m third_party/' -e '^m third_party/' | wc -l )
+
+{
+    prov "# desktop core build provenance"
+    prov "# compared by tools/check_desktop_provenance.py; only built_at may differ"
+    prov "built_at=$(date -Iseconds)"
+    prov "seed=$SEED"
+    prov "device=$DEVICE_PART"
+    prov "device_family=$DEVICE_FAMILY"
+    prov "source_sha256=$(sha_or_unknown "$stage_parent/source.sha256")"
+    prov "tinytang_head=$(git_or_unknown "$repo" rev-parse HEAD)"
+    prov "tinytang_status_files=$tt_status"
+    prov "apicula_head=$(git_or_unknown "$A" rev-parse HEAD)"
+    # --untracked-files=no: the device database is generated into this tree and
+    # is never tracked, so counting it would report every build as dirty.
+    prov "apicula_status_files=$( ( git -C "$A" status --porcelain --untracked-files=no 2>/dev/null || true ) | wc -l )"
+    prov "apicula_chipdb_sha256=$(sha_or_unknown "$A/apycula/$DEVICE_FAMILY.msgpack.xz")"
+    prov "nextpnr_version=$(first_line_or_unknown "$nextpnr_bin" --version)"
+    prov "nextpnr_binary_sha256=$(sha_or_unknown "$nextpnr_bin")"
+    prov "yosys_version=$(first_line_or_unknown "${SUITE:-/nonexistent}/bin/yosys" -V)"
+    prov "python_version=$(first_line_or_unknown "$PY" -V)"
+    prov "desktop_fs_sha256=$(sha256sum "$out/desktop.fs" | cut -d' ' -f1)"
+    prov "desktop_fs_bytes=$(stat -c %s "$out/desktop.fs")"
+    prov "desktop_bin_sha256=$(sha256sum "$out/desktop.bin" | cut -d' ' -f1)"
+    prov "desktop_bin_bytes=$(stat -c %s "$out/desktop.bin")"
+} > "$out/provenance.txt"
+cp -f "$out/provenance.txt" "$out/provenance.$BINHASH.txt"
+
 ls -l "$out/desktop.$BINHASH.bin" "$out/desktop.$FSHASH.fs" | sed 's/^/   /'
 log "   desktop.$BINHASH.bin  <- put this on the card for tangload"
 log "   desktop.$FSHASH.fs  <- this one is for openFPGALoader"
-log "   record both stamps, and the pair, in the log entry for this build."
+log "   provenance.$BINHASH.txt  <- what made it; check with check_desktop_provenance.py"
+log "   record both stamps, the pair, and the provenance file, in the log entry for this build."

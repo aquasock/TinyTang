@@ -3029,3 +3029,41 @@ The Classic Controller failing after a game remains the one unexplained defect, 
 - User Test: PASS
 
 ---
+
+## 88 COMMIT Unreleased 2026-11-03T20:59:24-07:00
+
+#### Coming From:
+
+Unreleased 9b6fdb2
+
+#### Purpose:
+
+Make a desktop core's build record say what produced it and let it be checked, repin the device toolchain to the pair that actually builds, and fix the dependency check that could never report the truth about either.
+
+#### Outcome:
+
+The flow turned out to be deterministic already: two builds from one staged tree and one toolchain gave byte-identical bitstreams at `00d8b48cac8e`, and `gowin_pack.py`, `bitstreams.py`, `chipdb.py` and `fs_to_bin.py` contain no clock, so nothing about the algorithm needed changing and entry 87's note that a build "reproduced no artifact already on disk" was true but framed as flakiness it never had. What was missing was the record. `tools/desktop_open/build.sh` now writes `provenance.txt` beside every artifact, naming the seed, the `source_sha256` the staging step already computed, the apicula and nextpnr heads with their dirty counts, the device database digest the packer reads, the sha256 of the `nextpnr-himbaechel` binary, and the yosys and Python versions, plus both output digests; `tools/check_desktop_provenance.py` compares two such files and `tools/build_desktop_core_open.sh --verify <file>` rebuilds into a scratch directory and runs that check. The binary digest is the load-bearing field: nextpnr compiles the device database into itself through `add_bba_compile_command`, so its sha256 pins nextpnr's source, the compiler that built it, apicula's architecture tables and the exact database in one value. Two defects were found while making the record honest: `pnr.sh` documented `NEXTPNR_BUILD` and never read it, so a build pointed at another nextpnr silently used the default and a reproduction attempt was measuring the wrong binary -- which is what made entry 87's pinned-tuple experiment inconclusive rather than negative -- and `nextpnr-himbaechel --version` prints on stderr, so `2>/dev/null | head -1` yielded an empty field because `head` succeeds on empty input and the `|| unknown` fallback never fired. Both are fixed, and a rebuild now records the real version. Verified on the host: `--verify` against a rebuild reports `provenance matches on all 15 compared fields`, while the same command pointed at the pinned nextpnr `8be8657b` reports six fields differing -- apicula head, both output digests, the binary digest and the version -- and exits 1, so the check has a negative control. `tools/tests/test_desktop_provenance.sh` covers the directions that matter: 21 checks that tolerate `built_at`, the repository head and the dirty count, and refuse a changed chipdb, seed, nextpnr binary or version, source digest, either output digest, an output size, a field missing from one side, an absent database, an empty or non-provenance file, a missing file and a repeated field; three planted faults in the checker were each caught, ignoring the output digests, accepting a one-sided field and dropping the duplicate rejection. The toolchain was also re-pinned, which entry 87 had flagged: `deps.conf` now pins apicula `495661a` and nextpnr `16237b0f` with device database `e74b77e4`, the tuple that builds the card's core, and `tools/fetch-deps.sh --check` resolves the trees the build uses through `APICULA_FORK` and `NEXTPNR_SRC` instead of looking for `$root/apicula` and `$root/nextpnr`, which never existed here -- it now reports 8 verified where it had reported 5 verified and 2 MISSING it could never have filled, and it looks for the generated database in whichever apicula tree is in use. A correction is recorded rather than glossed: entry 87 stated the pinned database could not be regenerated on this machine, which was wrong -- Gowin EDA 1.9.11.03 is installed at `/home/vash/tools/gowin-1.9.11.03` and regenerating at `04bc3c5` reproduced the pin `aecb123e` byte for byte, 851,160 bytes. What does not come back is the ABI 1.3 core of record: rebuilt from its own commit `cfb29aa` with the apicula and nextpnr that commit pinned and that database, the flow gives `4558404a7404`, not `24a11e81a46c`, so BUILDING.md now marks that digest as recorded rather than reproducible and names the tuple that does reproduce. The licensing position was also corrected where it was wrong: `THIRD_PARTY.md` here gained a section stating that `GW5AST-138C.msgpack.xz` is generated from Gowin's proprietary `.fse`, `.dat` and `.tm` files and is therefore vendor-derived rather than apicula's MIT work, which is why the repository carries only the digest and the recipe, and Tang-Build's `THIRD_PARTY.md` carried the opposite claim -- that the databases are apicula's and MIT -- which is true of the database apicula publishes for other devices and not of the one this flow regenerates. No host test regressed: 29 of the 30 `tools/tests/test_*.sh` pass, up one for the new one, with `test_desktop_core.sh` and `test_phosphor_catalog.sh` red exactly as they were in entry 87, and `check_help_width.py` reports 150 entries with none over 80 columns. The Tang was not touched in this cycle, on the user's instruction; no firmware was built, flashed or deployed, and the card still carries the `00d8b48cac8e` core entry 87 installed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 88 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The chipdb is now a digest with a recipe and a proven regeneration, but the binary it feeds is still a compiled artefact nobody else can rebuild to the same bytes without this machine's compiler, so the honest next question is whether to record the nextpnr toolchain more tightly -- a vendored `.bba`, a published binary digest, or accepting that provenance gains reproducibility of the tuple rather than of the bytes. Two smaller items belong to the same class and were left alone rather than folded in: `fetch-deps.sh --check` still judges the three prebuilt toolchains at the manifest's sibling paths, where this machine does not install them, and it still reports TinyNES at `f4e542ea` against a pin of `9e1c027a`, which is a real mismatch to resolve on its own. `tools/tests/test_desktop_core.sh` has been red since entry 84 for asserting desktop ABI 1.5 and is now two ABIs behind the card. The standing list is otherwise unchanged: the Classic Controller's intermittent failure after a game, the manual pack that lacks the TinyNode paragraph, the English Wikipedia conversion that must restart, and the MPR121 pad-to-electrode map.
+
+#### Files Modified:
+
+- BUILDING.md
+- THIRD_PARTY.md
+- deps.conf
+- tools/build_desktop_core_open.sh
+- tools/check_desktop_provenance.py
+- tools/desktop_open/build.sh
+- tools/desktop_open/pnr.sh
+- tools/fetch-deps.sh
+- tools/tests/test_desktop_provenance.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

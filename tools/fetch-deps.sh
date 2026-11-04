@@ -30,6 +30,15 @@
 # environment variables -- BL_SDK_BASE, NEXTPNR_BUILD, APICULA_FORK, TINYNES_DIR,
 # PATH for the toolchains -- rather than by a path this script guesses at.  See
 # BUILDING.md.
+#
+# --check judges the trees the build actually uses, not the manifest's layout:
+# apicula resolves through APICULA_FORK and nextpnr through NEXTPNR_SRC (or
+# NEXTPNR_BUILD when that is a checkout), falling back to the manifest path, and
+# the resolved path is printed when it differs.  The generated device database
+# is looked for in whichever apicula tree that is.  Before 2026-11-03 both were
+# judged at $root/apicula and $root/nextpnr, which are not where they live here,
+# so the check reported MISSING whatever the trees contained and could never
+# have caught a real mismatch.
 
 set -uo pipefail
 
@@ -44,6 +53,39 @@ check=0
 
 pinned=0; unpinned=0; ok=0; fetched=0; failed=0; refs=0
 unpinned_names=()
+
+# Where a pinned source actually lives.
+#
+# The manifest describes the release layout -- each source in a directory named
+# after it, beside the checkout -- and that is right for a fresh clone.  On a
+# development machine the two forks are wherever their maintainer keeps them,
+# and the build finds them through APICULA_FORK and NEXTPNR_BUILD.  Until
+# 2026-11-03 this script ignored both, so it looked for $root/apicula and
+# $root/nextpnr, reported MISSING for trees it never opened, and could not
+# report a mismatch if it had.  A gate that can never pass is not a gate: the
+# line "not reproducible until these are resolved" sat in the log for weeks
+# and was read as background noise.  So resolve the way the build resolves,
+# and say which path was judged when it is not the manifest's.
+source_target() {
+    local name=$1 dest=$2
+    case "$name" in
+        apicula)
+            if [[ -n ${APICULA_FORK:-} && -e ${APICULA_FORK:-}/.git ]]; then
+                printf '%s' "$APICULA_FORK"; return
+            fi ;;
+        nextpnr)
+            # NEXTPNR_SRC is the checkout; NEXTPNR_BUILD is where it was built,
+            # which has no .git and so cannot be compared with a commit.
+            for candidate in "${NEXTPNR_SRC:-}" "${NEXTPNR_BUILD:-}"; do
+                if [[ -n $candidate && -e $candidate/.git ]]; then
+                    printf '%s' "$candidate"; return
+                fi
+            done ;;
+    esac
+    printf '%s' "$root/${dest:-$name}"
+}
+# The generated device database belongs to whichever apicula tree is in use.
+apicula_dir="$(source_target apicula "")"
 
 echo "release root : $root"
 echo "manifest     : $conf"
@@ -70,12 +112,14 @@ while read -r kind name pin url dest _; do
     case "$kind" in
         source)
             pinned=$((pinned+1))
-            target="$root/${dest:-$name}"
+            target="$(source_target "$name" "$dest")"
+            shown=""
+            [[ $target == "$root/${dest:-$name}" ]] || shown=" [$target]"
             # a submodule's .git is a file pointing into the superproject
             if [[ -e $target/.git ]]; then
                 have=$(git -C "$target" rev-parse -q --verify HEAD || true)
                 if [[ $have == "$pin" ]]; then
-                    printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
+                    printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}${shown:-}"
                     ok=$((ok+1)); continue
                 fi
                 (( check )) && { printf 'MISMATCH  %-10s %-30s have %s want %s\n' "$kind" "$name" "${have:0:12}" "${pin:0:12}"; failed=$((failed+1)); continue; }
@@ -93,7 +137,7 @@ while read -r kind name pin url dest _; do
             fi
             have=$(git -C "$target" rev-parse -q --verify HEAD || true)
             if [[ $have == "$pin" ]]; then
-                printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}"
+                printf 'ok        %-10s %-30s %s\n' "$kind" "$name" "${pin:0:12}${shown:-}"
                 ok=$((ok+1))
             else
                 printf 'FAILED    %-10s %-30s have %s want %s\n' "$kind" "$name" "${have:0:12}" "${pin:0:12}"
@@ -104,7 +148,7 @@ while read -r kind name pin url dest _; do
             # The pin is a SHA-256, and the location field names the file as
             # <repo>:<path inside it>.  Check it where a builder has one.
             pinned=$((pinned+1))
-            target="$root/${url%%:*}/${url#*:}"
+            target="${apicula_dir:-$root/${url%%:*}}/${url#*:}"
             if [[ ! -f $target ]]; then
                 printf 'ABSENT    %-10s %-30s %s\n' "$kind" "$name" "$target"
                 printf '          generate it: GOWINHOME=<install> PYTHONPATH=<apicula>:<pydeps> python3 -m apycula.chipdb_builder GW5AST-138C\n'

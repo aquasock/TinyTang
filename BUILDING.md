@@ -103,20 +103,38 @@ not.
     pip through SPINE17. Proven on the board the same day: `tangini` read
     `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared` and `node status`
     returned TinyNode's block in full.
-  - **This build reproduced none of the artifacts already on disk**, which
-    held the same netlist at other placements (one of them the same
-    4,526,774 bytes, different bytes). The toolchain here is newer than
-    `deps.conf` pins -- apicula `495661a` against `04bc3c5`, nextpnr
-    `16237b0f` against `8be8657b` -- so a bitstream built today is a new
-    placement and, per `TOOL-017`, needs its own gates and a board test
-    rather than being assumed equal to a recorded one. Reproducing a
-    recorded core needs the pinned pair.
+  - **The tuple that makes it**, which `deps.conf` now pins and the build
+    writes beside every artifact as `provenance.txt`:
+    - source `fpga/desktop` at `207f9af`, `source_sha256`
+      `b313d00f7824b3d425f222dd8b24355a0e2a4186286491a14af69b539022d96d`
+    - apicula `495661a`, nextpnr `16237b0f`
+      (`nextpnr_binary_sha256` `2eca603a2a90424305fd72d53a50c3d1b8daeb21e8f0451690cfc4797b85c6c1`)
+    - device database `e74b77e429e9be2e176477fa4d3c9984a1bdee8a17dad5dd3ab80620aefe175b`,
+      regenerated from Gowin EDA 1.9.11.03
+    - yosys 0.69+260, Python 3.11.6
+  - **It reproduces.** `tools/build_desktop_core_open.sh --verify
+    build/desktop-rev/out/provenance.txt` rebuilds from this tree and compares
+    every input field and both output digests: fifteen fields match. Point that
+    same command at a different nextpnr and it refuses, naming the six fields
+    that moved -- which is the check that was missing when a core of record
+    could not be rebuilt from its own recorded tuple.
+  - The ABI 1.3 entry below is kept as history. Its expected bitstream
+    `24a11e81a46c` does not come back from its own recorded tuple: built from
+    commit `cfb29aa` with the apicula `04bc3c5` and nextpnr `8be8657b`
+    `deps.conf` pinned there, and that chipdb regenerated from the same Gowin
+    install, the flow produces `4558404a7404` instead. The flow is
+    deterministic -- two builds from one tree and one toolchain are
+    byte-identical -- so that gap is a record of the environment that was never
+    kept, not a clock or a seed. Treat that digest as a statement about an
+    October machine, not a guarantee.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to `build/desktop/open-s3/` (desktop ABI 1.3 with the PMOD I2C bus,
   apicula `04bc3c5`, nextpnr `8be8657b`, recorded 2026-10-18)
   - `desktop.fs` sha256 `d993899c24a44dcfa503554e27ca873d012b0592162a7335f6b4c46378ed865b`
   - `desktop.bin` sha256 `24a11e81a46cd6a9937c9dca8e2e0f5d8494fc6f4f1e029d3917cef846519fb0`
+    -- **recorded, not reproducible** (2026-11-03): rebuilding commit `cfb29aa`
+    from this tuple gives `4558404a7404`. Kept as history; see the note above.
   - The previous core of record, seed 26 of desktop ABI 1.2 (`desktop.bin`
     `16c6c5998c9a`), is rebuilt from commit `97cf0db` with the chipdb
     digest `446b89c0e96e` that `deps.conf` pinned there.

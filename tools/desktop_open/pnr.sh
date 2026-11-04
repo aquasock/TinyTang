@@ -61,7 +61,17 @@ if [[ -z ${SYNTH_DESKTOP_NO_ENV:-} ]]; then
 fi
 
 # The fork's nextpnr, not the suite's -- see the header.
+#
+# NEXTPNR_BUILD is the knob that tools/build_desktop_core_open.sh and
+# tools/desktop_open/build.sh both document, and until 2026-11-03 nothing read
+# it: a build pointed at a different nextpnr silently used this default one, so
+# an attempt to reproduce a recorded core with the pinned toolchain was
+# measuring the wrong binary and looked like a reproduction failure.  Both
+# spellings now resolve, NEXTPNR_HIMBAECHEL winning when it is set explicitly.
 default_nextpnr=/home/vash/tools/nextpnr-mathieufro/nextpnr-himbaechel
+if [[ -n ${NEXTPNR_BUILD:-} ]]; then
+    default_nextpnr=$NEXTPNR_BUILD/nextpnr-himbaechel
+fi
 nextpnr=${NEXTPNR_HIMBAECHEL:-$default_nextpnr}
 case $nextpnr in
     */oss-cad-suite/*)

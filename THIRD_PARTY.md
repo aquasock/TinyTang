@@ -321,6 +321,19 @@ these sheets name the sheet and the revision so that anyone holding a copy can
   the Gowin toolchain, the vendor datasheets and the example bitstreams in
   particular.
 
+## The Gowin device database (generated, never committed)
+
+`GW5AST-138C.msgpack.xz` -- apicula's device database for this part -- is not in
+this repository and must not be. `apycula.chipdb_builder` derives it from
+Gowin's proprietary device files under
+`$GOWINHOME/IDE/share/device/GW5AST-138C/`, so it is a derivative of vendor data
+rather than of apicula's MIT-licensed code. What this repository carries is the
+digest (`deps.conf`) and the recipe to regenerate it, which is the most it can
+lawfully carry without a decision about redistributing vendor-derived data.
+Nothing in this repository links against the database: it is compiled into a
+locally built `nextpnr-himbaechel`, and each build records the digest it used in
+`provenance.txt`.
+
 ## Board photographs (this project's own work, removed)
 
 `images/circuit_boards/` carried seven photographs of the dock, the FPGA module
