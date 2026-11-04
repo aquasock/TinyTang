@@ -2967,3 +2967,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 86 COMMIT Unreleased 2026-11-03T19:15:35-07:00
+
+#### Coming From:
+
+Unreleased 5039b09
+
+#### Purpose:
+
+Repair the start menu that silently dropped two apps and whose "Exit" entry could not be chosen, which left the desktop with no way out short of a power cycle.
+
+#### Outcome:
+
+`third_party/tinydesk/src/wm.c` laid its start-menu list into a fixed `MENU_MAX` of 20 and reserved three slots below the separator for the separator itself, "Redraw screen" and "Exit", so only 17 apps were drawn; the callback that receives a chosen item's index then offset it by `s_app_count`, the number registered, so with the 19 apps this port registers (`td_desktop_bl616.c`, `TD_MAX_APPS=24` since entry 82) the tail landed on branches that did not exist. "Exit" computed an offset of -1 and did nothing, and since `wm.c`'s `start_menu_chosen()` is the only caller of `td_quit()` in TinyDesk there was no other way to leave the desktop at all; the same clip hid TinyNode and About from the menu. Carried patch `third_party/patches/tinydesk/0004-start-menu-exit.patch` makes `MENU_MAX` derived, `TD_MAX_APPS + START_EXTRA_MAX + 3`, so the clip cannot bind, and offsets the callback by `s_menu_apps`, the count actually placed, so the arithmetic stays right if the menu is ever sized below the registry again. `tests/test_wm.c` gained `test_start_menu_tail()`, which fills the registry to 19 apps and asserts that the last app, "Redraw screen" and "Exit" are all drawn, that both ends of the app section launch apps, that "Redraw screen" redraws without quitting and that "Exit" reaches `td_quit()`; the host build sets `TD_MAX_APPS=24` on `tinydesk_core` so the test reaches the state at the size this port runs, since at upstream's 16-slot default the bug is unreachable. `tools/tests/test_tinydesk_patches.sh` passed with the patch applying once, reproducing the checkout byte for byte, and TinyDesk's suite green at 10 of 10 with `test_wm` at 70 checks; three planted faults were each caught, `MENU_MAX` back at 20 giving four failures, a tail offset off by one giving one, and "Exit" not appended giving two. The handler fix is itself unreachable while `MENU_MAX` is derived, and is carried so the arithmetic is right by construction rather than by luck. The firmware built at 682,272 bytes, SHA-256 `a7b839df03ad87b1ed417435d1df34296bcfc1a30f182422b743ac22083916ba`, with no warning outside the vendored `tang_jtag_programmer.c`, and was installed with `tools/tinytang_flash.py --yes`; after the user's power cycle `platform` read `tinytang 5039b09-dirty.04ed790`. The user's report of the start menu listing every app with Exit at the bottom, and of Exit returning to the shell prompt, is the pass. The cycle also tested the hypothesis that a game's return path loads the wrong core: `scripts/boot.tdsh` loads `tinytang-lora.bin` and `tangini` read `layout lora`, `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`, so the booted core is the ABI 1.6 one and the four apps' `DESKTOP_REAL` of `tinytang.bin` is not implicated on this boot; what the game-return path actually loads was not measured because the desktop could not be left until this fix landed. The Classic Controller was baselined at the prompt before the test as `classic ready`, centred 128/128 with right 130/133 and report `80 82 80 85 18 0a ff ff`, so a dead pad after a game can be compared against a known-good reading, and the pad defect itself is not fixed by this cycle. `.ai/core-reference.md` gained TDESK-017 for the two fixed capacities, `TD_MAX_APPS` and `MENU_MAX`, with the silent-refusal and single-`td_quit` consequences that entry 82 had left for its own cycle, its index line, a routing row and the review date; the file's index and records name the same 156 ids in the same order, no retired id collides with a live one, and all six of its YAML blocks parse. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches this log and the reference, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 86 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Classic Controller failing after a game returns to the desktop is the next cycle and is already narrowed to two candidates: `tang_ini_core_loaded()` derives the I2C-bus flag from a single three-attempt core-ID probe and one ABI read taken while the desk layer is repainting, and `tang_wiipad_reset()` and `tang_pad_reset()` run only from `tang_osd_desk_set(true)`, which the game-return path never calls, so the pad's adopted kind, format and edges survive a core change. The console now reports which it is: if the desktop clock reads correctly the bus flag is true and the pad's own state machine is at fault, while `wiipad status` at the prompt saying `no I2C bus` names the probe. `.ai/core-log.md` now holds 86 of its 100 entries, leaving 14 cycles before the archival rollover, and the two host tests red since entry 84 are unchanged: `test_desktop_core.sh` asserts desktop ABI 1.5 where the core answers 1.6, and `test_phosphor_catalog.sh` lacks `-I ports/bl616` and then trips the opendir assertion entry 41 recorded.
+
+#### Files Modified:
+
+- third_party/patches/tinydesk/0004-start-menu-exit.patch
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

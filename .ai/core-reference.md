@@ -256,6 +256,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Why does Ctrl+S freeze the screen? | TDESK | TDESK-006 |
 | Why are System Monitor and Task Manager blank? | TDESK | TDESK-007 |
 | Which apps exist, and which are compiled here? | TDESK | TDESK-009 |
+| Why is an app missing from the start menu, or why does Exit do nothing? | TDESK | TDESK-017 |
 | Can the Files app delete a file with two keystrokes? | TDESK | TDESK-011 |
 | Why is CONFIG_CHERRYUSB_HOST set with a device-only firmware? | TOOL | TOOL-001 |
 | Which IDCODEs does the Gowin programmer accept? | TOOL | TOOL-002 |
@@ -392,6 +393,7 @@ TDESK-013: "TinyDesk v0.1.5 at feaf841 (tinydesk-project/tinydesk), C11: the por
 TDESK-014: "Terminal retains its started flag across td_shutdown(); a port that stops its shell at desktop exit must explicitly restart it on reentry, since reinstalling the same backend does not call start again"
 TDESK-015: "TinyDesk launches apps by registered name: Settings' Network... button and the taskbar's network tray both call td_app_launch(\"Network\"), which does nothing when no app has that name, and the tray is drawn only when the port supplies td_net_ops_t; TinyTang's carried patch makes the button Bluetooth... launching its own Bluetooth app"
 TDESK-016: "TinyDesk's Editor allocates TD_EDITOR_MAX + 1 bytes of text and an undo history of TD_EDITOR_UNDO bytes plus 128 records when it opens, about 25 KB at the 16 KB and 6 KB defaults, freed on close; TinyTang sets 8 KB and 2 KB, measured at 12 KB on the board, and larger files open read-only"
+TDESK-017: "td_app_register holds TD_MAX_APPS descriptors (16 default) and answers -1 in silence past that, while the start menu lays its list into MENU_MAX 20 and reserves three slots below the separator, so it draws at most 20 minus the extras minus 3 apps yet offsets a chosen index by the number registered; td_quit has one caller, the menu's last entry, so at 19 apps the tail was dead, and this port raises TD_MAX_APPS to 24 and carries patch 0004"
 EXTCTL-001: "Tang-Control's extended channel is legacy frame type 0x10: version, opcode, sequence, address, data, CRC-16; opcodes 0x00 capabilities, 0x01 read32, 0x02 write32, 0x03 set baud (2 or 5 Mbps, both ends switch only after the response), 0x04 block write"
 EXTCTL-002: "Frame type 0x12 writes 1 to 64 consecutive 32-bit words and applies none of them unless CRC, version, opcode, count, length and alignment all validate; the reply is a 0x10 response with opcode 0x84 and the word count"
 EXTCTL-003: "Frame type 0x11 is a stop-and-credit stream: flags start, data, end and cancel, at most 1024 data bytes per frame, and the FPGA acknowledges each frame with the next expected offset and receive credit"
@@ -1692,6 +1694,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "CMakeLists.txt; tools/tests/test_editor_limits.sh; tools/make_editor_test_files.py"
   verification: "On this board on 2026-10-07 with firmware 268021f-dirty.bab3b26 the user read System Monitor at 50 KB free with Files open and 38 KB with the Editor open on a 7,000-byte file, back to 50 KB on each close, against the 20 to 25 KB the Editor took before; the 7,000-byte file took an edit and kept it, and a 9,000-byte file opened read-only and stayed 9,000 bytes on the card (core-log entry 55)."
 
+- record_id: TDESK-017
+  kind: EXTERNAL
+  topic_id: TDESK
+  title: "The two fixed capacities that bound the app registry and the start menu"
+  status: VERIFIED
+  verified_date: 2026-11-03
+  statement: "Two capacities in TinyDesk v0.1.5 are fixed numbers and neither reports being exceeded. td_app_register() holds at most TD_MAX_APPS descriptors, 16 unless the build sets it, and answers -1 past that in silence, so a later app never reaches the registry at all. The start menu separately lays its list into MENU_MAX, 20, and reserves three slots below the separator for the separator itself, 'Redraw screen' and 'Exit', so it draws at most MENU_MAX - 3 - <extra start items> apps; the callback that receives a chosen item's index offsets it by the number of registered apps, not the number drawn (src/wm.c, start_menu_chosen()), so an app count at or above that bound makes every entry after the apps land on the wrong branch. td_quit() has one caller in the whole desktop, the last start-menu entry, so a tail that cannot be chosen is a desktop that cannot be left."
+  consequence: "Both limits are the port's to respect, and this port exceeds both: it registers 19 apps where upstream ships nine, and TD_MAX_APPS is raised to 24 in CMakeLists.txt for that reason (core-log entry 82). At 19 apps the menu drew only 17 of them and its 'Exit' computed an offset of -1 and did nothing, which is why the desktop could not be left until carried patch third_party/patches/tinydesk/0004-start-menu-exit.patch; the patch derives MENU_MAX from TD_MAX_APPS plus the extra items and the three fixed entries, and offsets by the count actually drawn. A port adding apps must check both: the registry's TD_MAX_APPS and the menu's capacity. tools/tests/test_tinydesk_patches.sh builds TinyDesk's suite at TD_MAX_APPS=24 so test_wm reaches this state at the size this port runs."
+  sources:
+    - "tinydesk-project/tinydesk v0.1.5 (feaf841): src/wm.c td_app_register(), td_app_count(), MENU_MAX, td_wm_toggle_start_menu(), start_menu_chosen(); include/tinydesk/td_config.h TD_MAX_APPS; src/td.c td_quit(); the only caller is wm.c's start_menu_chosen()"
+    - "CMakeLists.txt: -DTD_MAX_APPS=24"
+    - "third_party/patches/tinydesk/0004-start-menu-exit.patch; tools/tests/test_tinydesk_patches.sh"
+  verification: "Read from the source at the pin. Confirmed on this board on 2026-11-03 (core-log entry 86): the start menu on firmware 5039b09-dirty.04ed790 listed all nineteen apps with 'Redraw screen' and 'Exit' below them, and Exit returned to the shell prompt; before the patch, Exit did nothing and TinyNode and About were absent from the menu. The host test fails on the pre-patch arithmetic and on a fixed MENU_MAX of 20, so the guarantee is carried by the test rather than by inspection."
+
 - record_id: EXTCTL-001
   kind: EXTERNAL
   topic_id: EXTCTL
@@ -2757,7 +2773,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
 - A `core-syntax.md` audit is required whenever this file changes, per `.ai/core.md`.
 
 ```yaml
-last_reviewed: 2026-10-29
+last_reviewed: 2026-11-03
 ```
 
 ---
