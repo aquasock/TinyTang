@@ -115,6 +115,13 @@ static void reset(void)
     list_widget = {};
     s_folder = &folder_widget;
     s_list = &list_widget;
+    // The window's own launch puts the browser at the music root before its
+    // first scan, and that is the only state in which a scan happens; a scan
+    // from an unset directory is not a state the app can reach.  The same two
+    // assignments as td_phosphor_app.cpp's launch, so the stub's expectation
+    // of one absolute path is the real contract rather than a convenience.
+    std::snprintf(s_dir_shown, sizeof s_dir_shown, "%s", MUSIC_SHOWN);
+    std::snprintf(s_dir_real, sizeof s_dir_real, "%s", MUSIC_REAL);
     // Also exercise replacing an existing catalog. This lets the regression
     // run safely against the old scan, which assumes launch preallocated it.
     s_entries = static_cast<entry *>(catalog_malloc(sizeof(entry) * MAX_TRACKS));
@@ -143,14 +150,26 @@ int main(void)
     first_pass.push_back(file("notes.txt"));
     first_pass.push_back(file(std::string(92, 'a') + ".mp3"));
     scan();
-    assert(s_count == 19 && requested == 19 * sizeof(entry) && s_truncated);
-    assert(std::strcmp(s_entries[0].name, "Track 00.MP3") == 0);
-    assert(std::strcmp(s_entries[18].name, "Track 18.MP3") == 0);
+    // The composition, not just a total: 19 tracks plus "folder.mp3", which
+    // carries AM_DIR and is therefore listable so the browser can walk into
+    // it.  hidden.mp3 and system.mp3 carry AM_HID and AM_SYS and are dropped,
+    // notes.txt is not a media extension, and the 92-character name is longer
+    // than NAME_BYTES can hold, which is what raises s_truncated -- the list
+    // says so rather than dropping it silently.
+    assert(s_count == 20 && requested == 20 * sizeof(entry) && s_truncated);
+    // Folders sort ahead of files (compare()), so the one directory leads.
+    assert(std::strcmp(s_entries[0].name, "folder.mp3") == 0 &&
+           s_entries[0].is_dir);
+    assert(std::strcmp(s_entries[1].name, "Track 00.MP3") == 0);
+    assert(std::strcmp(s_entries[19].name, "Track 18.MP3") == 0);
 
     reset();
     scan();
     assert(s_count == 0 && allocation == nullptr && requested == 0);
-    assert(std::strcmp(folder_widget.text, "/root/media/music: 0 tracks") == 0);
+    // The status line the folder widget shows for an empty library.  The app
+    // counts items rather than tracks -- a folder is an item too -- so this is
+    // the same format the non-empty case uses.
+    assert(std::strcmp(folder_widget.text, "/root/media/music: 0 items") == 0);
 
     reset();
     first_pass.push_back(file(std::string(91, 'a') + ".mp3"));

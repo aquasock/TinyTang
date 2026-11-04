@@ -3067,3 +3067,39 @@ The chipdb is now a digest with a recipe and a proven regeneration, but the bina
 - User Test: N/A
 
 ---
+
+## 89 COMMIT Unreleased 2026-11-04T15:18:16-07:00
+
+#### Coming From:
+
+Unreleased 6ff42c9
+
+#### Purpose:
+
+Establish the release qualification baseline with `tinytang.bin` and its RTL frozen, by repairing the two failing host tests, adding a single gate that runs every host regression, and recording a qualification matrix that separates what is proven on the board from what is only tested on a host.
+
+#### Outcome:
+
+The baseline is frozen and the host suite is green at 32 of 32, which is 31 `tools/tests/test_*.sh` plus `tools/check_help_width.py`, run by the new `tools/tests/run_all.sh` in one command that exits non-zero on any failure and can be filtered by name. The firmware builds from this tree at 682,272 bytes with SHA-256 `ae318f0268c06f62ee401346a52784e024c1f4213d36ae683e2920b92ba5e646`, but only when `SOURCE_DATE_EPOCH` is pinned: two ordinary builds of identical source differed in three bytes, and `cmp` traced all three to the SDK's image tool stamping the app header with a `BLFBVERF` string holding the compile time, so the reproducible recipe is `SOURCE_DATE_EPOCH=1793750400 make`, which produced byte-identical images across two clean builds. Nothing in the tree sets that variable, because baking it into the Makefile would change the frozen image; it is recorded as a recipe in `docs/qualification.md` and the decision is left open. The desktop core was rebuilt from `207f9af`'s `fpga/desktop` at seed 3 and reproduced `00d8b48cac8e54b27cdbdacf2adfe8e67331bd3ff95c05e6fd671192f46582cf` at 4,526,774 bytes with `desktop.fs` `60dd20032095` — the same digest entry 87 put on the card, which is the first time the core of record has been reproduced from its own recorded tuple and answers the question entry 88 left open. An earlier `make clean` deleted the `build/desktop-rev` artifact this cycle inherited, because the SDK's clean rule removes the whole `build` directory; the rebuild restored it with a provenance file, and the loss is recorded here rather than glossed. Both failing tests were repaired, and each repair exposed defects older than this cycle that the failures had masked. The desktop register bench had no UART engine behind the window: it instantiated `desktop_link` alone, so `desktop_regs`' `uart_status` input was dangling, every status read returned zero, and the newest core personality had never been checkable there at all; the bench now instantiates `pmod_uart` on the same clocks and parameters `desktop_pmod` uses, and asserts the whole window — status zero at reset, writes to the read-only `0x174` and `0x178` refused with status 4, the push and last-byte read-back, control bits above 3 refused while the value holds, hold queueing three bytes so the count reads 3, release draining them, loopback returning a byte that the `0x174` read pops, flush emptying a queued byte, and NRST reaching the pin inverted — together with ABI 1.6's `0x00010006` and bitmap `0x0000010f` and personality 8 accepted as `0x0080` and `0x0800` while 5, 6, 7 and 8-on-both are refused whole. Six planted faults were each caught, and the failure text carried the hardware's real value, so the assertions bite rather than merely pass. The second masked defect was in the PMOD testbench, which could not elaborate because `desktop_pmod` instantiates `pmod_uart` and the harness never added the file; it was invisible because the register bench aborted first every time. The Phosphor catalog test needed `-I ports/bl616` for `tang_core_load.h`, and behind that include sat four stale expectations, not a code defect: the harness called `load_folder()` without the directory state the app's own launch establishes, then expected 19 entries where the truth is 20 because the folder it adds carries AM_DIR and is listable, expected file-first ordering where `compare()` sorts directories first, called the status text "tracks" where the app says "items", and did not account for the long name that raises `s_truncated` deliberately. Reading the app rather than the assertion is what settled each one; no application code changed. `test_fat_rename.sh` gained its executable bit and passes its 16 fsck-validated checks. `docs/qualification.md` is the matrix: the frozen tuple with digests and the recipe that reproduces each, the gate, and one row per contract marked silicon, host, partial, untested or deviation, with the test or measurement named. It records two findings that outlive the cycle. The first is a documented-versus-actual mismatch: `supported_word`'s mask is `0xffffc00f`, so bits 4 to 13 pass unconstrained and a flip bit on personality 8 is accepted even though PMOD-009 says personality 8 has no flip support, which would silently drive the UART to the wrong socket row; the RTL is frozen so it is recorded, not fixed. The second is a correction to a carried claim: the handoff's `mkdir -p` defect could not be reproduced by reading `mkdir_parents` and `_mkdir_r`, which look correct for `/sd` paths, so it is now an unverified claim needing a board measurement rather than an established fact. The matrix also corrects a number this project has been quoting: `check_help_width.py` reports 150 entries, but those are width-checked string candidates, not commands, and the real count is 46 commands registered by this port and 25 by the shell core. Thirty-two port and Phosphor modules have no host test at all, named in the document by a command that reproduces the list; the largest gaps in consequence are `tang_fpga_uart.c`, `usb_cdc_bl616.c`, `tang_lora.c` and `tang_proto.c`, `tang_heap.c` and the five app wrappers. The Tang was not touched, at the operator's instruction, so there is no hardware reading this cycle and every silicon row in the matrix cites a measurement taken earlier and named by its record. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 89 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Phase 1 qualifies `tinytang.bin` on the wire: enumerate every register in `desktop_regs.sv` and `desktop_pmod.sv` into one contract table, give the untested members tests, add pin-level coverage for personality 8's lane and row mapping, and take the silicon rows a subsystem at a time once the operator frees the board. Before Phase 2, two small decisions are owed: whether to bake `SOURCE_DATE_EPOCH` into the build so the firmware digest is reproducible by anyone, and what to do about the flip-bit acceptance on personality 8 — record it as a known deviation for this release or fix it in the next core revision. Phase 2 then walks the BL616 from the bottom: boot and flash, SD and FatFS including the `mkdir -p` measurement and the first multi-chunk pack read on hardware, console and USB CDC, the shell's own builtins, heap, the FPGA link, the load path, input, and configuration. The Classic Controller defect from entry 86 gets its instrumentation in Phase 3, once the pad path, the I2C bus and the desk layer are each independently proven.
+
+#### Files Modified:
+
+- docs/qualification.md
+- tools/tests/phosphor_catalog_test.cpp
+- tools/tests/run_all.sh
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_fat_rename.sh
+- tools/tests/test_phosphor_catalog.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

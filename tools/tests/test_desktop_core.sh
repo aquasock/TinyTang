@@ -12,7 +12,8 @@ verilator --binary --timing -j 4 -Wno-fatal -Wno-DECLFILENAME \
     --Mdir "$work/uart" -o tb \
     "$root/tools/tests/sim/tb_desktop_uart.sv" \
     "$desktop/desktop_link.v" "$desktop/uart_fixed.v" \
-    "$desktop/desktop_regs.sv" "$desktop/clock_monitor.sv" > "$work/uart.log" 2>&1 || \
+    "$desktop/desktop_regs.sv" "$desktop/clock_monitor.sv" \
+    "$desktop/pmod_uart.sv" > "$work/uart.log" 2>&1 || \
     { cat "$work/uart.log"; exit 1; }
 c++ -std=gnu++17 -Wall -Wextra -Werror -I "$root/ports/bl616/phosphor" \
     "$root/tools/tests/sim/gen_desktop_block_frames.cpp" -o "$work/gen_frames"
@@ -23,7 +24,10 @@ import binascii
 import sys
 from pathlib import Path
 replies=Path(sys.argv[1]).read_text().splitlines()
-assert len(replies)==71
+# The count is pinned so a lost or duplicated reply fails here rather than
+# passing silently. Adding transactions to tb_desktop_uart.sv means updating
+# this number in the same change.
+assert len(replies)==109
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15
@@ -33,7 +37,8 @@ PY
 iverilog -g2012 -I "$root/fpga/desktop" -s tb_desktop_pmod -o "$work/pmod" \
     "$root/tools/tests/sim/tb_desktop_pmod.sv" "$root/fpga/desktop/desktop_pmod.sv" \
     "$root/fpga/desktop/desktop_oled.sv" "$root/fpga/desktop/oled_panel.sv" \
-    "$root/fpga/desktop/oled_spi.sv" "$root/fpga/desktop/i2c_master.sv"
+    "$root/fpga/desktop/oled_spi.sv" "$root/fpga/desktop/i2c_master.sv" \
+    "$root/fpga/desktop/pmod_uart.sv"
 vvp "$work/pmod"
 iverilog -g2012 -s tb_i2c_master -o "$work/rtcc" \
     "$root/tools/tests/sim/tb_i2c_master.sv" "$root/fpga/desktop/i2c_master.sv"

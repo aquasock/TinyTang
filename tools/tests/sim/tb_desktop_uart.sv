@@ -23,6 +23,31 @@ module tb_desktop_uart;
         end
     end
     wire [6:0] wide_x, wide_ch;
+    // The PMOD UART engine (pmod_uart) belongs behind the register window at
+    // 0x170-0x17c: the window's contract is about FIFO counts, the pop on
+    // read and the four control bits, none of which exist without it.  This
+    // bench wires the engine's register side to desktop_link's uart ports, so
+    // a status read is answered by the same hardware the board runs rather
+    // than by a dangling input.  The pin side is left unwired and the receive
+    // pin idles high, which is what an unseated socket looks like; loopback is
+    // how the receive path is exercised here.
+    wire [7:0] uart_tx_data, uart_rx_data;
+    wire uart_tx_push, uart_flush, uart_hold, uart_loopback, uart_rx_pop;
+    wire uart_nrst_low;
+    wire [31:0] uart_status;
+    // The engine itself, on the same clocks and parameters desktop_pmod uses
+    // (control_clk is the register clock, clk is the 50 MHz crystal).
+    pmod_uart #(.CLK_HZ(50_000_000), .BAUD(115_200)) uart (
+        .control_clk(clk), .clk(ref_clk), .resetn(resetn),
+        .tx_data(uart_tx_data), .tx_push(uart_tx_push), .flush(uart_flush),
+        .hold(uart_hold), .loopback(uart_loopback),
+        .rx_data(uart_rx_data), .rx_pop(uart_rx_pop), .status(uart_status),
+        .rx_pin(1'b1), .tx_pin()
+    );
+    // NRST has no engine of its own: desktop_pmod launches it as a pin level.
+    // Watching it here is what makes the register bit's polarity checkable.
+    logic nrst_seen_low = 0;
+    always @(posedge clk) if (resetn && uart_nrst_low) nrst_seen_low <= 1'b1;
     wire [5:0] wide_y;
     wire [14:0] wide_fg, wide_bg;
     wire wide_we, wide_on;
@@ -47,6 +72,12 @@ module tb_desktop_uart;
         .uart_rx(uart_rx), .uart_tx(uart_tx),
         .desktop_socket_word(socket_word), .desktop_socket_request(socket_request),
         .desktop_socket_ack(socket_ack),
+        .desktop_uart_tx_data(uart_tx_data), .desktop_uart_tx_push(uart_tx_push),
+        .desktop_uart_flush(uart_flush), .desktop_uart_hold(uart_hold),
+        .desktop_uart_nrst_low(uart_nrst_low),
+        .desktop_uart_loopback(uart_loopback),
+        .desktop_uart_rx_pop(uart_rx_pop), .desktop_uart_rx_data(uart_rx_data),
+        .desktop_uart_status(uart_status),
         .desktop_oled_cell_we(cell_we),.desktop_oled_cell_index(cell_index),
         .desktop_oled_cell_word(cell_word),.desktop_oled_font(oled_font),
         .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0)
@@ -239,16 +270,83 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        request(1,4,0,0,0,32'h00010005);
-        request(1,8,0,0,0,32'hf);
+        request(1,4,0,0,0,32'h00010006);
+        // ABI 1.6 adds personality 8, the PMOD UART, to the bitmap.
+        request(1,8,0,0,0,32'h0000010f);
         request(1,32'hc0,0,0,0,0);
-        // ABI 1.5 removed the PMOD UART: its window is unknown addresses now,
-        // and the I2C and I2C-plus-UART personalities are refused.
-        request(1,32'h178,0,0,4,0);
-        request(2,32'h170,32'ha5,0,4,0);
-        request(2,32'h17c,32'h5,0,4,0);
+        // -------------------------------------------- PMOD UART, 0x170-0x17c
+        // PMOD-009.  Both FIFOs are empty out of reset and nothing is in
+        // flight, so the status register is exactly zero.
+        request(1,32'h178,0,0,0,32'h0);
+        // 0x174 and 0x178 are read-only; a write to either is an unknown
+        // address for a write and must not disturb the window.
+        request(2,32'h174,32'h0,0,4,0);
+        request(2,32'h178,32'h0,0,4,0);
+        // 0x170 pushes one transmit byte and reads back the last one pushed.
+        // With the transmitter released it leaves the pin, so let it drain
+        // before counting anything.
+        request(1,32'h170,0,0,0,32'h0);
+        request(2,32'h170,32'h41,0,0,32'h41);
+        request(1,32'h170,0,0,0,32'h41);
+        #1_000_000;
+        request(1,32'h178,0,0,0,32'h0);
+        // 0x17c holds four control bits; anything above bit 3 is refused and
+        // leaves the previous value in place.
+        request(2,32'h17c,32'h10,0,6,0);
+        request(1,32'h17c,0,0,0,32'h0);
+        // Bit 0 is NRST low, and the pin carries its inverse; the bench latches
+        // having seen the asserted level, which is the polarity claim.
+        if(nrst_seen_low)$fatal(1,"NRST was asserted before it was asked for");
+        request(2,32'h17c,32'h1,0,0,32'h1);
+        if(!nrst_seen_low)$fatal(1,"NRST bit did not reach the pin");
+        request(1,32'h17c,0,0,0,32'h1);
+        request(2,32'h17c,32'h0,0,0,32'h0);
+        // With the transmitter held, pushed bytes stay queued, which is what
+        // makes the status counters deterministic: three pushed, none out.
+        request(2,32'h17c,32'h8,0,0,32'h8);
+        request(1,32'h17c,0,0,0,32'h8);
+        request(2,32'h170,32'h42,0,0,32'h42);
+        request(2,32'h170,32'h43,0,0,32'h43);
+        request(2,32'h170,32'h44,0,0,32'h44);
+        request(1,32'h170,0,0,0,32'h44);
+        request(1,32'h178,0,0,0,32'h00300000);
+        // Releasing the hold drains them at 115200: 8.68 us a bit here.
+        request(2,32'h17c,32'h0,0,0,32'h0);
+        #3_000_000;
+        request(1,32'h178,0,0,0,32'h0);
+        // Loopback exercises the receive side with no wire: a byte written
+        // comes straight back, the status reports it, and reading 0x174 pops
+        // it.  This is the same reading the board gives after one exchange.
+        request(2,32'h17c,32'h4,0,0,32'h4);
+        request(2,32'h170,32'h5a,0,0,32'h5a);
+        #1_000_000;
+        request(1,32'h178,0,0,0,32'h00000101);
+        request(1,32'h174,0,0,0,32'h5a);
+        request(1,32'h178,0,0,0,32'h0);
+        request(2,32'h17c,32'h0,0,0,32'h0);
+        // A flush empties a FIFO that has a queued byte in it.
+        request(2,32'h17c,32'h8,0,0,32'h8);
+        request(2,32'h170,32'h77,0,0,32'h77);
+        request(1,32'h178,0,0,0,32'h00100000);
+        request(2,32'h17c,32'h2,0,0,32'h2);
+        request(1,32'h178,0,0,0,32'h0);
+        request(2,32'h17c,32'h0,0,0,32'h0);
+        // ------------------------------------------------- socket words ----
+        // Personality 8 with the other socket released, in either direction.
+        request(2,32'hc0,32'h0080,0,0,32'h0080);
+        request(1,32'hc0,0,0,0,32'h0080);
+        request(2,32'hc0,32'h0800,0,0,32'h0800);
+        request(1,32'hc0,0,0,0,32'h0800);
+        // 8 on both sockets, and 5 (the Phosphor core's I2S2, which must not
+        // mean two things across cores) are refused whole.
+        request(2,32'hc0,32'h0880,0,6,0);
+        request(2,32'hc0,32'h0050,0,6,0);
+        request(1,32'hc0,0,0,0,32'h0800);
+        // The I2C and I2C-plus-UART personalities stay refused at ABI 1.6:
+        // that bus is on the USB-A port now.
         request(2,32'hc0,32'h0160,0,6,0);
         request(2,32'hc0,32'h0710,0,6,0);
+        request(1,32'hc0,0,0,0,32'h0800);
         request(2,32'hc0,32'h0230,0,0,32'h0230);
         request(1,32'hc0,0,0,0,32'h0230);
         request(2,32'hc0,32'h0320,1,3,0);
