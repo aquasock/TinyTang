@@ -3103,3 +3103,35 @@ Phase 1 qualifies `tinytang.bin` on the wire: enumerate every register in `deskt
 - User Test: N/A
 
 ---
+
+## 90 COMMIT Unreleased 2026-11-04T15:41:18-07:00
+
+#### Coming From:
+
+Unreleased f790d07
+
+#### Purpose:
+
+Bake the reproducible build stamp into the Makefile at the operator's direction, and settle the personality 8 flip-bit question by demonstrating what the gateware actually does rather than leaving it as a reading of the mask.
+
+#### Outcome:
+
+The `Makefile` now sets `SOURCE_DATE_EPOCH ?= 1793750400` and exports it, so a plain `make` stamps the app header with `Nov  4 2026 00:00:00` on every build instead of the compile time, and two clean builds are byte-identical; `?=` keeps a caller able to choose another stamp deliberately, and the comment records why the value is the one the baseline was measured at. Doing this exposed a fact worth more than the change itself: the firmware digest is **commit-scoped**, because `TINYTANG_BUILD_ID` is the abbreviated commit hash — plus a hash of the uncommitted changes when the tree is dirty — and is compiled into the image, so any edit, even to a test, moves the digest and a build from a dirty tree can never be reproduced from a commit. The baseline quoted in entry 89, `ae318f02`, was such a dirty-tree build and no commit reproduces it; the value to quote for a release is the clean-tree build at the release commit, which cannot be measured until that commit exists, so this entry records the mechanism and leaves the number for the next one. The personality 8 question was settled by simulation rather than by argument. `fpga/desktop/desktop_pmod.sv` drives the socket word only at a vertical blank, and a scratch bench that reached `cx==0, cy==720` showed that the correct word `0x0080` drives TX and NRST on pins 8 and 9 with pin 10 left undriven, which is PMOD-009 exactly; that `0x1080` — bit 12, the PMOD0 flip — is accepted by `supported_word` and moves NRST and TX to pins 2 and 3 while `uart_rx_raw` keeps reading `pmod0_io[7]` directly, because the receive index is not lane-mapped, so the link becomes half flipped with TX and RX on different rows and nothing reports it; and that `0x2080` — bit 13, which flips PMOD1 — changes nothing, because the word leaves that socket released. So the deviation is narrower than the mask alone suggested: it is one bit, on one socket, and it is silent. The exposure needs a host that writes `0xc0` itself, since `tang_ini.c` never sets a flip bit and the firmware's own layouts cannot produce `0x1080`, so it cannot be reached by a user choosing a layout; a raw `fpgapipe` write could reach it, which is why it is a deviation and not a curiosity. The finding is now permanent rather than prose: `tools/tests/sim/tb_desktop_pmod.sv` gained `check_uart_pins`, which computes the enabled lanes the way the driver's `g_pin` loop does and also names the shipped word's pins explicitly so a lane-map change cannot pass by agreeing with its own formula, and which asserts the current flip behaviour with a message saying "the deviation was fixed" if the RTL ever refuses the word. That last assertion is a characterisation, so a future core revision that closes the hole fails this test and says why rather than passing silently. The bench had been leaving the PMOD UART's register inputs unconnected, so `hold` floated to X and reached the transmitter's pin; they are now tied idle, and a planted fault that ignores the flip bit in the expectation is caught with the real pins shown. `docs/qualification.md` records the pinned stamp, the commit-scoped digest and why entry 89's number cannot be reproduced, and replaces the personality 8 "untested" row with the demonstrated mapping and the deviation. The host gate is green at 32 of 32 after the changes. The Tang was not touched, at the operator's instruction: nothing was built for the board beyond the host-only firmware builds used to check the stamp, nothing was flashed, and no hardware reading is claimed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 90 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Phase 1 still owns the core on the wire, and this cycle closed one of its rows early: the personality 8 pin map is now checked rather than assumed. Next is to enumerate every register in `desktop_regs.sv` and `desktop_pmod.sv` into one contract table, test the members that still have none, and then take the silicon rows a subsystem at a time when the board is free. Two items now wait on things rather than on work: the release digest is to be measured and recorded as a clean-tree build once the tree reaches the commit that will carry it, and the personality 8 flip bit needs the operator's per-release decision, which is now an informed one — waive it, since no layout the firmware writes can produce it, or close it in the next core revision by constraining bits 12 and 13 for personality 8.
+
+#### Files Modified:
+
+- Makefile
+- docs/qualification.md
+- tools/tests/sim/tb_desktop_pmod.sv
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

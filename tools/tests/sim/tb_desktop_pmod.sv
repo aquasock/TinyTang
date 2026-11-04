@@ -71,7 +71,13 @@ module tb_desktop_pmod;
         .oled_cell_we(1'b0),.oled_cell_index(9'd0),.oled_cell_word(16'd0),
         .oled_cursor(17'd0),.oled_frames(),.oled_signature(),
         .i2c_cmd(i2c_cmd),.i2c_cmd_toggle(i2c_toggle),.i2c_wdata(64'd0),
-        .i2c_auto(32'd0),.i2c_rdata(),.i2c_res_toggle(),.i2c_status(i2c_status));
+        .i2c_auto(32'd0),.i2c_rdata(),.i2c_res_toggle(),.i2c_status(i2c_status),
+        // The PMOD UART's register side, tied idle.  Left unconnected these
+        // float to X, and an X on `hold` reaches the transmitter's pin, which
+        // is exactly what a personality-8 pin check has to observe.
+        .uart_tx_data(8'd0),.uart_tx_push(1'b0),.uart_flush(1'b0),
+        .uart_hold(1'b0),.uart_nrst_low(1'b0),.uart_loopback(1'b0),
+        .uart_rx_pop(1'b0),.uart_rx_data(),.uart_status());
     task automatic sample(input integer x,input integer y);
         @(negedge pixel_clk); cx=11'(x); cy=10'(y);
         @(posedge pixel_clk); #1;
@@ -169,11 +175,73 @@ module tb_desktop_pmod;
         if(found!=2 || first!=8'h52)
             $fatal(1,"I2C beside VGA: scan found %0d device(s), first 0x%02h",found,first);
         apply(0); bus_on=0; #1;
+        // ------------------------------------------------- personality 8 ----
+        // The PMOD UART's pins, checked at pin level rather than through the
+        // register window (tb_desktop_uart covers that half).  PMOD-009 says
+        // NRST on pin 8 and TX on pin 9, RX read from pin 10, and no flip
+        // support.  The last of those is not what the gateware does: the
+        // accept mask leaves bits 4 to 13 unconstrained, so a flip bit on a
+        // personality-8 word is taken, and apply() then XORs the lane index
+        // while uart_rx_raw keeps reading IO7 directly.  These checks pin the
+        // behaviour down both ways so that a future core revision which
+        // refuses the word fails here and says so.
+        check_uart_pins(16'h0080, 0);   // PMOD0: NRST pin 8, TX pin 9
+        check_uart_pins(16'h0800, 1);   // PMOD1: the same two pins
+        // Bit 12 on a PMOD0 personality-8 word is accepted and moves NRST and
+        // TX to pins 2 and 3 while RX stays on pin 10: a half-flipped UART.
+        check_uart_pins(16'h1080, 0);
+        // Bit 13 flips PMOD1, which this word leaves released, so it changes
+        // nothing the module can see.
+        check_uart_pins(16'h2080, 0);
+        // A socket word the core refuses must not reach the pins at all.
+        apply(0);
         resetn=0; @(posedge pixel_clk); #1;
         if(p0!==8'hzz || p1!==8'hzz) $fatal(1,"reset did not release sockets");
         if(usb_sda!==1'bz || usb_scl!==1'bz) $fatal(1,"reset drove the USB-A pair");
-        $display("desktop PMOD: row permutations, frame commit, blanking, 720p sync and USB-A I2C PASS");
+        resetn=1;
+        $display("desktop PMOD: row permutations, frame commit, blanking, 720p sync, USB-A I2C and personality 8 pins PASS");
         $finish;
     end
+    // Personality 8 drives exactly two pins per socket: lane 5 (NRST) and
+    // lane 6 (TX out of the FPGA).  Both idle high, which is TX's mark and the
+    // module's deasserted reset.  RX is not driven.  `slot` is 0 for PMOD0 and
+    // 1 for PMOD1; the bench asks only that the other socket is released.
+    task automatic check_uart_pins(input [15:0] w, input integer slot);
+        reg [7:0] exp_a,exp_b,en;
+        reg [2:0] normal,lane;
+        integer i;
+        begin
+            apply(w);
+            en=8'h00;
+            // The two enabled lanes, before the flip XOR.
+            en[5]=1'b1; en[6]=1'b1;
+            // Route them the way the driver's g_pin loop does.
+            exp_a=8'hzz; exp_b=8'hzz;
+            for(i=0;i<8;i=i+1) begin
+                normal=3'(i/2+(i%2)*4);
+                lane=normal ^ (w[12] ? 3'd4 : 3'd0);
+                if(en[lane]) begin
+                    if(slot==0) exp_a[i]=1'b1;
+                    else exp_b[i]=1'b1;
+                end
+            end
+            if(p0!==exp_a || p1!==exp_b)
+                $fatal(1,"personality 8 pins wrong for %04h: p0=%b p1=%b expected %b %b",
+                       w,p0,p1,exp_a,exp_b);
+            // Named expectations for the shipped word, so a lane-map change
+            // cannot pass by agreeing with its own formula.
+            if(w==16'h0080) begin
+                if(p0[3]!==1'b1 || p0[5]!==1'b1)
+                    $fatal(1,"0x0080 must drive IO3 (pin 8) and IO5 (pin 9)");
+                if(p0[7]!==1'bz) $fatal(1,"0x0080 must leave IO7 (pin 10, RX) undriven");
+            end
+            if(w==16'h1080) begin
+                if(p0[3]!==1'bz || p0[5]!==1'bz)
+                    $fatal(1,"flip bit 12 no longer moves the UART lanes; the deviation was fixed");
+                if(p0[2]!==1'b1 || p0[4]!==1'b1)
+                    $fatal(1,"flip bit 12 moved the UART to unexpected pins");
+            end
+        end
+    endtask
     initial begin #25_000_000; $fatal(1,"desktop PMOD test timeout"); end
 endmodule

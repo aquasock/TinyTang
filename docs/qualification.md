@@ -35,22 +35,30 @@ below is measured against these artifacts and this toolchain, and nothing else.
 
 ### Firmware — the BL616 image
 
-- **Size**: 682,272 bytes
-- **SHA-256**: `ae318f0268c06f62ee401346a52784e024c1f4213d36ae683e2920b92ba5e646`
-- **Built from**: `6ff42c9` (this tree, at the commit Phase 0 started from)
-- **Build**: `SOURCE_DATE_EPOCH=1793750400 make -j$(nproc)`
+- **Size**: 682,272 bytes for the baseline build recorded in entry 89
+- **Build**: `make` — the timestamp is pinned in the `Makefile`
 
-The `SOURCE_DATE_EPOCH` is load-bearing. Without it the build is **not**
-reproducible: two builds of identical source differ in three bytes, because the
-SDK's image tool stamps the app header with a `BLFBVERF` string holding the
-compile time. With it pinned, two clean builds are byte-identical — verified by
-building twice and comparing with `cmp`. The digest above is therefore the
-digest of *a* build at a stated time, not of the source; the reproducible form
-is the one to quote.
+The `SOURCE_DATE_EPOCH` is load-bearing and is now **baked in**. The SDK's image
+tool writes the app header's `BLFBVERF` string from the compiler's `__DATE__`
+and `__TIME__`, so without a pinned stamp two builds of identical source differ
+in three bytes and no firmware digest means anything. The `Makefile` sets
+`SOURCE_DATE_EPOCH ?= 1793750400` and exports it, so a plain `make` now stamps
+`Nov  4 2026 00:00:00` every time; `?=` keeps a caller free to choose another
+stamp deliberately. Verified by two clean builds comparing byte-identical.
 
-Nothing in this tree sets `SOURCE_DATE_EPOCH`. It is a documented recipe rather
-than a build setting, because changing the Makefile would change the frozen
-image. Deciding to bake it in is a release decision, not a Phase 0 one.
+**The digest is commit-scoped, and that is by design.** `TINYTANG_BUILD_ID` is
+the abbreviated commit hash, plus a hash of the uncommitted changes when the
+tree is dirty, and it is compiled into the image. So a firmware digest names a
+*tree state*, not a source tree:
+
+- a clean build at commit `X` gives one digest, reproducible by anyone at `X`;
+- any edit, even to a test, changes it;
+- a build from a dirty tree can never be reproduced from a commit.
+
+The baseline quoted in entry 89 (`ae318f02…`) was a dirty-tree build, so no
+commit reproduces it. Treat it as the identity of one image, not of the source.
+The value to quote for a release is the clean-tree build at the release commit,
+and it can only be measured after that commit exists.
 
 ### Desktop core — `tinytang.bin`
 
@@ -119,7 +127,7 @@ The register endpoint is `fpga/desktop/desktop_regs.sv`; the socket logic is
 | host | Personality 5 (Phosphor I2S2) refused, status 6 | `test_desktop_core` |
 | host | 8 on both sockets refused | `test_desktop_core` |
 | host | A refused word leaves the previous word in place | `test_desktop_core` |
-| deviation | Flip bits 12/13 are **not** rejected for personality 8 | read of `supported_word`: the mask is `0xffffc00f`, so bits 4–13 pass unconstrained. PMOD-009 says personality 8 has no flip support. Silent wrong-row drive is possible if a host sets a bit the firmware never sets |
+| deviation | The accept mask does not constrain the flip bits | `supported_word` masks `0xffffc00f`, so bits 4–13 pass unconstrained and a flip bit on a personality-8 word is taken; the consequence is demonstrated in the personality-8 table below |
 | silicon | `layout = lora` declared and accepted | `tangini`, 2026-11-04 |
 | silicon | `layout = i2s2_oled` on the desktop core | core-log entries 22–24 |
 
@@ -156,7 +164,8 @@ real `pmod_uart` behind the window.
 | host | NRST (bit 0) reaches the pin, inverted | `test_desktop_core` |
 | silicon | Module answers `AT`, `+VER`, `+ADDRESS=2`, `+BAND=915000000`, `+NETWORKID=6`, `+PARAMETER=7,7,1,12`, `+CRFOP=14` | 2026-11-04, this session |
 | silicon | `node status`, `node lora`, `node time` round-trip to TinyNode | 2026-11-04, this session |
-| untested | Pin-level row/lane mapping for personality 8 | no bench drives socket pins for 8; `test_desktop_pmod` covers VGA and I2C only |
+| host | Personality 8 pins: NRST on pin 8, TX on pin 9, RX on pin 10, per socket | `test_desktop_pmod` (`check_uart_pins`), checked at pin level |
+| **deviation** | **Flip bit 12 on a personality-8 word is accepted and misroutes the UART** | demonstrated: `0x1080` is accepted by `supported_word` and drives NRST/TX on pins 2 and 3 while RX keeps reading pin 10 — a half-flipped link. `0x2080` (bit 13, the released socket) changes nothing. `test_desktop_pmod` asserts the current behaviour and fails with "the deviation was fixed" if the RTL ever refuses the word |
 
 Each assertion above was proven to bite: six planted faults (stale ABI, stale
 bitmap, hold ignored, loopback ignored, personality 8 refused, inverted NRST)
