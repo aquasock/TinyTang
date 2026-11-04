@@ -84,6 +84,35 @@ Recorded from builds of this tree; a release should reproduce these or say why
 not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
+  written to the build directory it is given (the section below records the
+  ABI 1.6 core that is on the card, which is what a card should carry;
+  the ABI 1.3 entry that follows is kept as the older record of this flow)
+
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.6**,
+  built 2026-11-03 from `207f9af`'s `fpga/desktop` at the script's default
+  seed 3 into `build/desktop-rev/out/`
+  - `desktop.bin` sha256
+    `00d8b48cac8e54b27cdbdacf2adfe8e67331bd3ff95c05e6fd671192f46582cf`,
+    4,526,774 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `60dd20032095f6d1b7e14dab9e77ca57973e5d494051d0acf2955dd929e45fda`,
+    36,239,160 bytes; the card's `tinytang.fs.gz` is `gzip -9 -n` of it,
+    401,300 bytes
+  - Gates passed with nothing overridden: setup and hold met, no
+    clock-topology regression against `clock_profile.json`, and no `clk`
+    pip through SPINE17. Proven on the board the same day: `tangini` read
+    `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared` and `node status`
+    returned TinyNode's block in full.
+  - **This build reproduced none of the artifacts already on disk**, which
+    held the same netlist at other placements (one of them the same
+    4,526,774 bytes, different bytes). The toolchain here is newer than
+    `deps.conf` pins -- apicula `495661a` against `04bc3c5`, nextpnr
+    `16237b0f` against `8be8657b` -- so a bitstream built today is a new
+    placement and, per `TOOL-017`, needs its own gates and a board test
+    rather than being assumed equal to a recorded one. Reproducing a
+    recorded core needs the pinned pair.
+
+- **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to `build/desktop/open-s3/` (desktop ABI 1.3 with the PMOD I2C bus,
   apicula `04bc3c5`, nextpnr `8be8657b`, recorded 2026-10-18)
   - `desktop.fs` sha256 `d993899c24a44dcfa503554e27ca873d012b0592162a7335f6b4c46378ed865b`

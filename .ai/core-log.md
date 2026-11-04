@@ -2997,3 +2997,35 @@ The Classic Controller failing after a game returns to the desktop is the next c
 - User Test: PASS
 
 ---
+
+## 87 COMMIT Unreleased 2026-11-03T20:06:22-07:00
+
+#### Coming From:
+
+Unreleased c63088b
+
+#### Purpose:
+
+Reduce the desktop core on the card to the single file `tinytang.bin` carrying the newest revision, which every path that hands the desktop back already names, so a game can no longer leave a different and older core behind.
+
+#### Outcome:
+
+The card carried four desktop cores: `tinytang.bin`, `tinytang-lora.bin`, `tinytang-lora-sr.bin` and `tinytang-abi16-open.bin`, and `scripts/boot.tdsh` loaded `tinytang-lora.bin` while the four game windows' `DESKTOP_REAL` loaded `tinytang.bin`. Hashing each off the board with `tangget` identified them exactly: `tinytang.bin` was `bff603129045` at 4,479,158 bytes, entry 23's desktop ABI 1.5 seed-3 core; `tinytang-lora-sr.bin` was `f52959f245df` at 4,510,902, byte-identical to `build/desktop/open-s3/desktop.bin` from 2026-10-30; `tinytang-abi16-open.bin` was `5b2aceb002ca` at 4,479,158 from 2026-10-26; and `tinytang-lora.bin` was `79e1d69d` at 4,447,414, matching nothing on disk. Measured on the board, a game's return loaded the ABI 1.5 file: after one, `tangini` read `core 0x54 (ABI 1.5) has 0xc0 = 0x0000` against the boot's ABI 1.6 with `0x0080`, and `node status` then failed all ten attempts of 4000 ms because ABI 1.5 has no personality 8, so the PMOD UART the LoRa module sits on was gone. Which image was the newest could not be settled from the card, and entry 83 had changed `fpga/desktop/i2c_master.sv` without building any core, so HEAD's RTL had never been turned into a bitstream at all; it was therefore rebuilt rather than guessed, from `207f9af`'s `fpga/desktop` at the script's default seed 3 into `build/desktop-rev/out/`, giving 4,526,774 bytes at SHA-256 `00d8b48cac8e54b27cdbdacf2adfe8e67331bd3ff95c05e6fd671192f46582cf` with `desktop.fs` `60dd20032095f6d1b7e14dab9e77ca57973e5d494051d0acf2955dd929e45fda`, its setup-and-hold, clock-topology and SPINE17 gates all passing with nothing overridden. That build reproduced none of the artifacts already on disk, one of them at the same size but different bytes, because the toolchain here is newer than `deps.conf` pins -- apicula `495661a` against `04bc3c5` and nextpnr `16237b0f` against `8be8657b` -- so per TOOL-017 it is a fresh placement and was proven on the board before being kept: loaded as `tinytang-new.bin` it answered `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`, `tangi2c read 0x68 0x00 1` returned the DS3231's seconds, and `node status` returned TinyNode's whole block including `relay 1111`. It was written over `tinytang.bin` with `tinytang_put.py`, its `gzip -9 -n` companion of 401,300 bytes was written as `tinytang.fs.gz` and decompresses back to the `.fs` digest, and `tinytang-lora.bin`, `tinytang-lora-sr.bin`, `tinytang-abi16-open.bin` and the staging copy were deleted, leaving `tinytang.bin` and `tinytang.fs.gz` as the only `tinytang.*` files on the card. `scripts/boot.tdsh` sets `CORE` to `tinytang.bin` with no fallback branch, so the boot and the four windows name one file that cannot drift apart; `README.md`'s two passages that described a two-name boot now describe one, and `BUILDING.md` records this build's two digests together with the fact that it reproduced no earlier artifact and why. The new boot script was run live before the power cycle and printed `boot: loading /root/cores/console138k/tinytang.bin`, `fpga: core 84 answering on UART1 at 2000000 baud` and `boot: core loaded`, so its single-line form parses; after the user's power cycle `platform` read `tinytang 5039b09-dirty.04ed790`, `tangini` read `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`, and `node status` returned the node's block, which the user reports as passing, the same reading holding after a game was played and left. The Classic Controller working after a game was observed again but this cycle changes nothing on the pad path and does not explain entry 86's intermittent, which stays open. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 87 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The Classic Controller failing after a game remains the one unexplained defect, and it is now harder to blame on the core, since a game hands back ABI 1.6 with the I2C bus and socket word intact; the two candidates are `tang_ini_core_loaded()` deriving `tang_core_i2c_bus()` from one three-attempt probe and a single ABI read taken while the desk layer repaints, and the pad's own adopted kind, format and centring surviving a core change because `tang_wiipad_reset()` and `tang_pad_reset()` run only from `tang_osd_desk_set(true)`. Instrumenting those three gates into `wiipad status` is the next step that would turn either into a fact. `tools/tests/test_desktop_core.sh` has been red since entry 84 for asserting desktop ABI 1.5, and the card now carries an ABI 1.6 core, so the FPGA-side register test still does not check the core the board runs. The toolchain used here is off the `deps.conf` pin, which is why no recorded bitstream could be reproduced; restoring the pinned apicula and nextpnr pair is its own cycle if reproducibility is wanted. The card's `/root/cores/console138k/` also holds a dozen `tinymaps*.bin` files that were left alone as a different core family, and the standing items are otherwise unchanged: the manual pack that lacks the TinyNode paragraph, the English Wikipedia conversion that must restart, and the MPR121 pad-to-electrode map.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- scripts/boot.tdsh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
