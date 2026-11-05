@@ -756,7 +756,7 @@ extern "C" void tang_i2c_mux_for_game_core(void)
  * and the desk clock's RTC read moves it to channel 6 once a second.
  */
 #define TOUCH_ADDR       0x5A
-#define TOUCH_CH         TANG_I2C_MUX_CH_IR
+#define TOUCH_CH         TANG_I2C_MUX_CH_TOUCH
 #define TOUCH_REG_TOUCH  0x00
 
 static bool s_touch_ready = false;

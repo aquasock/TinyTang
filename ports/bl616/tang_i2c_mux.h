@@ -11,12 +11,18 @@
  *
  *   channel 0  Adafruit Wii adapter, 0x52
  *   channel 6  DS3231 RTC, 0x68
- *   channel 7  MLX90614 IR thermometer, 0x5A
+ *   channel 7  Adafruit MPR121 12-key cap-touch breakout, 0x5A
  *
- * Channels 1 to 5 are unassigned: the LIS3MDL magnetometer that named channel
- * 1 was removed from the bench, so it no longer has a name or a constant here.
- * The MLX90614 answers its address on channel 7 but returns no register data
- * yet, so the channel carries the part's name and nothing reads it.
+ * Channels 1 to 5 are unassigned and free for another device: a part added to
+ * one of them is reached today with `tangi2c mux <n>` and the read/write
+ * commands, and needs an entry here only to be routed automatically by
+ * address or to have a name in `tangi2c mux`.
+ *
+ * Channel 7 held an MLX90614 IR thermometer until 2026-10-30, when the user
+ * replaced it with the MPR121 (core-log entry 83).  The address, 0x5a, is the
+ * same, which is why the constant kept its old name for a while; it is
+ * `..._TOUCH` now and the old spelling remains as an alias so nothing that
+ * still names it breaks.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -34,7 +40,10 @@ extern "C" {
 
 #define TANG_I2C_MUX_CH_WII   0
 #define TANG_I2C_MUX_CH_RTC   6
-#define TANG_I2C_MUX_CH_IR    7
+#define TANG_I2C_MUX_CH_TOUCH 7
+/* The MPR121 replaced an MLX90614 on this channel; keep the old spelling
+ * working so a caller that still names it does not break. */
+#define TANG_I2C_MUX_CH_IR    TANG_I2C_MUX_CH_TOUCH
 
 /* The channel a transaction to `addr` has to have selected, or -1 to leave the
  * switch where it is: the switch itself answers upstream of every channel, and

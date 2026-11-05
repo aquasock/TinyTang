@@ -22,6 +22,18 @@ module tb_desktop_uart;
             else ack_delay<=ack_delay+1;
         end
     end
+    logic [31:0] oled_frames_tb = 32'h0000abcd;
+    logic [31:0] oled_signature_tb = 32'h12345678;
+    // The I2C engine's side of the register file.  The bench plays the engine:
+    // it presents a result window, toggles the result strobe when asked, and
+    // records the command and write window the core sends.
+    logic [63:0] i2c_rdata_tb = 64'h0;
+    logic i2c_res_toggle_tb = 1'b0;
+    logic [31:0] i2c_status_tb = 32'h0;
+    wire [31:0] i2c_cmd_tb;
+    wire i2c_cmd_toggle_tb;
+    wire [63:0] i2c_wdata_tb;
+    wire [31:0] i2c_auto_tb;
     wire [6:0] wide_x, wide_ch;
     // The PMOD UART engine (pmod_uart) belongs behind the register window at
     // 0x170-0x17c: the window's contract is about FIFO counts, the pop on
@@ -78,9 +90,13 @@ module tb_desktop_uart;
         .desktop_uart_loopback(uart_loopback),
         .desktop_uart_rx_pop(uart_rx_pop), .desktop_uart_rx_data(uart_rx_data),
         .desktop_uart_status(uart_status),
+        .desktop_i2c_rdata(i2c_rdata_tb), .desktop_i2c_res_toggle(i2c_res_toggle_tb),
+        .desktop_i2c_status(i2c_status_tb), .desktop_i2c_cmd(i2c_cmd_tb),
+        .desktop_i2c_cmd_toggle(i2c_cmd_toggle_tb), .desktop_i2c_wdata(i2c_wdata_tb),
+        .desktop_i2c_auto(i2c_auto_tb),
         .desktop_oled_cell_we(cell_we),.desktop_oled_cell_index(cell_index),
         .desktop_oled_cell_word(cell_word),.desktop_oled_font(oled_font),
-        .desktop_oled_frames(32'd0),.desktop_oled_signature(32'd0)
+        .desktop_oled_frames(oled_frames_tb),.desktop_oled_signature(oled_signature_tb)
     );
     function automatic [15:0] crc_byte(input [15:0] old, input [7:0] b);
         reg [15:0] c;
@@ -331,6 +347,71 @@ module tb_desktop_uart;
         request(2,32'h17c,32'h2,0,0,32'h2);
         request(1,32'h178,0,0,0,32'h0);
         request(2,32'h17c,32'h0,0,0,32'h0);
+        // ------------------------------------ OLED counters and I2C windows
+        // 0x108 and 0x10c are pass-throughs of the OLED engine's frame and
+        // signature counters.  The bench drives them so a miswiring shows.
+        request(1,32'h108,0,0,0,32'h0000abcd);
+        request(1,32'h10c,0,0,0,32'h12345678);
+        // Their write forms are unknown addresses: the counters belong to the
+        // engine and a host must not be able to forge them.
+        request(2,32'h108,32'h0,0,4,0);
+        request(2,32'h10c,32'h0,0,4,0);
+        request(1,32'h108,0,0,0,32'h0000abcd);
+        // 0x140 reports the engine's status verbatim.
+        i2c_status_tb = 32'h0000_0042;
+        request(1,32'h140,0,0,0,32'h00000042);
+        i2c_status_tb = 32'h0;
+        // 0x154 is the command word: op[1:0], addr[14:8], reg[23:16],
+        // len[28:24], start[31].  A legal one is echoed and reaches the engine;
+        // each rejected field keeps the previous command.
+        request(1,32'h154,0,0,0,32'h0);
+        request(2,32'h154,32'h81006802,0,0,32'h81006802);
+        request(1,32'h154,0,0,0,32'h81006802);
+        if(i2c_cmd_tb != 32'h81006802) $fatal(1,"command word did not reach the engine");
+        request(2,32'h154,32'h81006803,0,6,0);   // op 3 is not a command
+        request(2,32'h154,32'h81006882,0,6,0);   // bit 7 is reserved
+        request(2,32'h154,32'h81008002,0,6,0);   // bit 15 is reserved
+        request(2,32'h154,32'h81006802 | 32'h20000000,0,6,0); // bit 29
+        request(2,32'h154,32'h80000002,0,6,0);   // len 0 is not a transfer
+        request(2,32'h154,32'h89006802,0,6,0);   // len 9 is above the FIFO
+        request(1,32'h154,0,0,0,32'h81006802);
+        // 0x158 is the automatic-read configuration: addr[6:0], reg[15:8],
+        // len[20:16], enable[31].
+        request(1,32'h158,0,0,0,32'h0);
+        request(2,32'h158,32'h80010068,0,0,32'h80010068);
+        request(1,32'h158,0,0,0,32'h80010068);
+        request(2,32'h158,32'h800100e8,0,6,0);   // bit 7
+        request(2,32'h158,32'h80210068,0,6,0);   // bit 21
+        request(2,32'h158,32'h40010068,0,6,0);   // bit 30
+        request(2,32'h158,32'h80090068,0,6,0);   // len 9
+        request(1,32'h158,0,0,0,32'h80010068);
+        request(2,32'h158,32'h0,0,0,32'h0);
+        // 0x160 and 0x164 are the write window: four bytes each, low byte
+        // first, and they read back as one little-endian word per half.
+        request(2,32'h160,32'h11223344,0,0,32'h11223344);
+        request(2,32'h164,32'h55667788,0,0,32'h55667788);
+        #1_000;
+        request(1,32'h160,0,0,0,32'h11223344);
+        request(1,32'h164,0,0,0,32'h55667788);
+        if(i2c_wdata_tb != 64'h5566778811223344)
+            $fatal(1,"write window reached the engine as %016h",i2c_wdata_tb);
+        // 0x162 is inside the window but not on a word boundary, so a write
+        // there is an unknown address and must not disturb the window.
+        request(2,32'h162,32'hdeadbeef,0,4,0);
+        request(1,32'h160,0,0,0,32'h11223344);
+        // 0x144 and 0x148 are the read window: eight bytes of the engine's
+        // last result, latched on the result strobe, high half first.
+        request(1,32'h144,0,0,0,32'h0);
+        request(1,32'h148,0,0,0,32'h0);
+        i2c_rdata_tb = 64'h1122334455667788;
+        i2c_res_toggle_tb = ~i2c_res_toggle_tb;
+        #5_000;
+        request(1,32'h144,0,0,0,32'h55667788);
+        request(1,32'h148,0,0,0,32'h11223344);
+        // Writing either half is an unknown address; they are the engine's.
+        request(2,32'h144,32'h0,0,4,0);
+        request(2,32'h148,32'h0,0,4,0);
+        request(1,32'h144,0,0,0,32'h55667788);
         // ------------------------------------------------- socket words ----
         // Personality 8 with the other socket released, in either direction.
         request(2,32'hc0,32'h0080,0,0,32'h0080);

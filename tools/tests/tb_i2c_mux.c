@@ -1,9 +1,10 @@
 /* TinyTang — host test for the PCA9548A channel map (tang_i2c_mux.c).
  *
- * The map is fixed for this bench (core-log entry 41): 0 Wii adapter,
- * 6 RTC, 7 MLX90614 IR thermometer, switch at 0x70.  What this locks down is
- * the routing rule the shell and the clock depend on — a known device always
- * selects its own channel, and anything else stays on the selected one.
+ * The map is fixed for this bench (core-log entry 41, revision entry 83):
+ * 0 Wii adapter, 6 RTC, 7 MPR121 cap-touch breakout, switch at 0x70.  What
+ * this locks down is the routing rule the shell and the clock depend on -- a
+ * known device always selects its own channel, and anything else stays on the
+ * selected one.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -59,7 +60,14 @@ int main(void)
      * here rather than a mystery on the board. */
     CHECK(TANG_I2C_MUX_CH_WII == 0);
     CHECK(TANG_I2C_MUX_CH_RTC == 6);
-    CHECK(TANG_I2C_MUX_CH_IR == 7);
+    CHECK(TANG_I2C_MUX_CH_TOUCH == 7);
+    /* The channel held an MLX90614 until 2026-10-30; the old spelling is an
+     * alias for the same number, so a caller that still uses it routes
+     * identically. */
+    CHECK(TANG_I2C_MUX_CH_IR == TANG_I2C_MUX_CH_TOUCH);
+    /* The part on that channel is a touch sensor, so the shell must not call
+     * it an IR thermometer. */
+    CHECK(strcmp(tang_i2c_mux_name(TANG_I2C_MUX_CH_TOUCH), "touch") == 0);
     CHECK(TANG_I2C_MUX_ADDR == 0x70);
     CHECK(TANG_I2C_WII_ADDR == 0x52);
     CHECK(TANG_CLOCK_RTC_ADDR == 0x68);

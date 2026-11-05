@@ -3135,3 +3135,55 @@ Phase 1 still owns the core on the wire, and this cycle closed one of its rows e
 - User Test: N/A
 
 ---
+
+## 91 COMMIT Unreleased 2026-11-04T17:40:58-07:00
+
+#### Coming From:
+
+Unreleased 685b3ac
+
+#### Purpose:
+
+Qualify the desktop core's register contract and give the settled-configuration path its first automated coverage, after the operator settled on LoRa on PMOD0, the PCA9548A board carrying the RTC, Wii adapter and cap sensor, and VGA as the alternative.
+
+#### Outcome:
+
+Phase 1A wrote the register contract as one table in `docs/qualification.md`: the wire protocol (`0x10` register frames and the `0x12` block write, the four opcodes, the seven status codes and their meanings) and one row per address with its access, its meaning, its acceptance rule and the evidence behind it. The registers that had no coverage were then closed: `0x108` and `0x10c` now read back the OLED frame and signature counters the bench drives instead of a tied zero, `0x140` reports the I2C status verbatim, `0x144` and `0x148` latch the engine's eight-byte result on the result strobe and reassemble it as two natural words, `0x154` and `0x158` were given their field-by-field refusal cases as well as their accept cases, and `0x160`/`0x164` were shown to reach the engine as one 64-bit little-endian window with an unaligned write to `0x162` refused. The bench had been leaving the I2C engine's ports dangling, so those addresses answered as if the engine were dead; they are now driven by the testbench in place of the engine, which is the same approach the PMOD UART half uses. Two planted faults were caught with the hardware's real value in the failure text, and the reply count the harness pins moved from 109 to 147. Phase 1B added three host suites. `tb_tang_proto.c` pins the application protocol the LoRa link carries: the CRC-16/CCITT-FALSE check value `0x29b1` for `123456789` rather than only a round trip against itself, the big-endian length across the 255/256 boundary and every length to 300, refusal of an over-long body, of a short buffer and of a NULL body with a non-zero length, and on the decode side the version, the length, the CRC, a swapped CRC pair and a length field past the framing limit, each with a CRC recomputed so the intended check is what refuses it. `tb_tang_lora.c` runs the real driver against a PMOD UART model that implements the four registers as byte FIFOs, so it can assert what actually leaves the pin: base64 in both directions with every padding case, `AT+ADDRESS?` and `AT+VER?` reaching the wire as one line, an over-long command refused rather than truncated onto the wire, the hold-then-burst sequence proven by the control-write log rather than inferred from the bytes, `+RCV` reassembly across three frames, a frame from another address refused without disturbing the assembly in progress, a new frame id restarting the assembly instead of splicing two messages, the rule that only a reply with the sequence asked for is returned while a stale one is discarded, and the client's lock refusing a second caller rather than queueing it. `tb_tang_heap.c` covers the wrappers every app depends on: a refused `kmalloc` recorded with its size and task and with interrupts restored afterwards, a successful or zero-byte one not recorded, `pvPortMalloc` asking for either heap so a task stack is not confined to OCRAM and running the FreeRTOS hook on refusal, `krealloc(NULL, n)` treated as an allocation, and the move path that carries a block to the other heap when its own refuses to grow it, copying only the smaller of the two sizes. `tang_i2c_mux`'s channel 7 was still named for the MLX90614 that left the bench on 2026-10-30, so `tangi2c mux` printed `ir` for a touch sensor; it is now `TANG_I2C_MUX_CH_TOUCH` returning `touch`, with the old spelling kept as an alias so no caller breaks, and the test asserts both the name and that the alias routes identically. Fourteen planted faults across the three suites were each caught, and one fault was deliberately not: removing `tang_proto_decode`'s exact-length check does not fail any test, because the CRC's span is derived from the buffer's actual length, so a truncated message covers different bytes and cannot match. That check is therefore redundant with the CRC rather than load-bearing, it is defence in depth against a length field disagreeing with a CRC that happens to validate, and both the test and the matrix say so instead of claiming coverage that does not exist. The firmware builds from this tree at 682,272 bytes with SHA-256 `b36fc07e96f859381e5105639108579894c654d84e1cc0c8eaada256be5ac2de` and no compiler warning outside the vendored JTAG programmer; the only firmware-source edits are the channel rename and its use, which change no pin, register or wire behaviour, so nothing was deployed and the board still runs entry 86's image. The host gate is 35 of 35, and the count of port and Phosphor modules with no host test at all fell from 32 to 29. `tang_i2c.cpp` was left for its own cycle rather than folded in: it is 911 lines across seven subcommands, and three new suites plus a source fix is already a large commit boundary. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 91 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+`tang_i2c.cpp` is the next cycle and the last large untested module on the settled path: its mux routing, the MPR121 init sequence and poll, the DS3231 read and the argument handling of all seven subcommands, against a fake of the register window it already uses. After that the remaining uncovered modules are `tang_fpga_uart.c`, `usb_cdc_bl616.c`, `tang_psram.c`, `tang_usbstat.c`, `tang_crash.c`, `tang_ble_trace.c`, `td_pack.c`, the three shell-port files and the five app wrappers. Phase 2's silicon rows then wait on the board being free: the LoRa link end to end, a scan of every mux channel including one spare channel accepting a device with no firmware change, the `mkdir -p` measurement the handoff still carries as an unverified claim, and the first multi-chunk pack read on hardware. The release firmware identity is still to be measured as a clean-tree build at the release commit, and the personality 8 flip bit still waits on the operator's waiver decision, which entry 90 left informed.
+
+#### Files Modified:
+
+- docs/qualification.md
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_i2c_mux.c
+- ports/bl616/tang_i2c_mux.h
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/stubs/tang_heap/FreeRTOS.h
+- tools/tests/stubs/tang_heap/bflb_irq.h
+- tools/tests/stubs/tang_heap/mm.h
+- tools/tests/stubs/tang_heap/task.h
+- tools/tests/stubs/tang_lora/FreeRTOS.h
+- tools/tests/stubs/tang_lora/bflb_mtimer.h
+- tools/tests/stubs/tang_lora/semphr.h
+- tools/tests/stubs/tang_lora/tang_fpga_link.h
+- tools/tests/stubs/tang_lora/task.h
+- tools/tests/stubs/tang_lora/tdsh.h
+- tools/tests/tb_i2c_mux.c
+- tools/tests/tb_tang_heap.c
+- tools/tests/tb_tang_lora.c
+- tools/tests/tb_tang_proto.c
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_tang_heap.sh
+- tools/tests/test_tang_lora.sh
+- tools/tests/test_tang_proto.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

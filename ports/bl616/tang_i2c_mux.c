@@ -29,8 +29,8 @@ const char *tang_i2c_mux_name(int channel)
         return "wii";
     case TANG_I2C_MUX_CH_RTC:
         return "rtc";
-    case TANG_I2C_MUX_CH_IR:
-        return "ir";
+    case TANG_I2C_MUX_CH_TOUCH:
+        return "touch";
     default:
         return "unassigned";
     }
