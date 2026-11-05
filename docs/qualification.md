@@ -210,7 +210,7 @@ whole with status 6 and both sockets keep their previous state.
 | host | 8 on both sockets refused | `test_desktop_core` |
 | host | A refused word leaves the previous word in place | `test_desktop_core` |
 | host | Personality 8 pins: NRST on pin 8, TX on 9, RX on 10, per socket | `test_desktop_pmod` (`check_uart_pins`) |
-| **deviation** | **Flip bit 12 on a personality-8 word is accepted and misroutes the UART** | demonstrated: `0x1080` drives NRST/TX on pins 2 and 3 while RX keeps reading pin 10 — a half-flipped link, silently. `0x2080` (bit 13, the released socket) changes nothing. Need a host that writes `0xc0` itself; no layout the firmware can produce sets a flip bit |
+| **deviation** | **Flip bit 12 on a personality-8 word is accepted and misroutes the UART** — **decision 2026-11-04: closed in the next core revision**, which the operator will build as the final firmware and `tinytang.bin` before release | demonstrated: `0x1080` drives NRST/TX on pins 2 and 3 while RX keeps reading pin 10 — a half-flipped link, silently. `0x2080` (bit 13, the released socket) changes nothing. Need a host that writes `0xc0` itself; no layout the firmware can produce sets a flip bit |
 | silicon | `layout = lora` declared and accepted | `tangini`, 2026-11-04 |
 | silicon | `layout = i2s2_oled` on the desktop core | core-log entries 22–24 |
 
@@ -300,6 +300,7 @@ quote it as a command count.
 | host | Wii pad decode, centring, adopted kind | `test_pad`, `test_wiipad`, `test_osd_desk` |
 | host | BLE bonds persistence | `test_bonds` |
 | host | Bluetooth app widget | `test_bluetooth_app` |
+| **host** | **Bluetooth HID report routing** — which parser takes a notification: handle match, boot-format lengths (8 keyboard, 3/4 mouse), the combo slot carrying both, handle 0 as "undiscovered", and equivalence with the inline code it replaced over 65,520 inputs | **`test_tang_hid_route`**; 8 planted faults caught |
 | silicon | BLE keyboard, mouse, combo pair and reconnect | entries 77–82 |
 | silicon | Classic Controller works at the prompt | entry 86 baseline |
 | **open** | **Classic Controller dies after a game** | entries 86–88; two candidates named, uninstrumented |
@@ -354,13 +355,13 @@ shipping.
 
 ## 6. Coverage summary
 
-- 38 host regressions plus the width gate, all passing; proven to bite where
+- 39 host regressions plus the width gate, all passing; proven to bite where
   fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
-  I2C 9, link 6, crash 4, FatFS 6).
-- **29 of 55 port and Phosphor modules are built by no host test.** The seven
+  I2C 9, link 6, crash 4, FatFS 6, HID routing 8).
+- **29 of 56 port and Phosphor modules are built by no host test.** The eight
   this programme added — `tang_proto.c`, `tang_lora.c`, `tang_heap.c`,
-  `tang_i2c.cpp`, `tang_fpga_uart.c`, `tang_crash.c` and `tdsh_fs_bl616.c` —
-  are covered. Measured by:
+  `tang_i2c.cpp`, `tang_fpga_uart.c`, `tang_crash.c`, `tdsh_fs_bl616.c` and
+  `tang_hid_route.c` — are covered. Measured by:
 
 ```
 tools/check_test_coverage.py            # the uncovered modules
@@ -394,7 +395,7 @@ host suite is not the next best use of a cycle.
 
 | Modules | Reason |
 |---|---|
-| `tang_ble.c` (2737) | Needs 56 `bt_*` symbols and most of the Zephyr-derived host stack to link. A suite would have to stub the stack and would then be testing those stubs. The testable part — the boot-report routing that sends an 8-byte report to the keyboard slot and a 3–4 byte one to the mouse (BLE-019) — is 40 lines buried in the file; extracting it is a firmware refactor needing approval. |
+| `tang_ble.c` (2681 after the extraction) | Needs 56 `bt_*` symbols and most of the Zephyr-derived host stack to link, so a suite would stub the stack and test the stubs. **Its one testable decision has been extracted**: report routing now lives in `tang_hid_route.c` and is covered (BLE-019, and the Logitech and Rii K06 cases). What remains in `tang_ble.c` is discovery, pairing, bonds and the stack's lifecycle, all of which need the stack or the radio. |
 | `tang_jtag_programmer.c` (1102) | Vendored unmodified from nand2mario under Apache-2.0 (TOOL-007). Testing it tests a third party's code, and its behaviour is proven by every `tangload` on the board. |
 | 7 app wrappers: `tinygbc_app`, `tinynes_app`, `td_gutenberg_app`, `td_wiki_app`, `tiny89_app`, `tinynode_app`, `tinycreature_app` (5751 total) | Mostly widget layout and list navigation over the app's own data. A stubbed window proves the layout calls; Phase 3 exercises them end to end on the board, which is both cheaper and truer. The data-side logic (`tang_nes_ini`, `tang_gbc_ini`, the pack formats) is already covered separately. |
 | 9 Phosphor transport files (`phosphor_player`, `phosphor_cmd`, `pmod_sockets`, `fpga_file_stream`, `ae350_play`, `fpga_debug`, `oled_cmd`, `ae350_file_server`, `fpga_stream`; 2722 total) | Each is a thin layer over the extended-protocol endpoint with a core and an AE350 on the far end. The protocol itself is covered by `test_desktop_core`, `test_phosphor_frames` and `test_tang_fpga_uart`; what remains is the far end's behaviour, which only hardware supplies. |

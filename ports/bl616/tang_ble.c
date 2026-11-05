@@ -50,6 +50,8 @@
 #include "ff.h"
 #include "mm.h"
 
+#include "tang_hid_route.h"
+
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_ble.h"
@@ -672,6 +674,13 @@ typedef struct {
 
 enum { HID_KBD, HID_MOUSE, HID_COMBO, HID_SLOTS };
 
+/* The route module names the same three slots so a host test can express them.
+ * If either numbering moves, this fails to compile rather than silently
+ * routing a mouse report as a keyboard one. */
+_Static_assert(HID_KBD == TANG_HID_SLOT_KBD, "slot numbering drifted");
+_Static_assert(HID_MOUSE == TANG_HID_SLOT_MOUSE, "slot numbering drifted");
+_Static_assert(HID_COMBO == TANG_HID_SLOT_COMBO, "slot numbering drifted");
+
 static hid_dev_t s_hid[HID_SLOTS] = {
     [HID_KBD] = { .cmd = "blekbd", .boot_uuid = 0x2A22,
                   .ready_hint = "type on the keyboard",
@@ -886,23 +895,23 @@ static u8_t hid_notify(struct bt_conn *conn, struct bt_gatt_subscribe_params *pa
      * its report characteristic and never on the boot input, so a strict
      * handle match left its movement unread while `watch` showed the reports
      * arriving.  The role each slot carries keeps the two shapes apart. */
-    const bool kbd_slot = (slot == HID_KBD || slot == HID_COMBO);
-    const bool mouse_slot = (slot == HID_MOUSE || slot == HID_COMBO);
-    const bool kbd_report =
-        (d->kbd_value_handle && params->value_handle == d->kbd_value_handle) ||
-        (kbd_slot && length == 8);
-    const bool mouse_report =
-        (d->mouse_value_handle && params->value_handle == d->mouse_value_handle) ||
-        (mouse_slot && (length == 3 || length == 4));
+    /* The decision itself lives in tang_hid_route.c, where a host test can
+     * reach it: a report routed to the wrong parser is silent, so it is worth
+     * testing away from the stack.  The slot values are the same numbers --
+     * HID_KBD, HID_MOUSE and HID_COMBO are asserted against the route module's
+     * constants at the bottom of this file. */
+    const tang_hid_route_t route =
+        tang_hid_route(slot, params->value_handle,
+                       d->kbd_value_handle, d->mouse_value_handle, length);
 
-    if (kbd_report && length >= 8) {
+    if (route == TANG_HID_ROUTE_KEYBOARD) {
         taskENTER_CRITICAL();
         memcpy(s_kbd_report[slot], p, 8);
         taskEXIT_CRITICAL();
         if (d->watching) {
             kbd_log_boot_report(d, p);
         }
-    } else if (mouse_report && length >= 3) {
+    } else if (route == TANG_HID_ROUTE_MOUSE) {
         taskENTER_CRITICAL();
         tang_mouse_boot_add(&s_mouse[slot], p, length);
         taskEXIT_CRITICAL();

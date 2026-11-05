@@ -3348,3 +3348,38 @@ The coverage sweep stays stopped and the deferred table now carries the reason f
 - User Test: N/A
 
 ---
+
+## 96 COMMIT Unreleased 2026-11-04T19:59:59-07:00
+
+#### Coming From:
+
+Unreleased 6c22e7d
+
+#### Purpose:
+
+Cover the one part of the Bluetooth path that can be tested without a radio by extracting its report-routing decision into its own module, and record the operator's decision to close the personality 8 flip bit in the next core revision.
+
+#### Outcome:
+
+The operator decided the personality 8 flip-bit deviation is to be closed in the next core revision rather than waived, and that the final firmware and `tinytang.bin` will be rebuilt before release; `docs/qualification.md`'s deviation row now carries that decision and its date. The Bluetooth work then took the route the previous entry left open. `tang_ble.c`'s notify callback decided which parser takes each report inline, and that decision is the one part of the file that fails silently -- a report sent to the wrong parser raises nothing and simply does nothing, while the console still shows reports arriving. It is now `ports/bl616/tang_hid_route.c` with a header, a pure function taking the slot, the arriving handle, the two configured handles and the length, and `tang_ble.c` calls it instead of computing the booleans itself. The rules encoded are the ones two recorded facts established: a report routes when its handle is the configured input for that role, or when its length is that role's boot shape -- 8 bytes keyboard, 3 or 4 mouse -- and the slot carries the role, because a boot device may send only those two shapes and may put them on a report characteristic rather than its boot input, which is why the Rii K06's combo works and why a strict handle match left a Logitech mouse in the mouse slot with unread movement while `watch` showed its reports arriving. A handle of 0 means "not discovered yet" and never matches, since the ATT handle range starts at 1. The keyboard branch is tested first, and the test names why that is load-bearing rather than arbitrary: in a combo an 8-byte report is a keyboard report whatever handle it arrives on, so the length overrides a mouse handle match, which is safe only because boot protocol gives a mouse three or four bytes and never eight. `tang_ble.c` gained three static assertions tying its `HID_KBD`, `HID_MOUSE` and `HID_COMBO` to the route module's slot constants, so a renumbering on either side fails to compile rather than routing a mouse report as a keyboard one. Proving the refactor did not move behaviour was done twice: eight planted faults were each caught (handle 0 matching, the mouse branch tested first, handle-only routing, the combo losing its mouse role, an out-of-range slot falling through, the wheel length dropped, the keyboard length widened to seven, and the keyboard branch no longer requiring eight bytes), and a differential check transcribed the inline expression and compared it with the extracted function over 65,520 inputs -- three slots, four handle classes, every length to 20 -- with no mismatches. That check is now permanent, in the test, rather than a one-off: it asserts the count is over 60,000 so a comparison that ran nothing cannot pass. One deliberate difference is documented in the module and excluded from the comparison: an out-of-range slot answers NONE where the original could still have routed by handle, because the caller derives the slot from a pointer into its own array and indexes arrays with it, so refusing is the safer answer for a case that cannot arise. The firmware was built once to prove the extraction compiles and links -- 682,256 bytes, SHA-256 `d665f05e8d3ce80498944d324d8620128d3960c70a1c5d54f9e2ef9b8e8d45cd`, build id `6c22e7d-dirty.d2f1209`, sixteen bytes smaller than the previous image because the extraction removed duplicated comparisons -- and the operator then asked that firmware work be held while TinySNES is being flashed, so nothing was deployed and the board was not touched. The host gate is 40 of 40. `tools/check_test_coverage.py` reports 27 of 56 modules built by a host test, which is one more module covered and one more module in the total, so the uncovered count stays at 29. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 96 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Firmware work is held at the operator's request while TinySNES is being flashed, so the build above is a compile proof rather than an image to deploy, and Phase 2's silicon rows wait with it. The remaining Bluetooth surface in `tang_ble.c` -- discovery, pairing, bonds, the whitelist initiator and the stack's lifecycle -- needs the radio, so its next evidence is a board session rather than a host suite; the three recorded behaviours worth re-testing when that happens are the reconnect after a disconnect (BLE-011), the -EALREADY on re-subscribing a bonded device (BLE-010), and the notify callback's NULL report (BLE-004), since the routing change sits beside all three. When the final firmware is built, the personality 8 fix belongs in that cycle: constrain bits 12 and 13 when personality 8 is named, and flip `tb_desktop_pmod`'s flip-bit assertion from "the deviation was fixed" to the refusal it should then expect. Two operator decisions remain open: what the release firmware identity should be given that `TINYTANG_BUILD_ID` cannot distinguish one `third_party/tinydesk` patch set from another, and whether the `-25200 s` zone file and other per-card state should be recorded as release prerequisites.
+
+#### Files Modified:
+
+- docs/qualification.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_hid_route.c
+- ports/bl616/tang_hid_route.h
+- tools/tests/tb_tang_hid_route.c
+- tools/tests/test_tang_hid_route.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
