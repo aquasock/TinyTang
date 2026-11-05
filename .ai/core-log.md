@@ -3187,3 +3187,40 @@ Phase 1A wrote the register contract as one table in `docs/qualification.md`: th
 - User Test: N/A
 
 ---
+
+## 92 COMMIT Unreleased 2026-11-04T18:21:01-07:00
+
+#### Coming From:
+
+Unreleased af25065
+
+#### Purpose:
+
+Cover `ports/bl616/tang_i2c.cpp`, the last large untested module on the settled configuration's path, so the operator's three I2C devices and the switch in front of them have a host test that fails when the routing or the part's sequence breaks.
+
+#### Outcome:
+
+`tools/tests/tb_tang_i2c.cpp` takes the FPGA engine's place behind `fpga_debug_request()`, which is the single call the driver makes for every register access, so one simulated window answers for all of it: `0x140` status, `0x144`/`0x148` the result window, `0x154` the command write, `0x158` the automatic-read word, and `0x160`/`0x164` the write window. An armed command completes on the next status read, which is the engine's own shape -- busy rises in the clock the command is written and falls when the result is latched, a read moves the sequence number and a write does not -- so the driver's poll loop and its done-when-the-sequence-moves rule are exercised rather than bypassed. Behind the window sit a PCA9548A, a DS3231 and an MPR121, all register-addressable, with the switch gating which device may answer at all. The suite pins the command and auto-read word packing down to the seven-bit address and five-bit length masks, the status decode across four flags and three packed fields, the routing rule that `0x52` selects channel 0 and `0x68` channel 6 while an unknown address selects nothing, `tangi2c mux` in both its select and release forms with out-of-range and non-hex refused, the no-switch path reporting a direct bus that still works, and the per-channel scan with the switch's own reply subtracted and a dead bus reported as zero devices rather than a false success. The subtle behaviour it locks down is the automatic read: the probe turns it off because the switch cannot follow it, and the suite asserts it stays off by switching it back on behind the driver's back and then proving a transaction turns it off rather than restoring it. `tangi2c rtc` is covered through the seven-byte read, the OSF flag, 12- and 24-hour decoding including that 12 PM is hour 12 and not 0, `set` parsing with its refusals, and `sync` reporting the clock's own verdict. The MPR121 init sequence is checked register by register -- soft reset `0x80`=0x63, electrodes off `0x5E`=0x00 before the filter blocks at `0x2B`, `0x2F` and `0x33`, debounce and the two configuration registers, twelve threshold pairs of 12 and 6 counts from `0x41`, then `0x5E`=0x8C last so the chip starts only once everything above it is in place -- together with the two-byte poll at `0x00` and the electrode mask printing `E0`, `E2` and `E11`. That every touch access re-selects channel 7 is shown the way it happens on the board: an RTC read moves the switch to channel 6, and the next touch poll puts it back. Nine planted faults were each caught, and one of them says something about the code rather than the test: raising `tangi2c write`'s byte limit past eight makes UBSan report an index out of bounds for `data[8]`, so the `n > 8` guard is what stops a long list overrunning a stack buffer. One fault was not caught on the first attempt and the suite was strengthened rather than the fault waived: restoring the automatic read while the switch is fitted is invisible unless the read is actually on when the transaction begins, so the test now switches it on and asserts it is turned off and left off. Four assertions of my own were wrong and were corrected against the driver rather than the reverse: three hand-computed command words were mis-packed, and one read-window test put its pattern in the window instead of in the device that fills it. The host gate is 36 of 36, and the count of port and Phosphor modules with no host test at all fell from 29 to 28. Nothing was built, flashed or deployed: this cycle changed only tests and documentation, so the board still runs entry 86's image and no hardware reading is claimed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 92 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The remaining modules with no host test are `tang_fpga_uart.c`, `usb_cdc_bl616.c`, `tang_psram.c`, `tang_usbstat.c`, `tang_crash.c`, `tang_ble_trace.c`, `td_pack.c`, the three shell-port files and the five app wrappers; `tang_fpga_uart.c` comes first because every register access in the project passes through it. After that the host side of Phase 1 is done and Phase 2's silicon rows wait on the board: the LoRa link end to end, a scan of every mux channel including one spare channel accepting a device with no firmware change, the `mkdir -p` measurement the handoff still carries as an unverified claim, and the first multi-chunk pack read on hardware. One observation from the board is worth carrying into that work: `node status` failed all ten attempts twice before answering on the sixth, with the receive FIFO holding 375 bytes of the node's own Reticulum traffic at -16 and -19 dBm, so the link's behaviour under a busy node has not been characterised and PROT-011's retry budget may be too small for it. The release firmware identity is still to be measured as a clean-tree build at the release commit, and the personality 8 flip bit still waits on the operator's waiver decision.
+
+#### Files Modified:
+
+- docs/qualification.md
+- tools/tests/stubs/tang_i2c/FreeRTOS.h
+- tools/tests/stubs/tang_i2c/bflb_mtimer.h
+- tools/tests/stubs/tang_i2c/semphr.h
+- tools/tests/stubs/tang_i2c/task.h
+- tools/tests/stubs/tang_i2c/tdsh.h
+- tools/tests/tb_tang_i2c.cpp
+- tools/tests/test_tang_i2c.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

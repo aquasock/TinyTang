@@ -309,7 +309,7 @@ quote it as a command count.
 | **host** | `tang_lora.c` — base64 both ways, hold-then-burst write, `+RCV` reassembly, address filter, sequence match, retry budget, link lock | **`test_tang_lora`**, against a PMOD UART model; 5 planted faults caught |
 | **host** | `tang_heap.c` — refusal recording, `MM_FLAG_HEAP_ANY` for task stacks, the krealloc move path, active-heap sum | **`test_tang_heap`**; 4 planted faults caught |
 | host | `tang_i2c_mux.c` — channel map, routing rule, channel names | `test_i2c_mux` |
-| untested | `tang_i2c.cpp` — `tangi2c` and `tangtouch` command paths | 911 lines, seven subcommands; the next cycle |
+| **host** | `tang_i2c.cpp` — command-word packing, status decode, mux routing and probe, per-channel scan, `tangi2c` read/write/mux/auto/rtc and `tangtouch` init/status/watch | **`test_tang_i2c`**, against a simulated register window and bus; 9 planted faults caught |
 | untested | `tang_psram.c` | no test; part reports no PSRAM anyway (BL6-002) |
 | untested | `tang_usbstat.c` | no test |
 | untested | `tang_crash.c`, `tang_ble_trace.c` | no test |
@@ -350,11 +350,12 @@ shipping.
 
 ## 6. Coverage summary
 
-- 34 host regressions plus the width gate, all passing; proven to bite where
-  fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4).
-- **29 port and Phosphor modules have no host test at all**, down from 32 with
-  `tang_proto.c`, `tang_lora.c` and `tang_heap.c` now covered. Named by this
-  command:
+- 35 host regressions plus the width gate, all passing; proven to bite where
+  fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
+  I2C 9).
+- **28 port and Phosphor modules have no host test at all**, down from 32 with
+  `tang_proto.c`, `tang_lora.c`, `tang_heap.c` and `tang_i2c.cpp` now covered.
+  Named by this command:
 
 ```
 for f in ports/bl616/*.c ports/bl616/*.cpp ports/bl616/phosphor/*.cpp; do
@@ -364,9 +365,8 @@ done
 ```
 
 The largest gaps in consequence, not in count: `tang_fpga_uart.c` (every
-register access goes through it), `usb_cdc_bl616.c` (the only console),
-`tang_i2c.cpp` (the whole I2C surface, and the settled config's three devices),
-and the five app wrappers.
+register access goes through it), `usb_cdc_bl616.c` (the only console), and the
+five app wrappers.
 
 ---
 
@@ -433,3 +433,65 @@ SHA-256 **and** the submodule state, never by the `platform` string alone.
 Nothing here changed the RTL, `tinytang.bin`, or the firmware image. The two
 firmware-source edits are the channel-7 rename and its use, which do not alter
 any pin, register or wire behaviour.
+
+---
+
+## 9. What the I2C cycle changed
+
+`ports/bl616/tang_i2c.cpp` was the last large untested module on the settled
+path: 911 lines, seven subcommands, and the three devices the operator's bench
+actually carries. It is now covered by `tools/tests/tb_tang_i2c.cpp`, which
+takes the FPGA engine's place behind `fpga_debug_request()` — the single call
+the driver makes for every register access — so one simulated window answers
+for all of it:
+
+| Address | Modelled as |
+|---|---|
+| `0x140` | status: valid, busy, nack, scan_done, seq, scan address and count |
+| `0x144`/`0x148` | the eight-byte result window |
+| `0x154` | command write, which arms an operation |
+| `0x158` | the automatic-read word |
+| `0x160`/`0x164` | the write window |
+
+An armed command completes on the **next status read**, which is the engine's
+own shape: busy rises in the clock the command is written and falls when the
+result is latched, a read moves the sequence number and a write does not. That
+means the driver's poll loop and its "done when the sequence moves" rule are
+exercised rather than bypassed. Behind the window sit a PCA9548A, a DS3231 and
+an MPR121, all register-addressable, with the switch gating which device can
+answer at all.
+
+What the suite pins, in the order the commands use it:
+
+- `cmd_word` and `auto_word` bit packing, including that the address masks to
+  seven bits and the length to five rather than spilling into a neighbour.
+- Status decode across all four flag bits and the three packed fields.
+- The routing rule: `0x52` selects channel 0, `0x68` selects channel 6, and an
+  unknown address selects nothing.
+- `tangi2c mux <n>` and `off`, with out-of-range and non-hex refused, and the
+  no-switch path reporting a direct bus that still works.
+- The per-channel scan, with the switch's own reply subtracted, and a dead bus
+  reporting zero devices rather than a false success.
+- That the once-a-second read is turned off by the probe and **stays** off:
+  if something switches it back on, a transaction turns it off again rather
+  than restoring it, because the switch cannot follow that read.
+- `tangi2c rtc`: the seven-byte read, the OSF flag, 12- and 24-hour decoding
+  (including that 12 PM is hour 12 and not 0), `set` parsing and its refusals,
+  and `sync` reporting the clock's own verdict.
+- The MPR121 init sequence register by register, with `0x5E` off before the
+  filter blocks and `0x8C` last so the chip starts only once everything above
+  it is in place; the two-byte poll at `0x00`; and the electrode mask printed
+  as `E0`/`E2`/`E11`.
+- That every touch access re-selects channel 7, shown by moving the switch to
+  channel 6 with an RTC read and then polling.
+
+Nine planted faults were each caught. One is worth naming because it says the
+guard is load-bearing rather than decorative: raising `tangi2c write`'s byte
+limit past eight makes UBSan report an index out of bounds for `data[8]`, so
+the `n > 8` check is what stops a long list overrunning the stack buffer.
+
+One fault was not caught on the first attempt and the test was strengthened
+rather than the fault waived: restoring the automatic read while the switch is
+fitted is invisible unless the read is actually on when the transaction starts.
+The suite now switches it on behind the driver's back and asserts it is turned
+off and left off.
