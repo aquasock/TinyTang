@@ -43,7 +43,46 @@ went; the window lists it beside the folders.
 
 The 49 GB English archive needs no different command: it writes several
 `wiki.NNN` files because FAT32 will not hold a single file over 4 GB, and it
-takes some hours.
+takes hours rather than minutes.
+
+### Converting one overnight
+
+`tools/convert_wikipedia_overnight.py` wraps that command for a run you want to
+start and walk away from:
+
+    tools/convert_wikipedia_overnight.py start
+    tools/convert_wikipedia_overnight.py status     # from another terminal
+    tools/convert_wikipedia_overnight.py tail       # follow the log
+
+It checks the archive's own MD5 first, refuses to start if the pack will not
+fit, prints a progress line with a rate and an estimate, keeps watching the
+free space while it runs, and checks the finished pack with
+`tools/check_wiki_pack.py`. Its state lives in `status.json` and
+`progress.log` beside the pack, so a second terminal can watch without
+attaching to the first.
+
+Two facts about it are worth knowing before you rely on it. The converter opens
+the archive and walks its index before it processes a single entry, which on the
+49 GB English archive is about five minutes with no output -- the progress line
+says "reading the archive index" rather than showing 0%, so that is not a stall.
+And **the converter has no resume**: if the job dies, the next run deletes the
+partial pack and starts again. Given a night is long enough for one attempt, that
+is the honest behaviour rather than a half-written pack that looks finished.
+
+### The archive's checksum, and the junk some downloads carry
+
+A ZIM ends with a 16-byte MD5 of everything before it -- but only if the file
+ends there. The header records *where* that checksum starts, and some downloads
+carry bytes past it while the content is complete: the English archive this
+project converted has 1,012,842,619 bytes of junk after its trailer. Hashing
+"everything but the last 16 bytes" would therefore reject a perfectly good
+archive, which is why `tools/zim_verify.py` reads the header's position instead:
+
+    tools/zim_verify.py archive.zim              # verify and summarise
+    tools/zim_verify.py --truncate archive.zim   # verify, then cut the tail
+
+`--truncate` refuses to run unless the content verifies first, so it cannot
+destroy the evidence of a bad download.
 
 What the conversion keeps is what this screen can show: headings, paragraphs
 and list items, wrapped to 78 columns, with accents and dashes folded to

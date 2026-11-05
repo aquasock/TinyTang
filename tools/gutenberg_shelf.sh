@@ -104,42 +104,15 @@ say "           download complete: $(human "$final")"
 
 # ------------------------------------------------------------------ integrity
 
-say "stage 2/4  verify    the archive's own MD5 over $(human "$final")"
-python3 - "$FILE" <<'PY'
-import hashlib, sys
-path = sys.argv[1]
-with open(path, "rb") as f:
-    f.seek(0, 2)
-    size = f.tell()
-    f.seek(size - 16)
-    tail = f.read(16)
-    f.seek(0)
-    digest = hashlib.md5()
-    left = size - 16
-    step = 8 << 20
-    done = 0
-    shown = -5
-    while left:
-        block = f.read(min(step, left))
-        if not block:
-            break
-        digest.update(block)
-        done += len(block)
-        left -= len(block)
-        pct = done * 100 // max(size - 16, 1)
-        if pct >= shown + 20:
-            shown = pct
-            print(f"  {pct}% hashed", flush=True)
-ok = digest.digest() == tail
-print("  md5", "matches" if ok else "DOES NOT MATCH", flush=True)
-sys.exit(0 if ok else 1)
-PY
-if [ "$?" -ne 0 ]; then
+# The checksum is at the header's checksumPos, not "everything but the last 16
+# bytes": a download can carry junk past its trailer while the content is
+# complete, and hashing to the end of the file would then fail on a good
+# archive.  tools/zim_verify.py reads checksumPos and reports any tail it saw.
+say "stage 2/4  verify    the archive's own MD5 at its checksumPos ($(human "$final"))"
+if ! python3 "$ROOT/tools/zim_verify.py" --progress "$FILE"; then
     say "archive failed its own MD5; stopping"
     exit 1
 fi
-
-# ----------------------------------------------------------------- conversion
 
 say "stage 3/4  convert   -> $NAME"
 python3 "$CONVERT" --zim "$FILE" --out "$NAME" --min-chars 2000 \

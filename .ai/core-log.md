@@ -3383,3 +3383,38 @@ Firmware work is held at the operator's request while TinySNES is being flashed,
 - User Test: N/A
 
 ---
+
+## 97 COMMIT Unreleased 2026-11-04T20:31:48-07:00
+
+#### Coming From:
+
+Unreleased dcd4990
+
+#### Purpose:
+
+Fix the archive verification that made the English Wikipedia conversion impossible, by hashing to the checksum position the ZIM header records rather than to the end of the file, and give the operator a tool that can run that conversion unattended overnight.
+
+#### Outcome:
+
+The verify stage in `tools/gutenberg_shelf.sh` hashed everything but the last 16 bytes and compared it with those last 16, which is only correct when a download ends exactly at its trailer. Entry 85 recorded that defect after it put 246 MB of junk in the way of class Q; this cycle measured the same defect against the English Wikipedia archive and found 1,012,842,619 bytes of tail after a checksum position of 52,690,706,539, with the MD5 over those 52,690,706,539 bytes matching the stored value exactly. The stage now calls `tools/zim_verify.py`, which reads the 8-byte `checksumPos` from the header at offset 72, hashes exactly that many bytes and compares against the 16 bytes at that position; it also reports the tail size, distinguishes a short download from a padded one, refuses a wrong magic or a checksum position inside the header, and offers `--truncate`, which will not run unless the content verifies first so that a bad download's evidence survives. `tools/tests/check_zim_verify.py` covers it against synthetic archives -- a clean one, complete content with a junk tail, the truncate path, a corrupted body that must not be truncated, a short download, a wrong magic, a nonsense checksum position and a wrong stored MD5 -- and carries the negative control that matters: the old "everything but the last 16 bytes" logic is asserted to REJECT the same junk-tailed archive the new tool accepts, so the defect being fixed is pinned rather than described. Five planted faults were caught, including reverting the tool to the old logic, hashing to the wrong length, removing the truncate guard, dropping the short-download check and ignoring the magic. The conversion tool is `tools/convert_wikipedia_overnight.py`, with `start`, `status` and `tail` verbs: it verifies the archive, refuses to begin when the pack will not fit, prints a progress line with the rate and an estimate, watches free space while it runs and stops before filling the filesystem, and checks the finished pack with `tools/check_wiki_pack.py`; its state lives in `status.json` and `progress.log` beside the pack so a second terminal can watch without attaching. Three defects of its own were found and fixed by running it rather than by reading it: the progress heartbeat never fired, because a stream read on the child's stderr blocks until end of file and the loop therefore hung for the whole conversion with no output at all; `read1` exists on neither the text wrapper nor the raw `FileIO`, so the loop reads one chunk with `os.read` on the descriptor; and the converter walks the archive's index for about five minutes before processing any entry, during which "0% eta 0s" read as a stall and now reads as "reading the archive index". A smoke conversion of 1500 real entries then 800 completed and passed `check_wiki_pack.py` in both cases, and a measured run of 25,000 entries gave about 320 entries a second with an estimate near seven and a quarter hours for the archive's 8,516,992 iterated entries -- which is the number that makes this an overnight job rather than a lunch break. That measured run also showed the archive's header count of 19,707,096 is not the count the converter iterates, so a percentage taken against the header would be wrong. `manual/wiki.md` documents both tools, the overnight shape of the job and the junk-tail risk. The firmware was not built and the board was not touched: the operator had asked for firmware work to be held while TinySNES is being flashed, and every command this cycle ran on the host. The host gate is 42 of 42, which includes one suite another agent added to this same working tree concurrently; nothing of theirs was staged or committed, and `tang_fpga_uart.c`, `tang_osd.c`, `tang_osd.h`, `tang_osd_desk.c`, their tests and the new `tang_pipe_sniff` files were left exactly as found. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 97 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The conversion is the operator's to start when they want it: `tools/convert_wikipedia_overnight.py start` against the archive already in the scratch directory, with `--truncate` offered and not required, and `status` or `tail` from another terminal to watch. The measured rate says about seven and a quarter hours, so a run started in the evening finishes overnight, and the tool refuses to start if the pack will not fit -- on this machine there were 264 GB free, which is ample. Firmware work remains held by the operator while TinySNES is flashed; when it resumes, the personality 8 flip-bit fix belongs in that cycle since the operator has decided to close it in the next core revision, and Phase 2's remaining silicon rows are the LoRa link end to end including the retry budget under a busy node, the `mkdir -p` measurement, and the first multi-chunk pack read -- the last of which this conversion produces the first real subject for. Two decisions remain open: what the release firmware identity should be given that `TINYTANG_BUILD_ID` cannot distinguish one `third_party/tinydesk` patch set from another, and whether the card's per-device state such as the zone file should be recorded as a release prerequisite.
+
+#### Files Modified:
+
+- manual/wiki.md
+- tools/convert_wikipedia_overnight.py
+- tools/gutenberg_shelf.sh
+- tools/tests/check_zim_verify.py
+- tools/tests/test_zim_verify.sh
+- tools/zim_verify.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
