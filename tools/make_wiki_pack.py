@@ -1017,10 +1017,22 @@ def convert(args) -> int:
     refs = tempfile.NamedTemporaryFile(prefix="wiki-refs-", suffix=".bin", delete=False)
     entries = 0
     covers = 0
+    internal = 0
     cover_bases: set[bytes] = set()
     for i in range(zim.article_count):
         mimetype, ns, cluster, blob_index, url, title, dirent_redirect = zim.dirent(i)
         if ns != "C" or mimetype not in html_mime or dirent_redirect is not None:
+            continue
+        # Kiwix keeps its own machinery beside the articles under URL prefixes
+        # that begin with an underscore: _assets_ for media, _mw_ for MediaWiki
+        # internals, _res_ and _webp_ for packaging.  None of it is an article.
+        # One such page leaked once -- _mw_/MathML, whose ZIM title is the
+        # literal string "null" and whose body is a namespace notice -- and it
+        # became an encyclopedia entry called "null" in a finished pack.  The
+        # sentinel title is treated as no title below, so a page that carries
+        # one is named from its URL rather than called "null".
+        if url.startswith(b"_"):
+            internal += 1
             continue
         # A Gutenberg cover page is not an article: it is the book's metadata,
         # and it is read here so its author can be recorded against the book.
@@ -1060,6 +1072,10 @@ def convert(args) -> int:
                 if name:
                     authors[url.replace(b"_cover", b"")] = name
                 continue
+            # A literal "null" is the archive's way of saying "no title", so
+            # it is treated as absent and the URL names the page instead.
+            if title.strip().lower() == b"null":
+                title = b""
             display = clean_title(title or title_from_url(url))
             if not display:
                 skipped_short += 1
@@ -1125,7 +1141,8 @@ def convert(args) -> int:
                parts_written, authors_written)
     zim.close()
     print(f"wrote {written} index records ({resolved} redirects resolved) in "
-          f"{chunks} chunk(s) to {args.out}; skipped {skipped_short} short entries",
+          f"{chunks} chunk(s) to {args.out}; skipped {skipped_short} short "
+          f"entries and {internal} internal page(s)",
           file=sys.stderr)
     return written
 

@@ -710,3 +710,56 @@ macro is absent and the same instructions are built as before.
 numbers in the preprocessed file and the build id covers the whole tree. The
 baseline recorded in §1 is therefore superseded for any build that includes
 this change; the instruction stream for this file is unchanged.
+
+---
+
+## 12. The English Wikipedia pack, built 2026-11-04/05
+
+The first multi-chunk pack this project has produced, and the first real subject
+for the "multi-chunk packs have never been read on hardware" gap. Built by
+`tools/convert_wikipedia_overnight.py` from
+`wikipedia_en_all_nopic_2026-06.zim` in **7h25m** (20:43 → 04:08), which is
+close to the 7h15m its own rate estimate predicted at ~320 entries a second.
+
+| Fact | Value |
+|---|---|
+| Records | 8,425,137 |
+| Redirects resolved | 1,185,677 |
+| Chunks | 11 (`wiki.000`–`wiki.010`) |
+| Chunk size | 3.00 GiB each, the last 2.93 GiB |
+| Pack total | 32.93 GiB in 14 files |
+| Parts (chapter navigation) | 1,097 |
+| Authors | 0 — an articles pack has none, so there is no `wiki.auth` |
+| Verified | `check_wiki_pack.py`: 8,425,137 records, 16,851 bodies sampled, 11 chunks, OK |
+
+The archive's content was 52,690,706,539 bytes with **1,012,842,619 bytes of junk
+after its MD5 trailer**; `tools/zim_verify.py` matched the stored checksum over
+exactly the content bytes, which is the check the old shell-script logic could
+not perform.
+
+**Chunk boundaries are exact.** For every chunk the last record's
+`offset + length` equals the file size, so the gap at the end of each chunk is
+**zero** and the writer cut only on an article boundary — KIWI-004's rule, and
+the reason a body can never be split across two files. The final article in
+chunk 0 ends with Wikipedia's licence footer, not mid-word.
+
+**The reader has no chunk cap.** `td_wiki_app.cpp` opens `wiki.%03u` from the
+record's own chunk field, so 11 chunks is not a limit case; `TD_PACK_MAX` (16)
+bounds how many *packs* a folder may hold, not chunks.
+
+**One record is wrong, and it is the converter's fault.** The pack contains a
+single article titled `null` whose body is a MathML namespace notice. The cause:
+the archive keeps its own machinery beside the articles under URL prefixes that
+begin with an underscore (`_assets_`, `_mw_`, `_res_`, `_webp_`), and one such
+page — `_mw_/MathML` — carries `text/html` **and** the literal string `"null"` as
+its ZIM title, so it passed the namespace, mimetype and length filters and was
+converted. Measured across the whole archive: 8,516,992 namespace-C text/html
+entries, of which exactly **one** has an underscore-prefixed URL. The converter
+now skips underscore-prefixed URLs and treats a `"null"` title as absent;
+`check_wiki_convert.py` builds that exact entry and fails if it reaches the pack,
+which was verified by reverting the filter and watching four checks fail.
+
+The built pack was **not** rebuilt for that: re-running 7h25m to remove one
+bogus article in 8.4 million is not worth the electricity, and the pack's
+structure is unaffected. Copy it to the card as-is, or rebuild if a clean index
+matters more than the time.

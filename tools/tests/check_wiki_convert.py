@@ -257,6 +257,23 @@ def main():
              "blob": cover.replace(
                  b"Lewis Carroll",
                  b"Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Aaa Zulu")},
+            # The exact shape that leaked into a finished pack once: a
+            # MediaWiki internal page, whose ZIM title is the literal string
+            # "null", carrying a text/html mimetype.  It passed every filter
+            # and became an encyclopedia entry called "null".
+            {"ns": "C", "url": "_mw_/MathML", "title": "null", "mime": 1,
+             "blob": (b"<html><body><h1>MathML Namespace</h1>"
+                      b"<p>If MathML is being used by an application that "
+                      b"conforms to the Namespaces in XML Recommendation, then "
+                      b"the following namespace should be used.</p>"
+                      b"</body></html>")},
+            # And one under a resource prefix, to prove the rule is the
+            # underscore rather than the single name that happened to leak.
+            {"ns": "C", "url": "_res_/article_list.html", "title": "A list",
+             "mime": 1,
+             "blob": (b"<html><body><h1>A list</h1>"
+                      b"<p>This is packaging, not an article, and it must not "
+                      b"reach the reader's index.</p></body></html>")},
         ]
         build_zim(zim, entries, ["text/css", "text/html", "text/plain"],
                   {"Title": "Wikipedia (test)", "Language": "eng",
@@ -283,6 +300,13 @@ def main():
               "both articles are indexed")
         check("Natural science" in titles, "the redirect page became a title")
         check("style" not in titles, "a non-HTML entry is not an article")
+        check("null" not in titles,
+              "a literal \"null\" title is not an article name (the _mw_ leak)")
+        check("MathML Namespace" not in titles and
+              not any("MathML" in t for t in titles),
+              "a _mw_ internal page is not converted as an article")
+        check("A list" not in titles,
+              "a _res_ packaging page is not converted either")
         check("Aardvark" not in titles,
               "a redirect to a missing target is dropped rather than dangling")
 
