@@ -101,6 +101,7 @@
 #include "tang_osd.h"
 #include "tang_osd_desk.h"
 #include "tang_pipe_sniff.h"
+#include "tang_snes_load.h"
 #include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -847,6 +848,24 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
 
     tdsh_printf("nesload: %u bytes in; the core is running\r\n", (unsigned)sent_total);
     return 0;
+}
+
+/* The TinySNES core's loader, shared with the desk app (tang_snes_load.c). */
+static int cmd_snesload(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: snesload <path>\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("snesload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+    char why[96];
+    const int rc = tang_snes_load(real, why, sizeof(why));
+    tdsh_printf("snesload: %s\r\n", why);
+    return rc;
 }
 
 /* ------------------------------------------------------------- fpgapipe */
@@ -2348,6 +2367,8 @@ static int cmd_fpgabaud(tdsh_session_t *session, int argc, char **argv)
 static const tdsh_command_t s_fpga_commands[] = {
     { "nesload", "nesload <path>", "Stream an iNES ROM into the running core and start it",
       cmd_nesload, 0 },
+    { "snesload", "snesload <path>", "Stream a SNES cartridge into the TinySNES core and start it",
+      cmd_snesload, 0 },
     { "fpga", "fpga", "Ask the loaded core for its ID over UART1",
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",

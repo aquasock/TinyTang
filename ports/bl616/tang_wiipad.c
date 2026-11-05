@@ -117,11 +117,15 @@ tang_wii_kind_t tang_wii_identify(const uint8_t id[6])
     /* The fifth byte is the model (0x00 nunchuck, 0x01 Classic) and the sixth
      * the data format, which distinguishes a Classic from a guitar or drum
      * that shares its identity prefix.  A Classic's format byte reads 0x01
-     * before the host selects format 3 and 0x03 after (WII-004). */
+     * before the host selects format 3 and 0x03 after (WII-004).  Any format
+     * byte is a Classic: the 8BitDo receiver comes back from a TinySNES game
+     * reading 0x00 there, and refusing it as unsupported left the pad dead
+     * when the driver's own format-3 write is what would have fixed it.  The
+     * TinySNES core's reader accepts any format byte for the same reason. */
     if (id[4] == 0x00u && id[5] == 0x00u) {
         return TANG_WII_KIND_NUNCHUCK;
     }
-    if (id[5] == 0x01u && (id[4] == 0x01u || id[4] == 0x03u)) {
+    if (id[5] == 0x01u) {
         return TANG_WII_KIND_CLASSIC;
     }
     return TANG_WII_KIND_NONE;

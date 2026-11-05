@@ -113,7 +113,7 @@ Runs every `tools/tests/test_*.sh` plus `check_help_width.py`, one line each,
 and exits non-zero if any fails. `--list` enumerates, an argument filters by
 substring, `TINYTANG_KEEP_LOGS=1` keeps the per-test logs.
 
-**Current state: 32 of 32 pass** (31 scripts plus the width gate).
+**Current state: 43 of 43 pass** (42 scripts plus the width gate).
 
 ---
 
@@ -348,7 +348,9 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 | untested | Bluetooth, Software Update | `test_bluetooth_app` covers the first; `td_update_app.c` has none |
 
 Out of scope for this release, per the operator: **TinySNES** is a single core
-that reintegrates later. TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not
+that reintegrates later.  Its launcher (`tinysnes_app.cpp`) and the cartridge
+loader it shares with `snesload` (`tang_snes_load.c`, covered by
+`test_snes_load`) are in the tree and board-tested, but not qualified. TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not
 shipping.
 
 ---
@@ -358,7 +360,8 @@ shipping.
 - 39 host regressions plus the width gate, all passing; proven to bite where
   fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
   I2C 9, link 6, crash 4, FatFS 6, HID routing 8).
-- **29 of 56 port and Phosphor modules are built by no host test.** The eight
+- **30 of 59 port modules are built by no host test**, the thirtieth being
+  the TinySNES launcher added after this summary was taken. The eight
   this programme added — `tang_proto.c`, `tang_lora.c`, `tang_heap.c`,
   `tang_i2c.cpp`, `tang_fpga_uart.c`, `tang_crash.c`, `tdsh_fs_bl616.c` and
   `tang_hid_route.c` — are covered. Measured by:
@@ -385,7 +388,7 @@ either named by path in a test script, which is how it reaches a compiler, or
 included by a test source, and it strips comments first. Section 6's numbers are
 that tool's, not a grep's.
 
-### 6.1 The other 29, deferred with reasons
+### 6.1 The other 30, deferred with reasons
 
 These are **knowingly deferred**, not overlooked. The coverage sweep was stopped
 by the operator after the seven modules that matter were covered, because driving
@@ -397,7 +400,7 @@ host suite is not the next best use of a cycle.
 |---|---|
 | `tang_ble.c` (2681 after the extraction) | Needs 56 `bt_*` symbols and most of the Zephyr-derived host stack to link, so a suite would stub the stack and test the stubs. **Its one testable decision has been extracted**: report routing now lives in `tang_hid_route.c` and is covered (BLE-019, and the Logitech and Rii K06 cases). What remains in `tang_ble.c` is discovery, pairing, bonds and the stack's lifecycle, all of which need the stack or the radio. |
 | `tang_jtag_programmer.c` (1102) | Vendored unmodified from nand2mario under Apache-2.0 (TOOL-007). Testing it tests a third party's code, and its behaviour is proven by every `tangload` on the board. |
-| 7 app wrappers: `tinygbc_app`, `tinynes_app`, `td_gutenberg_app`, `td_wiki_app`, `tiny89_app`, `tinynode_app`, `tinycreature_app` (5751 total) | Mostly widget layout and list navigation over the app's own data. A stubbed window proves the layout calls; Phase 3 exercises them end to end on the board, which is both cheaper and truer. The data-side logic (`tang_nes_ini`, `tang_gbc_ini`, the pack formats) is already covered separately. |
+| 8 app wrappers: `tinygbc_app`, `tinynes_app`, `tinysnes_app`, `td_gutenberg_app`, `td_wiki_app`, `tiny89_app`, `tinynode_app`, `tinycreature_app` (6269 total) | Mostly widget layout and list navigation over the app's own data. A stubbed window proves the layout calls; Phase 3 exercises them end to end on the board, which is both cheaper and truer. The data-side logic (`tang_nes_ini`, `tang_gbc_ini`, `tang_snes_load`, the pack formats) is already covered separately. |
 | 9 Phosphor transport files (`phosphor_player`, `phosphor_cmd`, `pmod_sockets`, `fpga_file_stream`, `ae350_play`, `fpga_debug`, `oled_cmd`, `ae350_file_server`, `fpga_stream`; 2722 total) | Each is a thin layer over the extended-protocol endpoint with a core and an AE350 on the far end. The protocol itself is covered by `test_desktop_core`, `test_phosphor_frames` and `test_tang_fpga_uart`; what remains is the far end's behaviour, which only hardware supplies. |
 | `tang_osd.c` (321) | Commands that assert an overlay and write a text page. Covered on the board by `osd`, and the page format is `test_desktop_core`'s. |
 | `tang_fw_update.c` (258), `td_update_app.c` (210) | The path that rewrites the firmware. A host test can check the header arithmetic, but the behaviour that matters — a power loss mid-commit — is destructive and belongs in a deliberate hardware trial, not a stub. |

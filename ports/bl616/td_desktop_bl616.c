@@ -63,6 +63,7 @@ void td_bridge_bl616_stop(void);
 void td_phosphor_register(void);   /* phosphor/td_phosphor_app.cpp */
 void td_tinynes_register(void);    /* tinynes_app.cpp: TinyNES, library and settings */
 void td_tinygbc_register(void);    /* tinygbc_app.cpp: TinyGBC, the cartridge library */
+void td_tinysnes_register(void);   /* tinysnes_app.cpp: TinySNES, the cartridge library */
 void td_tiny89_register(void);     /* tiny89_app.cpp: Tiny89, the calculator library */
 void td_tinycreature_register(void); /* tinycreature_app.cpp: the Celtic scene */
 void td_bluetooth_register(void);  /* td_bluetooth_app.c */
@@ -228,6 +229,7 @@ void td_apps_register_all(void)
     td_phosphor_register();
     td_tinynes_register();     /* tinynes_app.cpp: the TinyNES app */
     td_tinygbc_register();     /* tinygbc_app.cpp: the TinyGBC app */
+    td_tinysnes_register();    /* tinysnes_app.cpp: the TinySNES app */
     td_tiny89_register();      /* tiny89_app.cpp: the Tiny89 app */
     td_tinycreature_register(); /* tinycreature_app.cpp: TinyCreature */
     td_wiki_register();        /* td_wiki_app.cpp: the TinyWiki reader */

@@ -228,6 +228,7 @@ static void test_identity(void)
     const uint8_t nunchuck[6]   = {0x00, 0x00, 0xA4, 0x20, 0x00, 0x00};
     const uint8_t classic[6]    = {0x00, 0x00, 0xA4, 0x20, 0x01, 0x01};
     const uint8_t classic3[6]   = {0x00, 0x00, 0xA4, 0x20, 0x03, 0x01};
+    const uint8_t classic0[6]   = {0x00, 0x00, 0xA4, 0x20, 0x00, 0x01};
     const uint8_t classicpro[6] = {0x01, 0x00, 0xA4, 0x20, 0x01, 0x01};
     const uint8_t guitar[6]     = {0x00, 0x00, 0xA4, 0x20, 0x01, 0x03};
     const uint8_t ff[6]         = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -236,6 +237,8 @@ static void test_identity(void)
     CHECK(tang_wii_identify(classic) == TANG_WII_KIND_CLASSIC, "a Classic identifies as one");
     CHECK(tang_wii_identify(classic3) == TANG_WII_KIND_CLASSIC,
           "a Classic in format 3 still identifies as one");
+    CHECK(tang_wii_identify(classic0) == TANG_WII_KIND_CLASSIC,
+          "a Classic reading format 0 (the receiver after TinySNES) is one too");
     CHECK(tang_wii_identify(classicpro) == TANG_WII_KIND_CLASSIC, "so does a Classic Pro");
     CHECK(tang_wii_identify(guitar) == TANG_WII_KIND_NONE, "a guitar is neither");
     CHECK(tang_wiipad_all_ff(ff, sizeof ff), "all 0xff is the un-woken report");
@@ -588,6 +591,22 @@ static void test_swap_and_unsupported(void)
     CHECK(s_format_writes == 1, "and format 3 is selected");
     s_ms += 40;
     CHECK(poll_once(&m, false), "the next poll reads the format-3 report");
+
+    /* The 8BitDo receiver as a TinySNES game leaves it: identity byte 4 reads
+     * format 0.  It is a Classic, so it is adopted and put back in format 3
+     * rather than refused. */
+    n = fresh();
+    use_classic();
+    s_id[4] = 0x00;
+    classic_rest();
+    (void)poll_once(&m, false);              /* wake */
+    s_ms += 40;
+    CHECK(!poll_once(&m, false), "the format-0 receiver is adopted");
+    CHECK(n->state == TANG_WIIPAD_READY && n->kind == TANG_WII_KIND_CLASSIC,
+          "as a Classic, not refused");
+    CHECK(s_format_writes == 1 && s_id[4] == 0x03, "and format 3 is selected");
+    s_ms += 40;
+    CHECK(poll_once(&m, false), "then it reports");
 
     /* And a swap from a reporting nunchuck to a Classic is noticed by the
      * periodic identity check. */
