@@ -229,8 +229,11 @@ revision that closes the hole cannot pass silently.
 | host | Link framing, ID, no unprompted frames | `test_desktop_link` |
 | host | I2C master bit timing, NACK, stall | `test_desktop_core` (`tb_i2c_master`) |
 | host | Mux channel select and retry | `test_i2c_mux` |
+| silicon | Mux scan enumerates all 8 channels; 0x52/0x68/0x5a on 0/6/7; spare channels empty; select and release work | §6.2, 2026-11-04 |
 | silicon | 1280x720 HDMI output with desktop | manual, README, photographs |
 | silicon | DS3231 at 0x68, MPR121 at 0x5a, Wii adapter at 0x52 | BRD-011, BRD-015, entry 83 |
+| silicon | **The RTC holds across a power cycle** — OSF clear after both inputs were removed and the board re-enumerated; time within the round trip of the host | §6.2, 2026-11-04 |
+| silicon | **`tangi2c mux <n>` is not sticky** — the desk clock re-selects channel 6, so an unrouted address must be reached by a driver that re-selects per access (`tangtouch` does) | §6.2, 2026-11-04 |
 
 ## 4. Matrix — the BL616 platform
 
@@ -381,9 +384,54 @@ either named by path in a test script, which is how it reaches a compiler, or
 included by a test source, and it strips comments first. Section 6's numbers are
 that tool's, not a grep's.
 
-The largest gaps in consequence, not in count: `usb_cdc_bl616.c` (the only
-console) and the five app wrappers. The module every register access passes
-through, `tang_fpga_uart.c`, now has a suite.
+### 6.1 The other 29, deferred with reasons
+
+These are **knowingly deferred**, not overlooked. The coverage sweep was stopped
+by the operator after the seven modules that matter were covered, because driving
+the count to zero would spend many cycles proving things about a firmware whose
+remaining risk is on the board, not in a host stub. Each group below says why a
+host suite is not the next best use of a cycle.
+
+| Modules | Reason |
+|---|---|
+| `tang_ble.c` (2737) | Needs 56 `bt_*` symbols and most of the Zephyr-derived host stack to link. A suite would have to stub the stack and would then be testing those stubs. The testable part — the boot-report routing that sends an 8-byte report to the keyboard slot and a 3–4 byte one to the mouse (BLE-019) — is 40 lines buried in the file; extracting it is a firmware refactor needing approval. |
+| `tang_jtag_programmer.c` (1102) | Vendored unmodified from nand2mario under Apache-2.0 (TOOL-007). Testing it tests a third party's code, and its behaviour is proven by every `tangload` on the board. |
+| 7 app wrappers: `tinygbc_app`, `tinynes_app`, `td_gutenberg_app`, `td_wiki_app`, `tiny89_app`, `tinynode_app`, `tinycreature_app` (5751 total) | Mostly widget layout and list navigation over the app's own data. A stubbed window proves the layout calls; Phase 3 exercises them end to end on the board, which is both cheaper and truer. The data-side logic (`tang_nes_ini`, `tang_gbc_ini`, the pack formats) is already covered separately. |
+| 9 Phosphor transport files (`phosphor_player`, `phosphor_cmd`, `pmod_sockets`, `fpga_file_stream`, `ae350_play`, `fpga_debug`, `oled_cmd`, `ae350_file_server`, `fpga_stream`; 2722 total) | Each is a thin layer over the extended-protocol endpoint with a core and an AE350 on the far end. The protocol itself is covered by `test_desktop_core`, `test_phosphor_frames` and `test_tang_fpga_uart`; what remains is the far end's behaviour, which only hardware supplies. |
+| `tang_osd.c` (321) | Commands that assert an overlay and write a text page. Covered on the board by `osd`, and the page format is `test_desktop_core`'s. |
+| `tang_fw_update.c` (258), `td_update_app.c` (210) | The path that rewrites the firmware. A host test can check the header arithmetic, but the behaviour that matters — a power loss mid-commit — is destructive and belongs in a deliberate hardware trial, not a stub. |
+| `usb_cdc_bl616.c` (418) | **The largest real gap.** The only console. Hosting it means modelling the SDK's USB device stack, which is the thing most likely to be wrong. Deferred rather than dismissed: the board exercises it every session, and its failure modes (USB-007, USB-008) are already recorded. |
+| `td_desktop_bl616.c` (432), `tdsh_platform_bl616.c` (718), `tdsh_console_stdio_bl616.c` (41) | Registration tables and platform glue. `check_help_width.py` already parses every registered command, which is the part a stub could catch. |
+| `td_pack.c` (260) | The pack *format* is checked by `tools/check_wiki_pack.py` against real converted archives, which is a stronger claim than a stub. |
+| `tang_usbstat.c` (274), `tang_psram.c` (145), `tang_ble_trace.c` (182) | Register readers and a trace buffer. `tang_psram` cannot be exercised on this board at all — the part reports no PSRAM (BL6-002). |
+
+The two that would be worth the next cycle if the operator wants more:
+**`usb_cdc_bl616.c`** because it is the only console, and **`tang_fw_update.c`**
+because a wrong commit is unrecoverable without a BOOT button.
+
+### 6.2 Silicon results taken 2026-11-04
+
+- **The DS3231's backup supply holds.** After setting the RTC, a full power
+  cycle (both inputs removed; the USB device re-enumerated as `088`) left
+  `status 0x0F = 0x08` — **OSF clear** — and the time correct to within the
+  round trip: `02:28:55` against a host reading of `02:28:59`, then `02:29:38`
+  against `02:29:41` thirty seconds later. The earlier invalid state was an
+  event, not a flat cell. Entry 83 recorded the same transient after probe work
+  and attributed it to a register-pointer write; nothing here contradicts that.
+- **The mux scan enumerates all eight channels.** `tangi2c scan` found `0x52` on
+  channel 0, `0x68` on channel 6 and `0x5a` on channel 7, with channels 1–5
+  reporting "the switch only". Selecting a spare channel and releasing it both
+  work, which is the mechanism a new device needs.
+- **`tangi2c mux <n>` is not sticky, by design.** `tangi2c mux 7` followed by
+  `tangi2c read 5a 00 2` fails consistently, because the desk clock's RTC read
+  re-selects channel 6 between the two commands and `0x5a` is not routed by
+  address. The correct route for an unrouted device is a driver that re-selects
+  per access — `tangtouch` does, and reads `0x0000 none` on the same sensor. This
+  is BRD-015's rule working as recorded, and it means the "wrong channel" test
+  used to prove isolation was invalid: it measured the clock, not the switch.
+- The board's image (`5039b09-dirty.04ed790`) predates the channel-7 rename in
+  entry 91, so `tangi2c mux 7` still prints `ir` there. The tree says `touch`; the
+  board will too once a firmware built after that entry is deployed.
 
 ---
 

@@ -3318,3 +3318,33 @@ The operator stopped a coverage sweep that had begun treating `tools/check_test_
 - User Test: N/A
 
 ---
+
+## 95 COMMIT Unreleased 2026-11-04T19:34:22-07:00
+
+#### Coming From:
+
+Unreleased 4a40779
+
+#### Purpose:
+
+Record every remaining untested module with the reason it is deliberately deferred, and take the two silicon rows the operator freed the board for: whether the DS3231's backup supply actually holds, and whether the I2C switch's scan and channel selection behave as recorded.
+
+#### Outcome:
+
+Section 6 of `docs/qualification.md` gained the deferred-module table the operator's stop required, grouping the 29 uncovered modules by why a host suite is not the next best cycle: `tang_ble.c` needs 56 `bt_*` symbols and most of the Zephyr-derived host stack, so a suite would be testing its own stubs, and the one testable part is the boot-report routing that sends an 8-byte report to the keyboard slot and a 3- or 4-byte one to the mouse, which would have to be extracted first; `tang_jtag_programmer.c` is vendored unmodified from nand2mario and exercised by every `tangload`; the seven app wrappers are widget layout over data logic that is already covered separately, and Phase 3 exercises them on the board; the nine Phosphor transport files are thin layers whose protocol is covered and whose remaining behaviour needs the far end; the OSD, the pack format and the registration tables each have a stronger check elsewhere; the firmware-update path's real risk is a power loss mid-commit, which is a destructive hardware trial; and `usb_cdc_bl616.c` is named as the largest real gap and the one worth the next cycle, since it is the only console. The two silicon rows were then taken on the board. The DS3231 was set with `tangi2c rtc set 2026-11-05 02:26:45`, took it, and read back `status 0x0F = 0x08` with OSF clear; it counted correctly against the host (56 s later `02:27:42` against a host reading of `02:27:46` in the same second), and after the operator removed both power inputs and the board re-enumerated as USB device 088 it read `2026-11-05 02:28:55` with **OSF still clear**, then `02:29:38` thirty seconds later against a host reading of `02:29:41`. The backup supply therefore holds, and the earlier invalid state was an event rather than a flat cell -- which contradicts the hypothesis recorded in the handoff and is corrected here. Entry 83 had recorded the same transient immediately after probe work and attributed it to a register-pointer write; nothing measured here contradicts that, and the handoff item is now answered rather than open. The mux scan enumerated all eight channels: `0x52` on channel 0, `0x68` on channel 6, `0x5a` on channel 7, and channels 1 to 5 reporting the switch only, with select and release both working. One finding is a correction to a test rather than a result: `tangi2c mux 7` followed by `tangi2c read 5a 00 2` fails consistently, not intermittently, because the desk clock's RTC read re-selects channel 6 between the two commands and `0x5a` is not routed by address, so the "same address from the wrong channel then the right one" sequence I used to demonstrate isolation was measuring the clock rather than the switch and proves nothing about isolation. The correct route for an unrouted device is a driver that re-selects per access, which is what `tangtouch` does and why it reads `0x0000 none` from the same sensor; that is BRD-015's rule working exactly as recorded. The board's image `5039b09-dirty.04ed790` predates entry 91's channel rename, so `tangi2c mux 7` still prints `ir` there and will print `touch` once a firmware built after that entry is deployed. The host gate is 39 of 39 and nothing in this cycle changed a test or a source file: the two suites and the deferred table come from entries 92 to 94. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 95 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The coverage sweep stays stopped and the deferred table now carries the reason for every module it defers. Phase 2's remaining silicon rows are the LoRa link end to end including the retry budget under a busy node, the `mkdir -p` measurement the handoff still carries as an unverified claim, and the first multi-chunk pack read on hardware. If more host coverage is wanted the operator's likely order is `usb_cdc_bl616.c` because it is the only console and `tang_fw_update.c` because a wrong commit is unrecoverable without a BOOT button, and `tang_ble.c` waits on a decision about extracting its boot-report routing. Three operator decisions are still open: whether the release waives the personality 8 flip bit or closes it in a later core revision, what the release firmware identity should be given that `TINYTANG_BUILD_ID` cannot distinguish one `third_party/tinydesk` patch set from another, and whether the firmware carrying this tree's channel rename is to be built and deployed so the board stops printing `ir`.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
