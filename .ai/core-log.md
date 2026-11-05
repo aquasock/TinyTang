@@ -3418,3 +3418,43 @@ The conversion is the operator's to start when they want it: `tools/convert_wiki
 - User Test: N/A
 
 ---
+
+## 98 COMMIT Unreleased 2026-11-04T21:02:19-07:00
+
+#### Coming From:
+
+Unreleased 7c44fb3
+
+#### Purpose:
+
+Close two gaps that kept a core's pad from driving TinyDesk, so that a pad tap opens the desk while its layer is off and the first tap after a host loader's overlay frame is not lost.
+
+#### Outcome:
+
+With the desk layer off, `desk_watch_toggle()` in `ports/bl616/tang_osd_desk.c` watched only F12, so a core reporting LB for its HOME button could never bring TinyDesk up; it now also reads `tang_fpga_joypad`, opens the desk on an LB rising edge, and after a successful `tang_osd_desk_set(true)` restores the edge state to the current pad so an LB still held does not toggle the desk again on the next `desk_poll`. Host loaders such as TinySNES's `tools/load_snes_rom.py` end with a 0x08 overlay-off frame through `fpgapipe`, which `tang_osd` never saw, so its recorded state stayed on and the first tap after a load only flipped it back; the new `ports/bl616/tang_pipe_sniff.c` and `ports/bl616/tang_pipe_sniff.h` parse the piped bytes as frames, report bit 0 of a 0x08 frame's first payload byte, and give up for the rest of the session on a byte stream that does not frame, and `cmd_fpgapipe` in `ports/bl616/tang_fpga_uart.c` passes each 0x08 result to the new `tang_osd_note_locked()` in `ports/bl616/tang_osd.c`, which records the state under the lock without sending anything. `tools/tests/tb_osd_desk.c`, the new `tools/tests/tb_tang_pipe_sniff.c` with `tools/tests/test_tang_pipe_sniff.sh`, and `tools/tests/tb_tang_fpga_uart.c` with its updated `tools/tests/test_tang_fpga_uart.sh` cover the pad toggle, held buttons, every split of a frame stream from 1 to 300 bytes, a ROM chunk full of fake overlay bytes and a foreign stream, and each test failed against a deliberately broken variant of the code it covers; `tools/tests/run_all.sh` passed 42 of 42. A desk core reporting raw L as LB would now also open the desk with the layer off; TinySNES reports LB only for a HOME tap, and the NES and Game Boy cores have no L. The firmware built with `make CHIP=bl616 BOARD=bl616dk` as 682,256 bytes, SHA-256 `a44fa98478accc875c792416cadf9fa834ae94a3e8b626f25497dc941ba486c2`, build `7c44fb3-dirty.1491160`, was installed with `tools/tinytang_flash.py`, and after a power cycle `platform` reported that build. With TinySNES's desk core loaded and Super Mario Kart sent by its loader, the user reported HOME opening and closing the desk, including the first tap after the load, F12 still working and game input blocked while the desk is shown. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, confirmed `.ai/core.md` was not changed, inspected the `.ai/` diff as this entry alone, and validated it as entry 98 with six sections in order, a one-sentence Purpose, prose Outcome and Next Steps, permitted Status values, no self-referencing hash and a count of ninety-eight against the 100-entry limit.
+
+#### Next Steps:
+
+The installed image also carries entry 96's HID report routing change, so the Bluetooth re-tests that entry names, the reconnect after a disconnect (BLE-011), re-subscribing a bonded device (BLE-010) and the notify callback's NULL report (BLE-004), can now run on the board, and entry 96's personality 8 fix still belongs in the final firmware cycle. The Wikipedia conversion remains the operator's to start, and the active log holds 98 of its 100 entries, so the third entry from now must first archive it to `archived_logs`.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_osd.c
+- ports/bl616/tang_osd.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_pipe_sniff.c
+- ports/bl616/tang_pipe_sniff.h
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_tang_fpga_uart.c
+- tools/tests/tb_tang_pipe_sniff.c
+- tools/tests/test_tang_fpga_uart.sh
+- tools/tests/test_tang_pipe_sniff.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

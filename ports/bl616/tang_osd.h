@@ -60,6 +60,12 @@ int tang_osd_reassert(void);
  * This is the F12 / L session switch.  Returns 0, or -1 if the link is down. */
 int tang_osd_toggle(void);
 
+/* Record an overlay state the core was given by someone else -- a host's
+ * overlay frame through `fpgapipe` (tang_pipe_sniff.h) -- without sending
+ * anything.  The caller holds the transmit lock, as everything that changes
+ * the record does, so it cannot interleave with a toggle or a re-assert. */
+void tang_osd_note_locked(bool on);
+
 /* Blank every cell. */
 int tang_osd_clear(void);
 

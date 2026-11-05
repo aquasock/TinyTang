@@ -100,6 +100,7 @@
 #include <stdarg.h>
 #include "tang_osd.h"
 #include "tang_osd_desk.h"
+#include "tang_pipe_sniff.h"
 #include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -855,10 +856,17 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
  * on the link -- TinyNES's AE350 loader -- is driven by the host's own tool.
  * The TX lock is held throughout, so the desk layer and the other commands
  * wait rather than interleave their frames with the host's stream, and the
- * probe is passed through as data because the stream is binary. */
+ * probe is passed through as data because the stream is binary.
+ *
+ * The host's bytes are also watched, unchanged, for an overlay frame: a host
+ * loader hides the overlay itself at the end of a load, and the OSD module's
+ * record has to follow or the next L / HOME tap does nothing
+ * (tang_pipe_sniff.h).  The record is changed under the lock this holds. */
 static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session; (void)argc; (void)argv;
+    tang_pipe_sniff_t sniff;
+    tang_pipe_sniff_reset(&sniff);
 
     if (tang_fpga_link_open() != 0) {
         tdsh_printf("fpgapipe: cannot bring up UART1\r\n");
@@ -887,6 +895,12 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
         if (sent && uart_write(up, n) != 0) {
             rc = 1;              /* UART1's FIFO stayed full for 100 ms */
             break;
+        }
+        if (sent) {
+            const int overlay = tang_pipe_sniff(&sniff, up, n);
+            if (overlay >= 0) {
+                tang_osd_note_locked(overlay != 0);
+            }
         }
         n = 0;
         while (n < sizeof(down) && rx_pop(&down[n])) {

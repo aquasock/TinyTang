@@ -235,8 +235,22 @@ int tdsh_path_to_real(tdsh_session_t *session, const char *input,
 static int raw_mode_calls;
 void tdsh_bl616_console_set_raw(bool on) { (void)on; raw_mode_calls++; }
 bool tdsh_bl616_console_write_raw(const void *data, size_t n) { (void)data; (void)n; return true; }
-bool tdsh_bl616_console_connected(void) { return true; }
-int tdsh_bl616_console_read_byte(void) { return -1; }   /* no host typing */
+
+/* A host on the far side of `fpgapipe`: its bytes come from a script, and it
+ * "closes the port" once the script is used up, which ends the pipe. */
+static const unsigned char *host_script;
+static size_t host_script_len, host_script_at;
+bool tdsh_bl616_console_connected(void)
+{
+    return host_script == NULL || host_script_at < host_script_len;
+}
+int tdsh_bl616_console_read_byte(void)
+{
+    if (host_script == NULL || host_script_at >= host_script_len) {
+        return -1;                       /* no host typing */
+    }
+    return host_script[host_script_at++];
+}
 
 /* The clock and the OSD, which other commands in this file call. */
 static int64_t s_now_utc;
@@ -246,6 +260,15 @@ int tang_osd_set(bool on) { (void)on; return 0; }
 int tang_osd_desk_set(bool on) { (void)on; return 0; }
 void tang_osd_desk_core_reloaded(void) { }
 bool tang_osd_shown(void) { return true; }
+static int osd_notes;
+static bool osd_noted;
+static int osd_noted_locked;
+void tang_osd_note_locked(bool on)
+{
+    osd_notes++;
+    osd_noted = on;
+    osd_noted_locked = mutex_held;
+}
 
 /* The AE350 runner lives in this module too (tang_ae350_run.h declares it and
  * tang_fpga_uart.c defines it), so nothing is stubbed for it. */
@@ -835,6 +858,50 @@ int main(void)
      * interrupts off, which on this board stops the link's own receive. */
     CHECK_EQ(critical_depth, 0);
     CHECK_EQ(critical_imbalance, 0);
+
+    /* ------------------------------------------------ fpgapipe's overlay -- */
+    /* A host loader ends with an overlay frame of its own; the OSD module's
+     * record has to follow it, under the lock, or the next L / HOME tap after
+     * a load does nothing.  The bytes still go to the core unchanged. */
+    reset_world();
+    (void)tang_fpga_link_open();
+    {
+        static unsigned char script[2048];
+        size_t n = 0;
+        const unsigned char reset_on[] = { 0xAA, 0x00, 0x02, 0x06, 0x01 };
+        memcpy(&script[n], reset_on, sizeof reset_on); n += sizeof reset_on;
+        /* A ROM chunk longer than one pipe read, full of overlay-on lookalikes. */
+        script[n++] = 0xAA; script[n++] = 0x04; script[n++] = 0x01; script[n++] = 0x07;
+        static const unsigned char fake[5] = { 0xAA, 0x00, 0x02, 0x08, 0x01 };
+        for (size_t i = 0; i < 0x400; i++) {
+            script[n++] = fake[i % 5];
+        }
+        const unsigned char tail[] = { 0xAA, 0x00, 0x02, 0x06, 0x00,
+                                       0xAA, 0x00, 0x02, 0x08, 0x00 };
+        memcpy(&script[n], tail, sizeof tail); n += sizeof tail;
+
+        osd_notes = 0; osd_noted = true; osd_noted_locked = 0;
+        host_script = script; host_script_len = n; host_script_at = 0;
+        const int rc = cmd_fpgapipe(NULL, 1, NULL);
+        host_script = NULL;
+        CHECK_EQ(rc, 0);
+        CHECK_EQ(wire_len, n);
+        CHECK(memcmp(wire, script, n) == 0);
+        CHECK_EQ(osd_notes, 1);
+        CHECK(!osd_noted);
+        CHECK_EQ(osd_noted_locked, 1);
+        CHECK_EQ(mutex_held, 0);
+
+        /* Someone else's protocol: nothing in it is believed. */
+        static const unsigned char foreign[] = { 0x55, 0xAA, 0x00, 0x02, 0x08, 0x01 };
+        wire_len = 0;
+        osd_notes = 0;
+        host_script = foreign; host_script_len = sizeof foreign; host_script_at = 0;
+        CHECK_EQ(cmd_fpgapipe(NULL, 1, NULL), 0);
+        host_script = NULL;
+        CHECK_EQ(wire_len, sizeof foreign);
+        CHECK_EQ(osd_notes, 0);
+    }
 
     /* ------------------------------------------------------- registration -- */
     reset_world();

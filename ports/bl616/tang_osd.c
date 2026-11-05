@@ -108,6 +108,11 @@ int tang_osd_toggle(void)
     return rc;
 }
 
+void tang_osd_note_locked(bool on)
+{
+    s_shown = on;
+}
+
 int tang_osd_put(uint8_t x, uint8_t y, const char *text, size_t length)
 {    if (tang_fpga_link_open() != 0) {
         return -1;

@@ -594,16 +594,32 @@ static void desk_poll(void)
 /* F12 with the layer off altogether -- after `osd desk off`, or after a
  * tangload with no `osd desk on` -- brings TinyDesk up, which is what the key
  * promises.  It comes up on a fresh grid, as `osd desk on` does, because
- * nothing was mirrored while the layer was off; the next output repaints it. */
+ * nothing was mirrored while the layer was off; the next output repaints it.
+ *
+ * L on the pad does the same, so a pad on its own can reach the desktop: the
+ * core reports the tap as LB in its pad word (TinySNES turns a HOME tap into
+ * one and never reports the game's own L).  set(true) resets the pad, which
+ * forgets the edge -- and LB is still down on the next poll, which would read
+ * it as a fresh press and hide the desktop it had just put up.  So the word
+ * that brought it up is put back as the previous one. */
 static void desk_watch_toggle(void)
 {
     if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open()) {
         return;
     }
+    uint16_t joy1 = 0, joy2 = 0;
+    tang_fpga_joypad(&joy1, &joy2);
+    const bool pad_toggle =
+        ((uint16_t)(joy1 & (uint16_t)~s_pad.prev) & TANG_PAD_LB) != 0;
+    s_pad.prev = joy1;
+
     uint8_t brep[8];
     (void)tang_ble_keyboard(brep);
-    if (toggle_pressed(&s_ble, brep)) {
-        (void)tang_osd_desk_set(true);
+    const bool key_toggle = toggle_pressed(&s_ble, brep);
+    if (pad_toggle || key_toggle) {
+        if (tang_osd_desk_set(true) == 0) {
+            s_pad.prev = joy1;
+        }
     }
 }
 

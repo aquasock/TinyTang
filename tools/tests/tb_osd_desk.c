@@ -780,6 +780,56 @@ int main(void)
         g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
     }
 
+    /* ---- L on the pad brings the layer up from off, and only once ---------
+     * A pad alone had no way to the desktop after a tangload with no
+     * `osd desk on`: only F12 was watched while the layer was off. */
+    {
+        (void)tang_osd_desk_set(false);
+        g_joy = 0;
+        desk_watch_toggle();
+        check(!tang_osd_desk_enabled(), "the layer came up with nothing pressed");
+
+        g_joy = TANG_PAD_LB;
+        desk_watch_toggle();
+        check(tang_osd_desk_enabled(), "L on the pad did not bring the layer up");
+        check(tang_osd_shown(), "L brought the layer up with the overlay hidden");
+
+        /* LB is still down on the next poll: that is the same press, not a
+         * second one, so the desktop it just put up must stay. */
+        desk_poll();
+        check(tang_osd_shown(), "the held L hid the desktop it had just put up");
+
+        g_joy = 0;
+        desk_poll();
+        g_joy = TANG_PAD_LB;
+        desk_poll();
+        check(!tang_osd_shown(), "a second L did not hand the screen back");
+        g_joy = 0;
+        desk_poll();
+
+        /* While a host owns the link nothing is read, so nothing switches. */
+        (void)tang_osd_desk_set(false);
+        g_pipe = true;
+        g_joy = TANG_PAD_LB;
+        desk_watch_toggle();
+        check(!tang_osd_desk_enabled(), "L brought the layer up through a host's pipe");
+        g_pipe = false;
+        g_joy = 0;
+        desk_watch_toggle();
+
+        /* An L still held when the layer is turned off is the press that was
+         * already used, not a new one: it must not bring the layer back. */
+        (void)tang_osd_desk_set(true);
+        g_joy = TANG_PAD_LB;
+        desk_poll();
+        (void)tang_osd_desk_set(false);
+        desk_watch_toggle();
+        desk_watch_toggle();
+        check(!tang_osd_desk_enabled(), "a held L brought the layer back up");
+        g_joy = 0;
+        desk_watch_toggle();
+    }
+
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;
 }
