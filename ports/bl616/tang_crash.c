@@ -135,9 +135,27 @@ static void copy_name(char *dst, size_t n, const char *src)
     }
 }
 
+/* The three CSRs this file reads are RISC-V only, so a host build cannot
+ * assemble them.  TINYTANG_HOST_TEST selects a settable stand-in instead; on
+ * the target the macro is absent and the same three functions are built
+ * exactly as before, with nothing else in the file changed.  Without this the
+ * module cannot be compiled off-target at all, because an inline-asm statement
+ * is rejected by the assembler whatever the optimiser might elide. */
+#if defined(TINYTANG_HOST_TEST)
+extern uint32_t tang_crash_host_csr(int which);
+static uint32_t csr_mcause(void) { return tang_crash_host_csr(0); }
+static uint32_t csr_mepc(void)   { return tang_crash_host_csr(1); }
+static uint32_t csr_mtval(void)  { return tang_crash_host_csr(2); }
+/* MIE off, and the deliberate illegal instruction `crash test trap` executes. */
+static void crash_irq_off(void) { }
+static void crash_illegal_instruction(void) { }
+#else
 static uint32_t csr_mcause(void) { uint32_t v; __asm__ volatile("csrr %0, mcause" : "=r"(v)); return v; }
 static uint32_t csr_mepc(void)   { uint32_t v; __asm__ volatile("csrr %0, mepc" : "=r"(v));   return v; }
 static uint32_t csr_mtval(void)  { uint32_t v; __asm__ volatile("csrr %0, mtval" : "=r"(v));  return v; }
+static void crash_irq_off(void) { __asm__ volatile("csrc mstatus, 8"); }
+static void crash_illegal_instruction(void) { __asm__ volatile(".word 0"); }
+#endif
 
 void tang_crash_init(void)
 {
@@ -223,7 +241,7 @@ static void persist_to_flash(void)
 static void record_and_wait(uint32_t kind, uint32_t mcause, uint32_t mepc, uint32_t mtval,
                             uint32_t ra, const char *task)
 {
-    __asm__ volatile("csrc mstatus, 8");      /* MIE off */
+    crash_irq_off();                          /* MIE off */
     s_rec.state = RUN_CRASHED;
     s_rec.kind = kind;
     s_rec.mcause = mcause;
@@ -537,7 +555,7 @@ static int cmd_crash(tdsh_session_t *session, int argc, char **argv)
         if (strcmp(argv[2], "trap") == 0) {
             tdsh_printf("crash: executing an illegal instruction\r\n");
             vTaskDelay(pdMS_TO_TICKS(100));
-            __asm__ volatile(".word 0");
+            crash_illegal_instruction();
         } else if (strcmp(argv[2], "hang") == 0) {
             tdsh_printf("crash: interrupts off, spinning; the watchdog should reset in %d s. "
                         "Nothing can run to record this one, so expect no record.\r\n",

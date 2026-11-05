@@ -240,7 +240,7 @@ revision that closes the hole cannot pass silently.
 |---|---|---|
 | untested | Boot header validation | no host test; FLS-002 is the contract |
 | untested | Soft reset lands in vendor loader | recorded, not tested |
-| untested | Crash record across watchdog reset | `tang_crash.c` has no test |
+| **host** | Crash record across a reset: checksum, init state machine, trap dispatch, controller fatal-error codes, report formatting, flash persist and reload, one-shot reporting | **`test_tang_crash`**; 4 planted faults caught |
 | silicon | Firmware reflash over CDC | `tinytang_flash.py`, entries 80/86 |
 | silicon | BL616 recovery via BOOT button | BRD-009 |
 
@@ -312,7 +312,8 @@ quote it as a command count.
 | **host** | `tang_i2c.cpp` — command-word packing, status decode, mux routing and probe, per-channel scan, `tangi2c` read/write/mux/auto/rtc and `tangtouch` init/status/watch | **`test_tang_i2c`**, against a simulated register window and bus; 9 planted faults caught |
 | untested | `tang_psram.c` | no test; part reports no PSRAM anyway (BL6-002) |
 | untested | `tang_usbstat.c` | no test |
-| untested | `tang_crash.c`, `tang_ble_trace.c` | no test |
+| host | `tdsh_fs_bl616.c` — fd table, open-mode mapping, errno per FatFS result, seek, stat with the directory probe, unlink/mkdir/rmdir/rename, opendir walk, ENOSYS calls | **`test_tdsh_fs`**; 6 planted faults caught |
+| untested | `tang_ble_trace.c` | no test |
 | untested | `tang_jtag_programmer.c` | vendored, unmodified, untested |
 
 Two findings came out of writing these tests rather than from reading the code.
@@ -350,12 +351,13 @@ shipping.
 
 ## 6. Coverage summary
 
-- 36 host regressions plus the width gate, all passing; proven to bite where
+- 38 host regressions plus the width gate, all passing; proven to bite where
   fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
-  I2C 9, link 6).
-- **31 of 55 port and Phosphor modules are built by no host test.** The five
+  I2C 9, link 6, crash 4, FatFS 6).
+- **29 of 55 port and Phosphor modules are built by no host test.** The seven
   this programme added — `tang_proto.c`, `tang_lora.c`, `tang_heap.c`,
-  `tang_i2c.cpp` and `tang_fpga_uart.c` — are covered. Measured by:
+  `tang_i2c.cpp`, `tang_fpga_uart.c`, `tang_crash.c` and `tdsh_fs_bl616.c` —
+  are covered. Measured by:
 
 ```
 tools/check_test_coverage.py            # the uncovered modules
@@ -568,3 +570,91 @@ not the reverse.
 `tools/check_test_coverage.py` was added in this cycle for the reason Section 6
 gives: the number the matrix had been quoting came from a grep that counted
 comments, so the coverage claim it supported could not be trusted.
+
+---
+
+## 11. What the crash and FatFS cycles changed
+
+### `tang_crash.c`
+
+The recorder that has to work when nothing else did, built with
+`-DTINYTANG_HOST_TEST`. Its hardware is replaced: the three CSRs are settable,
+the flash sector is a buffer, `GLB_SW_POR_Reset()` leaves through `longjmp`
+instead of resetting, and the watchdog device is a counter. What the suite pins:
+
+- **The checksum** — FNV-1a over every field before `sum` and none after, so a
+  record can be sealed and then verified; a change in any covered field moves
+  it, and a change to `sum` itself does not.
+- **`copy_name`** — truncation to `n-1`, zero-fill of the remainder, and a NULL
+  source as an empty name.
+- **`cause_name`** — the masked lookup, including that the interrupt bit and the
+  high bits are not part of the cause.
+- **The init state machine** — a power-up leaves nothing valid; a correctly
+  sealed RAM record is taken and its boot count carried forward; a corrupt sum,
+  a wrong magic or a future version is refused; and a flash record wins over a
+  RAM one, because it is the crash that survived the power cycle.
+- **The trap dispatch** — mcause 8 and 11 pass through to the SDK's handler and
+  record nothing; anything else records and resets. The "code argument rather
+  than a register frame" case, which is what made 2.3.36 fault twice before
+  recording, is the single trap the suite runs, and it asserts that no callee
+  register is taken from a code.
+- **The controller's fatal-error exit** — `0xC3C3C3C3` and `0xA5A5A5A5` go on to
+  the library, checked as "no reset happened" rather than as a counter, because
+  a reset on an ordinary return is a permanent boot loop; any other code is
+  recorded with the code in `mtval`.
+- **The report** — each kind's detail line, the "reset while running" hang case
+  with the reset recorder's active-low watchdog bit both ways, a deliberate
+  reset reporting nothing, the trail printed newest-first, and the one-shot
+  report appending to `/sd/crash.log` and clearing the sector.
+
+Four planted faults were caught. One of them needed a better test first:
+removing the fatal-error magic-code check was invisible, because the call was
+not inside a `setjmp` and the reset it caused escaped detection — the suite now
+wraps that call so "this must not reset" is itself asserted.
+
+### `tdsh_fs_bl616.c`
+
+The newlib-to-FatFS syscall layer, with FatFS results chosen per call so the
+errno mapping is exercised against FatFs's own values:
+
+- **The file-descriptor table** — eight slots behind a tag bit; the ninth open
+  is `EMFILE`; a refused open gives its slot back (checked by eight refusals
+  followed by eight successes in one world); closing the console frees nothing,
+  checked with the table full so a spurious free would show.
+- **The open-mode mapping** — `O_CREAT` alone is open-or-create and must not
+  empty an existing file; `O_CREAT|O_TRUNC` is create-always; `O_APPEND` is the
+  append bit.
+- **The errno each result becomes** — `FR_NO_FILE`/`FR_NO_PATH` → `ENOENT`,
+  `FR_DENIED` → `EACCES`, anything else → `EIO`; and `FR_EXIST` → `EEXIST` for
+  `mkdir`, which is what makes the shell's `mkdir -p` idempotent. That last one
+  is load-bearing rather than cosmetic, and planting a fault there fails the
+  test.
+- **Seek, fstat, stat** — `SEEK_CUR` and `SEEK_END` arithmetic, `ESPIPE` on the
+  console, character versus regular in `fstat`, and the directory probe in
+  `_stat_r` that makes `ls /` work when FatFS cannot describe the volume root.
+- **Directories** — the `opendir`/`readdir`/`closedir` walk with `DT_DIR` and
+  `DT_REG`, a stable NULL at the end, and no double free.
+
+Six planted faults were caught. Two of the assertions had to be strengthened
+first: a `reset_world()` between the failing opens and the successful ones
+defeated the leak check, and the console-close check only asserted a return
+value rather than that the table was undisturbed.
+
+**`mkdir -p` is not in this file.** The recursive parent walk is the shell's
+`mkdir_parents` in `third_party/tinydesk-shell/src/core/tdsh_builtin.c`, which
+this suite does not cover; what it pins is the `EEXIST` mapping that walk
+depends on.
+
+### The one firmware change
+
+`tang_crash.c` could not be compiled off-target at all: an inline-asm statement
+is rejected by the assembler whatever the optimiser might elide. Four
+RISC-V-only instructions — three CSR reads, `csrc mstatus, 8`, and the `.word 0`
+that `crash test trap` executes — are now selected by `TINYTANG_HOST_TEST`, with
+the original instructions in the `#else` branch verbatim. On the target the
+macro is absent and the same instructions are built as before.
+
+**The firmware image digest still changes**, because the guard moves line
+numbers in the preprocessed file and the build id covers the whole tree. The
+baseline recorded in §1 is therefore superseded for any build that includes
+this change; the instruction stream for this file is unchanged.

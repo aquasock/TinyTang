@@ -3266,3 +3266,55 @@ The remaining untested modules are `usb_cdc_bl616.c`, which is the only console 
 - User Test: N/A
 
 ---
+
+## 94 COMMIT Unreleased 2026-11-04T19:20:08-07:00
+
+#### Coming From:
+
+Unreleased cb9e9b4
+
+#### Purpose:
+
+Cover the two of the operator's three named modules that can be covered honestly -- the crash recorder and the FatFS syscall layer -- and stop the coverage sweep there, recording the third as deferred with its reason rather than proceeding file by file.
+
+#### Outcome:
+
+The operator stopped a coverage sweep that had begun treating `tools/check_test_coverage.py` as a checklist, and chose three modules: `tang_crash.c`, `tdsh_fs_bl616.c` and `tang_ble.c`. The first two are now covered. `tools/tests/tb_tang_crash.c` runs the recorder with its hardware replaced -- the three CSRs settable, the flash sector a buffer, `GLB_SW_POR_Reset()` leaving through `longjmp` instead of resetting, the watchdog a counter -- and pins the checksum (FNV-1a over every field before `sum` and none after, so a change to `sum` itself does not move it), `copy_name`'s truncation and zero-fill, the masked cause lookup, and the init state machine: a power-up leaves nothing valid, a sealed RAM record is taken and its boot count carried forward, a corrupt sum or wrong magic or future version is refused, and a flash record wins over a RAM one because it is the crash that survived the power cycle. It pins the trap dispatch too -- mcause 8 and 11 passing through to the SDK's handler while anything else records and resets -- and pins the "code argument rather than a register frame" case that made 2.3.36 fault twice before recording, as the single trap the suite can run because the handler's already-recording guard is correct behaviour and only one fault per process is possible. The controller's fatal-error exit is pinned from the other side: `0xC3C3C3C3` and `0xA5A5A5A5` are checked as "no reset happened" rather than as a counter, because a reset on an ordinary return is a permanent boot loop. `tools/tests/tb_tdsh_fs.c` covers the newlib-to-FatFS layer with FatFS results chosen per call, so the errno mapping is exercised against FatFs's own values: the eight-slot tagged descriptor table with `EMFILE` at nine and a refused open giving its slot back, the open-mode mapping where `O_CREAT` alone must not empty an existing file, seek arithmetic with `ESPIPE` on the console, `fstat` character versus regular, `_stat_r`'s directory probe that makes `ls /` work when FatFS cannot describe the volume root, the opendir walk, the ENOSYS calls, and above all `FR_EXIST` becoming `EEXIST`, which is what makes the shell's `mkdir -p` idempotent. Ten planted faults were caught across the two suites; two assertions had to be strengthened before their faults could be caught at all, one because a reset between the failing and succeeding opens defeated a leak check and one because a removed magic-code check let a reset escape a call that was not inside a `setjmp`. Covering the recorder needed one firmware change and it is the only one in this cycle: an inline-asm statement is rejected by the assembler whatever the optimiser elides, so the three CSR reads, `csrc mstatus, 8` and the `.word 0` behind `crash test trap` are now selected by `TINYTANG_HOST_TEST` with the original instructions in the `#else` branch verbatim. On the target the macro is absent and the same instructions are built, but the image digest still moves because the guard changes line numbers and the build id covers the whole tree; the firmware builds at 682,272 bytes with SHA-256 `65341de213eac06739c065506012ef28e89590aebad9efa8503ca1be334dcba9` and no error, and section 1's recorded baseline is superseded for any build including this change. `tang_ble.c` was not covered and that is a deliberate stop rather than an omission: it is 2737 lines and 81 static functions against the Zephyr-derived host stack, needing 56 `bt_*` symbols to link at all, so a host suite would have to stub a large part of a Bluetooth stack and would then be testing those stubs rather than the stack. The host gate is 39 of 39, `tools/check_test_coverage.py` reports 26 of 55 modules built by a test, and the board was not touched -- every command in this cycle was host-only, at the operator's instruction. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 94 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+`tang_ble.c` needs the operator's direction before it goes further, and there are two honest routes: accept that it stays untested with the reason recorded, or extract its few pure decisions -- above all the boot-report routing that sends an 8-byte report to the keyboard slot and a 3- or 4-byte one to the mouse, which is BLE-019's finding and the kind of thing a wrong length check breaks silently -- into a small function with no stack dependency, which is a firmware refactor needing approval before it is made. Everything else the operator named as deferred stays deferred. With the coverage work stopped, the programme returns to Phase 2, which waits on the board: the LoRa link end to end, a scan of every mux channel including a spare one accepting a device with no firmware change, the `mkdir -p` measurement the handoff still carries as an unverified claim, and the first multi-chunk pack read on hardware. Three operator decisions are still open and none blocks host work: whether the release waives the personality 8 flip bit or closes it in a later core revision, what the release firmware identity should be given that `TINYTANG_BUILD_ID` cannot distinguish one `third_party/tinydesk` patch set from another, and whether the DS3231's lost backup supply is worth chasing before release.
+
+#### Files Modified:
+
+- docs/qualification.md
+- ports/bl616/tang_crash.c
+- tools/tests/stubs/tang_crash/FreeRTOS.h
+- tools/tests/stubs/tang_crash/bflb_flash.h
+- tools/tests/stubs/tang_crash/bflb_name.h
+- tools/tests/stubs/tang_crash/bflb_wdg.h
+- tools/tests/stubs/tang_crash/bl616_glb.h
+- tools/tests/stubs/tang_crash/ff.h
+- tools/tests/stubs/tang_crash/task.h
+- tools/tests/stubs/tang_crash/tinytang_build_id.h
+- tools/tests/stubs/tdsh_fs/FreeRTOS.h
+- tools/tests/stubs/tdsh_fs/bflb_device_stub.h
+- tools/tests/stubs/tdsh_fs/bflb_gpio.h
+- tools/tests/stubs/tdsh_fs/bflb_mtimer.h
+- tools/tests/stubs/tdsh_fs/board.h
+- tools/tests/stubs/tdsh_fs/fatfs_diskio_register.h
+- tools/tests/stubs/tdsh_fs/ff.h
+- tools/tests/stubs/tdsh_fs/sys/reent.h
+- tools/tests/stubs/tdsh_fs/task.h
+- tools/tests/tb_tang_crash.c
+- tools/tests/tb_tdsh_fs.c
+- tools/tests/test_tang_crash.sh
+- tools/tests/test_tdsh_fs.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
