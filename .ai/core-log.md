@@ -3224,3 +3224,45 @@ The remaining modules with no host test are `tang_fpga_uart.c`, `usb_cdc_bl616.c
 - User Test: N/A
 
 ---
+
+## 93 COMMIT Unreleased 2026-11-04T18:50:14-07:00
+
+#### Coming From:
+
+Unreleased 0b9fa5f
+
+#### Purpose:
+
+Cover `ports/bl616/tang_fpga_uart.c`, the module every register access in this project passes through, and correct the qualification matrix's own coverage count after finding it had been crediting an untested module with a comment mention.
+
+#### Outcome:
+
+`tools/tests/tb_tang_fpga_uart.c` drives the real 2356-line module against a UART model rather than a rewritten one. The seam is narrow: `uart_write()` reads the TX FIFO's free count from one register offset and pushes bytes to another, so a small register file captures the exact byte stream the core would see and can refuse room to provoke the transmit bound; the RX ring is fed directly, which is what the interrupt does, and a reply can be made to arrive during a call; the transmit lock's owner is whichever task the test names, so contention is a switch rather than a second thread. `fpga_frames.c`, `ae350_load.c` and the three ini modules are linked for real. The suite pins the frame format -- `AA len_hi len_lo type payload` with the length counting the type byte, a big-endian length above 255, and the 2047-byte limit where 2046 payload is accepted and 2047 refused with nothing left on the wire -- the 100 ms transmit bound reporting a stuck FIFO rather than spinning on it, and the transmit lock in all its rules: re-entrant by owner and counted by depth, released exactly once, another task's unlock not ours to give, the bounded form nesting for its owner while failing a second task rather than blocking, and all three calls harmless before the link is open. It pins the extended endpoint too: the 14-byte payload, opcodes 1 and 2, the address and value big-endian in their fields, the CRC-16 over frame type 0x10 plus twelve bytes, the 15-byte reply with its status byte and its register at bytes 9 to 12, and a short reply, a refused status and a busy link each failing rather than reading partially. `core_id()` is shown sending its command and taking a reply that arrives during the wait, which is also the test that documents why the drain inside it is deliberate: a frame queued before the call is discarded rather than mistaken for this answer. The rest of the surface is covered as well -- the baud switch de-initing and re-initing with the new rate reported, the pipe flag leaving the ring to its owner, the joypad cache reading words big-endian, ring overflow counted rather than overwriting the oldest, and every critical section left balanced, since an imbalanced one would leave interrupts off and stop the link's own receive. Six planted faults were each caught: the frame length off by one, the lock not re-entrant, the unlock ignoring its owner, the CRC over eleven bytes, the address bytes reversed, and the bounded take made unbounded. Two of the bench's own bugs are recorded because both would have made it lie: the virtual clock had to advance a millisecond per read, because `uart_write()` polls the clock with no yield and a frozen clock makes its timeout never fire, so the test hung instead of failing; and four assertions were wrong in my favour, since the reply carries a register address rather than a value, a pipe owning the ring means no bytes are consumed at all, and joypad words are big-endian in the frame, each corrected against the module rather than the reverse. Writing this exposed a defect in the qualification matrix itself: the command it used to count uncovered modules was `grep -ql "$basename" tools/tests/*`, which counts a mention, and two comments in `tb_frames.c` and `tb_saves_log.c` that merely name `tang_fpga_uart.c` had made the link read as covered since the matrix was first written while nothing compiled it. The honest count is 31 of 55 port modules built by no host test, not the 28 the document quoted, and the same false positive could hide any module a test comment talks about. `tools/check_test_coverage.py` replaces the grep: a module counts only when a test script names its path, which is how it reaches a compiler, or a test source includes it, and comments are stripped first, so Section 6's number is now the tool's rather than a grep's. The host gate is 37 of 37. The board was not touched: an operator-requested RTC check ran earlier in the session and showed the DS3231 alive and counting with OSF set and EN32kHz set, which is a backup-supply question rather than a firmware one, and nothing was built, flashed or deployed by this cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 93 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The remaining untested modules are `usb_cdc_bl616.c`, which is the only console and so the largest gap in consequence, `tang_crash.c`, `tang_ble_trace.c`, `tang_psram.c`, `tang_usbstat.c`, `td_pack.c`, `td_desktop_bl616.c`, `td_update_app.c`, the three shell-port files, the eight Phosphor transport files and the five app wrappers. Phase 2's silicon rows wait on the board and on the operator's word: the LoRa link end to end, a scan of every mux channel including a spare one accepting a device with no firmware change, the `mkdir -p` measurement the handoff still carries as an unverified claim, and the first multi-chunk pack read on hardware. Three operator decisions are still open and none blocks the host work: whether the release waives the personality 8 flip bit or closes it in a later core revision, what the release firmware identity should be given that `TINYTANG_BUILD_ID` cannot distinguish one `third_party/tinydesk` patch set from another, and whether the DS3231's lost backup supply is worth chasing before release.
+
+#### Files Modified:
+
+- docs/qualification.md
+- tools/check_test_coverage.py
+- tools/tests/stubs/tang_fpga_uart/FreeRTOS.h
+- tools/tests/stubs/tang_fpga_uart/bflb_gpio.h
+- tools/tests/stubs/tang_fpga_uart/bflb_irq.h
+- tools/tests/stubs/tang_fpga_uart/bflb_mtimer.h
+- tools/tests/stubs/tang_fpga_uart/bflb_uart.h
+- tools/tests/stubs/tang_fpga_uart/ff.h
+- tools/tests/stubs/tang_fpga_uart/hardware/uart_reg.h
+- tools/tests/stubs/tang_fpga_uart/semphr.h
+- tools/tests/stubs/tang_fpga_uart/task.h
+- tools/tests/tb_tang_fpga_uart.c
+- tools/tests/test_tang_fpga_uart.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

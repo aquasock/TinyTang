@@ -287,7 +287,7 @@ quote it as a command count.
 | host | AE350 program load | `test_ae350_load` |
 | silicon | Core answers on UART1 at 2 Mbaud | every boot |
 | silicon | Register read/write over the link | `fpgar`, `tangini`, this session |
-| untested | `tang_fpga_uart.c` as a whole — baud switch, lock, re-entrancy | no host test |
+| **host** | **`tang_fpga_uart.c`** — frame length and magic, the 2047-byte limit, the 100 ms transmit bound, re-entrant and owner-checked transmit lock, bounded acquisition, read32/write32 request packing and CRC, reply decoding, baud switch, pipe flag, joypad cache, ring drops, critical-section balance | **`test_tang_fpga_uart`**, against a UART FIFO model; 6 planted faults caught |
 
 ### Input
 
@@ -350,23 +350,38 @@ shipping.
 
 ## 6. Coverage summary
 
-- 35 host regressions plus the width gate, all passing; proven to bite where
+- 36 host regressions plus the width gate, all passing; proven to bite where
   fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
-  I2C 9).
-- **28 port and Phosphor modules have no host test at all**, down from 32 with
-  `tang_proto.c`, `tang_lora.c`, `tang_heap.c` and `tang_i2c.cpp` now covered.
-  Named by this command:
+  I2C 9, link 6).
+- **31 of 55 port and Phosphor modules are built by no host test.** The five
+  this programme added — `tang_proto.c`, `tang_lora.c`, `tang_heap.c`,
+  `tang_i2c.cpp` and `tang_fpga_uart.c` — are covered. Measured by:
 
 ```
-for f in ports/bl616/*.c ports/bl616/*.cpp ports/bl616/phosphor/*.cpp; do
-  b=$(basename "$f")
-  grep -ql "$b" tools/tests/*.{sh,c,cpp} tools/tests/sim/*.sv 2>/dev/null || echo "NOTEST $b"
-done
+tools/check_test_coverage.py            # the uncovered modules
+tools/check_test_coverage.py --covered  # with the test that builds each
 ```
 
-The largest gaps in consequence, not in count: `tang_fpga_uart.c` (every
-register access goes through it), `usb_cdc_bl616.c` (the only console), and the
-five app wrappers.
+**The figure this document quoted before was wrong, and the tool exists because
+of it.** The earlier command was
+
+```
+grep -ql "$basename" tools/tests/*.{sh,c,cpp}
+```
+
+which counts a *mention*. Two comments in `tb_frames.c` and `tb_saves_log.c`
+merely name `tang_fpga_uart.c` — "used to live inside tang_fpga_uart.c" and
+"the exact shapes ports/bl616/tang_fpga_uart.c writes" — and that was enough to
+report the link as covered while nothing compiled it. The real count was 29
+where this file said 28, and the same false positive can hide any module a test
+comment talks about. `tools/check_test_coverage.py` requires a module to be
+either named by path in a test script, which is how it reaches a compiler, or
+included by a test source, and it strips comments first. Section 6's numbers are
+that tool's, not a grep's.
+
+The largest gaps in consequence, not in count: `usb_cdc_bl616.c` (the only
+console) and the five app wrappers. The module every register access passes
+through, `tang_fpga_uart.c`, now has a suite.
 
 ---
 
@@ -495,3 +510,61 @@ rather than the fault waived: restoring the automatic read while the switch is
 fitted is invisible unless the read is actually on when the transaction starts.
 The suite now switches it on behind the driver's back and asserts it is turned
 off and left off.
+
+---
+
+## 10. What the link cycle changed
+
+`ports/bl616/tang_fpga_uart.c` is the module every register access in this
+project passes through, and it had no test. It is 2356 lines, but its
+hardware touches are narrow, and the bench takes their place:
+
+| Seam | Modelled as |
+|---|---|
+| `uart_write()` | a register file: the TX FIFO's free count comes from one offset, pushed bytes are captured from another, and the room can be refused to provoke the 100 ms bound |
+| the RX interrupt | the ring is fed directly, and a reply can be made to arrive *during* a call, which is what the interrupt does |
+| the transmit lock | the "current task" is whichever the test says, so contention is a switch rather than a second thread |
+| `fpga_frames.c`, `ae350_load.c`, the three ini modules | linked for real, not stubbed |
+
+What the suite pins:
+
+- **Frame construction.** `AA len_hi len_lo type payload`, with the length
+  counting the type byte, a big-endian length above 255, and the 2047-byte
+  limit: 2046 payload is legal, 2047 is refused with nothing left on the wire.
+- **The 100 ms transmit bound.** A stuck FIFO is reported rather than spun on.
+- **The transmit lock.** Re-entrant by owner, counted by depth, released once —
+  and another task's unlock is not ours to give, so the holder keeps it. The
+  bounded form nests for the owner and *fails* for a second task rather than
+  blocking, which is what stops a host pipe or a stuck load from wedging a
+  caller. Before the link is open all three calls are harmless.
+- **`read32`/`write32`.** The 14-byte payload, opcode 1 and 2, the address and
+  value big-endian in the right fields, the CRC-16 over frame type `0x10` plus
+  twelve bytes, the 15-byte reply and its status byte, and the reply's register
+  at bytes 9..12. A short reply, a refused status and a busy link are each
+  failures rather than partial reads.
+- **`core_id()`** sends the command and takes a reply that arrives during the
+  wait — and `core_id()` drains before transmitting, so a frame queued earlier
+  is deliberately discarded rather than mistaken for this answer.
+- **The rest of the surface:** baud switch (de-init, re-init, the new rate
+  reported), the pipe flag leaving the ring to its owner, the joypad cache
+  reading words big-endian, ring overflow counted rather than overwriting, and
+  every critical section left balanced — an imbalanced one would leave
+  interrupts off, which on this board stops the link's own receive.
+
+Six planted faults were each caught: the frame length off by one, the lock not
+re-entrant, the unlock ignoring its owner, the CRC over eleven bytes, the
+address bytes reversed, the reply length unchecked, and the bounded take made
+unbounded.
+
+Two of the bench's own bugs were worth recording, because both were the kind
+that makes a test lie. The virtual clock had to advance a millisecond per read:
+`uart_write()` polls the clock with no yield, so with a frozen clock its timeout
+never fires and the test hangs rather than failing. And four assertions were
+wrong in my favour — the CRC's address field is a register address rather than
+a value, a pipe owning the ring means no bytes are consumed at all, and the
+joypad words are big-endian in the frame — each corrected against the module,
+not the reverse.
+
+`tools/check_test_coverage.py` was added in this cycle for the reason Section 6
+gives: the number the matrix had been quoting came from a grep that counted
+comments, so the coverage claim it supported could not be trusted.
