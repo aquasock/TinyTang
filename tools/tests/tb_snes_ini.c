@@ -182,10 +182,11 @@ int main(void)
     check(s.keys == 0, "unknown names: not counted");
     check(s.p1[TANG_SNES_A] == TANG_SNES_A, "unknown names: A keeps default");
 
-    /* Comments and an unknown section and key are skipped. */
+    /* Comments and an unknown section and key are skipped.  [video] is a known
+     * section now, so this file has three understood keys, not two. */
     load(&s, "# a comment\n; another\n[input]\np1_a = b\n"
              "[video]\naspect = 4:3\n[tinysnes]\nversion = 1\n");
-    check(s.keys == 2, "comments and unknown sections skipped");
+    check(s.keys == 3, "comments and unknown sections skipped");
     check(s.p1[TANG_SNES_A] == TANG_SNES_B, "still read the known key");
 
     /* The frame word: button 11 in the top nibble, identity packing. */
@@ -234,8 +235,18 @@ int main(void)
     check(reread.p1[TANG_SNES_SELECT] == TANG_SNES_SRC_NONE,
           "round trip: SELECT still unbound");
     check(reread.p2[TANG_SNES_UP] == TANG_SNES_DN, "round trip: p2 UP still DN");
-    check(reread.keys == 2 * TANG_SNES_BUTTONS + 1,
-          "round trip: every button written, plus the version");
+    check(reread.keys == 2 * TANG_SNES_BUTTONS + 3,
+          "round trip: every button, the version and the two video keys");
+    check(reread.aspect == written.aspect, "round trip: aspect kept");
+    check(reread.overscan == written.overscan, "round trip: overscan kept");
+
+    /* The video keys, and a shape this build does not know. */
+    load(&s, "[video]\naspect = 8:7\noverscan = crop\n");
+    check(s.aspect == TANG_SNES_ASPECT_8_7, "video: 8:7 read");
+    check(s.overscan == 0, "video: crop read");
+    load(&s, "[video]\naspect = 16:9\n");
+    check(s.aspect == TANG_SNES_ASPECT_4_3, "video: unknown shape keeps default");
+    check(s.keys == 0, "video: unknown shape not counted");
 
     /* A card that stops taking the file says so rather than reporting a save. */
     s_card[0] = '\0';

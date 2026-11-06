@@ -50,10 +50,20 @@ enum {
 #define TANG_SNES_SRC_NONE 12
 #define TANG_SNES_SOURCES 13
 
+/* The picture's shape.  Aspect is a real choice on this console: the pixels are
+ * digital BGR555 with one correct rendering, but their shape is not fixed, and
+ * the three settings are the ones every emulator offers.  There is deliberately
+ * no palette setting -- unlike the NES, whose composite output leaves the
+ * colours genuinely ambiguous, this console's colours have one answer. */
+enum { TANG_SNES_ASPECT_4_3, TANG_SNES_ASPECT_8_7, TANG_SNES_ASPECT_1_1,
+       TANG_SNES_ASPECTS };
+
 typedef struct {
     /* Controller source per SNES button, in TANG_SNES_BUTTONS order. */
     uint8_t p1[TANG_SNES_BUTTONS];
     uint8_t p2[TANG_SNES_BUTTONS];
+    uint8_t aspect;             /* TANG_SNES_ASPECT_* */
+    uint8_t overscan;           /* 1 = show the PPU's extra fifteen lines */
     uint8_t version;
     bool    found;          /* the file was there to be read */
     uint16_t keys;          /* how many of its keys were understood */
@@ -72,6 +82,7 @@ bool tang_snes_settings_load(tang_snes_settings_t *s, const char *path);
  * return "?" out of range rather than a plausible wrong answer. */
 const char *tang_snes_button_name(int button);
 const char *tang_snes_source_name(int source);
+const char *tang_snes_aspect_name(int aspect);
 
 /* The map as the core's frame 0x1A carries it: twelve nibbles, button 11 in
  * the most significant.  Built from one player's array. */

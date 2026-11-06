@@ -117,6 +117,7 @@ static int send_locked(uint8_t type, const uint8_t *payload, size_t length)
 #define SNES_SAVE_WRITE 0x18u
 #define SNES_SAVE_READ  0x19u
 #define SNES_PAD_MAP    0x1au
+#define SNES_VIDEO      0x1bu
 
 /* The reply timeout.  A 250-byte read is 253 bytes back at 2 Mbaud, about
  * 1.3 ms on the wire; 200 ms leaves room for a joystick frame overtaking it
@@ -439,6 +440,19 @@ int tang_snes_apply_pad_map(const uint8_t map[TANG_SNES_BUTTONS])
     return send_locked(SNES_PAD_MAP, body, sizeof body) == 0 ? 0 : 1;
 }
 
+int tang_snes_apply_video(uint8_t aspect, uint8_t overscan)
+{
+    /* Bit 0 and 1 the aspect, bit 2 whether the PPU's extra lines show. */
+    const uint8_t byte = (uint8_t)((aspect & 0x3u) | (overscan ? 0x4u : 0u));
+    if (tang_fpga_link_open() != 0) {
+        return 1;
+    }
+    if (tang_fpga_pipe_open()) {
+        return 1;
+    }
+    return send_locked(SNES_VIDEO, &byte, 1) == 0 ? 0 : 1;
+}
+
 void tang_snes_resume(void)
 {
     (void)send_locked(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
@@ -594,6 +608,7 @@ static int load(FIL *file, const char *real, char *why, size_t why_len)
     tang_snes_settings_t settings;
     (void)tang_snes_settings_load(&settings, TANG_SNES_INI_REAL);
     const bool mapped = tang_snes_apply_pad_map(settings.p1) == 0;
+    (void)tang_snes_apply_video(settings.aspect, settings.overscan);
 
     if (f_lseek(file, (FSIZE_t)skip) != FR_OK) {
         snprintf(why, why_len, "cannot rewind the file");

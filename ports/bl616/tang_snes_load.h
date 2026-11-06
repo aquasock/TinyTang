@@ -87,6 +87,10 @@ int tang_snes_save_write(const char *path, uint32_t size,
  * one there.  Takes the link itself; 0 on success. */
 int tang_snes_apply_pad_map(const uint8_t map[TANG_SNES_BUTTONS]);
 
+/* Send the picture's shape to the core, frame 0x1B.  Takes the link itself;
+ * 0 on success. */
+int tang_snes_apply_video(uint8_t aspect, uint8_t overscan);
+
 /* Release the load hold that tang_snes_save_write took. */
 void tang_snes_resume(void);
 

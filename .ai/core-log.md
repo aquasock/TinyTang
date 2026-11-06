@@ -343,3 +343,39 @@ Player 2 is the one drawn control that cannot work, and the operator left it for
 - User Test: PASS
 
 ---
+
+## 11 COMMIT Unreleased 2026-11-05T23:33:08-07:00
+
+#### Coming From:
+
+Unreleased 9b4d026
+
+#### Purpose:
+
+Build the TinySNES window's Video page with the two settings this console can honour, and store them in the settings file beside the input map.
+
+#### Outcome:
+
+The Video page is real rather than a placeholder, with two rows and a Save: `Aspect`, cycling 4:3, 8:7 and 1:1, and `Extra lines`, toggling between shown and cropped. Both are written to `/tinysnes.ini` under a new `[video]` section, `aspect` and `overscan = show|crop`, read through the same `tang_settings_ini.c` walk as `[input]`. The defaults are 4:3 with the extra lines shown, which is the geometry and the line count this core had before the setting existed, so a card with no `[video]` section behaves exactly as it did. `tang_snes_apply_video()` sends the core's frame 0x1B and a load calls it beside the pad map, before the ROM goes out; the core half is the TinySNES repository's entry 20. The Save on this page writes the whole file rather than only its own section, so an Input edit and a Video edit saved from different pages both persist -- the Input page's Save does the same, because `tang_snes_settings_save()` serialises the struct rather than patching one section. One setting the other two systems have was deliberately left out: there is no palette row. The NES needs one because its composite output leaves the colours ambiguous and its emulators ship competing interpretations of that artifact, while the SNES drives digital BGR555 from CGRAM and this core's path from it is a bit shift, so there is one correct rendering and a palette selector would invent an ambiguity the hardware does not have. That reasoning is in `tang_snes_ini.h` beside the aspect enum, not only here, so a later cycle adding a palette row meets the argument first. The page also says so on screen. The firmware builds at 698,928 bytes, SHA-256 `b1be6bedf721edfa17263d18a7a092227427c597de983670b034bc1cbcb444a5`, identity `9b4d026-dirty.4ec8ed0`, and was deployed with `tools/tinytang_flash.py`. It is **not confirmed on the board**: the operator deployed at the end of the session and did not power-cycle before stopping, so the page layout and both settings are unproven on hardware. The host gate is 44 of 44 and `tb_snes_ini.c` grew from 34 checks to 40: the `[video]` keys read and written, an aspect this build does not know keeping the default and not counting as understood, and a save-then-reload round trip whose key count now includes the two video keys. `tb_snes_load.c` was updated for the frame order the load now has -- pad map, video, hold, header -- and its overlay-index assertion moved from 1 to 2, because two settings frames now precede the hide. Three expectations in the loader test and one in the ini test were wrong on the first run and the tests caught them, all of them indices or counts that shifted by one when a frame was added. One older bench defect surfaced in the core repository and is recorded there: a pad chord test that depended on a tick phase, failing once the new frames shifted it, and fixed by holding the chord long enough for a report to finish rather than by widening a retry count. `test_tang_fpga_uart` needed no change this cycle, unlike entry 10, because `tang_snes_apply_video()` lives in `tang_snes_load.c` itself and `tang_snes_ini.c` is already on that link line. Two untracked scripts in `tools/` named for previewing bitmap and cell layers are not this project's work and were left out of the commit. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 11 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The board is flashed and unconfirmed, and settling that is the first task: power-cycle, open the Video page, and check the picture is unchanged before anything is saved, since the defaults are meant to reproduce the previous geometry exactly. Then step the aspect to 8:7 and 1:1, both of which must be visibly and proportionally narrower, and save so that a launch picks the setting up. The extra-lines row cannot be tested on demand -- it needs a cartridge that sets SETINI bit 2, and a row that changes nothing is as likely to mean no such cartridge here as to mean the row is broken -- so the useful observation is a title whose bottom fifteen lines are missing today, recorded by name if one is found. `Audio` is the last placeholder and it is the harder of the two remaining pages, because a master volume cannot be a frame applied after the mixer: the S-DSP sums its voices internally and a volume applied downstream of that would scale the output rather than the mix, so the setting would have to live inside `dsp.v` and that is a core cycle with a listening test, not a page. It should not be started with the assumption that it is the same job as Video was. Entry 19's open question about Player 2 -- whether a page may draw a control the core cannot honour -- is now the only such case left on the window, and the Audio page is where the answer will be tested again. Entry 9's manual pack still needs rebuilding onto the card for the 70-column reader. The rest of the open list is unchanged: the two untried pack boundaries, the LoRa link end to end, the `mkdir -p` measurement, the three Bluetooth re-runs, the TinyGutenberg reading-position restore, the personality 8 flip-bit fix and the release firmware identity question.
+
+#### Files Modified:
+
+- ports/bl616/tang_snes_ini.c
+- ports/bl616/tang_snes_ini.h
+- ports/bl616/tang_snes_load.c
+- ports/bl616/tang_snes_load.h
+- ports/bl616/tinysnes_app.cpp
+- tools/tests/tb_snes_ini.c
+- tools/tests/tb_snes_load.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

@@ -118,7 +118,11 @@ char s_launch_cart[TD_PATH_MAX + 4];
 
 /* The Saves page's lines. */
 td_widget_t *s_save_line[SAVE_LINES];
-td_widget_t *s_dummy_list[2];   /* Video, Audio */
+td_widget_t *s_dummy_list;      /* Audio, the one page still a placeholder */
+
+/* The Video page: the picture's shape, edited here and pushed by the next
+ * launch.  There is no palette row on purpose -- see tang_snes_ini.h. */
+td_widget_t *s_video_list;
 
 /* The Input page: the file's map, what is being edited, and which player the
  * rows are for.  `s_map` is the edit buffer; Save writes it and the next launch
@@ -274,6 +278,67 @@ void on_input_save(td_widget_t *, void *)
     lib_say("Saved. Taken when the next game starts.");
 }
 
+/* ------------------------------------------------------------------ the video */
+
+const int VIDEO_ROWS = 2;
+
+/* Two rows, the aspect and the overscan crop.  TinyNES's page carries an aspect
+ * and a palette because the NES's composite output leaves its colours
+ * ambiguous; this console's are digital and have one rendering, but the shape
+ * of a pixel is a genuine choice, and the fifteen lines a 239-line game draws
+ * beyond the 224-line raster are a real decision about whether to show them. */
+const char *video_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[52];
+
+    (void)fg;
+    if (index == 0) {
+        snprintf(text, sizeof text, "Aspect      %s%s",
+                 tang_snes_aspect_name(s_set.aspect), s_dirty ? " *" : "");
+    } else if (index == 1) {
+        snprintf(text, sizeof text, "Extra lines %s%s",
+                 s_set.overscan ? "shown" : "cropped", s_dirty ? " *" : "");
+    } else {
+        return "";
+    }
+    return text;
+}
+
+void on_video_row(td_widget_t *, void *)
+{
+    const int row = s_video_list != nullptr ? td_list_selected(s_video_list) : -1;
+
+    if (row == 0) {
+        s_set.aspect = (uint8_t)((s_set.aspect + 1) % TANG_SNES_ASPECTS);
+    } else if (row == 1) {
+        s_set.overscan = (uint8_t)!s_set.overscan;
+    } else {
+        return;
+    }
+    s_dirty = true;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+    lib_say("Change steps the setting; Save writes it.");
+}
+
+void on_video_save(td_widget_t *, void *)
+{
+    char why[96];
+    for (int p = 0; p < PLAYERS; p++) {
+        memcpy(p == 0 ? s_set.p1 : s_set.p2, s_map[p], TANG_SNES_BUTTONS);
+    }
+    if (tang_snes_settings_save(&s_set, TANG_SNES_INI_REAL, why, sizeof why) != 0) {
+        lib_say(why);
+        return;
+    }
+    s_dirty = false;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+    lib_say("Saved. Taken when the next game starts.");
+}
+
 /* ------------------------------------------------------- the placeholder pages */
 
 /* Input, Video and Audio are not built yet.  Each carries its rows and says in
@@ -281,11 +346,11 @@ void on_input_save(td_widget_t *, void *)
  * the core has taken -- which is the mistake the three TinyNES pages made
  * before they were built. */
 const char *const DUMMY_ROWS_TEXT[2][DUMMY_ROWS] = {
-    { "Aspect ratio: not set",
-      "Scanlines: not set",
-      "This page is a placeholder" },
     { "Volume: not set",
       "Mute: not set",
+      "This page is a placeholder" },
+    { "Reserved",
+      "Reserved",
       "This page is a placeholder" },
 };
 
@@ -823,9 +888,8 @@ void on_close(td_window_t *)
     for (int i = 0; i < SAVE_LINES; i++) {
         s_save_line[i] = nullptr;
     }
-    for (int i = 0; i < 2; i++) {
-        s_dummy_list[i] = nullptr;
-    }
+    s_dummy_list = nullptr;
+    s_video_list = nullptr;
     s_input_list = nullptr;
     s_player_button = nullptr;
     memset(s_page_count, 0, sizeof s_page_count);
@@ -907,21 +971,31 @@ void launch(void)
     page_add(INPUT_TAB, td_button(s_win, 22, 16, "Save", on_input_save, nullptr));
     settings_show();
 
-    /* Video and Audio: the rows exist so the window has the shape the other two
-     * apps have, and say plainly that they are not wired.  Nothing on them is
-     * read by anything. */
-    for (int t = VIDEO_TAB; t <= AUDIO_TAB; t++) {
-        page_add(t, td_label(s_win, 1, 2, 0, "Not built yet: nothing here is set."));
-        td_widget_t *list = td_list(s_win, td_rect(1, 3, -1, DUMMY_ROWS), dummy_item,
-                                    nullptr,
-                                    reinterpret_cast<void *>(static_cast<uintptr_t>(t - VIDEO_TAB)));
-        if (list != nullptr) {
-            td_list_set_count(list, DUMMY_ROWS);
-        }
-        s_dummy_list[t - VIDEO_TAB] = list;
-        page_add(t, list);
-        page_add(t, td_label(s_win, 1, 7, 0, "Placeholder, filled in by a later build."));
+    /* Video: the picture's shape.  Two rows, and a Save -- which writes the
+     * whole file, so an Input edit and a Video edit are written together. */
+    s_video_list = td_list(s_win, td_rect(1, 2, -1, VIDEO_ROWS), video_item,
+                           on_video_row, nullptr);
+    if (s_video_list != nullptr) {
+        td_list_set_count(s_video_list, VIDEO_ROWS);
     }
+    page_add(VIDEO_TAB, s_video_list);
+    page_add(VIDEO_TAB, td_button(s_win, 1, 5, "Change", on_video_row, nullptr));
+    page_add(VIDEO_TAB, td_button(s_win, 10, 5, "Save", on_video_save, nullptr));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 7, 0, "Aspect is the pixel's shape, not the picture's."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 8, 0, "Extra lines are the 239 a few games draw."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "There is no palette: SNES colour is digital."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+
+    /* Audio: still a placeholder, and says so. */
+    page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Not built yet: nothing here is set."));
+    s_dummy_list = td_list(s_win, td_rect(1, 3, -1, DUMMY_ROWS), dummy_item,
+                           nullptr,
+                           reinterpret_cast<void *>(static_cast<uintptr_t>(0)));
+    if (s_dummy_list != nullptr) {
+        td_list_set_count(s_dummy_list, DUMMY_ROWS);
+    }
+    page_add(AUDIO_TAB, s_dummy_list);
+    page_add(AUDIO_TAB, td_label(s_win, 1, 7, 0, "Placeholder, filled in by a later build."));
 
     /* Saves: the selected cartridge's battery save.  There is no save state on
      * TinySNES, so this page is the save itself and when it was written. */

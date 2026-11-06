@@ -31,6 +31,18 @@ static const char *const s_source_names[TANG_SNES_SOURCES] = {
     "none",
 };
 
+static const char *const s_aspect_names[TANG_SNES_ASPECTS] = {
+    "4:3", "8:7", "1:1",
+};
+
+const char *tang_snes_aspect_name(int aspect)
+{
+    if (aspect < 0 || aspect >= TANG_SNES_ASPECTS) {
+        return "?";
+    }
+    return s_aspect_names[aspect];
+}
+
 const char *tang_snes_button_name(int button)
 {
     if (button < 0 || button >= TANG_SNES_BUTTONS) {
@@ -56,6 +68,8 @@ void tang_snes_defaults(tang_snes_settings_t *s)
         s->p1[i] = (uint8_t)i;
         s->p2[i] = (uint8_t)i;
     }
+    s->aspect = TANG_SNES_ASPECT_4_3;
+    s->overscan = 1;
     s->version = 1;
 }
 
@@ -111,6 +125,22 @@ static bool apply(void *ctx, const char *section, const char *key,
         }
         map[button] = (uint8_t)source;
         return true;
+    }
+    if (strcmp(section, "video") == 0) {
+        if (strcmp(key, "aspect") == 0) {
+            for (int i = 0; i < TANG_SNES_ASPECTS; i++) {
+                if (strcmp(value, s_aspect_names[i]) == 0) {
+                    s->aspect = (uint8_t)i;
+                    return true;
+                }
+            }
+            return false;   /* a shape this build does not know */
+        }
+        if (strcmp(key, "overscan") == 0) {
+            s->overscan = strcmp(value, "show") == 0;
+            return true;
+        }
+        return false;
     }
     if (strcmp(section, "tinysnes") == 0) {
         if (strcmp(key, "version") == 0) {
@@ -169,6 +199,12 @@ int tang_snes_settings_save(const tang_snes_settings_t *s, const char *path,
                           p + 1, s_button_names[i],
                           tang_snes_source_name(map[i]));
         }
+    }
+    if (n > 0 && (size_t)n < sizeof text) {
+        n += snprintf(text + n, sizeof text - (size_t)n,
+                      "\n[video]\naspect = %s\noverscan = %s\n",
+                      tang_snes_aspect_name(s->aspect),
+                      s->overscan ? "show" : "crop");
     }
     if (n <= 0 || (size_t)n >= sizeof text) {
         (void)f_close(&file);
