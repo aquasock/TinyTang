@@ -304,3 +304,42 @@ The manual pack has to be rebuilt onto the card, because the board is running a 
 - User Test: PASS
 
 ---
+
+## 10 COMMIT Unreleased 2026-11-05T22:43:05-07:00
+
+#### Coming From:
+
+Unreleased d1e45e3
+
+#### Purpose:
+
+Build the TinySNES window's Input page, storing the pad mapping in the card-root settings file beside the other two systems' own, and fix the host gate this work broke.
+
+#### Outcome:
+
+The Input page is real rather than a placeholder, in TinyNES's shape: a Player 1/Player 2 toggle, a row per SNES button reading `<button> <- <source>`, a Change button that cycles the selected row through every controller button and then `none`, a Restore that returns a player to the default map, and a Save that writes the file. A row always exists for every button and an absent binding reads `none` rather than the row disappearing, so the list never changes height under the player, and an edited row is marked `*` until Save. A binding of `none` is a real state, not a missing one: it is how a player removes a button rather than moving it, and the core's frame carries it as selectors 12 to 15. The file is `/sd/tinysnes.ini` at the card root, beside `/tinynes.ini` and `/tinygbc.ini`, read through the same `tang_settings_ini.c` walk they use. Its `[input]` section holds `p1_<button> = <source>` and `p2_<button> = <source>`, the same shape as TinyNES's, and `[tinysnes] version` matches the other two files' convention. `ports/bl616/tang_snes_ini.c` and its header are new: the defaults are the identity map, so an absent file leaves a pad the player cannot tell apart from every build before this one, and an unknown key or value is ignored and not counted, so a misspelt binding shows in the key count rather than as a button that silently does nothing. The write goes through a `.tmp` with the old file moved aside first and removed only once the new one is in place, because FatFS has no atomic replace and a card that fills up must not cost a player their bindings; a failure at any step puts the old file back. `tang_snes_apply_pad_map()` in `tang_snes_load.c` sends the core's frame 0x1A, and a load calls it once the link is up and before the ROM goes out. The core half is the TinySNES repository's entry 19, and this entry cannot be read on its own without it. The firmware builds at 694,816 bytes, SHA-256 `1394f3d87af0c3912f0ceabda5170bf7bd085d872df8a48da6b66fce36fa804f`, identity `d1e45e3-dirty.888a330`, deployed with `tools/tinytang_flash.py` and run after a power cycle. The operator confirmed the page and the mapping on the board: the pad's behaviour was checked before the first save and again after, with the buttons exchanged in the game, and `/tinysnes.ini` on the card shows the edit. That file is 408 bytes with `p1_a = y` and `p1_y = x` against `p2_` still at identity, so the write and the read-back agree. Two tests are new and one gate is repaired. `tools/tests/tb_snes_ini.c` with `tools/tests/test_snes_ini.sh` drives the real parser: identity defaults, an absent file, several pairs on one line, `r` against `rt` in both directions because a prefix compare would bind the shoulder to the wrong button, `none`, player 2 kept apart from player 1, comments and unknown sections skipped, the frame word's packing at identity, at an A/B swap and at all-unbound, and a save-then-reload round trip, 34 checks. `tb_snes_load.c` gained the pad map frame: identity when no file exists, and the exact six bytes for a pushed map and for all-unbound. The gate this work broke is `test_tang_fpga_uart`, which links `tang_snes_load.c` and had no module for the `tang_snes_settings_load` and `tang_snes_map_word` symbols that file now calls; another agent found it, established it predated their own cycle by stashing their files and reproducing it, and left this session's files untouched, which is recorded because it was the right call. The fix adds `tang_snes_ini.c` to that link line, and the host gate is 44 of 44. Player 2 is deliberately not functional and the page does not pretend otherwise in the code's comments, though it does in its layout: `snestang_top.v` ties player 2's pad inputs to zero and the core's frame carries one player's selectors, so the toggle edits keys that are stored and read back and can change nothing. The operator's decision was to leave it for now; it is recorded here and in the core's entry so the page is not later read as working. No settled entry was rewritten: entry 9's note that this session's SNES work was mid-edit and breaking that gate is now closed by this entry rather than edited. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 10 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Player 2 is the one drawn control that cannot work, and the operator left it for a later cycle deliberately: the options are to hide the toggle while this core has one pad, to keep it with a caption saying so, or to wire a second pad, which is the only one that makes it real and needs a second `wii_pad` on another adapter plus a wider frame at the core end. It should be settled before the Video and Audio pages are built, because the same question -- whether a control is honest when the core cannot honour it -- will come up on both, and the placeholder treatment those two pages currently use is the answer this session preferred. The remap is proven on player 1 with the Wii Classic Controller only; the other pad sources pass through the same stage in the core and none was exercised. Entry 9's note about the manual pack still stands and is not this cycle's: the board reads a pack wrapped at 78 against a reader that clips at 70 until that pack is rebuilt onto the card. The rest of the open list is unchanged: the two untried pack boundaries, the LoRa link end to end, the `mkdir -p` measurement, the three Bluetooth re-runs, the TinyGutenberg reading-position restore, the personality 8 flip-bit fix and the release firmware identity question.
+
+#### Files Modified:
+
+- ports/bl616/tang_snes_ini.c
+- ports/bl616/tang_snes_ini.h
+- ports/bl616/tang_snes_load.c
+- ports/bl616/tang_snes_load.h
+- ports/bl616/tinysnes_app.cpp
+- tools/tests/tb_snes_ini.c
+- tools/tests/test_snes_ini.sh
+- tools/tests/tb_snes_load.c
+- tools/tests/test_snes_load.sh
+- tools/tests/test_tang_fpga_uart.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

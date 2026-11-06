@@ -116,6 +116,7 @@ static int send_locked(uint8_t type, const uint8_t *payload, size_t length)
  * data bytes, rather than relying on this side to remember. */
 #define SNES_SAVE_WRITE 0x18u
 #define SNES_SAVE_READ  0x19u
+#define SNES_PAD_MAP    0x1au
 
 /* The reply timeout.  A 250-byte read is 253 bytes back at 2 Mbaud, about
  * 1.3 ms on the wire; 200 ms leaves room for a joystick frame overtaking it
@@ -420,6 +421,24 @@ int tang_snes_save_for(const char *cart_real, uint32_t *size,
     return 0;
 }
 
+int tang_snes_apply_pad_map(const uint8_t map[TANG_SNES_BUTTONS])
+{
+    const uint64_t word = tang_snes_map_word(map);
+    uint8_t body[6];
+    for (int i = 0; i < 6; i++) {
+        /* Button 11 in the top nibble of the first byte, as pad_remap.v and
+         * frame 0x1A index them. */
+        body[i] = (uint8_t)(word >> (8 * (5 - i)));
+    }
+    if (tang_fpga_link_open() != 0) {
+        return 1;
+    }
+    if (tang_fpga_pipe_open()) {
+        return 1;
+    }
+    return send_locked(SNES_PAD_MAP, body, sizeof body) == 0 ? 0 : 1;
+}
+
 void tang_snes_resume(void)
 {
     (void)send_locked(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
@@ -567,6 +586,15 @@ static int load(FIL *file, const char *real, char *why, size_t why_len)
         snprintf(why, why_len, "the host's fpgapipe owns the link");
         return 1;
     }
+    /* The pad map, before anything else goes out: the pad is decoded in fabric
+     * and a remapping can only be honoured by the core, so the file's [input]
+     * section is pushed as frame 0x1A here.  A failure is not fatal -- an
+     * unconfigured core keeps the identity map, which is the wiring every build
+     * before this one had -- but it is reported in the outcome below. */
+    tang_snes_settings_t settings;
+    (void)tang_snes_settings_load(&settings, TANG_SNES_INI_REAL);
+    const bool mapped = tang_snes_apply_pad_map(settings.p1) == 0;
+
     if (f_lseek(file, (FSIZE_t)skip) != FR_OK) {
         snprintf(why, why_len, "cannot rewind the file");
         return 1;
@@ -647,10 +675,11 @@ static int load(FIL *file, const char *real, char *why, size_t why_len)
         return 1;
     }
 
-    snprintf(why, why_len, "%u bytes, %s%s; %s", (unsigned)sent,
+    snprintf(why, why_len, "%u bytes, %s%s; %s%s", (unsigned)sent,
              at == TANG_SNES_HIROM_HDR ? "HiROM" : "LoROM",
              skip != 0u ? ", copier header dropped" : "",
-             restored ? "save restored, running" : "running");
+             restored ? "save restored, " : "",
+             mapped ? "running" : "running, pad map not applied");
     return 0;
 }
 

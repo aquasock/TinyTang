@@ -322,6 +322,11 @@ struct save_write { uint32_t addr; uint32_t len; uint8_t data[TANG_SNES_SAVE_BLO
 static struct save_write save_writes[SAVE_WRITES_MAX];
 static int save_write_count;
 
+/* The last pad map frame's six bytes, so a test can check what the core would
+ * have been told rather than only that a frame went out. */
+static uint8_t pad_map_seen[6];
+static int pad_map_count;
+
 /* The saves log: every line a save leaves for the Saves page to read. */
 #define NOTES_MAX 64
 static char notes[NOTES_MAX][192];
@@ -333,6 +338,11 @@ void tang_ae350_note(const char *text)
         note_count++;
     }
 }
+
+/* The settings file lives on the same fake card as the saves.  Absent unless a
+ * test writes one, which is the default case: an empty card must leave the
+ * identity map in force. */
+void tang_settings_walk_stub(void) { }
 
 int tang_fpga_link_open(void) { return link_rc; }
 bool tang_fpga_pipe_open(void) { return pipe_open; }
@@ -368,6 +378,10 @@ int tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length)
             }
             memcpy(w->data, payload + 3, w->len);
         }
+    }
+    if (type == 0x1a && length == 6) {
+        memcpy(pad_map_seen, payload, 6);
+        pad_map_count++;
     }
     if (type == 0x19 && length == 4) {
         const uint32_t at = ((uint32_t)payload[0] << 16) |
@@ -456,6 +470,8 @@ static void reset_world(void)
     reenter_rc = -2;
     critical_depth = 0;
     saves_forget();
+    pad_map_count = 0;
+    memset(pad_map_seen, 0, sizeof pad_map_seen);
     refuse_reads = false;
     save_reply_len = 0;
     save_reply_pending = false;
@@ -496,20 +512,23 @@ static void pattern(uint32_t from)
 }
 
 /* The sequence every good load must show, for an image starting at `skip`
- * with its header at file offset `hdr`. */
+ * with its header at file offset `hdr`.  The pad map goes first, before the
+ * core is even held: it is a register the core keeps, and setting it early
+ * means a load that fails part way still leaves the pad configured. */
 static void check_good_load(uint32_t skip, uint32_t hdr)
 {
     const uint32_t image = file_len - skip;
-    CHECK(frame_count >= 4);
-    CHECK(frames[0].type == FPGA_CMD_SET_LOAD && frames[0].len == 1 && frames[0].first == 1);
-    CHECK(frames[1].type == FPGA_CMD_ROM_DATA && frames[1].len == TANG_SNES_HEADER_LEN);
-    CHECK(frames[1].at_ms >= frames[0].at_ms + 50);
+    CHECK(frame_count >= 5);
+    CHECK(frames[0].type == 0x1a && frames[0].len == 6);   /* pad map, 6 bytes */
+    CHECK(frames[1].type == FPGA_CMD_SET_LOAD && frames[1].len == 1 && frames[1].first == 1);
+    CHECK(frames[2].type == FPGA_CMD_ROM_DATA && frames[2].len == TANG_SNES_HEADER_LEN);
+    CHECK(frames[2].at_ms >= frames[1].at_ms + 50);
     CHECK(rom_seen_len == TANG_SNES_HEADER_LEN + image);
     CHECK(memcmp(rom_seen, file_data + hdr, TANG_SNES_HEADER_LEN) == 0);
     CHECK(memcmp(rom_seen + TANG_SNES_HEADER_LEN, file_data + skip, image) == 0);
     const int expect_data = (int)((image + 1023u) / 1024u);
-    CHECK(frame_count == 2 + expect_data + 1);
-    for (int i = 2; i < frame_count - 1; i++) {
+    CHECK(frame_count == 3 + expect_data + 1);
+    for (int i = 3; i < frame_count - 1; i++) {
         CHECK(frames[i].type == FPGA_CMD_ROM_DATA);
         CHECK(frames[i].len <= 1024u);
     }
@@ -522,9 +541,10 @@ static void check_good_load(uint32_t skip, uint32_t hdr)
     }
     CHECK(drains == 1);
     /* Hidden before the core is held, so the bars show through the stream,
-     * and hidden again after the release. */
+     * and hidden again after the release.  The pad map is the one frame that
+     * precedes the hide, which is why the index is 1. */
     CHECK(osd_calls == 2 && !osd_first && !osd_shown_now);
-    CHECK(osd_first_index == 0);
+    CHECK(osd_first_index == 1);
     CHECK(osd_last_index == frame_count);
     CHECK(!locked && lock_errors == 0);
     CHECK(!file_open_now);
@@ -693,7 +713,9 @@ static void test_refusals(void)
  * it started. */
 static bool restored(void)
 {
-    return osd_calls == 2 && !osd_first && osd_first_index == 0 && osd_shown_now;
+    /* The pad map is sent before the core is held, so one frame precedes the
+     * overlay being hidden. */
+    return osd_calls == 2 && !osd_first && osd_first_index == 1 && osd_shown_now;
 }
 
 /* A failure part-way leaves the core in reset: no release, the overlay put
@@ -716,7 +738,7 @@ static void test_mid_failures(void)
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 5;                   /* the fourth data chunk */
+    frame_fail_at = 6;                   /* the fourth data chunk */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "stopped taking data at 3072") != NULL);
     CHECK(restored() && !locked && lock_errors == 0 && !file_open_now);
@@ -725,16 +747,16 @@ static void test_mid_failures(void)
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 1;                   /* the header */
+    frame_fail_at = 2;                   /* the header */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "header") != NULL);
-    CHECK(frame_count == 1 && restored() && !locked && lock_errors == 0);
+    CHECK(frame_count == 2 && restored() && !locked && lock_errors == 0);
 
     reset_world();
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 2 + 64;              /* the release */
+    frame_fail_at = 3 + 64;              /* the release */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "did not start") != NULL);
     CHECK(restored() && !locked && lock_errors == 0);
@@ -745,10 +767,11 @@ static void test_mid_failures(void)
     pattern(0);
     put_header(0x7FC0u, 0x20);
     osd_shown_now = false;
-    frame_fail_at = 0;                   /* the hold */
+    frame_fail_at = 1;                   /* the hold */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "cannot start") != NULL);
-    CHECK(osd_calls == 2 && !osd_shown_now && frame_count == 0);
+    /* The map went out before the hold that failed, so one frame exists. */
+    CHECK(osd_calls == 2 && !osd_shown_now && frame_count == 1);
 }
 
 /* A second load while one is streaming is refused, and the first finishes;
@@ -894,9 +917,9 @@ static void test_save_restore(void)
     CHECK(memcmp(save_writes[blocks - 1].data,
                  old + (blocks - 1) * TANG_SNES_SAVE_BLOCK, tail) == 0);
     /* The restore did not disturb the load's own order. */
-    CHECK(frames[0].type == FPGA_CMD_SET_LOAD && frames[0].first == 1);
-    CHECK(frames[1].type == FPGA_CMD_ROM_DATA && frames[1].len == TANG_SNES_HEADER_LEN);
-    CHECK(frames[1].at_ms >= frames[0].at_ms + 50);
+    CHECK(frames[1].type == FPGA_CMD_SET_LOAD && frames[1].first == 1);
+    CHECK(frames[2].type == FPGA_CMD_ROM_DATA && frames[2].len == TANG_SNES_HEADER_LEN);
+    CHECK(frames[2].at_ms >= frames[1].at_ms + 50);
     CHECK(!locked && lock_errors == 0);
     CHECK(!file_open_now);
 
@@ -1081,6 +1104,49 @@ static void test_resume(void)
     CHECK(!locked && lock_errors == 0);
 }
 
+/* The pad map frame: identity when no settings file exists, and the map it was
+ * handed when one is pushed.  Identity is the case that matters most -- an
+ * empty card must leave a pad the player cannot tell apart from before. */
+static void test_pad_map(void)
+{
+    char why[96];
+
+    reset_world();
+    make_file(64u * 1024u);
+    pattern(0);
+    put_header(0x7FC0u, 0x20);
+    CHECK(tang_snes_load(FILE_PATH, why, sizeof why) == 0);
+    CHECK(pad_map_count == 1);
+    /* Identity packs as ba9876543210: button 11 in the top nibble, button 0 in
+     * the bottom, each holding its own index. */
+    CHECK(pad_map_seen[0] == 0xba && pad_map_seen[1] == 0x98 &&
+          pad_map_seen[2] == 0x76 && pad_map_seen[3] == 0x54 &&
+          pad_map_seen[4] == 0x32 && pad_map_seen[5] == 0x10);
+
+    /* A pushed map replaces it, and the frame carries it in the same packing. */
+    reset_world();
+    uint8_t map[TANG_SNES_BUTTONS];
+    for (int i = 0; i < TANG_SNES_BUTTONS; i++) {
+        map[i] = (uint8_t)i;
+    }
+    map[TANG_SNES_A] = TANG_SNES_SRC_NONE;
+    CHECK(tang_snes_apply_pad_map(map) == 0);
+    CHECK(pad_map_count == 1);
+    /* A is button 3, so its nibble -- the high nibble of the fifth byte -- is
+     * now 12 rather than 3. */
+    CHECK(pad_map_seen[4] == 0xc2);
+
+    /* `none` for every button is all 12s. */
+    reset_world();
+    for (int i = 0; i < TANG_SNES_BUTTONS; i++) {
+        map[i] = TANG_SNES_SRC_NONE;
+    }
+    CHECK(tang_snes_apply_pad_map(map) == 0);
+    for (int i = 0; i < 6; i++) {
+        CHECK(pad_map_seen[i] == 0xcc);
+    }
+}
+
 int main(void)
 {
     rom_seen = malloc(TANG_SNES_MAX_IMAGE + 4096u);
@@ -1098,6 +1164,7 @@ int main(void)
     test_save_write_refusals();
     test_save_for();
     test_resume();
+    test_pad_map();
     reset_world();
     free(rom_seen);
     if (failures != 0) {

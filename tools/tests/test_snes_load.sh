@@ -14,5 +14,7 @@ cc -std=c11 -O1 -D_GNU_SOURCE -Wall -Wextra -Werror -fsanitize=address,undefined
    -I "$root/ports/bl616" \
    "$root/tools/tests/tb_snes_load.c" \
    "$root/ports/bl616/tang_snes_load.c" \
+   "$root/ports/bl616/tang_snes_ini.c" \
+   "$root/ports/bl616/tang_settings_ini.c" \
    "$root/ports/bl616/ae350_load.c" -o "$work/tb"
 "$work/tb"

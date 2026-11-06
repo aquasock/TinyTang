@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "tang_snes_ini.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -78,6 +80,12 @@ int tang_snes_save_path(const char *cart_real, char *out, size_t size);
  * CRC-32 matches, so a doomed write never costs the previous save. */
 int tang_snes_save_write(const char *path, uint32_t size,
                          char *why, size_t why_len);
+
+/* Send one player's pad map to the core, frame 0x1A.  The pad is decoded in
+ * fabric -- the Wii Classic Controller never reaches this chip -- so a
+ * remapping can only be honoured by the core, and this is the only way to get
+ * one there.  Takes the link itself; 0 on success. */
+int tang_snes_apply_pad_map(const uint8_t map[TANG_SNES_BUTTONS]);
 
 /* Release the load hold that tang_snes_save_write took. */
 void tang_snes_resume(void);

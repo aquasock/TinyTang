@@ -28,6 +28,7 @@ extern "C" {
 #include "tang_core_load.h"
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
+#include "tang_snes_ini.h"
 #include "tang_snes_load.h"
 #include "td_saves_log.h"
 
@@ -117,7 +118,18 @@ char s_launch_cart[TD_PATH_MAX + 4];
 
 /* The Saves page's lines. */
 td_widget_t *s_save_line[SAVE_LINES];
-td_widget_t *s_dummy_list[3];   /* Input, Video, Audio */
+td_widget_t *s_dummy_list[2];   /* Video, Audio */
+
+/* The Input page: the file's map, what is being edited, and which player the
+ * rows are for.  `s_map` is the edit buffer; Save writes it and the next launch
+ * pushes it to the core. */
+const int PLAYERS = 2;
+tang_snes_settings_t s_set;
+uint8_t s_map[PLAYERS][TANG_SNES_BUTTONS];
+int s_player;
+bool s_dirty;                    /* edited here and not yet saved */
+td_widget_t *s_input_list;
+td_widget_t *s_player_button;
 
 /* A launch or a stop owns the core and the link until it is done, so a
  * second is refused rather than reloading the core under the first.  The
@@ -131,6 +143,9 @@ char s_task_say[TD_TEXT_MAX];
 /* Declared here because launch_task starts the exit watcher, which is defined
  * further down beside the rest of the task code. */
 void play_task(void *);
+
+/* The status line, defined with the Library below and used by every page. */
+void lib_say(const char *text);
 
 /* ------------------------------------------------------------------ pages */
 
@@ -169,16 +184,103 @@ void show_tab(int tab)
     }
 }
 
+/* ------------------------------------------------------------------ the input */
+
+/* What the file holds, and what the rows edit.  Read once when the window
+ * opens; Save writes it back and the next launch pushes it to the core, which
+ * is the only place a remapping can take effect -- the pad is decoded in
+ * fabric and never reaches this chip. */
+void settings_load(void)
+{
+    (void)tang_snes_settings_load(&s_set, TANG_SNES_INI_REAL);
+    s_dirty = false;
+}
+
+void settings_show(void)
+{
+    if (s_player_button != nullptr) {
+        td_widget_set_text(s_player_button, s_player ? "Player 2" : "Player 1");
+    }
+    if (s_input_list != nullptr) {
+        td_list_set_count(s_input_list, TANG_SNES_BUTTONS);
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* One row: the SNES button, and what it answers to.  A row always exists for
+ * every button -- a binding that is absent is shown as "none" rather than by
+ * the row disappearing, so the list never changes height under the player. */
+const char *input_item(td_widget_t *, int index, int *fg, void *)
+{
+    static char text[48];
+    if (index < 0 || index >= TANG_SNES_BUTTONS) {
+        return "";
+    }
+    const int src = s_map[s_player][index];
+    snprintf(text, sizeof text, "%-6s <- %s%s",
+             tang_snes_button_name(index), tang_snes_source_name(src),
+             s_dirty ? " *" : "");
+    *fg = src == TANG_SNES_SRC_NONE ? td_theme()->dim : TD_COLOR_DEFAULT;
+    return text;
+}
+
+void on_input_row(td_widget_t *, void *)
+{
+    const int row = s_input_list != nullptr ? td_list_selected(s_input_list) : -1;
+    if (row < 0 || row >= TANG_SNES_BUTTONS) {
+        return;
+    }
+    /* Cycles through every source and then the absence of one, so a single
+     * button reaches every state a mapping can hold. */
+    s_map[s_player][row] =
+        (uint8_t)((s_map[s_player][row] + 1) % TANG_SNES_SOURCES);
+    s_dirty = true;
+    if (s_input_list != nullptr) {
+        td_win_invalidate(s_win);
+    }
+    lib_say("Change cycles the binding; Save writes it.");
+}
+
+void on_player(td_widget_t *, void *)
+{
+    s_player = (s_player + 1) % PLAYERS;
+    settings_show();
+}
+
+void on_restore(td_widget_t *, void *)
+{
+    for (int i = 0; i < TANG_SNES_BUTTONS; i++) {
+        s_map[s_player][i] = (uint8_t)i;
+    }
+    s_dirty = true;
+    settings_show();
+    lib_say("Restored this player to the default map; Save writes it.");
+}
+
+void on_input_save(td_widget_t *, void *)
+{
+    char why[96];
+    for (int p = 0; p < PLAYERS; p++) {
+        memcpy(p == 0 ? s_set.p1 : s_set.p2, s_map[p], TANG_SNES_BUTTONS);
+    }
+    if (tang_snes_settings_save(&s_set, TANG_SNES_INI_REAL, why, sizeof why) != 0) {
+        lib_say(why);
+        return;
+    }
+    s_dirty = false;
+    settings_show();
+    lib_say("Saved. Taken when the next game starts.");
+}
+
 /* ------------------------------------------------------- the placeholder pages */
 
 /* Input, Video and Audio are not built yet.  Each carries its rows and says in
  * one line that nothing here is wired, so a row can never be read as a setting
  * the core has taken -- which is the mistake the three TinyNES pages made
  * before they were built. */
-const char *const DUMMY_ROWS_TEXT[3][DUMMY_ROWS] = {
-    { "Controller mapping: not built yet",
-      "This page is a placeholder",
-      "Game input comes from the pad directly" },
+const char *const DUMMY_ROWS_TEXT[2][DUMMY_ROWS] = {
     { "Aspect ratio: not set",
       "Scanlines: not set",
       "This page is a placeholder" },
@@ -192,7 +294,7 @@ const char *dummy_item(td_widget_t *w, int index, int *fg, void *)
     const int page = w != nullptr && w->user != nullptr
                          ? static_cast<int>(reinterpret_cast<uintptr_t>(w->user))
                          : 0;
-    if (index < 0 || index >= DUMMY_ROWS || page < 0 || page >= 3) {
+    if (index < 0 || index >= DUMMY_ROWS || page < 0 || page >= 2) {
         return "";
     }
     *fg = td_theme()->dim;   /* greyed: none of this is in force */
@@ -721,9 +823,11 @@ void on_close(td_window_t *)
     for (int i = 0; i < SAVE_LINES; i++) {
         s_save_line[i] = nullptr;
     }
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         s_dummy_list[i] = nullptr;
     }
+    s_input_list = nullptr;
+    s_player_button = nullptr;
     memset(s_page_count, 0, sizeof s_page_count);
     /* The names are not worth the heap while the window is shut. */
     free(s_lib_entries);
@@ -785,18 +889,36 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* Input, Video and Audio: the rows exist so the window has the shape the
-     * other two apps have, and say plainly that they are not wired.  Nothing
-     * on them is read by anything. */
-    for (int t = INPUT_TAB; t <= AUDIO_TAB; t++) {
+    /* Input: which controller button answers to each SNES button, edited a row
+     * at a time, written to /tinysnes.ini by Save and pushed to the core by the
+     * next launch. */
+    settings_load();
+    for (int p = 0; p < PLAYERS; p++) {
+        memcpy(s_map[p], p == 0 ? s_set.p1 : s_set.p2, TANG_SNES_BUTTONS);
+    }
+    s_player_button = td_button(s_win, 1, 1, "Player 1", on_player, nullptr);
+    page_add(INPUT_TAB, s_player_button);
+    page_add(INPUT_TAB, td_label(s_win, 12, 1, 0, "Controller button per SNES button:"));
+    s_input_list = td_list(s_win, td_rect(1, 3, -1, TANG_SNES_BUTTONS), input_item,
+                           on_input_row, nullptr);
+    page_add(INPUT_TAB, s_input_list);
+    page_add(INPUT_TAB, td_button(s_win, 1, 16, "Change", on_input_row, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, 12, 16, "Restore", on_restore, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, 22, 16, "Save", on_input_save, nullptr));
+    settings_show();
+
+    /* Video and Audio: the rows exist so the window has the shape the other two
+     * apps have, and say plainly that they are not wired.  Nothing on them is
+     * read by anything. */
+    for (int t = VIDEO_TAB; t <= AUDIO_TAB; t++) {
         page_add(t, td_label(s_win, 1, 2, 0, "Not built yet: nothing here is set."));
         td_widget_t *list = td_list(s_win, td_rect(1, 3, -1, DUMMY_ROWS), dummy_item,
                                     nullptr,
-                                    reinterpret_cast<void *>(static_cast<uintptr_t>(t - 1)));
+                                    reinterpret_cast<void *>(static_cast<uintptr_t>(t - VIDEO_TAB)));
         if (list != nullptr) {
             td_list_set_count(list, DUMMY_ROWS);
         }
-        s_dummy_list[t - 1] = list;
+        s_dummy_list[t - VIDEO_TAB] = list;
         page_add(t, list);
         page_add(t, td_label(s_win, 1, 7, 0, "Placeholder, filled in by a later build."));
     }

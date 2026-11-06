@@ -20,5 +20,6 @@ cc -std=c11 -O1 -D_GNU_SOURCE -Wall -Wextra -Werror -fsanitize=address,undefined
    "$root/ports/bl616/tang_gbc_ini.c" \
    "$root/ports/bl616/tang_pipe_sniff.c" \
    "$root/ports/bl616/tang_snes_load.c" \
+   "$root/ports/bl616/tang_snes_ini.c" \
    "$root/ports/bl616/tang_settings_ini.c" -o "$work/tb"
 "$work/tb"
