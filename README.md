@@ -181,8 +181,8 @@ python tools/tinytang_sync.py
 - **The mouse at the console prompt.** With the desktop not running the wheel
   scrolls the shell's own history -- one detent is one Up or Down, so wheel up
   once recalls the last command -- and a left click presses Enter on the line
-  as it stands, recalled or typed. So from the prompt `desktop` is two gestures
-  away: wheel up once, click. Both are only sent while the shell is waiting at its prompt;
+  as it stands, recalled or typed. So `desktop` is two gestures away: wheel up
+  once, click. Both are only sent while the shell is waiting at its prompt;
   while a command runs the mouse is ignored and a press is not saved for
   later. The history is the shell's, kept in `~/.tdsh_history` on the card, so
   the first command has to be typed once before the wheel has anything to
@@ -479,11 +479,8 @@ tools/tinytang_put.py scripts/tinyphosphor.tdsh  /root/scripts/tinyphosphor.tdsh
 screen /dev/ttyACM0 115200
 ```
 
-Power-cycle the board and it comes up in **TinyDesk**, on HDMI and configured
-VGA. Exit from the start menu returns to the shell prompt, and `desktop` brings
-the desktop back; a card with an empty `/root/scripts/no-desktop` file stops at
-the prompt instead, which is what to use during bring-up or before a keyboard is
-paired.
+Power-cycle the board and it comes up at the console on HDMI and configured VGA. Type
+`desktop` for TinyDesk.
 
 ### The card
 

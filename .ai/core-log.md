@@ -168,3 +168,41 @@ The change is built but unproven: when the operator frees the board, flashing th
 - User Test: N/A
 
 ---
+
+## 6 COMMIT Unreleased 2026-11-05T20:23:47-07:00
+
+#### Coming From:
+
+Unreleased 4c3a2bc
+
+#### Purpose:
+
+Revert the desktop-first boot at the operator's change of mind, after the build had been deployed and the board shown to reach the prompt.
+
+#### Outcome:
+
+Entry 5's change was deployed and worked: the operator power-cycled and `platform` reported `4c3a2bc-dirty.f646e08`, and the operator then decided against it, because the Bluetooth setup and first-boot work are moving into the GUI where the advice belongs. The commit was reverted with `git revert`, which restores the platform file to `run_boot_script()` then `tang_ble_boot()` then the readline loop and removes `ports/bl616/tang_boot_mode.{c,h}`, `tools/tests/tb_boot_mode.c`, `tools/tests/test_boot_mode.sh` and the marker-file escape hatch, and puts `README.md`, `manual/getting-started.md` and `scripts/boot.tdsh` back to describing a console boot where the desktop is a command the user types. One part of the revert was deliberately not kept: entry 5 also carried the `-Wenum-compare` fix to the three static assertions entry 96 added in `tang_ble.c`, and reverting that would have put the warnings back, so the cast through `int` was restored by hand; the fix is unrelated to boot behaviour and outlives the feature it was found beside. The revert also erased entry 5 from `.ai/core-log.md`, since the commit's diff included adding it and `git revert` removes what a commit added; that is wrong for a log, because the cycle did happen and the record of it is not undone by the code being undone, so the log was restored from the reverted commit and this entry records the reversal instead. That is worth carrying as a rule: a revert of a cycle must not revert that cycle's own entry. The reverted firmware was rebuilt from the reverted tree at 690,624 bytes, SHA-256 `15f8548203412d79db11f3e66ec61274fc67d828f6a69a3133bdf4f7a45aeeeb`, build `4c3a2bc-dirty.d82a2f5` -- the same commit id with a different tree hash, which is the build-id scheme doing exactly what it is designed to do -- and deployed with `tools/tinytang_flash.py`; after the operator's power cycle `platform` reported that build and `tangini` reported `layout lora` with `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`, so the card path and the core load are unaffected. The host gate is 43 of 43, one lower than entry 5's 44 because the boot-mode suite left with the feature it covered. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and restores entry 5 without rewriting it, that `.ai/core.md` was not changed, and validated this entry as number 6 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The board is back on console boot, and the desktop-first idea returns only if the GUI work it was waiting on makes it unnecessary -- the operator's reasoning was that the first-boot advice belongs in the desktop rather than in a prompt, which makes the automatic start pointless rather than wrong. The rest of the open list is unchanged: the two untried pack boundaries (`A & E Home Video` in chunk 10 and `A battuta` above 2 GiB), the LoRa link end to end with its retry budget under a busy node, the `mkdir -p` measurement, the three Bluetooth re-runs, the TinyGutenberg reading-position restore, the personality 8 flip-bit fix, and the release firmware identity question the build id cannot answer.
+
+#### Files Modified:
+
+- README.md
+- manual/getting-started.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_boot_mode.c
+- ports/bl616/tang_boot_mode.h
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/boot.tdsh
+- tools/tests/tb_boot_mode.c
+- tools/tests/test_boot_mode.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
