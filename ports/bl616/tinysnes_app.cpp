@@ -71,8 +71,7 @@ const int PAGE_WIDGETS = 16;
 const int ACCENT = 14;
 
 /* The tab set TinyNES and TinyGBC carry, so the three windows read the same.
- * Library is built; Saves is built; Input, Video and Audio are placeholders
- * whose rows say so rather than pretending to be settings. */
+ * All five are built: Library, Input, Video, Audio and Saves. */
 const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Audio", "Saves" };
 const int INPUT_TAB = 1;
 const int VIDEO_TAB = 2;
@@ -86,11 +85,6 @@ const int SAVES_TAB = 4;
 constexpr char SAVES_SHOWN[] = "/root/saves/snes";
 constexpr char SAVES_REAL[] = "/sd/root/saves/snes";
 const int SAVE_LINES = 6;
-
-/* The placeholder rows on the three unbuilt pages.  Each list draws its rows
- * from these, and each row reads "not set" so no value here can be mistaken
- * for a setting the core has taken. */
-const int DUMMY_ROWS = 3;
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -118,7 +112,9 @@ char s_launch_cart[TD_PATH_MAX + 4];
 
 /* The Saves page's lines. */
 td_widget_t *s_save_line[SAVE_LINES];
-td_widget_t *s_dummy_list;      /* Audio, the one page still a placeholder */
+td_widget_t *s_volume;          /* the Audio page's slider */
+td_widget_t *s_volume_label;    /* ...and the percentage beside it */
+td_widget_t *s_mute;            /* ...and its mute */
 
 /* The Video page: the picture's shape, edited here and pushed by the next
  * launch.  There is no palette row on purpose -- see tang_snes_ini.h. */
@@ -339,31 +335,67 @@ void on_video_save(td_widget_t *, void *)
     lib_say("Saved. Taken when the next game starts.");
 }
 
-/* ------------------------------------------------------- the placeholder pages */
+/* ---------------------------------------------------------------- the audio */
 
-/* Input, Video and Audio are not built yet.  Each carries its rows and says in
- * one line that nothing here is wired, so a row can never be read as a setting
- * the core has taken -- which is the mistake the three TinyNES pages made
- * before they were built. */
-const char *const DUMMY_ROWS_TEXT[2][DUMMY_ROWS] = {
-    { "Volume: not set",
-      "Mute: not set",
-      "This page is a placeholder" },
-    { "Reserved",
-      "Reserved",
-      "This page is a placeholder" },
-};
-
-const char *dummy_item(td_widget_t *w, int index, int *fg, void *)
+/* One master volume, not one per output.  HDMI and the Pmod I2S2's Line Out
+ * play the same stream, and the core scales it once, between the S-DSP and
+ * both -- so there is exactly one number to set and no way for the two to
+ * disagree.  The percentage is the player's unit; the gain the core takes is
+ * tang_audio_gain's square of it, which is why each step of the slider is
+ * about as large a change as the last rather than the top half of the travel
+ * doing almost nothing.
+ *
+ * The slider and the mute change what Save writes.  Nothing reaches the core
+ * until the next game starts, because the volume is sent once as frame 0x1C
+ * before the cartridge streams, alongside the pad map and the picture's
+ * shape. */
+void show_volume(void)
 {
-    const int page = w != nullptr && w->user != nullptr
-                         ? static_cast<int>(reinterpret_cast<uintptr_t>(w->user))
-                         : 0;
-    if (index < 0 || index >= DUMMY_ROWS || page < 0 || page >= 2) {
-        return "";
+    if (s_volume_label != nullptr) {
+        td_widget_printf(s_volume_label, "%3u%%%s",
+                         (unsigned)s_set.audio.volume,
+                         s_set.audio.mute ? "  muted" : "");
     }
-    *fg = td_theme()->dim;   /* greyed: none of this is in force */
-    return DUMMY_ROWS_TEXT[page][index];
+}
+
+void on_volume(td_widget_t *w, void *)
+{
+    if (w == nullptr) {
+        return;
+    }
+    s_set.audio.volume = (uint8_t)w->value;
+    s_dirty = true;
+    show_volume();
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+void on_mute(td_widget_t *w, void *)
+{
+    s_set.audio.mute = td_checkbox_get(w) ? 1 : 0;
+    s_dirty = true;
+    show_volume();
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+void on_audio_save(td_widget_t *, void *)
+{
+    char why[96];
+    for (int p = 0; p < PLAYERS; p++) {
+        memcpy(p == 0 ? s_set.p1 : s_set.p2, s_map[p], TANG_SNES_BUTTONS);
+    }
+    if (tang_snes_settings_save(&s_set, TANG_SNES_INI_REAL, why, sizeof why) != 0) {
+        lib_say(why);
+        return;
+    }
+    s_dirty = false;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+    lib_say("Saved. Taken when the next game starts.");
 }
 
 /* ----------------------------------------------------------------- the saves */
@@ -888,7 +920,9 @@ void on_close(td_window_t *)
     for (int i = 0; i < SAVE_LINES; i++) {
         s_save_line[i] = nullptr;
     }
-    s_dummy_list = nullptr;
+    s_volume = nullptr;
+    s_volume_label = nullptr;
+    s_mute = nullptr;
     s_video_list = nullptr;
     s_input_list = nullptr;
     s_player_button = nullptr;
@@ -986,16 +1020,21 @@ void launch(void)
     page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "There is no palette: SNES colour is digital."));
     page_add(VIDEO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
 
-    /* Audio: still a placeholder, and says so. */
-    page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Not built yet: nothing here is set."));
-    s_dummy_list = td_list(s_win, td_rect(1, 3, -1, DUMMY_ROWS), dummy_item,
-                           nullptr,
-                           reinterpret_cast<void *>(static_cast<uintptr_t>(0)));
-    if (s_dummy_list != nullptr) {
-        td_list_set_count(s_dummy_list, DUMMY_ROWS);
+    /* Audio: the master volume, its percentage, the mute, and the Save. */
+    page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
+    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    if (s_volume != nullptr) {
+        td_slider_set(s_volume, s_set.audio.volume);
     }
-    page_add(AUDIO_TAB, s_dummy_list);
-    page_add(AUDIO_TAB, td_label(s_win, 1, 7, 0, "Placeholder, filled in by a later build."));
+    page_add(AUDIO_TAB, s_volume);
+    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    page_add(AUDIO_TAB, s_volume_label);
+    show_volume();
+    s_mute = td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0, on_mute, nullptr);
+    page_add(AUDIO_TAB, s_mute);
+    page_add(AUDIO_TAB, td_button(s_win, 1, 8, "Save", on_audio_save, nullptr));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
 
     /* Saves: the selected cartridge's battery save.  There is no save state on
      * TinySNES, so this page is the save itself and when it was written. */

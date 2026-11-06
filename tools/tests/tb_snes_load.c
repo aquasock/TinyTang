@@ -512,24 +512,26 @@ static void pattern(uint32_t from)
 }
 
 /* The sequence every good load must show, for an image starting at `skip`
- * with its header at file offset `hdr`.  The pad map goes first, before the
- * core is even held: it is a register the core keeps, and setting it early
- * means a load that fails part way still leaves the pad configured. */
+ * with its header at file offset `hdr`.  The three settings frames go first,
+ * before the core is even held: they are registers the core keeps, and
+ * setting them early means a load that fails part way still leaves the pad
+ * and the picture configured the way the player asked. */
 static void check_good_load(uint32_t skip, uint32_t hdr)
 {
     const uint32_t image = file_len - skip;
-    CHECK(frame_count >= 6);
+    CHECK(frame_count >= 7);
     CHECK(frames[0].type == 0x1a && frames[0].len == 6);   /* pad map, 6 bytes */
     CHECK(frames[1].type == 0x1b && frames[1].len == 1);   /* video: aspect+overscan */
-    CHECK(frames[2].type == FPGA_CMD_SET_LOAD && frames[2].len == 1 && frames[2].first == 1);
-    CHECK(frames[3].type == FPGA_CMD_ROM_DATA && frames[3].len == TANG_SNES_HEADER_LEN);
-    CHECK(frames[3].at_ms >= frames[2].at_ms + 50);
+    CHECK(frames[2].type == 0x1c && frames[2].len == 2);   /* audio: gain, 2 bytes */
+    CHECK(frames[3].type == FPGA_CMD_SET_LOAD && frames[3].len == 1 && frames[3].first == 1);
+    CHECK(frames[4].type == FPGA_CMD_ROM_DATA && frames[4].len == TANG_SNES_HEADER_LEN);
+    CHECK(frames[4].at_ms >= frames[3].at_ms + 50);
     CHECK(rom_seen_len == TANG_SNES_HEADER_LEN + image);
     CHECK(memcmp(rom_seen, file_data + hdr, TANG_SNES_HEADER_LEN) == 0);
     CHECK(memcmp(rom_seen + TANG_SNES_HEADER_LEN, file_data + skip, image) == 0);
     const int expect_data = (int)((image + 1023u) / 1024u);
-    CHECK(frame_count == 4 + expect_data + 1);
-    for (int i = 4; i < frame_count - 1; i++) {
+    CHECK(frame_count == 5 + expect_data + 1);
+    for (int i = 5; i < frame_count - 1; i++) {
         CHECK(frames[i].type == FPGA_CMD_ROM_DATA);
         CHECK(frames[i].len <= 1024u);
     }
@@ -542,10 +544,10 @@ static void check_good_load(uint32_t skip, uint32_t hdr)
     }
     CHECK(drains == 1);
     /* Hidden before the core is held, so the bars show through the stream,
-     * and hidden again after the release.  The pad map is the one frame that
-     * precedes the hide, which is why the index is 1. */
+     * and hidden again after the release.  The three settings frames are the
+     * ones that precede the hide, which is why the index is 3. */
     CHECK(osd_calls == 2 && !osd_first && !osd_shown_now);
-    CHECK(osd_first_index == 2);
+    CHECK(osd_first_index == 3);
     CHECK(osd_last_index == frame_count);
     CHECK(!locked && lock_errors == 0);
     CHECK(!file_open_now);
@@ -714,9 +716,10 @@ static void test_refusals(void)
  * it started. */
 static bool restored(void)
 {
-    /* The pad map is sent before the core is held, so one frame precedes the
+    /* The three settings frames -- the pad map, the picture's shape and the
+     * volume -- are sent before the core is held, so three frames precede the
      * overlay being hidden. */
-    return osd_calls == 2 && !osd_first && osd_first_index == 2 && osd_shown_now;
+    return osd_calls == 2 && !osd_first && osd_first_index == 3 && osd_shown_now;
 }
 
 /* A failure part-way leaves the core in reset: no release, the overlay put
@@ -739,7 +742,7 @@ static void test_mid_failures(void)
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 7;                   /* the fourth data chunk */
+    frame_fail_at = 8;                   /* the fourth data chunk */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "stopped taking data at 3072") != NULL);
     CHECK(restored() && !locked && lock_errors == 0 && !file_open_now);
@@ -748,16 +751,16 @@ static void test_mid_failures(void)
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 3;                   /* the header */
+    frame_fail_at = 4;                   /* the header */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "header") != NULL);
-    CHECK(frame_count == 3 && restored() && !locked && lock_errors == 0);
+    CHECK(frame_count == 4 && restored() && !locked && lock_errors == 0);
 
     reset_world();
     make_file(64u * 1024u);
     pattern(0);
     put_header(0x7FC0u, 0x20);
-    frame_fail_at = 4 + 64;              /* the release */
+    frame_fail_at = 5 + 64;              /* the release */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "did not start") != NULL);
     CHECK(restored() && !locked && lock_errors == 0);
@@ -768,11 +771,11 @@ static void test_mid_failures(void)
     pattern(0);
     put_header(0x7FC0u, 0x20);
     osd_shown_now = false;
-    frame_fail_at = 2;                   /* the hold */
+    frame_fail_at = 3;                   /* the hold */
     CHECK(tang_snes_load(FILE_PATH, why, sizeof why) != 0);
     CHECK(strstr(why, "cannot start") != NULL);
-    /* The map went out before the hold that failed, so one frame exists. */
-    CHECK(osd_calls == 2 && !osd_shown_now && frame_count == 2);
+    /* The three settings frames went out before the hold that failed. */
+    CHECK(osd_calls == 2 && !osd_shown_now && frame_count == 3);
 }
 
 /* A second load while one is streaming is refused, and the first finishes;
@@ -917,11 +920,11 @@ static void test_save_restore(void)
     CHECK(save_writes[blocks - 1].len == tail);
     CHECK(memcmp(save_writes[blocks - 1].data,
                  old + (blocks - 1) * TANG_SNES_SAVE_BLOCK, tail) == 0);
-    /* The restore did not disturb the load's own order: the two settings
+    /* The restore did not disturb the load's own order: the three settings
      * frames, then the hold, then the header. */
-    CHECK(frames[2].type == FPGA_CMD_SET_LOAD && frames[2].first == 1);
-    CHECK(frames[3].type == FPGA_CMD_ROM_DATA && frames[3].len == TANG_SNES_HEADER_LEN);
-    CHECK(frames[3].at_ms >= frames[2].at_ms + 50);
+    CHECK(frames[3].type == FPGA_CMD_SET_LOAD && frames[3].first == 1);
+    CHECK(frames[4].type == FPGA_CMD_ROM_DATA && frames[4].len == TANG_SNES_HEADER_LEN);
+    CHECK(frames[4].at_ms >= frames[3].at_ms + 50);
     CHECK(!locked && lock_errors == 0);
     CHECK(!file_open_now);
 

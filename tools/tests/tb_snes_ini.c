@@ -222,6 +222,8 @@ int main(void)
     written.p1[TANG_SNES_A] = TANG_SNES_B;
     written.p1[TANG_SNES_SELECT] = TANG_SNES_SRC_NONE;
     written.p2[TANG_SNES_UP] = TANG_SNES_DN;
+    written.audio.volume = 65;
+    written.audio.mute = 1;
     s_card[0] = '\0';
     s_card_used = false;
     s_write_fails = false;
@@ -235,10 +237,12 @@ int main(void)
     check(reread.p1[TANG_SNES_SELECT] == TANG_SNES_SRC_NONE,
           "round trip: SELECT still unbound");
     check(reread.p2[TANG_SNES_UP] == TANG_SNES_DN, "round trip: p2 UP still DN");
-    check(reread.keys == 2 * TANG_SNES_BUTTONS + 3,
-          "round trip: every button, the version and the two video keys");
+    check(reread.keys == 2 * TANG_SNES_BUTTONS + 5,
+          "round trip: every button, the version, the video and audio keys");
     check(reread.aspect == written.aspect, "round trip: aspect kept");
     check(reread.overscan == written.overscan, "round trip: overscan kept");
+    check(reread.audio.volume == 65, "round trip: volume kept");
+    check(reread.audio.mute == 1, "round trip: mute kept");
 
     /* The video keys, and a shape this build does not know. */
     load(&s, "[video]\naspect = 8:7\noverscan = crop\n");
@@ -247,6 +251,33 @@ int main(void)
     load(&s, "[video]\naspect = 16:9\n");
     check(s.aspect == TANG_SNES_ASPECT_4_3, "video: unknown shape keeps default");
     check(s.keys == 0, "video: unknown shape not counted");
+
+    /* The audio keys.  They go through the same parser /tinynes.ini and
+     * /tinygbc.ini use, so what is checked here is that this file reaches it
+     * and that the defaults are a pass-through. */
+    tang_snes_defaults(&s);
+    check(s.audio.volume == 100, "audio: default is full volume");
+    check(s.audio.mute == 0, "audio: default is not muted");
+    check(tang_audio_gain(s.audio.volume, s.audio.mute) == TANG_VOLUME_UNITY,
+          "audio: the default gain is exactly unity");
+    load(&s, "[audio]\nvolume = 40\nmute = yes\n");
+    check(s.audio.volume == 40, "audio: volume read");
+    check(s.audio.mute == 1, "audio: mute read");
+    check(s.keys == 2, "audio: both keys counted");
+    load(&s, "[audio]\nvolume = 250\n");
+    check(s.audio.volume == 100, "audio: a volume past the top is clamped");
+    load(&s, "[audio]\nvolume = 0\n");
+    check(tang_audio_gain(s.audio.volume, 0) == 0, "audio: zero is silence");
+
+    /* The curve.  These are the numbers a player hears, so they are checked
+     * rather than derived again in the app: half travel is a quarter of the
+     * amplitude, which is -12 dB, and 100 is exactly unity so the default
+     * leaves every sample as it was. */
+    check(tang_audio_gain(100, 0) == 256u, "gain: 100% is unity");
+    check(tang_audio_gain(50, 0) == 64u, "gain: 50% is a quarter");
+    check(tang_audio_gain(5, 0) == 1u, "gain: 5% is about -48 dB");
+    check(tang_audio_gain(100, 1) == 0u, "gain: mute is silence at full volume");
+    check(tang_audio_gain(0, 0) == 0u, "gain: zero is silence");
 
     /* A card that stops taking the file says so rather than reporting a save. */
     s_card[0] = '\0';

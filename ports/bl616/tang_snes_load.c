@@ -118,6 +118,7 @@ static int send_locked(uint8_t type, const uint8_t *payload, size_t length)
 #define SNES_SAVE_READ  0x19u
 #define SNES_PAD_MAP    0x1au
 #define SNES_VIDEO      0x1bu
+#define SNES_AUDIO      0x1cu
 
 /* The reply timeout.  A 250-byte read is 253 bytes back at 2 Mbaud, about
  * 1.3 ms on the wire; 200 ms leaves room for a joystick frame overtaking it
@@ -453,6 +454,22 @@ int tang_snes_apply_video(uint8_t aspect, uint8_t overscan)
     return send_locked(SNES_VIDEO, &byte, 1) == 0 ? 0 : 1;
 }
 
+int tang_snes_apply_audio(const tang_audio_t *audio)
+{
+    /* Little-endian, because the core latches the low byte first: gain[8:0]
+     * lives in the first byte's eight bits and the second byte's bit 0. */
+    const unsigned gain = tang_audio_gain(audio->volume, audio->mute);
+    const uint8_t body[2] = { (uint8_t)(gain & 0xFFu),
+                              (uint8_t)((gain >> 8) & 0xFFu) };
+    if (tang_fpga_link_open() != 0) {
+        return 1;
+    }
+    if (tang_fpga_pipe_open()) {
+        return 1;
+    }
+    return send_locked(SNES_AUDIO, body, sizeof body) == 0 ? 0 : 1;
+}
+
 void tang_snes_resume(void)
 {
     (void)send_locked(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
@@ -609,6 +626,10 @@ static int load(FIL *file, const char *real, char *why, size_t why_len)
     (void)tang_snes_settings_load(&settings, TANG_SNES_INI_REAL);
     const bool mapped = tang_snes_apply_pad_map(settings.p1) == 0;
     (void)tang_snes_apply_video(settings.aspect, settings.overscan);
+    /* The volume, from the same file and before the stream starts, for the
+     * reason the picture's shape is sent here: both are settings rather than
+     * controls, and a core that never hears them keeps unity and 4:3. */
+    (void)tang_snes_apply_audio(&settings.audio);
 
     if (f_lseek(file, (FSIZE_t)skip) != FR_OK) {
         snprintf(why, why_len, "cannot rewind the file");

@@ -70,6 +70,9 @@ void tang_snes_defaults(tang_snes_settings_t *s)
     }
     s->aspect = TANG_SNES_ASPECT_4_3;
     s->overscan = 1;
+    /* 100 percent and not muted, which is a gain of exactly unity: the level
+     * every build before the volume existed played at. */
+    tang_audio_defaults(&s->audio);
     s->version = 1;
 }
 
@@ -142,6 +145,12 @@ static bool apply(void *ctx, const char *section, const char *key,
         }
         return false;
     }
+    if (strcmp(section, "audio") == 0) {
+        /* The same two keys /tinynes.ini and /tinygbc.ini carry, through the
+         * same parser, so the three players cannot drift apart on what
+         * `volume` or `mute` means. */
+        return tang_audio_apply(&s->audio, key, value);
+    }
     if (strcmp(section, "tinysnes") == 0) {
         if (strcmp(key, "version") == 0) {
             s->version = (uint8_t)atoi(value);
@@ -205,6 +214,12 @@ int tang_snes_settings_save(const tang_snes_settings_t *s, const char *path,
                       "\n[video]\naspect = %s\noverscan = %s\n",
                       tang_snes_aspect_name(s->aspect),
                       s->overscan ? "show" : "crop");
+    }
+    if (n > 0 && (size_t)n < sizeof text) {
+        n += snprintf(text + n, sizeof text - (size_t)n,
+                      "\n[audio]\nvolume = %u\nmute = %s\n",
+                      (unsigned)s->audio.volume,
+                      s->audio.mute ? "yes" : "no");
     }
     if (n <= 0 || (size_t)n >= sizeof text) {
         (void)f_close(&file);

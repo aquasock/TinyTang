@@ -91,6 +91,12 @@ int tang_snes_apply_pad_map(const uint8_t map[TANG_SNES_BUTTONS]);
  * 0 on success. */
 int tang_snes_apply_video(uint8_t aspect, uint8_t overscan);
 
+/* Send the master volume to the core, frame 0x1C, as the gain tang_audio_gain
+ * turns this player's volume and mute into.  One gain for both outputs: the
+ * core applies it between the S-DSP and HDMI and the Pmod together.  Takes the
+ * link itself; 0 on success. */
+int tang_snes_apply_audio(const tang_audio_t *audio);
+
 /* Release the load hold that tang_snes_save_write took. */
 void tang_snes_resume(void);
 

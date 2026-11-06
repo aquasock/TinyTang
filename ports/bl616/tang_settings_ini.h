@@ -44,6 +44,22 @@ void tang_audio_defaults(tang_audio_t *a);
 /* `volume` and `mute` of an [audio] section. */
 bool tang_audio_apply(tang_audio_t *a, const char *key, const char *value);
 
+/* The gain a player's volume and mute become, out of TANG_VOLUME_UNITY.
+ *
+ * The square is the point: at 100 percent each 5 percent step of the slider
+ * moves the level about the same amount, instead of the top half of the travel
+ * barely changing anything and the bottom half falling off a cliff.  100
+ * percent is exactly unity, so the default leaves every sample as it was, and
+ * a mute or a zero is exactly silence.
+ *
+ * This lives here rather than in a core's RTL because the curve is a property
+ * of the slider a person drags, and two copies of it -- one in C, one as a
+ * lookup table in fabric -- would eventually disagree.  The cores that take a
+ * gain take the number this returns. */
+#define TANG_VOLUME_UNITY 256u
+
+unsigned tang_audio_gain(unsigned percent, unsigned mute);
+
 #ifdef __cplusplus
 }
 #endif

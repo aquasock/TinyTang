@@ -6,9 +6,9 @@
 // it, is the default, so dropping one on the card is safe and an old card keeps
 // working.
 //
-// Only [input] exists so far.  The Video and Audio pages are still placeholders
-// in the desktop window, and a settings file that carried keys nothing reads
-// would be worse than one that does not.
+// [input], [video] and [audio] are all read: the pad map, the picture's shape
+// and the master volume.  A section nothing reads is worse than an absent one,
+// so a key is only written here once a page sets it.
 //
 // SPDX-License-Identifier: MIT
 
@@ -18,6 +18,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "tang_settings_ini.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,6 +66,7 @@ typedef struct {
     uint8_t p2[TANG_SNES_BUTTONS];
     uint8_t aspect;             /* TANG_SNES_ASPECT_* */
     uint8_t overscan;           /* 1 = show the PPU's extra fifteen lines */
+    tang_audio_t audio;         /* master volume and mute, shared with the others */
     uint8_t version;
     bool    found;          /* the file was there to be read */
     uint16_t keys;          /* how many of its keys were understood */

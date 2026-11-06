@@ -410,3 +410,41 @@ The depth is the operator's to settle, with setting e held for that decision, an
 - User Test: N/A
 
 ---
+
+## 13 COMMIT Unreleased 2026-11-06T09:56:36-07:00
+
+#### Coming From:
+
+Unreleased b73a7dd
+
+#### Purpose:
+
+Build the TinySNES desktop window's Audio page, which was the last placeholder, as one master volume and a mute in the shape TinyNES and TinyGBC already ship.
+
+#### Outcome:
+
+The page is TinyNES's, and so is the arithmetic behind it. `tang_settings_ini.h` gained `tang_audio_gain`, which squares the percentage out of `TANG_VOLUME_UNITY` 256 with rounding rather than truncation, so each 5 percent step moves the level about as much as the last instead of the top half of the slider doing almost nothing. It lives in the shared settings module rather than in the app or in fabric because the curve is a property of the slider a person drags, and a copy in C beside a lookup table in RTL would eventually disagree; the core takes the number this returns and nothing else. `tang_snes_settings_t` grew a `tang_audio_t`, `[audio]` is read through the same `tang_audio_apply` that `/tinynes.ini` and `/tinygbc.ini` use, which is what stops the three players from drifting on what `volume` or `mute` means, and the writer emits the section after `[video]`. `tang_snes_apply_audio` turns the pair into the two little-endian bytes of frame `0x1C` and is called beside the pad map and the picture's shape when a game starts, so all three settings arrive before the cartridge streams and a core that hears none of them keeps unity, identity and 4:3. The page itself is a 5 percent slider, a `%3u%%` label that appends "muted", a Mute checkbox, Save, and the note that the value is taken when the next game starts; the placeholder list and its `DUMMY_ROWS` table are gone, and the tab-set comment no longer calls anything unbuilt. Adding a third settings frame broke `tb_snes_load.c`, which asserts an exact frame sequence: the settings frames are now three before the hold rather than two, so `frame_count`, `osd_first_index`, `restored()` and the three `frame_fail_at` indices moved by one, and those are expectation changes with no change to what the test proves. `tb_snes_ini.c` gained the `[audio]` round trip, the clamping of a volume past the top, the four named gain values including that 100 percent is exactly unity, and the two new keys in the key count. The firmware is `build/build_out/tinytang_bl616.bin`, SHA-256 `77a3432ad9213cc7033c09ebcfcae7ea9db817eef353bfc313e6b4d554907058` at 698,944 bytes, identity `b73a7dd-dirty.30d9470`, with `tang_audio_gain` and `tang_snes_apply_audio` present in the ELF rather than assumed linked; the host gate passes 44 of 44. It was installed by `tools/tinytang_flash.py`, which reported `tangflash: OK committing`, and a power cycle through the operator's relay script brought it back reporting the new identity. The core half is the TinySNES repository's entry 22 and this entry cannot be read on its own without it. The operator tested the page on the board and reports the volume working perfectly, and the card corroborates the path independently of the listening test: `/tinysnes.ini` now carries `[audio]` with `volume = 20` and `mute = no`, a value neither the defaults nor the cycle's own test wrote, so the slider, the label, Save and the atomic rename all ran on hardware and a gain of 10 out of 256 reached the core. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, confirmed `.ai/core.md` was not changed, confirmed entries 1 to 12 were not rewritten, and validated this entry as number 13 of 100 with six sections in order, one-sentence Purpose, prose Outcome and Next Steps, permitted Status values, only eligible paths in Files Modified and no self-referencing hash.
+
+#### Next Steps:
+
+The Audio page has one property still unproven and it cannot be settled by ear: that a mute silences both outputs and that unity is bit-identical to the previous build, which a capture through the TinySNES tree's `tools/ab_capture.sh` would answer. The Input page's Player 2 toggle is still drawn and inert by the operator's earlier decision, and the same question it raises has now been answered twice the same way -- Video and Audio both carry only controls the core honours -- so it is worth settling rather than carrying. The `tmp.*.test_*.log` files that `tools/tests/run_all.sh` leaves in the repository root are still there and are nobody's intent; the harness should clean them up or write them under `build/`. `third_party/tinydesk` still carries uncommitted changes that are not this repository's and stayed out of this commit. Everything else open is as entry 12 left it.
+
+#### Files Modified:
+
+- ports/bl616/tang_settings_ini.c
+- ports/bl616/tang_settings_ini.h
+- ports/bl616/tang_snes_ini.c
+- ports/bl616/tang_snes_ini.h
+- ports/bl616/tang_snes_load.c
+- ports/bl616/tang_snes_load.h
+- ports/bl616/tinysnes_app.cpp
+- tools/tests/tb_snes_ini.c
+- tools/tests/tb_snes_load.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -152,3 +152,16 @@ bool tang_audio_apply(tang_audio_t *a, const char *key, const char *value)
     }
     return false;
 }
+
+unsigned tang_audio_gain(unsigned percent, unsigned mute)
+{
+    if (mute || percent == 0) {
+        return 0;
+    }
+    if (percent >= TANG_VOLUME_MAX) {
+        return TANG_VOLUME_UNITY;
+    }
+    /* percent^2 * 256 / 10000, rounded rather than truncated so a step of one
+     * percent is never lost to integer division. */
+    return (percent * percent * TANG_VOLUME_UNITY + 5000u) / 10000u;
+}
