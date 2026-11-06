@@ -2,17 +2,18 @@
 # SPDX-License-Identifier: MIT
 """Play every format in the Phosphor corpus on the board and check each one.
 
-The corpus is tools/make_codec_corpus.sh's twelve files in /root/media/music on the card,
-the same set Tang-Phosphor qualified in its entry 43.  With the Phosphor core
-loaded and the desk layer off, each file is played through the resident AE350
-Rockbox player with `phosphor play`, and a file passes when the player reports
-it complete with zero underruns.  The sample count is compared with what entry
-43 recorded for the same file on the same player, and a difference is reported
-for review rather than waved through; the output rate must be the file's own.
-The order puts Opus, the one 48 kHz file, after WMA at 44.1 kHz, and the sweep
-ends by playing the WAV again, so the rate is seen to change both ways.
+The corpus is tools/make_codec_corpus.sh's twelve files on the card, in
+/root/media/music/diagnostics by default, the same set Tang-Phosphor qualified in
+its entry 43.  With the Phosphor core loaded and the desk layer off, each file is
+played through the resident AE350 Rockbox player with `phosphor play`, and a file
+passes when the player reports it complete with zero underruns.  The sample count
+is compared with what entry 43 recorded for the same file on the same player, and
+a difference is reported for review rather than waved through; the output rate
+must be the file's own.  The order puts Opus, the one 48 kHz file, after WMA at
+44.1 kHz, and the sweep ends by playing the WAV again, so the rate is seen to
+change both ways.
 
-    tools/phosphor_format_sweep.py [--only mp3,flac] [--port /dev/ttyACM0]
+    tools/phosphor_format_sweep.py [--dir DIR] [--only mp3,flac] [--port PORT]
 
 Nothing is sent unless the console is first shown to be a plain shell prompt
 (tinytang_console.require_shell), because bytes sent while the desktop is up are
@@ -43,6 +44,7 @@ EXPECTED = [
 ]
 
 PROMPT = b"root@tinytang"
+DEFAULT_DIR = "/root/media/music/diagnostics"
 DONE = re.compile(rb"playback complete: (\d+) samples, (\d+) underruns, (\d+) Hz")
 
 
@@ -66,6 +68,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", default="/dev/ttyACM0")
+    ap.add_argument("--dir", default=DEFAULT_DIR,
+                    help="the corpus folder on the card (default: %(default)s)")
     ap.add_argument("--only", help="comma-separated extensions to play")
     ap.add_argument("--timeout", type=float, default=60.0,
                     help="seconds to allow each file")
@@ -81,7 +85,7 @@ def main():
         if not only:
             plan.append(("wav", 441000, 44100, "  after Opus: 48 -> 44.1 kHz"))
         for ext, expected, expected_rate, label in plan:
-            path = f"/root/media/music/test.{ext}"
+            path = f"{args.dir}/test.{ext}"
             out = run(port, f"phosphor play {path}", args.timeout)
             m = DONE.search(out.encode())
             if not m:

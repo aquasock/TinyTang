@@ -5,12 +5,23 @@
 Everything lives on one FAT32 card:
 
      /root/media/music     tracks for the player
-     /root/media/nes       cartridges
+     /root/media/nes       NES cartridges
+     /root/media/gb        Game Boy cartridges
+     /root/media/gbc       Game Boy Color cartridges
+     /root/media/snes      SNES cartridges
+     /root/media/gba       Game Boy Advance cartridges
      /root/cores/          FPGA cores
      /root/saves/nes       battery saves
-     /root/manual          this manual
+     /root/wiki/manual     this manual
      /root/scripts         shell scripts
      /tinytang.ini             which PMODs are seated
+
+Folders inside those are yours to arrange: the windows open a folder
+when you pick it and `..` climbs back, so a library can be sorted
+however suits.  A release card comes with a `diagnostics` folder in
+`music`, `nes`, `gb`, `gbc`, `snes` and `gba` holding test material,
+and a `homebrew` folder under `nes`, `gb`, `gbc` and `snes` holding
+the bundled games.
 
 ## Putting files on the card
 
