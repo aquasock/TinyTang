@@ -342,6 +342,7 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 | partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project |
 | untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not |
 | untested | Tiny89 | no host test in this tree. **Its save stalls after the state lands — see 5.1** |
+| partial | TinySNES | in scope from 2026-11-06. `test_snes_load` covers the loader and `tb_snes_ini` the settings; the window is not covered, and no cartridge has been launched through it yet |
 | host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested |
 | untested | TinyWiki, TinyGutenberg | `test_wiki_pack` covers the pack format, not the apps |
 | untested | TinyNode | no host test |
@@ -403,11 +404,21 @@ one entry older than Tiny89's HEAD, and Tiny89's tree has uncommitted work —
 the archive attribute for the variable-send header — which touches the install
 path and not the save path.
 
-Out of scope for this release, per the operator: **TinySNES** is a single core
-that reintegrates later.  Its launcher (`tinysnes_app.cpp`) and the cartridge
-loader it shares with `snesload` (`tang_snes_load.c`, covered by
-`test_snes_load`) are in the tree and board-tested, but not qualified. TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not
-shipping.
+**TinySNES is in scope from 2026-11-06**, by the operator's decision, and the
+release card carries its core.  It was out of scope as "a single core that
+reintegrates later"; the reason to bring it back was that this firmware already
+has its window, its cartridge loader and its three settings pages, and the card
+had eleven homebrew games and a hardware test for a core that was not there.
+Status is `partial`: the launcher (`tinysnes_app.cpp`) and the loader it shares
+with `snesload` (`tang_snes_load.c`, covered by `test_snes_load`) are in the
+tree and board-tested, and the core itself is board-accepted in its own project.
+What is not yet proven here is a cartridge launched end to end through this
+window: `tinysnes.bin` at SHA-256 `6b7489d0…` was loaded with `tangload` on the
+release card and answered as core 2, and the desktop core was put back, which
+proves the file and the load path but not the stream.  The first launch is the
+test that closes it.
+
+TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not shipping.
 
 ---
 

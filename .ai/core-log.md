@@ -605,3 +605,33 @@ Cycle two is next and is already scoped: `tinysnes.bin` on the card, from `build
 - User Test: PASS
 
 ---
+
+## 19 COMMIT Unreleased 2026-11-06T16:18:27-07:00
+
+#### Coming From:
+
+Unreleased 4284991
+
+#### Purpose:
+
+Put the TinySNES core on the release card and move TinySNES from out of scope to in, so the eleven SNES homebrew games and the Retro Regen test that the card already carries can be launched.
+
+#### Outcome:
+
+The release card now carries `tinysnes.bin` at 5,238,252 bytes, SHA-256 `6b7489d022b65cc97b51b1a014e59cc2029f900501e134bd3e2cd43bcadfb26e`, with `tinysnes.fs.gz` beside it at 1,773,023 bytes from a `gzip -9 -n` of the 41,942,501-byte `tinysnes.fs` at SHA-256 `6bb911d033dc9792a4fe78b185bb606153b8c201d5adcf5ed2a3c470948baf28`, both uploaded over the CDC console with `tools/tinytang_put.py` and both landing at exactly their source sizes, checked with `ls -l` on the board. Choosing the build took reading rather than picking the newest directory: `build/video/tinysnes.bin` at `ce199fa6…` is the Video-settings core, but `build/audio1/tinysnes.bin` at `6b7489d0…` is newer and is the image TinySNES's own entry 22 deployed and had accepted with the desktop's Audio page, so it carries the pad remap, the aspect and extra-lines frames and the volume frames together, which the firmware's own entries 11 and 13 support; `build/hyg1/tinysnes.bin` is a hygiene rebuild that is byte-identical to it and was used as the source, with both the `.bin` and the `.fs` compared rather than assumed. The core was then verified on the board rather than left as a file transfer: `tangload /root/cores/console138k/tinysnes.bin` programmed it and reported `ID=0001081b`, `tangload: core loaded`, and `fpga` answered `core 2 answering on UART1 at 2000000 baud`, core 2 being SNES in TangCore's own table; the desktop core was then loaded back, which reported `tinytang.ini: sockets declared, 0xc0 = 0x0000` and answered as core 84, so the socket declaration ran and the I2C bus belief was restored, which is entry 18's fix doing its job on a real pair of loads. That establishes the file is a valid bitstream for this device, that the JTAG load path takes it, and that the link answers afterwards; it does not establish a cartridge streamed through the window, and the entry says so rather than claiming the library works. The card README was updated by fetch, edit and verified return rather than by rewriting it blind: `tangget` pulled the 27,196-byte file down through `tools/tinytang_sync.py`'s own `Console.get()`, the result was checked for transfer damage (no CR, no NUL, 105 non-ASCII bytes, 543 lines, valid UTF-8), three edits were made, and the 27,693-byte file was uploaded to `/README.new`, fetched back and compared — the round trip is byte-identical at SHA-256 `fcc41d12546721389adc7aa5122e5e52898968d30b1f7d2532dc926685a0408e` — before `/README.md` was replaced and `/README.new` renamed into place. The edits add `tinysnes.bin` and `tinysnes.fs.gz` to the card tree, add the core to the list with what its three settings pages and its HOME gesture do, replace the paragraph that said there was no `tinysnes.bin` on the card with one saying what is and is not proven about it, and move the build stamp from `5c58bd3` to `4284991`. In this repository `docs/qualification.md` moves TinySNES from out of scope to in with a `partial` row in the applications table: the loader is covered by `test_snes_load` and the settings by `tb_snes_ini`, the window is not covered, and no cartridge has been launched through it yet. The host gate is 45 of 45. No firmware was built and nothing was flashed, so the board still runs entry 18's `3a31690-dirty.cd6a5d5`; the only things that changed on the card are the two new core files and the README, and the one thing the cycle did not change is the out-of-scope sentence's other half, that TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not shipping, which still holds. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 19 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only `docs/qualification.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+One launch closes this cycle and it is the operator's: open the TinySNES window, pick a cartridge from `homebrew` — the eleven `.sfc` files are raw images because that window has no inflater — and see the game. If it plays, the `partial` row becomes silicon and the README's caveat can go; if it does not, the loader's own message names the stage it reached, and the console shows it because a cartridge stream is printed as it runs. The Retro Regen SNES test in `diagnostics` is a better second test than a game because it reports what it finds rather than merely drawing. Two smaller things are carried. The manual has no TinySNES page, which is consistent with it having no TinyGBC or Tiny89 page either, so bringing the game cores into the manual is one cycle rather than a gap this one opened. And `tinytang-upload.bin` is now at the card root, left by the entry-18 flash; it is `tinytang_flash.py`'s staging path by design and should be left alone, but a published card should not carry a stray 683 KB firmware image, so removing it belongs with the release-layout pass alongside `TI89Titanium_OS.89u`.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: NOT RUN
+
+---
