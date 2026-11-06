@@ -715,8 +715,9 @@ this change; the instruction stream for this file is unchanged.
 
 ## 12. The English Wikipedia pack, built 2026-11-04/05
 
-The first multi-chunk pack this project has produced, and the first real subject
-for the "multi-chunk packs have never been read on hardware" gap. Built by
+The first multi-chunk pack this project has produced, and **the first one read on
+hardware** — the gap carried since the pack format was designed is now closed for
+the main path; see the read result below. Built by
 `tools/convert_wikipedia_overnight.py` from
 `wikipedia_en_all_nopic_2026-06.zim` in **7h25m** (20:43 → 04:08), which is
 close to the 7h15m its own rate estimate predicted at ~320 entries a second.
@@ -763,3 +764,40 @@ The built pack was **not** rebuilt for that: re-running 7h25m to remove one
 bogus article in 8.4 million is not worth the electricity, and the pack's
 structure is unaffected. Copy it to the card as-is, or rebuild if a clean index
 matters more than the time.
+
+### It reads on the board
+
+Copied to `/root/wiki/wikipedia` on 2026-11-05: all 14 files byte-identical to
+the source by `cmp`, and `check_wiki_pack.py` against the **card copy** reported
+8,425,137 records with 4,213 bodies sampled across 11 chunks, OK.
+
+The user then read **Arizona** — the whole article — on the board. That is a
+stronger result than it looks, because `read_page()` in `td_wiki_app.cpp` opens
+the chunk file **afresh on every page turn**: `f_open("wiki.%03u")` then
+`f_lseek` to `record->offset + cursor`. Arizona is 91,031 bytes against a
+12,288-byte page, so the article is **8 pages**, and reading it end to end means
+eight separate open-seek-read cycles into `wiki.005` starting at offset
+1,009,142,055.
+
+What that establishes:
+
+- The record's **chunk field routes to the right file**. This was the core of
+  the multi-chunk question: a pack whose records all landed in chunk 0 would
+  read correctly and still be broken for any archive this size.
+- **Seeking ~1 GB into a 3 GiB file** works on FAT32 through the port's syscall
+  layer.
+- **Paging across 8 pages** works, each turn a fresh seek.
+- The article was **not truncated**: 91,031 bytes is well under the 256 KB
+  article cap, and the user read to its end.
+
+**Two boundaries that read did not cross**, and which a thorough qualification
+should still take:
+
+| Boundary | Why it matters | Target |
+|---|---|---|
+| The last chunk, `wiki.010` | 2.93 GiB rather than 3.00, so its offset space ends differently from the other ten | `A & E Home Video` — chunk 10, offset 311,802,683, 52,753 bytes, 5 pages |
+| An offset above 2 GiB | Arizona sits at ~1.0 GB. Each chunk is 3 GiB, so roughly its last third lies above `0x80000000` — the classic place a 32-bit signed offset wraps | `A battuta` — chunk 9, offset 2,500,311,686, 64,713 bytes, 6 pages |
+
+Neither is known to fail; neither has been tried. Until they are, the honest
+statement is that multi-chunk reading is proven for chunks 0–9 below the 2 GiB
+boundary, not for the whole pack.
