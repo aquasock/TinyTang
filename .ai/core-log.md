@@ -541,3 +541,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 17 COMMIT Unreleased 2026-11-06T16:05:18-07:00
+
+#### Coming From:
+
+Unreleased 3a31690
+
+#### Purpose:
+
+Record Tiny89's save stall in the release qualification matrix as a known issue the operator accepted, so the release carries the evidence rather than a memory of it.
+
+#### Outcome:
+
+The calculator runs and its save does not finish, which the operator reported and then accepted as a known issue rather than a cycle to fix now. Three Ctrl+S attempts were read out of `/root/saves/last.log` with the board on firmware `3a31690-dirty.45fed98` and the Tiny89 player the card carries, which is the build Tiny89's own log records for its entry 21 at SHA-256 `1f19f86e…` and 5,701,736 bytes. The third attempt wrote the state correctly: `arm ...state: 263316 bytes, crc eb590206`, then `finish ...: 263316 of 263316 bytes, crc eb590206 of eb590206, whole`, 529 ms of card time, and `/root/states/ti89/TI89Titanium_OS.state` on the card, so the state path works and the thing a launch resumes from now exists. What stalls is the 4 MiB flash image the same save goes on to send, because `save_flash()` runs when the OS has changed its flash: the log shows `arm ...flash: 4194304 bytes, crc d1fcdbf9` and `first byte 00`, and then no progress line and no finish line more than twenty minutes later. Progress is logged at every 32 KiB boundary and the sender paces itself at 62 ms per 512 bytes, so the whole image is about 8.5 minutes and the first progress line is due four seconds in; under 32 KiB of 4 MiB moved. The session never returns, which is the part the operator sees: `fpga` still answered core 0x4E (Tiny89) long afterwards, the picture stayed frozen and there was no second attempt because the app is inside the run. The first two attempts are the transport loss already recorded, where a lost frame shifts a byte payload and only the CRC can see it, but the second has a different signature worth carrying: its finish line reads `161792 of 0` with `crc cebaacfa of 00000000`, and exactly one line of code zeroes that field, the refusal branch of `ae350_save_arm()`, which also clears `s_ae350_save_left` and leaves `s_ae350_save_active` set so the next payload byte ends the save and hands the rest of a raw RAM dump to the text parser. That is recorded as a lead and not a finding, because how a second arm would arise mid-payload is not established and the flash stall shows no finish line at all, so it is not that path; whether the calculator is blocked in `t89_put_char` on `T89_UART_TX_READY` or the board stopped draining UART1 has not been told apart, and `s_rx_drops` exists but is printed only inside a failure message, so a failure that never prints one leaves no evidence behind and exposing it is the first step of any fix. The section also records that the fault spans two repositories, the sender being the Tiny89 ELF on the card and the receiver `ports/bl616/tang_fpga_uart.c`, that the card carries one entry older than Tiny89's HEAD, and that Tiny89's tree has uncommitted work — the archive attribute for the variable-send header — which touches the install path and not the save path, so the newer work does not fix this. One correction is owed against what this session reported out loud before it checked: a `flash.part` reading as zero bytes was offered as evidence of the stall, and it is not, because FatFS does not commit a file's directory size until `f_sync` or `f_close`; the missing 32 KiB progress line is the evidence, and the section says so. The matrix row now reads `untested | Tiny89 | no host test in this tree. Its save stalls after the state lands — see 5.1`, so the cross-reference is there from the top. No code changed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 17 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only `docs/qualification.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The first step of any fix is to make the failure legible, because it currently is not: `s_rx_drops` should be readable outside a failure message, and the flash save should log progress where a stalled one is visible. Only then is the right question answerable — whether the calculator is blocked in `t89_put_char` waiting for `T89_UART_TX_READY`, or the board stopped draining UART1 — since the two need opposite fixes and neither has been observed. A second question sits behind that: 4 MiB on the Ctrl+S key may simply be the wrong design, and a flash image that only travels when the OS has changed might belong behind its own command rather than lengthening every save. Nothing here blocks the release, since TinyNES and TinyGBC both passed on this card and Tiny89 is not in the ship set's read path. The pad fix is this session's next entry, and cycle two after it puts `tinysnes.bin` on the card.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

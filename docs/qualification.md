@@ -341,11 +341,67 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 |---|---|---|
 | partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project |
 | untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not |
-| untested | Tiny89 | no host test in this tree |
+| untested | Tiny89 | no host test in this tree. **Its save stalls after the state lands — see 5.1** |
 | host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested |
 | untested | TinyWiki, TinyGutenberg | `test_wiki_pack` covers the pack format, not the apps |
 | untested | TinyNode | no host test |
 | untested | Bluetooth, Software Update | `test_bluetooth_app` covers the first; `td_update_app.c` has none |
+
+### 5.1 Tiny89: the save stalls after the state lands
+
+**Known issue, accepted by the operator on 2026-11-06.**  The calculator itself
+runs; what does not finish is its save.  Recorded here so the release matrix
+carries it rather than a memory of it.
+
+Measured on the release card with firmware `3a31690-dirty.45fed98` and the
+Tiny89 player the card carries, which is the build Tiny89's own log records for
+entry 21 at SHA-256 `1f19f86e…`, 5,701,736 bytes.  Three Ctrl+S attempts, from
+`/root/saves/last.log`:
+
+| Attempt | Arm | Finish |
+|---|---|---|
+| 21:44:57 | state 263316 B, crc `7a4296e1` | `263316 of 263316`, crc `95f328a2` of `7a4296e1`, **short** |
+| 21:51:36 | state 263316 B, crc `c2d4d6b5` | `161792 of 0`, crc `cebaacfa` of `00000000`, **short** |
+| 22:17:38 | state 263316 B, crc `eb590206` | `263316 of 263316`, crc `eb590206` of `eb590206`, **whole** |
+
+The third attempt wrote the state correctly — both CRCs agree, 529 ms of card
+time, `TI89Titanium_OS.state` on the card.  So the state path works, and with it
+the thing a launch resumes from.
+
+**What stalls is the flash image that follows it.**  The same save goes on to
+`Tiny89 FLASH DATA 4194304 d1fcdbf9`, because `save_flash()` runs when the OS
+has changed its flash.  The log shows the arm at 22:18:12 and `first byte 00`,
+and then nothing: no progress line, no finish line, more than twenty minutes
+later.  Progress is logged at each 32 KiB boundary and the sender's own pacing
+is 62 ms per 512 bytes, so the whole image is about 8.5 minutes and the first
+progress line should appear four seconds in.  Under 32 KiB of 4 MiB moved.
+
+**The session does not return, and that is the part the operator sees.**  `fpga`
+still answers core 0x4E (Tiny89) long afterwards, so `ae350run` never came back
+and the picture stays frozen.  There is no second attempt because there is no
+second keypress: the app is inside the run.
+
+**Lead, not finding.**  Attempts 1 and 2 are the known transport loss, already
+recorded: a lost frame shifts a byte payload and only the CRC can see it.  The
+`of 0` in attempt 2 is a different signature, and exactly one line of code
+zeroes that field — the refusal branch of `ae350_save_arm()`, which also
+clears `s_ae350_save_left` and leaves `s_ae350_save_active` set, so the next
+payload byte ends the save at 161792 and hands the rest of a raw RAM dump to the
+text parser.  That is consistent with a refused arm arriving mid-payload, and
+it is also the shape that would let `BAD ` or `EXIT ` inside raw memory end the
+run early.  **How a second arm arises mid-payload is not established**, and the
+flash stall shows no finish line at all, so it is not that path: something stops
+the bytes between the calculator and the board instead.  Whether the calculator
+is blocked in `t89_put_char` on `T89_UART_TX_READY`, or the board stopped
+draining UART1, has not been told apart.  `s_rx_drops` exists and is printed
+only inside a failure message, so a failure that never prints one leaves no
+evidence behind; exposing it is the first step of any fix.
+
+**Not in this repository's power alone.**  The sender is the Tiny89 ELF on the
+card; the receiver is `ports/bl616/tang_fpga_uart.c`.  The card also carries
+one entry older than Tiny89's HEAD, and Tiny89's tree has uncommitted work —
+the archive attribute for the variable-send header — which touches the install
+path and not the save path.
 
 Out of scope for this release, per the operator: **TinySNES** is a single core
 that reintegrates later.  Its launcher (`tinysnes_app.cpp`) and the cartridge
