@@ -485,29 +485,131 @@ def markdown_title(text: str, fallback: str) -> str:
     return fallback
 
 
+def fold_verbatim(line: str) -> str:
+    """Fold a line to ASCII without touching its spacing.
+
+    to_ascii() collapses runs of spaces, which is right for prose and fatal for
+    a drawn map: every column in it is a space run.  Only the character mapping
+    and the combining-mark strip are wanted here.
+    """
+    text = "".join(_CHAR_MAP.get(c, c) for c in line)
+    text = unicodedata.normalize("NFKD", text)
+    out = []
+    for ch in text:
+        if unicodedata.combining(ch):
+            continue
+        if 32 <= ord(ch) < 127:
+            out.append(ch)
+        elif ord(ch) > 126:
+            out.append(" ")
+    return "".join(out)
+
+
+# Lines that a verbatim block drew wider than the reader can show.  The caller
+# reports them; the pack still builds, because a clipped map is the operator's
+# call and not a reason to refuse the whole conversion.
+wide_lines: list[int] = []
+
+# The characters a drawn line is made of: walls, rules, arrows, boxes, and the
+# punctuation a legend puts beside them.
+DRAW_CHARS = set("-=_|+/\\*:~<>^v.,'\"`[](){} ")
+
+
+def is_drawing(line: str) -> bool:
+    """A line that is drawn rather than written.
+
+    A map row carries a wall, and its columns are the information: collapsing a
+    run of spaces destroys it, because every space run in a map is a column.  A
+    rule or banner is a run of one symbol; it is decoration, but it is still not
+    prose and must not be read as a list, which is what happened to a banner of
+    asterisks (`***` is a horizontal rule in CommonMark, a bullet here).  An
+    axis row under a map is digits and spaces and nothing else.
+    """
+    body = line.strip()
+    if not body:
+        return False
+    if "|" in body:
+        return True
+    if len(body) >= 3 and set(body) <= DRAW_CHARS:
+        return True
+    if re.fullmatch(r"[\d\s]{7,}", body):
+        return True
+    return False
+
+
+def drawn_run(text: str, start: int) -> int:
+    """The end of the run of drawn lines that begins at `start`."""
+    end = start
+    for i in range(start, len(text)):
+        if not is_drawing(text[i]):
+            break
+        end = i + 1
+    return end
+
+
 def markdown_body(text: str) -> str:
     """Markdown into the page format the reader draws.
 
     The reader strips `## ` headings and the emphasis markers itself, so a
     chapter is stored as written: headings promoted to `## `, paragraphs wrapped
     to the column budget, list items keeping their bullet, indented blocks
-    keeping their indent, and fenced code fences dropped because the reader has
-    no reason to show them.
+    keeping their indent, and a drawn line kept exactly as it is -- neither
+    re-wrapped nor space-collapsed, with the run's common indent removed so a
+    right-aligned box still fits the page.
     """
+    del wide_lines[:]
+    source = text.splitlines()
     lines: list[str] = []
-    for raw in text.splitlines():
+    fenced = False
+    i = 0
+    while i < len(source):
+        raw = source[i]
         line = raw.rstrip()
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            i += 1
+            continue
+        if fenced:
+            keep = fold_verbatim(line)
+            lines.append(keep)
+            if len(keep) > WIKI_LINE_COLS:
+                wide_lines.append(len(keep))
+            i += 1
+            continue
+        if is_drawing(line):
+            end = drawn_run(source, i)
+            block = [l.rstrip() for l in source[i:end]]
+            # The run's own common indent is layout, not content: removing it
+            # keeps every column's relative position and lets a right-aligned
+            # box fit the page.
+            indent = min(len(b) - len(b.lstrip()) for b in block if b.strip())
+            for b in block:
+                keep = fold_verbatim(b[indent:]).rstrip()
+                if len(keep) > WIKI_LINE_COLS:
+                    if keep.count("|") >= 2:
+                        # Two or more walls: a row of a map, whose meaning is the
+                        # column each wall sits in.  Trimming it loses a room,
+                        # so it is kept whole and reported.
+                        wide_lines.append(len(keep))
+                    else:
+                        # One wall, a rule or a banner: a separator or a boxed
+                        # byline, whose tail is ornament.  Trimmed rather than
+                        # re-wrapped, which would break the run.
+                        keep = keep[:WIKI_LINE_COLS]
+                lines.append(keep)
+            i = end
+            continue
         # Folded per line: to_ascii() turns newlines into spaces, which is right
         # for one HTML block and wrong for a whole chapter.
         stripped = to_ascii(line.lstrip())
-        if stripped.startswith("```"):
-            continue
         if stripped.startswith("# ") or stripped.startswith("## "):
             lines.append("## " + stripped.lstrip("#").strip())
             lines.append("")
+            i += 1
             continue
         if not stripped:
             lines.append("")
+            i += 1
             continue
         if stripped.startswith("- ") or stripped.startswith("* ") or \
                 re.match(r"^\d+\. ", stripped):
@@ -517,17 +619,20 @@ def markdown_body(text: str) -> str:
             body_text = stripped[2:] if stripped[:2] in ("- ", "* ") else stripped
             wrapped = textwrap.wrap(body_text, width=WIKI_LINE_COLS - len(marker),
                                     break_long_words=True, break_on_hyphens=False)
-            for i, piece in enumerate(wrapped or [""]):
-                lines.append((marker if i == 0 else "  ") + piece)
+            for k, piece in enumerate(wrapped or [""]):
+                lines.append((marker if k == 0 else "  ") + piece)
+            i += 1
             continue
         if line.startswith("    "):
             wrapped = textwrap.wrap(stripped, width=WIKI_LINE_COLS - 4,
                                     break_long_words=True, break_on_hyphens=False)
             lines.extend("    " + piece for piece in (wrapped or [""]))
+            i += 1
             continue
         lines.extend(textwrap.wrap(stripped, width=WIKI_LINE_COLS,
                                    break_long_words=True, break_on_hyphens=False))
         lines.append("")
+        i += 1
 
     folded: list[str] = []
     for line in lines:
@@ -973,6 +1078,10 @@ def convert_markdown(args) -> int:
         if not title:
             continue
         body = markdown_body(text).encode("ascii", "replace")
+        if wide_lines:
+            print(f"  {base}: {len(wide_lines)} drawn line(s) wider than "
+                  f"{WIKI_LINE_COLS} columns, widest {max(wide_lines)}; "
+                  f"the reader will clip them", file=sys.stderr)
         if len(body.strip()) < args.min_chars:
             continue
         writer.add_article(title, body, max(body.count(b"\n"), 1))

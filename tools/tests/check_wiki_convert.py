@@ -491,6 +491,43 @@ def main():
                                         capture_output=True, text=True)
             check(md_checked.returncode == 0, "the checker accepts a manual pack")
 
+        # A drawn line is data, not prose: its columns are the information, so
+        # the converter must neither collapse its space runs nor re-wrap it.
+        art = os.path.join(work, "art")
+        os.makedirs(art)
+        with open(os.path.join(art, "map.md"), "w", encoding="utf-8") as f:
+            f.write("# Map of tests\n\n"
+                    " A   |   |   |D9 |   |   |\n"
+                    "     -----------------------\n"
+                    " B   | X |   |   |   |   |\n\n"
+                    + "* " * 36 + "\n\n"
+                    "A paragraph long enough that the size floor keeps it, and "
+                    "long enough that it must be wrapped at the reader's "
+                    "width or it would run off the right edge of the page.\n")
+        art_pack = os.path.join(work, "art-pack")
+        art_run = subprocess.run(
+            [sys.executable, CONVERTER, "--markdown", art, "--out", art_pack,
+             "--title", "Art test"], capture_output=True, text=True)
+        if art_run.returncode == 0:
+            _, art_records = read_pack(art_pack)
+            art_body = body_of(art_pack, art_records[0])
+            rows = art_body.splitlines()
+            check("A   |   |   |D9 |   |   |" in rows,
+                  "a drawn map keeps its columns")
+            check("B   | X |   |   |   |   |" in rows,
+                  "every row of a map is kept, not only the first")
+            banners = [r for r in rows if r.strip() and set(r.strip()) <= {"*", " "}]
+            check(len(banners) == 1,
+                  f"a banner of asterisks stays one drawn line (got {len(banners)})")
+            check(not any(r.startswith("- ") and "*" in r for r in rows),
+                  "a banner of asterisks is not read as a list")
+            check(all(len(r) <= COLS for r in rows),
+                  "no drawn line exceeds the reader's columns")
+            prose = [i for i, r in enumerate(rows) if r.startswith("A paragraph")]
+            check(len(prose) == 1 and rows[prose[0]] != rows[prose[0] + 1]
+                  and not rows[prose[0] + 1].startswith(" "),
+                  "a long prose line beside a drawing is still wrapped")
+
         # The checker must refuse a chapter table that points past its book.
         broken = os.path.join(work, "broken")
         shutil.copytree(pack, broken)

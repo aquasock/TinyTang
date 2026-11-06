@@ -448,3 +448,34 @@ The Audio page has one property still unproven and it cannot be settled by ear: 
 - User Test: PASS
 
 ---
+
+## 14 COMMIT Unreleased 2026-11-06T10:42:32-07:00
+
+#### Coming From:
+
+Unreleased b70eca4
+
+#### Purpose:
+
+Make `tools/make_wiki_pack.py` keep drawn ASCII art intact, so a hard-wrapped plain-text walkthrough can be renamed to `.md`, converted, and read on the board without its maps being flattened.
+
+#### Outcome:
+
+The converter collapsed space runs and re-wrapped every line, which is right for HTML prose and destroys ASCII art, because in a map every run of spaces is a column. Measured on a 215,697-byte GameFAQs walkthrough of The Legend of Zelda that the operator supplied, that turned the overworld grid's `A   |   |   |   |   |   |D9 |` into `A | | | | | |D9 |`, read a 79-character banner of asterisks as a Markdown bullet list and prefixed each line with `- `, and split a rule mid-run into two lines because it was re-wrapped at the page width. The fix is one predicate and one branch in `markdown_body()`: `is_drawing()` classifies a line as drawing when it carries a wall, is a run of box and rule characters only, or is a digits-and-spaces axis row, and a run of such lines is emitted verbatim with its own common indent removed, so a right-aligned box still fits the page while every column keeps its relative position. A drawn line wider than the page is trimmed only when it holds fewer than two walls, which distinguishes a separator or a boxed byline from a map row: the first loses ornament and keeps its meaning, the second would lose a room, so it is kept whole and reported through the existing `wide_lines` channel. The rewrite also had to stop using the loop variable as the list index, since the drawn path advances by a run rather than a line, and the per-line branches now advance by one. On the operator's file the pack now reads `A   |   |   |   |   |   |D9 |   |   |   |   |WS |D5 |   |   | L |   |` with all sixteen columns aligned under `1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16`, and the dungeon grids in all nine dungeons keep their walls. The pack is 1 record, 213,881 bytes, 8,985 lines and 17.4 pages at the reader's 12,288-byte page, and its widest line is exactly 70 columns, so `WINDOW_COLS` in `td_wiki_app.cpp` clips nothing. `tools/check_wiki_convert.py` grew from 62 checks to 68: map columns preserved, every row of a map kept and not only the first, a banner staying one drawn line, a banner not read as a list, no drawn line over the page, and prose beside a drawing still wrapped. Forcing `is_drawing()` false failed three of them and restoring it passed all six, so the guard bites rather than describing itself. The host gate is 44 of 44. The pack was uploaded to `/root/wiki/zelda` on the card as `wiki.meta`, `wiki.idx` and `wiki.000`, `ls` confirmed all three, and `check_wiki_pack.py` against the built pack reported OK; the operator opened it and passed it. No firmware was built or flashed and no firmware source changed, so the board still runs the image entry 11 deployed; `platform` could not be re-read to quote its identity because the desktop was up and the console guard refuses to send while the console is held, which is TOOL-011 working rather than a gap. Two things the operator will see are not this cycle's and were not changed: a markdown pack still carries `parts = 0` so a 17-page article has no contents list, and a legend entry hard-wrapped in the source still breaks mid-sentence because each source line is its own paragraph. Two untracked tools from this session's earlier detours were left out of the commit rather than deleted, `tools/preview_tile_vs_frame.py` and `tools/make_walkthrough_pack.py`, because deleting the operator's files is their call and the second was called overbuilt before it was finished. One correction is owed from entry 9 and is recorded here rather than edited there: the failure string `tools/tests/check_wiki_convert.py` prints is "they must be equal or long lines lose their tail on screen", and entry 9 quoted it as "they must be long lines lose their tail on screen", dropping three words. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 14 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The reading problem this cycle exposes is that a long document has no navigable structure: `convert_markdown` passes `parts_count = 0` to `write_meta`, so the 17-page pack scrolls linearly with no chapter jumps, and the board's `manual` pack has the same shape. Giving a markdown pack a parts table is the next useful cycle, and it needs a heading convention rather than a new splitter, since the source already marks its sections. The legend raggedness is the smaller half of the same question: a source line that continues a previous one should rejoin it, and the rule to distinguish a wrapped continuation from a real line break in a hard-wrapped file is the open decision. The two untracked tools are the operator's to delete or keep. Nothing else in this repository was touched: the release firmware identity question the build id cannot answer, the pack boundaries `A & E Home Video` and `A battuta`, the LoRa link end to end, the `mkdir -p` measurement and the three Bluetooth re-runs are all carried unchanged, as are the 70-column manual pack that is still not on the card and the TinyGutenberg width that still clips at 76.
+
+#### Files Modified:
+
+- tools/make_wiki_pack.py
+- tools/tests/check_wiki_convert.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
