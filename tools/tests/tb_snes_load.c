@@ -322,6 +322,18 @@ struct save_write { uint32_t addr; uint32_t len; uint8_t data[TANG_SNES_SAVE_BLO
 static struct save_write save_writes[SAVE_WRITES_MAX];
 static int save_write_count;
 
+/* The saves log: every line a save leaves for the Saves page to read. */
+#define NOTES_MAX 64
+static char notes[NOTES_MAX][192];
+static int note_count;
+void tang_ae350_note(const char *text)
+{
+    if (note_count < NOTES_MAX) {
+        snprintf(notes[note_count], sizeof notes[note_count], "%s", text);
+        note_count++;
+    }
+}
+
 int tang_fpga_link_open(void) { return link_rc; }
 bool tang_fpga_pipe_open(void) { return pipe_open; }
 void tang_fpga_lock(void) { if (locked) lock_errors++; locked = true; }
@@ -448,6 +460,7 @@ static void reset_world(void)
     save_reply_len = 0;
     save_reply_pending = false;
     save_write_count = 0;
+    note_count = 0;
     wait_calls = 0;
     write_fail_at = -1;
     rename_rc = FR_OK;
@@ -938,6 +951,16 @@ static void test_save_write(void)
 
     CHECK(tang_snes_save_write(path, 8u * 1024u, why, sizeof why) == 0);
     CHECK(strstr(why, "saved") != NULL);
+    /* The attempt is in the log the Saves page reads: an arm line and a
+     * finish line, in that order, naming the file. */
+    CHECK(note_count == 2);
+    if (note_count == 2) {
+        CHECK(strncmp(notes[0], "arm ", 4) == 0);
+        CHECK(strstr(notes[0], SAV) != NULL);
+        CHECK(strncmp(notes[1], "finish ", 7) == 0);
+        CHECK(strstr(notes[1], SAV) != NULL);
+        CHECK(strstr(notes[1], "verified") != NULL);
+    }
     /* One hold, then one 0x19 per block, and no release: the caller loads the
      * desktop core under it. */
     CHECK(frames[0].type == FPGA_CMD_SET_LOAD && frames[0].first == 1);
@@ -987,6 +1010,9 @@ static void test_save_write_refusals(void)
     refuse_reads = true;
     CHECK(tang_snes_save_write(path, 8192u, why, sizeof why) != 0);
     CHECK(strstr(why, "refused") != NULL);
+    /* A refusal is logged as a finish with the failed verdict, so a save that
+     * never landed still leaves a trace for the Saves page. */
+    CHECK(note_count == 2 && strstr(notes[1], "failed") != NULL);
     const struct sav_file *f = save_get(SAV);
     CHECK(f != NULL && f->len == 4 && memcmp(f->data, "keep", 4) == 0);
     char part[sizeof path + 8];

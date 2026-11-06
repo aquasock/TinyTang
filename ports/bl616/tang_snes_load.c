@@ -20,6 +20,7 @@
 #include "task.h"
 #include "ff.h"
 #include "ae350_load.h"        /* ae350_crc32, shared with the other save paths */
+#include "tang_ae350_run.h"   /* tang_ae350_note: the saves log */
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
 
@@ -224,6 +225,20 @@ static bool save_verify(const char *path, uint32_t expect, uint32_t crc)
     return ok;
 }
 
+/* One "finish" line in the shape td_saves_log.c parses, so the Saves page can
+ * say what came of the last attempt and when.  `verdict` is one word: the
+ * parser reads it with %15s. */
+static void save_log_finish(const char *path, uint32_t got, uint32_t want,
+                            uint32_t crc_got, uint32_t crc_want, const char *verdict)
+{
+    char line[176];
+    snprintf(line, sizeof line,
+             "finish %s: %lu of %lu bytes, crc %08lx of %08lx, %s",
+             path, (unsigned long)got, (unsigned long)want,
+             (unsigned long)crc_got, (unsigned long)crc_want, verdict);
+    tang_ae350_note(line);
+}
+
 int tang_snes_save_write(const char *path, uint32_t size, char *why, size_t why_len)
 {
     if (size == 0u || size > TANG_SNES_SAVE_MAX) {
@@ -265,6 +280,20 @@ int tang_snes_save_write(const char *path, uint32_t size, char *why, size_t why_
     if (f_open(&file, temp, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
         snprintf(why, why_len, "cannot write %s", temp);
         return 1;
+    }
+
+    /* The card's own record of the attempt, in the shape the Saves page reads
+     * (td_saves_log.h): an arm line now and a finish line at the end, both
+     * stamped by tang_ae350_note with the RTC-kept clock.  FatFS gives a file
+     * no date of its own, so this is the only way a window can say when a
+     * save was written. */
+    {
+        char line[176];
+        /* The crc field is the expected one, which this side does not know
+         * until the bytes are in; zero rather than a guess. */
+        snprintf(line, sizeof line, "arm %s: %lu bytes, crc %08lx, save",
+                 path, (unsigned long)size, 0ul);
+        tang_ae350_note(line);
     }
 
     static uint8_t reply[SNES_CHUNK];
@@ -317,12 +346,14 @@ int tang_snes_save_write(const char *path, uint32_t size, char *why, size_t why_
     if (fail != NULL) {
         (void)f_unlink(temp);
         snprintf(why, why_len, "%s; the old save is untouched", fail);
+        save_log_finish(path, done, size, 0ul, running, "failed");
         return 1;
     }
 
     if (!save_verify(temp, size, running)) {
         (void)f_unlink(temp);
         snprintf(why, why_len, "the card does not hold the save that was read");
+        save_log_finish(path, done, size, running, running, "unverified");
         return 1;
     }
 
@@ -332,9 +363,11 @@ int tang_snes_save_write(const char *path, uint32_t size, char *why, size_t why_
     if (f_rename(temp, path) != FR_OK) {
         (void)f_unlink(temp);
         snprintf(why, why_len, "the card will not put %s in place", path);
+        save_log_finish(path, done, size, running, running, "unplaced");
         return 1;
     }
 
+    save_log_finish(path, done, size, running, running, "verified");
     snprintf(why, why_len, "saved %lu bytes to %s, read back and verified",
              (unsigned long)size, path);
     return 0;

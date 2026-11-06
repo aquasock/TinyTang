@@ -29,6 +29,7 @@ extern "C" {
 #include "tang_fpga_link.h"
 #include "tang_osd.h"
 #include "tang_snes_load.h"
+#include "td_saves_log.h"
 
 /* The USB console writer, as tinygbc_app.cpp declares it. */
 int tdsh_printf(const char *fmt, ...);
@@ -62,7 +63,41 @@ constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
 
+const int TABS = 5;
+const int PAGE_WIDGETS = 16;
+
+/* There is no named accent, only TD_COLOR_DEFAULT and raw palette indices. */
+const int ACCENT = 14;
+
+/* The tab set TinyNES and TinyGBC carry, so the three windows read the same.
+ * Library is built; Saves is built; Input, Video and Audio are placeholders
+ * whose rows say so rather than pretending to be settings. */
+const char *const TAB_NAMES[TABS] = { "Library", "Input", "Video", "Audio", "Saves" };
+const int INPUT_TAB = 1;
+const int VIDEO_TAB = 2;
+const int AUDIO_TAB = 3;
+const int SAVES_TAB = 4;
+
+/* The Saves page: what the card holds for the cartridge selected in the
+ * Library, read again whenever the page is shown or the list selection
+ * changes.  TinyNES and TinyGBC show a save state above the battery save;
+ * TinySNES has no save states, so the battery save is the whole page. */
+constexpr char SAVES_SHOWN[] = "/root/saves/snes";
+constexpr char SAVES_REAL[] = "/sd/root/saves/snes";
+const int SAVE_LINES = 6;
+
+/* The placeholder rows on the three unbuilt pages.  Each list draws its rows
+ * from these, and each row reads "not set" so no value here can be mistaken
+ * for a setting the core has taken. */
+const int DUMMY_ROWS = 3;
+
 td_window_t *s_win;
+td_widget_t *s_tab[TABS];
+td_widget_t *s_page[TABS][PAGE_WIDGETS];
+int s_page_count[TABS];
+int s_tab_shown = -1;
+td_widget_t *s_status[TABS];   /* one per page: a shared widget cannot be shown
+                                * on one page and hidden on another */
 
 struct lib_entry
 {
@@ -80,6 +115,10 @@ char s_lib_shown[TD_PATH_MAX];
 char s_lib_real[TD_PATH_MAX + 4];
 char s_launch_cart[TD_PATH_MAX + 4];
 
+/* The Saves page's lines. */
+td_widget_t *s_save_line[SAVE_LINES];
+td_widget_t *s_dummy_list[3];   /* Input, Video, Audio */
+
 /* A launch or a stop owns the core and the link until it is done, so a
  * second is refused rather than reloading the core under the first.  The
  * task leaves its outcome in s_task_say; the tick, which runs on the
@@ -92,6 +131,178 @@ char s_task_say[TD_TEXT_MAX];
 /* Declared here because launch_task starts the exit watcher, which is defined
  * further down beside the rest of the task code. */
 void play_task(void *);
+
+/* ------------------------------------------------------------------ pages */
+
+void page_add(int tab, td_widget_t *w)
+{
+    if (w != nullptr && s_page_count[tab] < PAGE_WIDGETS) {
+        s_page[tab][s_page_count[tab]++] = w;
+    }
+}
+
+void show_tab(int tab);
+void saves_show(void);
+
+void on_tab(td_widget_t *, void *arg)
+{
+    show_tab(static_cast<int>(reinterpret_cast<uintptr_t>(arg)));
+}
+
+void show_tab(int tab)
+{
+    if (tab == s_tab_shown) {
+        return;
+    }
+    for (int t = 0; t < TABS; t++) {
+        for (int i = 0; i < s_page_count[t]; i++) {
+            td_widget_set_visible(s_page[t][i], t == tab);
+        }
+        td_widget_set_color(s_tab[t], TD_COLOR_DEFAULT,
+                            t == tab ? ACCENT : TD_COLOR_DEFAULT);
+    }
+    s_tab_shown = tab;
+    /* The Saves page reads the card, so it is filled when it is shown rather
+     * than on every tick. */
+    if (tab == SAVES_TAB) {
+        saves_show();
+    }
+}
+
+/* ------------------------------------------------------- the placeholder pages */
+
+/* Input, Video and Audio are not built yet.  Each carries its rows and says in
+ * one line that nothing here is wired, so a row can never be read as a setting
+ * the core has taken -- which is the mistake the three TinyNES pages made
+ * before they were built. */
+const char *const DUMMY_ROWS_TEXT[3][DUMMY_ROWS] = {
+    { "Controller mapping: not built yet",
+      "This page is a placeholder",
+      "Game input comes from the pad directly" },
+    { "Aspect ratio: not set",
+      "Scanlines: not set",
+      "This page is a placeholder" },
+    { "Volume: not set",
+      "Mute: not set",
+      "This page is a placeholder" },
+};
+
+const char *dummy_item(td_widget_t *w, int index, int *fg, void *)
+{
+    const int page = w != nullptr && w->user != nullptr
+                         ? static_cast<int>(reinterpret_cast<uintptr_t>(w->user))
+                         : 0;
+    if (index < 0 || index >= DUMMY_ROWS || page < 0 || page >= 3) {
+        return "";
+    }
+    *fg = td_theme()->dim;   /* greyed: none of this is in force */
+    return DUMMY_ROWS_TEXT[page][index];
+}
+
+/* ----------------------------------------------------------------- the saves */
+
+void save_lines(const char *const text[SAVE_LINES])
+{
+    for (int i = 0; i < SAVE_LINES; i++) {
+        if (s_save_line[i] != nullptr) {
+            td_widget_set_text(s_save_line[i], text[i] != nullptr ? text[i] : "");
+        }
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+}
+
+/* The selected cartridge's battery save: where it lives, how big it is, and
+ * when the last attempt to write it ran.  FatFS gives the file no date, so the
+ * time comes from the board's own log (td_saves_log.h), which the save path
+ * stamps as it writes.  Nothing here is a save state: TinySNES has none. */
+void saves_show(void)
+{
+    static char line[SAVE_LINES][TD_TEXT_MAX];
+    const char *text[SAVE_LINES] = {};
+    const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
+
+    if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
+        s_lib_entries[row].is_dir) {
+        text[0] = "Select a cartridge in the Library.";
+        text[1] = "Its battery save is shown here.";
+        save_lines(text);
+        return;
+    }
+    const char *name = s_lib_entries[row].name;
+    const char *dot = strrchr(name, '.');
+    const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+
+    /* The cartridge's own header decides whether it has a battery at all, and
+     * how large it is; the same rule the loader uses to size a save. */
+    uint32_t want = 0;
+    char save_path[256];
+    char cart_real[TD_PATH_MAX + 8];
+    snprintf(cart_real, sizeof cart_real, "%s/%s", s_lib_real, name);
+    if (tang_snes_save_for(cart_real, &want, save_path, sizeof save_path) != 0) {
+        snprintf(line[0], sizeof line[0], "%.*s", stem, name);
+        text[0] = line[0];
+        text[1] = "No battery: this cartridge keeps no save.";
+        text[2] = "A game may still save in memory for the session.";
+        save_lines(text);
+        return;
+    }
+
+    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
+    snprintf(line[1], sizeof line[1], "%.*s.sav in %s",
+             stem, name, SAVES_SHOWN);
+    text[0] = line[0];
+    text[1] = line[1];
+
+    FIL file;
+    if (f_open(&file, save_path, FA_READ) != FR_OK) {
+        text[2] = "No save yet. HOME+SELECT in the game writes one.";
+    } else {
+        const uint32_t size = (uint32_t)f_size(&file);
+        (void)f_close(&file);
+        snprintf(line[2], sizeof line[2], "%lu bytes, cartridge holds %lu",
+                 (unsigned long)size, (unsigned long)want);
+        text[2] = line[2];
+        if (size != want) {
+            text[3] = "Size differs from the header; the game may ignore it.";
+        }
+    }
+
+    /* When it was written: the log's record, since the file itself has none. */
+    {
+        char needle[LIB_NAME_BYTES + 8];
+        snprintf(needle, sizeof needle, "/%.*s.sav", stem, name);
+        td_saves_attempt_t rec = {};
+        td_saves_reader_t reader;
+        td_saves_reader_init(&reader);
+        FIL log;
+        if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
+            char buf[256];
+            UINT got = 0;
+            while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
+                td_saves_reader_feed(&reader, buf, got, needle, &rec);
+            }
+            (void)f_close(&log);
+        }
+        if (rec.verdict[0] != '\0' || rec.armed) {
+            char when[32];
+            td_saves_when(rec.stamp, when, sizeof when);
+            if (rec.verdict[0] != '\0') {
+                snprintf(line[4], sizeof line[4], "%s %s, %s, %lu B",
+                         rec.armed ? "Started" : "Saved", when, rec.verdict,
+                         rec.want);
+            } else {
+                snprintf(line[4], sizeof line[4], "Started %s, did not finish", when);
+            }
+        } else {
+            snprintf(line[4], sizeof line[4], "No record in the log.");
+        }
+        text[4] = line[4];
+    }
+    text[5] = "HOME+SELECT in the game saves and returns to the desk.";
+    save_lines(text);
+}
 
 /* ----------------------------------------------------------------- the list */
 
@@ -506,6 +717,14 @@ void on_close(td_window_t *)
     s_lib_list = nullptr;
     s_lib_path = nullptr;
     s_lib_message = nullptr;
+    s_tab_shown = -1;
+    for (int i = 0; i < SAVE_LINES; i++) {
+        s_save_line[i] = nullptr;
+    }
+    for (int i = 0; i < 3; i++) {
+        s_dummy_list[i] = nullptr;
+    }
+    memset(s_page_count, 0, sizeof s_page_count);
     /* The names are not worth the heap while the window is shut. */
     free(s_lib_entries);
     s_lib_entries = nullptr;
@@ -535,27 +754,79 @@ void launch(void)
         return;
     }
 
+    memset(s_page_count, 0, sizeof s_page_count);
+
+    /* The tab row is spaced by caption, because "Library" is wider than the
+     * four that follow it and a fixed pitch would run the labels together. */
+    int tab_x = 1;
+    for (int t = 0; t < TABS; t++) {
+        s_tab[t] = td_button(s_win, tab_x, 0, TAB_NAMES[t], on_tab,
+                             reinterpret_cast<void *>(static_cast<uintptr_t>(t)));
+        tab_x += static_cast<int>(strlen(TAB_NAMES[t])) + 5;
+    }
+
+    /* Library: the cartridge browser.  A launch loads the core and streams the
+     * cartridge in a task of its own, so this window survives it -- it lives on
+     * the BL616, not on the core. */
     lib_set_path(SNES_ROOT);
-    (void)td_label(s_win, 1, 0, 0, "Library");
     s_lib_path = td_label(s_win, 1, 2, 0, "");
     s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
                          lib_on_activate, nullptr);
     td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
-    (void)td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr);
-    (void)td_button(s_win, 12, 16, "Up", lib_on_up, nullptr);
-    (void)td_button(s_win, 19, 16, "Refresh", lib_on_refresh, nullptr);
-    s_lib_message = td_label(s_win, 1, 17, 0, "");
+    page_add(0, s_lib_path);
+    page_add(0, s_lib_list);
+    page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
+    page_add(0, td_button(s_win, 12, 16, "Up", lib_on_up, nullptr));
+    page_add(0, td_button(s_win, 19, 16, "Refresh", lib_on_refresh, nullptr));
     lib_load();
     if (s_lib_list != nullptr) {
         td_list_select(s_lib_list, 0);
     } else {
         lib_say("Not enough memory for the list");
     }
+
+    /* Input, Video and Audio: the rows exist so the window has the shape the
+     * other two apps have, and say plainly that they are not wired.  Nothing
+     * on them is read by anything. */
+    for (int t = INPUT_TAB; t <= AUDIO_TAB; t++) {
+        page_add(t, td_label(s_win, 1, 2, 0, "Not built yet: nothing here is set."));
+        td_widget_t *list = td_list(s_win, td_rect(1, 3, -1, DUMMY_ROWS), dummy_item,
+                                    nullptr,
+                                    reinterpret_cast<void *>(static_cast<uintptr_t>(t - 1)));
+        if (list != nullptr) {
+            td_list_set_count(list, DUMMY_ROWS);
+        }
+        s_dummy_list[t - 1] = list;
+        page_add(t, list);
+        page_add(t, td_label(s_win, 1, 7, 0, "Placeholder, filled in by a later build."));
+    }
+
+    /* Saves: the selected cartridge's battery save.  There is no save state on
+     * TinySNES, so this page is the save itself and when it was written. */
+    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Battery save of the selected cartridge:"));
+    for (int i = 0; i < SAVE_LINES; i++) {
+        s_save_line[i] = td_label(s_win, 3, 3 + i, 0, "");
+        page_add(SAVES_TAB, s_save_line[i]);
+    }
+    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Saves are in /root/saves/snes"));
+
+    /* One status label per page, because a widget shared between pages takes
+     * the visibility of whichever page is shown last. */
+    for (int t = 0; t < TABS; t++) {
+        s_status[t] = td_label(s_win, 1, 17, 0, "");
+        page_add(t, s_status[t]);
+    }
+    s_lib_message = s_status[0];
     if (s_launching) {
         lib_say("A core load is running");
     } else if (s_playing) {
         lib_say("A game is running; HOME+SELECT saves and ends it.");
     }
+
+    show_tab(0);
+    /* The Saves page is filled when it is shown; this is the selection the
+     * Library opens with, so the page is right the first time it is opened. */
+    saves_show();
 }
 
 const td_app_t s_app = { "TinySNES", launch, "SNS" };

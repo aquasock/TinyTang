@@ -240,3 +240,35 @@ The SuperFX save size is the one part of the sizing rule that has not met a real
 - User Test: PASS
 
 ---
+
+## 8 COMMIT Unreleased 2026-11-05T21:46:12-07:00
+
+#### Coming From:
+
+Unreleased 9ad6f09
+
+#### Purpose:
+
+Give the TinySNES window the five tabs TinyNES and TinyGBC carry, with the Saves page built the way theirs are, and stamp the save path into the log its Saves page reads.
+
+#### Outcome:
+
+The window is no longer a single Library page. It now has `Library`, `Input`, `Video`, `Audio` and `Saves`, in that order and with the tab row spaced by caption so "Library" does not run into the next label, which is how the other two apps lay theirs out. The page machinery is theirs too: per-page widget arrays, a `show_tab` that hides every other page and accents the current tab, and one status label per page because a shared widget takes the visibility of whichever page is shown last. Library is unchanged. Saves is built. Input, Video and Audio are placeholders by the operator's instruction, and they are honest ones: each carries a list of three rows rendered in the theme's dim colour under the heading "Not built yet: nothing here is set.", and the rows say the same in words — "Controller mapping: not built yet", "Aspect ratio: not set", "Volume: not set". Plausible-looking dummy values were rejected for the reason the TinyNES pages were built rather than faked: a row reading "Aspect: 4:3" would be read as a setting the core had taken, and nothing on those three pages is read by anything. The Saves page is the battery save of the cartridge selected in the Library and nothing else, because TinySNES has no save states and the operator deferred them: it shows the cartridge's name, `<stem>.sav` under `/root/saves/snes`, the file's size against the size the cartridge's own header asks for with a line saying so when they differ, whether the cartridge has a battery at all when its header says it does not, and when the save was last written. That date cannot come from the file, because FatFS gives a file no clock on this board, so it comes from `/sd/root/saves/last.log`, the same record TinyNES's and TinyGBC's pages read through `td_saves_log.c` — and nothing in the SNES save path was writing to it. `tang_snes_save_write()` therefore now leaves the two lines that parser expects, an `arm` before the readout and a `finish` after it, both stamped by `tang_ae350_note` with the RTC-kept clock, and a save that stops early logs `failed`, `unverified` or `unplaced` rather than vanishing: the arm line names the destination and the byte count, and the finish line names what arrived against what was wanted and the two CRC-32s. The parser itself is untouched, which is the point of it living in one module. `tools/tests/tb_snes_load.c` now asserts those lines — two notes on a good save, arm then finish naming the file and reading `verified`, and a refusal logged as `failed` — with a stub for `tang_ae350_note` that records them. The firmware builds at 694,752 bytes, SHA-256 `83f6965c473cf8b769a19c9fa8a8602733d2bfe9f9125b42cc5121e273191eeb`, identity `9ad6f09-dirty.385055a`, and was installed by `tools/tinytang_flash.py` and run after a power cycle, which `tang` confirmed by reporting that identity. The host gate is 43 of 43. The operator confirmed the window on the board: the five tabs are there, and after saving in Zelda the Saves page showed the new date, which is the part that could not work before the log lines existed. Read back afterwards, the save log holds exactly one arm-and-finish pair for that cartridge, both stamped `2026-11-05T21:36:53-07:00` and both `verified`, and the file on the card is 8,192 bytes with fifteen distinct byte values whose CRC-32 is `b19aa99e`, the same number the finish line recorded at write time — so the firmware's verify and the card's contents agree independently of each other. The core was not rebuilt this cycle; the TinySNES repository's entry 18 covers the SuperFX save size this entry would otherwise have carried forward as unverified. `third_party/tinydesk` has uncommitted changes that are not this project's and were left out of the commit. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed it touches only this log, confirmed `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 8 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The three placeholder pages are the obvious next cycle and each needs a decision rather than only code: Input would take the pad mapping the Wii Classic Controller already delivers, Video would take the aspect and scanline settings the HDMI path can act on, and Audio would take a master volume the S-DSP mixer could apply, but which of those the core can honour without a rebuild is not yet known and should be established before any of them is drawn as a control that works. The Saves page could grow a way to delete a save, which the two files left by the broken core make less academic than it sounds, but nothing needs it yet. Save states stay deferred by the operator. One limit of the Saves page is worth carrying: it reads the log only when the page is shown, so a save written while the window is open on another tab appears when Saves is next opened rather than immediately, which is deliberate because the log read costs card time and the tick runs on the desktop's own task. Nothing else in this repository was touched: the release firmware identity question, the pack boundaries, the LoRa link and the Bluetooth re-runs are carried unchanged.
+
+#### Files Modified:
+
+- ports/bl616/tang_snes_load.c
+- ports/bl616/tinysnes_app.cpp
+- tools/tests/tb_snes_load.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
