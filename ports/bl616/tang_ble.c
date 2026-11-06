@@ -676,10 +676,12 @@ enum { HID_KBD, HID_MOUSE, HID_COMBO, HID_SLOTS };
 
 /* The route module names the same three slots so a host test can express them.
  * If either numbering moves, this fails to compile rather than silently
- * routing a mouse report as a keyboard one. */
-_Static_assert(HID_KBD == TANG_HID_SLOT_KBD, "slot numbering drifted");
-_Static_assert(HID_MOUSE == TANG_HID_SLOT_MOUSE, "slot numbering drifted");
-_Static_assert(HID_COMBO == TANG_HID_SLOT_COMBO, "slot numbering drifted");
+ * routing a mouse report as a keyboard one.  Cast through int because the two
+ * sides are different anonymous enums, which -Wenum-compare flags even when
+ * the values are equal. */
+_Static_assert((int)HID_KBD == (int)TANG_HID_SLOT_KBD, "slot numbering drifted");
+_Static_assert((int)HID_MOUSE == (int)TANG_HID_SLOT_MOUSE, "slot numbering drifted");
+_Static_assert((int)HID_COMBO == (int)TANG_HID_SLOT_COMBO, "slot numbering drifted");
 
 static hid_dev_t s_hid[HID_SLOTS] = {
     [HID_KBD] = { .cmd = "blekbd", .boot_uuid = 0x2A22,

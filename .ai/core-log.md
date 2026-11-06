@@ -130,3 +130,41 @@ Two boundaries remain untried and are cheap to settle whenever the card is back 
 - User Test: PASS
 
 ---
+
+## 5 COMMIT Unreleased 2026-11-05T20:10:06-07:00
+
+#### Coming From:
+
+Unreleased 871f099
+
+#### Purpose:
+
+Make the board come up in TinyDesk rather than at a shell prompt, by the operator's decision, and record why the desktop has to be started from the shell task rather than from the boot script.
+
+#### Outcome:
+
+The board now brings TinyDesk up after its boot script returns, unconditionally, which is the operator's choice: the first-boot advice a new card needs is moving into the desktop itself, so there is no longer a reason to stop at a prompt to deliver it. The call is `tdsh_execute_line(&s_session, "desktop")` placed in `tdsh_bl616_run_until()` after `tang_ble_boot()` and before the readline loop, so the desktop starts in the shell task and by exactly the path a typed `desktop` takes — which is the whole design constraint. It could not be done by adding `desktop` to `boot.tdsh`: a script runs in a worker whose stack is capped at `BL616_WORKER_STACK_MAX` of 16 KB, the interpreter's frames would sit under the desktop inside that same 16 KB, and 16 KB is the budget the desktop alone consumes in the shell task, so the console build would have overflowed the stack into the crash recorder and reset the board. `tang_ble_boot()` is called first because it returns as soon as it has created its task, so the radio finishes starting while the desktop comes up; ordering it after would leave the desktop with no keyboard. Exit from the start menu still returns to the prompt, because `cmd_desktop` returns after `td_run()` and the readline loop is immediately below it. The escape hatch is kept as a file rather than a reflash, preserving the property `boot.tdsh` has always had: an empty `/root/scripts/no-desktop` leaves the prompt in place, which is the state a card needs while it is being brought up or before a keyboard is paired. That decision lives in a new `ports/bl616/tang_boot_mode.c` and its header rather than inline in the platform file, because the platform file needs the shell, the console, the radio and the card to link and so cannot be host-tested at all, while the decision on its own can. `tools/tests/tb_boot_mode.c` covers it: no marker means the desktop, an empty marker means the prompt, a marker with text in it behaves the same because the file's existence is never read, a path in a missing directory is absent rather than an error, and a NULL or empty path still means the desktop so a caller cannot accidentally hold the board at a prompt. Two planted faults were caught, one making it always choose the desktop and one always the prompt. One claim in the first draft of that test was wrong and was corrected rather than worked around: it asserted that a directory named `no-desktop` is not a marker, which is true on the board's FatFS where `f_open` returns FR_DENIED for a directory, and false under glibc where `fopen` on a directory succeeds — so the two platforms genuinely differ and the assertion was pinning a host accident rather than the firmware's promise. The module's comment and header now say that plainly, and the test asserts only the pair that holds on both. `tang_ble.c` also needed one fix that this build exposed: entry 96's static assertions compared two different anonymous enums, which `-Wenum-compare` flags, so they now cast through `int` and the build is warning-free apart from the vendored JTAG programmer. `scripts/boot.tdsh` was corrected to match: its comments said the board stops at a prompt and that starting the desktop from there would take the console before the user asked, which is no longer what happens, and its closing line now reads "core loaded, starting TinyDesk" while the Bluetooth pairing advice is described as the last thing written to the tap rather than a stopping point. `README.md` and `manual/getting-started.md` were updated for the same reason — both told the user to type `desktop` to get the desktop, and the first says so in the Quick start — and both now describe the desktop as what comes up, the prompt as what an Exit or a `no-desktop` marker gives, and pairing as something the desktop's Bluetooth window does. The firmware builds at 690,624 bytes; it was **not deployed**, at the operator's instruction, so the board still runs entry 2's image and nothing on the card changed. The host gate is 44 of 44. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it touches only this log, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 5 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The change is built but unproven: when the operator frees the board, flashing this image and confirming that a normal card reaches TinyDesk, that Exit returns to the prompt, and that an empty `/root/scripts/no-desktop` on the card stops at the prompt is the test it needs. It belongs in the release firmware cycle with the personality 8 flip-bit fix and the TinyGutenberg reading-position restore, all three being small and all three already on that list. The other agents' work in this repository continues independently and was not touched. The rest of the open list is unchanged: the two untried pack boundaries (`A & E Home Video` in chunk 10 and `A battuta` above 2 GiB), the LoRa link end to end with its retry budget under a busy node, the `mkdir -p` measurement, the three Bluetooth re-runs, and the release firmware identity question the build id cannot answer.
+
+#### Files Modified:
+
+- README.md
+- manual/getting-started.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_boot_mode.c
+- ports/bl616/tang_boot_mode.h
+- ports/bl616/tdsh_platform_bl616.c
+- scripts/boot.tdsh
+- tools/tests/tb_boot_mode.c
+- tools/tests/test_boot_mode.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---

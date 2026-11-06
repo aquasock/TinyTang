@@ -18,10 +18,16 @@
 #   osd clear  blank the core's own text page, which a reset core shows
 #   osd desk   mirror this session onto the desktop layer, so the screen shows it
 #
-# and then it stops.  The board is left showing its own console on the display,
-# the way a machine of the period came up at a prompt, and bringing the desktop
-# up is a thing the user types -- `desktop` enables the layer itself and turns
-# the mirror off on its way past.
+# and then the firmware brings TinyDesk up in the shell task, not here.  This
+# script's job ends at a core that is in and a layer that is on; the desktop is
+# started after this script returns, because a script runs on a 16 KB worker
+# stack and the desktop alone wants that much inside the shell task.
+#
+# To keep the console instead -- bring-up, or a card with no keyboard paired
+# yet -- create an empty file at /root/scripts/no-desktop and power-cycle.  The
+# board then stops at the prompt with the core loaded, which is what this
+# script used to do for every card.  Remove it to get the desktop back; nothing
+# is reflashed either way.
 #
 # The desktop core hosts TinyDesk without a machine running behind it. F12
 # switches between the desktop layer and an empty frame. Its VGA sockets follow
@@ -78,10 +84,10 @@ osd clear
 # user asks for rather than the thing that arrives first.
 osd desk on
 
-# Stop here, at a loaded core, a displayed prompt and a live console.  The
-# desktop is the only thing that draws into the layer as a window manager, so
-# starting it from here would take the console before the user asked.
-echo "boot: core loaded - type 'desktop' to bring up TinyDesk"
+# Stop here, at a loaded core, a displayed console and a live session.  The
+# desktop starts after this script returns; this line is what the display shows
+# for the moment between the two.
+echo "boot: core loaded, starting TinyDesk"
 
 # The mouse works at this prompt too: the wheel scrolls the shell's history and
 # a left click presses Enter.  Wheel up once recalls the last command and a
@@ -92,9 +98,10 @@ echo "boot: mouse: wheel scrolls history, click runs the line"
 
 # A fresh card ships no Bluetooth pairings, and this desktop has no other input:
 # there is no wired keyboard port, and the two USB-A sockets belong to the cores
-# rather than to the console.  With nothing paired the user is looking at a
-# console they cannot type into, so say what to do on the display, which is the
-# one place they are certain to be looking.
+# rather than to the console.  The desktop still comes up and is still the place
+# to fix that -- its Bluetooth window does the pairing -- so this advice is now
+# a note rather than a stopping point, and it is the last thing written to the
+# console tap before the desktop takes over the layer.
 if test ! -f /root/ble/bonds.bin
     echo "boot: no Bluetooth keyboard or mouse is paired."
     echo "boot: connect a PC to the Tang's USB-C OTG console port and run:"

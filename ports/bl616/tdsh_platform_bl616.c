@@ -8,6 +8,7 @@
 #include "tdsh_bl616.h"
 #include "tang_ble.h"
 #include "tang_crash.h"
+#include "tang_boot_mode.h"
 #include "tang_heap.h"
 #include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
@@ -683,6 +684,24 @@ static void run_boot_script(void)
     (void)tdsh_execute_line(&s_session, "tdsh run /root/scripts/boot.tdsh");
 }
 
+/* Bring TinyDesk up, if the card asks for it (tang_boot_mode.h has the rule and
+ * the escape hatch).  Failure is not a trap: cmd_desktop refuses when the layer
+ * will not start or the console is already in a desktop route, and every one of
+ * those paths returns to the loop below, which is the prompt. */
+static void run_desktop_after_boot(void)
+{
+    if (!tang_boot_wants_desktop(TANG_NO_DESKTOP_PATH)) {
+        return;
+    }
+    /* Through the shell, so this takes exactly the path a typed `desktop`
+     * does, in this task, with the stack this task has. */
+    if (tdsh_execute_line(&s_session, "desktop") < 0) {
+        /* Something went wrong badly enough that the command never ran; the
+         * prompt below is still the right place to land. */
+        tdsh_printf("boot: the desktop did not start; the prompt is below\r\n");
+    }
+}
+
 int tdsh_bl616_run_until(volatile const bool *stop)
 {
     static char line[TDSH_MAX_LINE + 2];
@@ -700,8 +719,20 @@ int tdsh_bl616_run_until(volatile const bool *stop)
     run_boot_script();
     /* Bluetooth devices paired before the reset reconnect from here on.
      * After the boot script, so the radio is not starting while a core is
-     * being programmed; once only, like the script. */
+     * being programmed; once only, like the script.  This returns as soon as
+     * the task is created, so the desktop below comes up while the radio
+     * finishes starting -- which is why it must come first and not after. */
     tang_ble_boot();
+
+    /* And then the desktop, which is what this board is for.
+     *
+     * It runs here, in the shell task, rather than from boot.tdsh: a script
+     * runs in a worker whose stack is capped at 16 KB, and the interpreter's
+     * own frames would sit under the desktop inside that same 16 KB -- which
+     * is the budget the desktop alone uses in this task.  The script still
+     * loads the core, because a core has to be in before the layer is shown;
+     * what it no longer does is say where to go next. */
+    run_desktop_after_boot();
 
     for (;;) {
         if (stop && *stop) {

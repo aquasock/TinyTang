@@ -1,7 +1,7 @@
 # Getting started
 
-Power the Tang Console over USB-C. The board always starts in the
-shell; the desktop is a program you launch from it.
+Power the Tang Console over USB-C. The board starts in **TinyDesk**; the shell
+is one keystroke away, and is where the board stops if you ask it to.
 
 ## The two halves
 
@@ -17,13 +17,16 @@ loaded and replaced. That is why you can press F12 mid-game.
 ## First boot
 
 1. Put a FAT32 card in the slot with the board powered off.
-2. Power up. The console appears as a serial port on your computer.
-3. At the shell prompt, type:
+2. Power up. It loads the desktop core from the card and comes up in
+   TinyDesk, on HDMI. Exit from the start menu returns to a shell prompt,
+   and `desktop` brings the desktop back.
+3. Pairing a keyboard and mouse is done from the desktop's Bluetooth window
+   (or with `blekbd pair` and `blemouse pair` from a shell).
 
-     platform
-
-   It answers with the firmware build it is running.
-4. Type `osd desk on` to start the desktop, or press F12.
+If you want the board to stop at the shell prompt instead -- while bringing a
+card up, or before a keyboard is paired -- put an empty file at
+`/root/scripts/no-desktop`. Remove it and the desktop comes back; nothing is
+reflashed either way.
 
 ## The shell
 
