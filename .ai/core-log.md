@@ -379,3 +379,34 @@ The board is flashed and unconfirmed, and settling that is the first task: power
 - User Test: NOT RUN
 
 ---
+
+## 12 COMMIT Unreleased 2026-11-05T23:33:20-07:00
+
+#### Coming From:
+
+Unreleased 81ca971
+
+#### Purpose:
+
+Establish what image support TinyWiki could actually have while an emulator core keeps running, and what picture quality each block-RAM budget buys.
+
+#### Outcome:
+
+Two deterministic preview tools now render what the hardware could put on a 1280 by 720 screen, from facts in this tree rather than from assumptions. The first question was whether an image can appear over a game at all, and the answer needed no new mechanism: the desk layer replaces the whole picture while the core keeps running, which is why F12 is a single byte, and `desk_link.sv` says so in its own header. That layer exists in TinyNES, TinyGBC and Tiny89 as the same `desk_link.sv` plus `desk_font.hex`, in TinyPhosphor as `textdisp_wide.sv`, and in TinySNES not at all, which carries `desk_font.hex` but no `desk_link.sv` and so has the glyph table and none of the mechanism, which means anything drawn over a game is a per-core bitstream change and TinySNES has no room for one: it sits at 340 of 340 BSRAM. The existing layer is 80 by 45 cells of 16 by 16 pixels carrying 5 bytes each on the wire, a 7-bit character, a 15-bit foreground and a 15-bit background, so a cell holds one of 128 glyphs in two RGB555 colours. `tools/preview_cell_layer.py` renders that faithfully, taking the glyph table from `fpga/desktop/font.vh`, treating bit 0 as the leftmost column per PROT-004, and quantising every colour to RGB555; it produced a walkthrough page whose text is exact, since the text is the font, over a dungeon figure, and it confirms that prose in this layer is as readable as it is today only because it is not rasterised. The same tool shows that the 16 quadrant patterns would give a 160 by 90 two-colour image grid, and the glyph slots for them are free: `font.vh` has exactly 34 blank glyphs, `0x00` to `0x1F` and `0x20` and `0x7F`, measured rather than assumed. A real bitmap layer is a different order of quality, and it is bounded by block RAM that was measured rather than guessed: TinyNES builds to 66 of 340 BSRAM and 14,898 of 138,240 LUTs, read from `build/ae350_soc/nextpnr.log` in the TinyNES tree, which leaves 274 blocks of 2,304 bytes, 616 KB. Against a 1280 by 720 frame that makes 1 bpp 50 blocks, 4 bpp 200 blocks and 8 bpp 400 blocks, so full resolution at 16 levels fits and full resolution at 256 does not, while 960 by 540 at 8 bpp takes 225. `tools/preview_bitmap_layer.py` renders each of those settings as its own complete 1280 by 720 frame, so no combination panel has to be interpreted, and the operator supplied a 1280 by 720 scan of a magazine page as the subject because it is close to the worst realistic case: dense body text inside an existing halftone. That test produced the cycle's one real finding, which runs against the obvious instinct. 1 bpp dither destroys such a scan, because screening an image that is already screened is destructive interference rather than dithering. 2 and 3 bpp climb to usable, 4 bpp is comfortably readable, and 8 bpp at full resolution is clean but 126 blocks over budget. Held against each other at equal block cost, native 4 bpp at 1280 by 720 is visibly sharper on letterforms than 8 bpp at 960 by 540 scaled up, so for text resolution beats colour depth and the extra four bits buy little that the pixels were not already giving. Sixteen colours rather than sixteen greys matters for the same bytes, since a palette keeps a magazine's logo and a map's coding that greyscale discards. One error of this cycle was caught and fixed before commit: the first side-by-side labelled 8 bpp at 960 by 540 as 180 blocks, and re-deriving the arithmetic gave 225, which is what the committed tool now prints. The operator reviewed the renders and deferred the choice of depth to the next session, naming setting e, which is 4 bpp at 1280 by 720 in sixteen greys for 200 blocks. No firmware was built and the board was not touched, so the image on it is unchanged; the host gate is 44 of 44, and the two failing entries that entry 9 recorded were cleared by the concurrent session's TinySNES cycles, which landed as 9b4d026 and 81ca971. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 12 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The depth is the operator's to settle, with setting e held for that decision, and the renders are reproducible with `python3 tools/preview_bitmap_layer.py` or `--image <any picture>` for a different subject. Three things stand between a decision and a design. Block RAM is measured for TinyNES alone, so TinyGBC, Tiny89 and TinyPhosphor need the same reading from their own `nextpnr.log` before 200 blocks can be promised anywhere, and Phosphor carries audio buffers that may leave less. A frame at 4 bpp is 460,800 bytes, which is 2.3 s over the 2 Mbaud wire and about 5.4 s at the 85 KB/s the link shows under load, so a page turn is a slideshow unless the host diffs rectangles the way the desk layer already diffs cells. And the bitstream work is the expensive half rather than the RTL: a changed netlist in five designs needs a seed sweep and a board test, which is the cycle the reference records as taking 2026-10-11 to 10-14, and TOOL-021's spine findings mean the build gates alone do not clear a core. TinySNES can take no framebuffer at all until BSRAM is freed or the dock's SDRAM grows a controller. Carried unchanged from entry 9: the 70-column manual pack is built and verified but still not on the card, so the board reads a 78-column pack through a 70-column reader, and `td_gutenberg_app.cpp` still clips at 76; `SOURCE_DATE_EPOCH` is a `?=` default rather than a lock, which the release rebuild should settle. The open list beyond this cycle is as entry 11 left it.
+
+#### Files Modified:
+
+- tools/preview_bitmap_layer.py
+- tools/preview_cell_layer.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
