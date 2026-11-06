@@ -41,7 +41,13 @@ constexpr int TITLE_BYTES = 44;        // what the list keeps of each title
 constexpr int PAGE_BYTES = 12288;      // one page of article text
 constexpr int MAX_PAGE_LINES = 512;
 constexpr int LINE_BYTES = 160;
-constexpr int WINDOW_COLS = 76;
+/* How wide a line may be on screen.  The converter wraps a pack to this same
+ * number (WIKI_LINE_COLS in tools/make_wiki_pack.py), so the two have to move
+ * together: the converter used to wrap at 78 while this clipped at 76, which
+ * silently cut the last two characters off every long line.  A narrower window
+ * is also why 70 rather than the window's own width -- it leaves a margin, so
+ * the text does not run to the edge. */
+constexpr int WINDOW_COLS = 70;
 // Where each page began, so Page Up can undo a Page Down.  A pack caps an
 // article at 256 KB, which is 22 pages at 12 KB, so 32 entries cover every pack
 // the converter writes for this reader; a longer one stops remembering.
@@ -719,7 +725,15 @@ void launch(void)
     td_window_desc_t d = {};
     d.title = "TinyWiki";
     d.rect = td_rect(-1, -1, 80, 40);
-    d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
+    /* Opened maximised and locked, as an experiment in reading comfort: a
+     * document wants the whole screen, and a movable window over one is only
+     * in the way.  MOVABLE is dropped so the window cannot be dragged; RESIZABLE
+     * is kept, because td_win_toggle_maximize() declines to act on a window
+     * without it (wm.c), and dropping it would leave the window un-maximised
+     * rather than locked.  With MAXIMIZED set the window manager already
+     * refuses drag-move, refuses the resize grip and does not draw it, so the
+     * size is fixed while double-click and F11 can still restore it. */
+    d.flags = TD_WIN_MAXIMIZED | TD_WIN_CLOSABLE | TD_WIN_RESIZABLE;
     d.min_w = 46;
     d.min_h = 14;
     d.on_close = on_close;

@@ -21,6 +21,33 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 CONVERTER = os.path.join(ROOT, "tools", "make_wiki_pack.py")
 CHECKER = os.path.join(ROOT, "tools", "check_wiki_pack.py")
+READER = os.path.join(ROOT, "ports", "bl616", "td_wiki_app.cpp")
+
+
+def line_cols():
+    """The converter's wrap width, read from its own source."""
+    for line in open(CONVERTER, encoding="utf-8"):
+        if line.startswith("WIKI_LINE_COLS"):
+            return int(line.split("=")[1].strip())
+    raise SystemExit("check_wiki_convert: WIKI_LINE_COLS not found")
+
+
+def reader_cols():
+    """The reader's clip width, read from its own source.
+
+    These two must be equal.  They were 78 and 76 until 2026-11-05, and the
+    reader clips rather than re-wrapping, so every long line lost its tail
+    silently.  Reading both here means a change to either alone fails the
+    suite instead of shipping a pack that is quietly cut off.
+    """
+    for line in open(READER, encoding="utf-8"):
+        if "WINDOW_COLS" in line and "=" in line and "constexpr" in line:
+            return int(line.split("=")[1].strip().rstrip(";"))
+    raise SystemExit("check_wiki_convert: WINDOW_COLS not found")
+
+
+COLS = line_cols()
+RCOLS = reader_cols()
 
 CHECKS = 0
 FAILED = 0
@@ -321,11 +348,19 @@ def main():
 
         body = body_of(pack, article_rec)
         lines = body.splitlines()
-        check(max(len(line) for line in lines) <= 78,
-              "even a heading fits the 78 columns")
-        check(all(len(line) <= 78 for line in lines),
-              f"every line fits the reader's 78 columns (longest "
+        check(COLS == RCOLS,
+              f"the converter wraps at {COLS} and the reader clips at {RCOLS}; "
+              f"they must be equal or long lines lose their tail on screen")
+        check(max(len(line) for line in lines) <= COLS,
+              f"even a heading fits the {COLS} columns")
+        check(all(len(line) <= COLS for line in lines),
+              f"every line fits the reader's {COLS} columns (longest "
               f"{max(len(l) for l in lines)})")
+        # The defect that prompted the width change: a line between the reader's
+        # clip and the converter's wrap is silently cut.  Asserting the pack
+        # never produces one is asserted above; this names why.
+        check(RCOLS >= COLS,
+              "the reader never clips below what the converter wrote")
         check(all(32 <= ord(c) < 127 or c == "\n" for c in body),
               "the body is printable ASCII")
         check("Cafe notes - with an em dash" in body,
@@ -450,7 +485,7 @@ def main():
             body = body_of(md_pack, records_md[names.index("One")])
             check("caf\u00e9".encode("ascii", "replace").decode() not in body or
                   "cafe" in body, "a chapter's accents are folded")
-            check(all(len(line) <= 78 for line in body.splitlines()),
+            check(all(len(line) <= COLS for line in body.splitlines()),
                   "a chapter is wrapped to the reader's columns")
             md_checked = subprocess.run([sys.executable, CHECKER, md_pack, "--quiet"],
                                         capture_output=True, text=True)
@@ -477,7 +512,7 @@ def main():
         body2 = body_of(pack2, article2)
         check(len(body2) <= 300 and "[truncated" in body2,
               "the article cap marks the cut instead of ending silently")
-        check(all(len(line) <= 78 for line in body2.splitlines()),
+        check(all(len(line) <= COLS for line in body2.splitlines()),
               "a truncated body still fits the reader's columns")
     finally:
         shutil.rmtree(work, ignore_errors=True)

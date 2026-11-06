@@ -67,7 +67,12 @@ from compression import zstd
 WIKI_MAGIC = "TWP1"
 WIKI_VERSION = 1
 WIKI_TITLE_BYTES = 64
-WIKI_LINE_COLS = 78
+# How wide a line is wrapped.  This must match the reader's WINDOW_COLS in
+# ports/bl616/td_wiki_app.cpp, because the reader *clips* to that width rather
+# than re-wrapping: a pack wrapped wider than the window loses the tail of every
+# long line with nothing to show for it.  The two sat at 78 and 76 until
+# 2026-11-05, which cut two characters off 23 lines of the manual pack.
+WIKI_LINE_COLS = 70
 DEFAULT_CHUNK_BYTES = 3 * 1024 * 1024 * 1024     # under FAT32's 4 GiB file cap
 DEFAULT_MAX_ARTICLE = 256 * 1024
 DEFAULT_SORT_RECORDS = 100_000
