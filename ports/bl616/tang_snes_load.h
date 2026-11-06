@@ -43,6 +43,63 @@ uint32_t tang_snes_pick_header(int lorom_score, int hirom_score);
  * reason in `why`.  On success `why` says what went in. */
 int tang_snes_load(const char *real, char *why, size_t why_len);
 
+/* ---- the cartridge's battery save ----
+ *
+ * The core exposes cartridge SRAM through two frames, 0x18 to write a block
+ * and 0x19 to read one back, and refuses both unless it is held in reset.  So
+ * restoring a save happens inside a load, between the ROM drain and the reset
+ * release, and saving one puts the load hold back on first.  The two halves
+ * are named separately because a load restores and an exit saves. */
+
+/* The largest save the core's 17-bit window holds. */
+#define TANG_SNES_SAVE_MAX    (128u * 1024u)
+/* Bytes per 0x19 read: the largest reply that fits the core's frame budget. */
+#define TANG_SNES_SAVE_BLOCK  250u
+
+/* HOME with SELECT, as the core reports it in the pad word: store the save
+ * and go back to the desktop. */
+#define TANG_SNES_PAD_EXIT    0x8000u
+
+/* How big the cartridge's battery save is, from its internal header, or 0
+ * when the cartridge has no battery.  `expansion_ram` is the byte at 0x7FBD
+ * or 0xFFBD, which carries the real SRAM size for a SuperFX cartridge whose
+ * own byte 0x18 reads zero. */
+uint32_t tang_snes_save_size(const uint8_t header[TANG_SNES_HEADER_LEN],
+                             uint8_t expansion_ram);
+
+/* Where a cartridge's save lives: its name with .sav, under the snes folder
+ * of the card's saves, as TinyNES and TinyGBC name theirs.  0 on success. */
+int tang_snes_save_path(const char *cart_real, char *out, size_t size);
+
+/* Store `size` bytes of cartridge SRAM at `path`, verified.  Holds the core in
+ * reset for the readout and leaves it held, so the caller can load another
+ * core under it; tang_snes_resume() puts the game back if that fails.  The
+ * file is built as .part and renamed only once it has been read back and its
+ * CRC-32 matches, so a doomed write never costs the previous save. */
+int tang_snes_save_write(const char *path, uint32_t size,
+                         char *why, size_t why_len);
+
+/* Release the load hold that tang_snes_save_write took. */
+void tang_snes_resume(void);
+
+/* Put `path` back into the cartridge SRAM.  Only meaningful while the core is
+ * held in reset; tang_snes_load calls it itself, so this is for a caller that
+ * holds its own.  Returns 0 when the bytes went in, TANG_SNES_RESTORE_NONE
+ * when there was no file (a first run -- the freshly configured core starts
+ * with an empty array, so this is not a failure), or 1 with the reason in
+ * `why`. */
+#define TANG_SNES_RESTORE_NONE 2
+int tang_snes_save_restore(const char *path, uint32_t size,
+                           char *why, size_t why_len);
+
+/* The save a cartridge keeps, worked out from its own file: its size in
+ * `*size` and the file it lives in through `path`.  Returns 0 when the
+ * cartridge has a battery, 1 when it does not or the file will not open, so a
+ * caller can skip the whole exit path for a cartridge that has nowhere to put
+ * a save.  Reads the card, so it is called on the way out rather than held. */
+int tang_snes_save_for(const char *cart_real, uint32_t *size,
+                       char *path, size_t path_size);
+
 #ifdef __cplusplus
 }
 #endif

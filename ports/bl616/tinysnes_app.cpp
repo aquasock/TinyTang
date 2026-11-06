@@ -5,7 +5,11 @@
 // to read the card itself, so a launch loads /cores/console138k/tinysnes.bin
 // and then streams the cartridge into it from here (tang_snes_load.c), the
 // way `snesload` does.  The game then runs with the desk layer hidden; HOME
-// on the pad brings TinyDesk up over it, and Stop puts the desktop core back.
+// on the pad brings TinyDesk up over it, and HOME with SELECT (Minus) stores
+// the cartridge's battery save to the card and puts the desktop core back --
+// the gesture TinyNES and TinyGBC use, so the three systems end a game the
+// same way.  There is no Stop button: a game ends by the pad, and the save is
+// written on the way out.
 //
 // SPDX-License-Identifier: MIT
 
@@ -84,6 +88,10 @@ volatile bool s_launching;
 volatile bool s_lib_reload;
 volatile bool s_playing;
 char s_task_say[TD_TEXT_MAX];
+
+/* Declared here because launch_task starts the exit watcher, which is defined
+ * further down beside the rest of the task code. */
+void play_task(void *);
 
 /* ----------------------------------------------------------------- the list */
 
@@ -271,7 +279,11 @@ void launch_task(void *)
         if (rc == 0) {
             s_playing = true;
             snprintf(s_task_say, sizeof s_task_say,
-                     "Playing.  HOME shows the desk; Stop ends it.");
+                     "Playing.  HOME shows the desk; HOME+SELECT saves and ends.");
+            /* The exit gesture is watched from here on, so the desk's own
+             * task never has to poll for it. */
+            (void)xTaskCreate(play_task, "snesplay", LAUNCH_STACK_WORDS, nullptr,
+                              tskIDLE_PRIORITY + 1, nullptr);
         } else {
             /* The SNES core is loaded but holds no game: put the desktop
              * core back rather than leave the bars up. */
@@ -290,18 +302,64 @@ void launch_task(void *)
     vTaskDelete(NULL);
 }
 
-/* Put the desktop core back, which is how a SNES game ends. */
-void stop_task(void *)
+/* How often the exit task looks at the pad.  The core reports a change within
+ * 20 ms of it happening, so 50 ms sees a held chord on the next look. */
+constexpr uint32_t PLAY_POLL_MS = 50;
+
+/* Watch the pad while a game runs, then store the cartridge's save and put
+ * the desktop core back.  One task does both: the watch is a loop and the
+ * exit is what ends it, so a second task would only buy a race and another
+ * 8 KiB of stack.  HOME with SELECT is the gesture, bit 15 of the pad word;
+ * everything else the pad reports belongs to the game. */
+void play_task(void *)
 {
+    for (;;) {
+        uint16_t joy1 = 0, joy2 = 0;
+        tang_fpga_joypad(&joy1, &joy2);
+        if ((joy1 & TANG_SNES_PAD_EXIT) != 0) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(PLAY_POLL_MS));
+    }
+
+    /* Own the core from here until the task ends, so the desk's Launch cannot
+     * start a second cartridge into the one being saved. */
+    s_launching = true;
+    lib_say("Saving ...");
+
+    char sav[256];
+    uint32_t size = 0;
+    char why[128];
+
+    if (tang_snes_save_for(s_launch_cart, &size, sav, sizeof sav) != 0) {
+        /* No battery, so nothing to write; the game still ends. */
+        tdsh_printf("snes: %s has no battery save\r\n", s_launch_cart);
+    } else if (tang_snes_save_write(sav, size, why, sizeof why) != 0) {
+        /* The core is held in reset from the failed readout.  Give the game
+         * back rather than leave the player with a frozen picture, and say
+         * what went wrong instead of pretending the save happened. */
+        tang_snes_resume();
+        s_launching = false;
+        snprintf(s_task_say, sizeof s_task_say, "Save failed: %s", why);
+        tdsh_printf("snes: save failed: %s\r\n", why);
+        vTaskDelete(NULL);
+        return;
+    } else {
+        tdsh_printf("snes: %s\r\n", why);
+    }
+
     overlay_record(true);
     const tang_load_result_t loaded = tang_core_load(DESKTOP_REAL);
     if (loaded == TANG_LOAD_OK) {
         s_playing = false;
-        snprintf(s_task_say, sizeof s_task_say, "Stopped.");
-    } else if (loaded == TANG_LOAD_BUSY) {
-        snprintf(s_task_say, sizeof s_task_say, "Another core load is running");
+        snprintf(s_task_say, sizeof s_task_say, "Saved.  Back at the desk.");
     } else {
-        snprintf(s_task_say, sizeof s_task_say, "The desktop core did not load");
+        /* The desktop did not load and the SNES core is held in reset.
+         * Release it so the picture is live again, and report the failure. */
+        tang_snes_resume();
+        snprintf(s_task_say, sizeof s_task_say,
+                 loaded == TANG_LOAD_BUSY ? "Another core load is running"
+                                          : "The desktop core did not load");
     }
     s_launching = false;
     s_lib_reload = true;
@@ -326,7 +384,14 @@ bool start_task(TaskFunction_t fn, const char *name, const char *say)
 void lib_start(int index)
 {
     if (s_launching) {
-        lib_say("A core load is already running");
+        lib_say("A core load is running");
+        return;
+    }
+    /* The desk can be brought up over a running game, so the library is
+     * reachable while one plays.  Starting a second would give the exit
+     * gesture two watchers, so it is refused until the first has ended. */
+    if (s_playing) {
+        lib_say("A game is running; HOME+SELECT saves and ends it.");
         return;
     }
     if (index < 0 || index >= s_lib_count) {
@@ -348,19 +413,6 @@ void lib_start(int index)
         td_list_set_count(s_lib_list, 0);
     }
     (void)start_task(launch_task, "sneslaunch", "Starting ...");
-}
-
-void lib_on_stop(td_widget_t *, void *)
-{
-    if (s_launching) {
-        lib_say("A core load is already running");
-        return;
-    }
-    if (!s_playing) {
-        lib_say("No game is running");
-        return;
-    }
-    (void)start_task(stop_task, "snesstop", "Stopping ...");
 }
 
 /* Put the task's outcome and the list back once it has finished; the tick
@@ -492,7 +544,6 @@ void launch(void)
     (void)td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr);
     (void)td_button(s_win, 12, 16, "Up", lib_on_up, nullptr);
     (void)td_button(s_win, 19, 16, "Refresh", lib_on_refresh, nullptr);
-    (void)td_button(s_win, 31, 16, "Stop", lib_on_stop, nullptr);
     s_lib_message = td_label(s_win, 1, 17, 0, "");
     lib_load();
     if (s_lib_list != nullptr) {
@@ -503,7 +554,7 @@ void launch(void)
     if (s_launching) {
         lib_say("A core load is running");
     } else if (s_playing) {
-        lib_say("A game is running; Stop ends it.");
+        lib_say("A game is running; HOME+SELECT saves and ends it.");
     }
 }
 
