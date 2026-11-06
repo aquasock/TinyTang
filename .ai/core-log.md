@@ -511,3 +511,33 @@ The card is written and untested, so the first thing it needs is the operator's 
 - User Test: NOT RUN
 
 ---
+
+## 16 COMMIT Unreleased 2026-11-06T14:27:59-07:00
+
+#### Coming From:
+
+Unreleased 26e92ac
+
+#### Purpose:
+
+Record the first boot of the release card by the operator, and what reading the running board afterwards established about it.
+
+#### Outcome:
+
+The card assembled in entry 15 boots, and the operator reports a pass through the Bluetooth setup to the desktop, which supersedes entry 15's `User Test: NOT RUN` without rewriting it. The board was then read over the CDC console rather than taken on report, and every claim below is its own output. `platform` answered `bl616/freertos, tinytang b73a7dd-dirty.30d9470`, TinyDesk Shell 0.1.6. `fpga` answered core 84 answering on UART1 at 2 Mbaud, and 0x54 is the desktop core, so `boot.tdsh` did its whole job: `tangload` of `tinytang.bin`, `osd clear`, `osd desk on`, and then the prompt. `tangini` reported no layout line with both sockets released and core 0x54 at ABI 1.6 holding 0xc0 = 0x0000 as declared, which is the missing-layout path working rather than a file that failed to parse. `crash` reported no record from a previous run, watchdog on, zero resets since power-up and reset status 0x7d with the watchdog bit high, which is the clean power-up the recorder is meant to distinguish from a fault. `ble` reported the radio up, the stack taking 16,852 bytes of heap at start, heap 86,016 free of 137,560 with a 42,508-byte largest block, and the last script task using 11,088 of its 16,384 bytes of stack, and it named the two devices that work: a Logi M750 mouse and a Rii K06 combo keyboard, both paired and reconnecting by themselves, with `bonds.bin` written to the card. Every folder the card carries reads back from the board as built: six NES zips in `homebrew` with AccuracyCoin and the Retro Regen test in `diagnostics`; three Game Boy and six Game Boy Color zips; eleven `.sfc` under `media/snes/homebrew` and the extracted Retro Regen test beside its archive; twelve codec tones in `music/diagnostics`; four AE350 players; five cores with five `.fs.gz`; and `wiki.meta` reporting ten articles at 70 columns, so TinyWiki will find the manual. Two things the reading turned up are recorded rather than corrected. The board is running `b73a7dd-dirty.30d9470`, which is entry 13's firmware, while the card's own `bl616-firmware.bin` is `5c58bd3-dirty.45fed98` at 698,944 bytes and `c84fa6a5…`, so what passed was not the release candidate; the difference between them is the TinySNES Audio page committed as `b70eca4` and nothing this card exercises, and installing it is a Software Update from the desktop followed by a power cycle, which was not done because the operator directed that the card and the firmware both be left alone. And `/root/media/gba/homebrew` exists and is empty, created by the operator rather than by the card build, so it lists as a folder that opens to nothing. One claim was deliberately not tested: the zipped-cartridge path is still proven only on the host, through TinyNES's own `cart_zip.c` under sanitizers, because `ae350run` waits out a program that does not exit and a shell-driven launch would hold the console for its 300-second bound and leave a cartridge running. The operator's own launch of a zipped cartridge from the TinyNES window is still the thing that would close it. `blekbd` reported idle with 871 reports and not paired, which is a leftover count in a slot whose bond is gone, not a failure: the working keyboard is the K06 in the combo slot. No source file changed in this cycle, so the host gate carries at 44 of 44 from entry 15 and was not re-run, and the `.ai/` diff is this entry alone. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 16 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The release candidate has not been booted: the board runs `b73a7dd` while the card carries `5c58bd3`, so the first thing the next cycle should do is install the card's `bl616-firmware.bin` through the desktop's Software Update app, power-cycle, and confirm `platform` reports `5c58bd3-dirty.45fed98` before anything else is qualified against it. Two hardware claims remain open for the operator's hand rather than an agent's: launching a zipped cartridge from the TinyNES window, which would close the last gap in the zip path, and the same for a Game Boy zip in the TinyGBC window. The TinySNES decision is unchanged and still blocks that library: `tinysnes.bin` is absent, the candidate is `build/video/tinysnes.bin` at 5,238,252 bytes in the TinySNES repository, and `docs/qualification.md` records the core as out of scope for this release. Before the layout is published, `root/media/ti89/TI89Titanium_OS.89u` must be removed, and the empty `root/media/gba/homebrew` should be either filled or deleted. Everything else carried from entry 15 stands: the empty GBA folder, the three per-system `.ini` files unexercised by a save, the pack contents list that `convert_markdown` still leaves at `parts = 0`, and the carried release qualification rows.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
