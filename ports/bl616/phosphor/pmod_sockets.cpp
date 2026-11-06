@@ -29,6 +29,7 @@ int tdsh_printf(const char *fmt, ...);
 int tang_tangini_register(void);
 void tang_ini_core_loaded(void);
 void tang_ini_core_replacing(void);
+void tang_ini_core_load_failed(void);
 bool tang_core_i2c_bus(void);
 }
 
@@ -65,6 +66,9 @@ tang_ini_t s_ini;
 // does not depend on /tinytang.ini: the bus is not a socket.
 constexpr uint32_t DESKTOP_I2C_ABI = 0x00010005u;
 bool s_i2c_bus;
+// What s_i2c_bus was before a load started, so a load that programmed nothing
+// can put it back (tang_ini_core_load_failed).
+bool s_i2c_bus_was;
 
 bool core_id(uint8_t *id)
 {
@@ -274,10 +278,25 @@ void tang_ini_core_loaded(void)
 }
 
 // The core is about to be replaced: its sockets, and the I2C bus and RTC
-// behind it, go with it, whether or not the next load succeeds.
+// behind it, go with it, whether or not the next load succeeds.  What the bus
+// was is kept, so a load that never programmed anything can put it back: the
+// usual failure is a file that is not there, which returns before the FPGA is
+// touched, and leaving the bus off then kills the Wii pad and the clock over a
+// core that is still sitting there.
 void tang_ini_core_replacing(void)
 {
+    s_i2c_bus_was = s_i2c_bus;
     s_i2c_bus = false;
+    tang_clock_core_changed();
+}
+
+// The load did not program the FPGA, so nothing replaced the core that was
+// there.  Put the bus belief back as it was; a core that really is gone will
+// say so when the pad's next probe gets no answer, which is a state the pad
+// already handles.  Pinning it off is the one answer that cannot recover.
+void tang_ini_core_load_failed(void)
+{
+    s_i2c_bus = s_i2c_bus_was;
     tang_clock_core_changed();
 }
 

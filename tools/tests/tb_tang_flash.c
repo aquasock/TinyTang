@@ -177,7 +177,21 @@ bool fpga_program(const char *fname)
 }
 void tang_phosphor_core_replacing(void) { hook("phos-replacing"); }
 static bool g_i2c_bus = true;   /* the desktop core holds the bus before a load */
-void tang_ini_core_replacing(void) { g_i2c_bus = false; hook("ini-replacing"); }
+static bool g_i2c_bus_was;
+void tang_ini_core_replacing(void)
+{
+    g_i2c_bus_was = g_i2c_bus;
+    g_i2c_bus = false;
+    hook("ini-replacing");
+}
+/* A load that programmed nothing puts the bus belief back.  Whether it does is
+ * pmod_sockets' own business (test_pmod_sockets.sh); this test is the caller,
+ * so what it pins is that the failure path asks for it at all. */
+void tang_ini_core_load_failed(void)
+{
+    g_i2c_bus = g_i2c_bus_was;
+    hook("ini-load-failed");
+}
 /* A select needs the bus the desktop core is still driving: if this hook runs
  * after the bus was given up, it does nothing and the game core's pad is dead. */
 void tang_i2c_mux_for_game_core(void)
@@ -354,7 +368,11 @@ int main(void)
     g_program_ok = false;
     clear();
     CHECK(tangload() == 1);
-    CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program ") == 0);
+    CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program "
+                          "ini-load-failed ") == 0);
+    /* The FPGA was never programmed, so the desktop core is still there and the
+     * pad and the clock must still believe they can reach it. */
+    CHECK(g_i2c_bus);
     g_program_ok = true;
     clear();
     CHECK(tangload() == 0);

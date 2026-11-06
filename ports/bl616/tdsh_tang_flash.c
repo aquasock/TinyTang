@@ -235,6 +235,7 @@ static int cmd_tangget(tdsh_session_t *session, int argc, char **argv)
 bool fpga_program(const char *fname);
 void tang_ini_core_loaded(void);
 void tang_ini_core_replacing(void);
+void tang_ini_core_load_failed(void);
 
 /* The Phosphor playback task (ports/bl616/phosphor/phosphor_player.cpp). */
 void tang_phosphor_core_replacing(void);
@@ -275,6 +276,12 @@ tang_load_result_t tang_core_load(const char *real)
         /* A core with the PMOD sockets brings them up released; declare
          * what /tinytang.ini says is seated (phosphor/pmod_sockets.cpp). */
         tang_ini_core_loaded();
+    } else {
+        /* Nothing was programmed, so the core that was there is still there.
+         * Put back the belief tang_ini_core_replacing() cleared, or the Wii
+         * pad and the clock stay dead over a core that never moved -- which
+         * is what a launch of a missing file used to cost. */
+        tang_ini_core_load_failed();
     }
     s_programming = false;
     return ok ? TANG_LOAD_OK : TANG_LOAD_FAILED;

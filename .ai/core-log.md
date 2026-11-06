@@ -571,3 +571,37 @@ The first step of any fix is to make the failure legible, because it currently i
 - User Test: PASS
 
 ---
+
+## 18 COMMIT Unreleased 2026-11-06T16:05:36-07:00
+
+#### Coming From:
+
+Unreleased 660edc7
+
+#### Purpose:
+
+Stop a core load that programs nothing from leaving the Wii pad and the clock dead over a core that never moved.
+
+#### Outcome:
+
+Launching a cartridge whose core image is not on the card killed the Classic Controller, and the cause was a belief nothing put back. `tang_core_load()` calls `tang_ini_core_replacing()` before programming, which clears `s_i2c_bus`, and only `tang_ini_core_loaded()` sets it again, on the success branch; `fpga_program()` returns before touching the FPGA when `f_open` fails, so a missing file left the flag false over a desktop core still sitting there with an I2C engine on the USB-A port. Three things read that flag and all three went dark: `tang_wiipad_hw_ready()`, which is `tang_core_i2c_bus() && tang_fpga_link_open() == 0 && !tang_fpga_pipe_open()`, so `tang_wiipad_poll()` marked the pad `TANG_WIIPAD_OFF` and returned early; the RTC through `tang_clock.c`; and `tangi2c`. The operator met it as "the core did not load, then my controller stops working", which is the TinySNES window launching a cartridge whose `tinysnes.bin` entry 15 deliberately left off the card, but the fault is any failed load and not TinySNES. The fix keeps what the flag was and offers a way back: `tang_ini_core_replacing()` records `s_i2c_bus_was` before clearing, a new `tang_ini_core_load_failed()` restores it and asks the clock to resync, and `tdsh_tang_flash.c` calls it on the failure branch. Restoring is the right answer rather than latching off even when a load failed part-way through programming, because the pad's next probe discovers a core that really is gone and that is a state `tang_wiipad_poll()` already handles, while a flag pinned false is the one answer that cannot recover without another load. Two host tests cover it and both were proven to bite. `tools/tests/tb_pmod_sockets.cpp` with `test_pmod_sockets.sh` compiles the real `ports/bl616/phosphor/pmod_sockets.cpp` and `tang_ini.c`, with the FPGA stubbed at the two seams the module uses — the link frames for the core-ID probe and `fpga_debug_request` for the register reads — so the module's own retry loops and its socket-word path run for real; it holds 11 checks across a desktop core at ABI 1.6 setting the bus, replacing clearing it, a failed load restoring it, a failed load over a socketless core leaving it off, a successful load of TinyNES clearing it, a desktop core below ABI 1.5 not claiming it, the socket word still being sent, a missing `/tinytang.ini` still being reported, and a core that does not answer leaving it off; emptying `tang_ini_core_load_failed()` fails two of them. `tools/tests/tb_tang_flash.c` gained the caller's half, so the failure path must now ask for the restore and its hook sequence reads `program ini-load-failed`, and removing that call from `tdsh_tang_flash.c` fails two checks there. The host gate is 45 of 45, one more than entry 17's 44 because the new suite is the addition. The firmware builds at 698,944 bytes, SHA-256 `88ce23b2cdd003e64f7d7672530f3ba3f7299e5af9ee0ffdc202ce487232e6a3`, identity `3a31690-dirty.cd6a5d5`, and was installed with `tools/tinytang_flash.py`; after the operator's power cycle `platform` reported exactly that identity. The board test is the one that failed before the fix and passes after: `wiipad status` read `classic ready` with live bytes `7a 7c 79 76 00 00 ff ff`, `tangload /root/cores/console138k/nosuchfile.bin` then failed with `open fail, res:4` and `tangload: failed`, and `wiipad status` still read `classic ready` with the same live bytes rather than `off`. The other two consumers were checked in the same state: `tangini` reported core 0x54 at ABI 1.6 holding 0xc0 = 0x0000 as declared, and `tangi2c rtc` read the DS3231 at `2026-11-06 23:04:57`, which is itself proof the flag was true because that read is gated on it. One build observation worth carrying: the same source produced `1a1108ee…` and then `88ce23b2…` because the build id embeds a hash of the working tree and the two new test files appeared between the two builds, with the dirty component moving `cbc026a` to `cd6a5d5`; the identity of the deployed image is the one quoted above. `pmod_sockets.cpp` had no host coverage at all before this cycle and `check_test_coverage.py` still lists it as untested, because the new suite drives it from `tb_pmod_sockets.cpp` rather than naming the module in a `test_*.sh` build line the tool recognises; that bookkeeping is left for a cycle that touches the tool. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 18 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+Cycle two is next and is already scoped: `tinysnes.bin` on the card, from `build/video/tinysnes.bin` in the TinySNES repository at 5,238,252 bytes, with its `.fs.gz` beside it, which makes the eleven SNES homebrew games and the Retro Regen test launch and removes the operator's reason for meeting this fault at all. It overturns the out-of-scope note for TinySNES in `docs/qualification.md`, so that row has to move rather than be deleted, and the card README's "there is no tinysnes.bin" paragraph has to go. Two smaller things came out of this cycle and belong to whoever next touches the coverage tool: `check_test_coverage.py` does not see `pmod_sockets.cpp` as covered even though a real test now builds it, and the `1a1108ee` versus `88ce23b2` pair is a second worked example for the build-id caveat in section 1 of `docs/qualification.md`, which entry 15 already warns about but does not illustrate with a digest pair. Everything else carried from entry 17 stands unchanged, and the Tiny89 save stall stays a known issue with no fix scheduled.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/pmod_sockets.cpp
+- ports/bl616/tdsh_tang_flash.c
+- tools/tests/tb_pmod_sockets.cpp
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_pmod_sockets.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
