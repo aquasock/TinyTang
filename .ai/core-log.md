@@ -695,3 +695,33 @@ The only real question the slider leaves is whether launch-time is good enough. 
 - User Test: PASS
 
 ---
+
+## 22 COMMIT Unreleased 2026-11-07T07:27:16-07:00
+
+#### Coming From:
+
+Unreleased 5ed64cc
+
+#### Purpose:
+
+Make the release matrix's own gate and coverage figures match what the tools measure, since three of them had been stale for many cycles and one of them was the document contradicting every log entry beside it.
+
+#### Outcome:
+
+Three figures in `docs/qualification.md` were false and are now measured. Section 2 said "43 of 43 pass (42 scripts plus the width gate)" while entries 18 through 21 each reported 45 of 45 in their own prose; running `tools/tests/run_all.sh` on 2026-11-07 returns "45 of 45 passed", and `--list` names 44 scripts plus `check_help_width.py`, so the two suites the matrix had not counted are `test_snes_ini` and `test_pmod_sockets`. Section 6's first bullet said 39 host regressions where it now says 44, the same error one line further down. Section 6's second bullet said 30 of 59 port modules were built by no host test and section 6.1 was headed "The other 30"; `tools/check_test_coverage.py` reports 31 of 60 covered and 29 not, and the module that moved is `pmod_sockets.cpp`, which the tool lists as `COVERED pmod_sockets.cpp test_pmod_sockets.sh` because that script names the module's path on its compiler line at line 27. Entry 18 recorded the expectation that the tool could not see it, because the suite drives the module from `tb_pmod_sockets.cpp` rather than a `test_*.sh` build line the tool recognises; that expectation was wrong and the script has named the path since it landed, so the entry is corrected here rather than edited, and the matrix now says so. Section 6.1's Phosphor row loses `pmod_sockets` and reads eight files at 2,276 lines rather than nine at 2,587. Four more counts in that same table were stale by measurement and were corrected with it, since leaving them beside a corrected one would be a half-true table: `tang_ble.c` is 2,748 lines rather than 2,681, the eight app wrappers total 6,840 rather than 6,269 (the TinySNES window grew through entries 8, 10, 11 and 13), `tang_osd.c` is 326 rather than 321 and `td_desktop_bl616.c` is 434 rather than 432. Every other figure in the table was checked and stands. The board was read first and is healthy on entry 18's image: `platform` answered `bl616/freertos, tinytang 3a31690-dirty.cd6a5d5`, `fpga` answered core 84 on UART1 at 2 Mbaud, and `tangini` reported `layout lora` with `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`; the desktop then took the console and the guard refused further sends, so `crash` and `ble` were not re-read, which is TOOL-011 working. The running image is source-equivalent to `HEAD` because `git diff --stat 3a31690..HEAD` touches no `ports/` file except entry 18's own fix, so no firmware was built, flashed or needed. `.codewhale/handoff.md` was rewritten because it was actively misleading a successor: it named entry 20 as the last cycle when entry 21 had superseded it, and it carried entry 20's withdrawn volume-slider claim as the immediate next step alongside the coverage-tool note this cycle disproves. No source, test, tool or build file changed, so the gate was run rather than modified and passes 45 of 45 both before and after. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten — entry 18's wrong expectation is corrected here, where a settled entry's error belongs — and validated this entry as number 22 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The `tangini` ambiguity is the next cycle and is the one entry 21 named: `pmod_sockets.cpp` cannot distinguish a core that legitimately has no socket word, which is every emulator core and printed as "core 0x02 has no PMOD sockets", from a core that does not answer at all, which for TinyNES is a different protocol and printed as "no core answering"; both are true and both read as faults, which is what cost entry 20 hours. The distinction is host-testable against `tools/tests/tb_pmod_sockets.cpp`, whose two stubs already separate the core-ID probe from the register reads, and it needs a build, a flash and one board test to close. Two smaller things stand where they did: the launch-time versus live volume question for TinyNES and TinyGBC belongs with the next core rebuild that closes the personality-8 flip-bit deviation rather than on its own, and `check_test_coverage.py` is still not a gate, which is deliberate while 29 modules are legitimately deferred. Everything else open is unchanged: the forty retail games, `TI89Titanium_OS.89u` and `tinytang-upload.bin` to strip from the release card before the layout is published, the two untried pack boundaries, the LoRa link end to end, the `mkdir -p` measurement, the three Bluetooth re-runs, the Tiny89 save stall as an accepted known issue, the pack contents list, and the TinyGutenberg widths and reading position.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
