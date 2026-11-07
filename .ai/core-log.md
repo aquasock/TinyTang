@@ -819,3 +819,33 @@ Make the card's `bl616-firmware.bin` the build the board runs, and make that a c
 - User Test: PASS
 
 ---
+
+## 26 COMMIT Unreleased 2026-11-07T09:46:04-07:00
+
+#### Coming From:
+
+Unreleased 58eec40
+
+#### Purpose:
+
+Close the one gap entry 25 left open, by verifying against the running board that the card's firmware file is the build the board runs, rather than inferring it from the build output.
+
+#### Outcome:
+
+Entry 25 installed the running image on the card and recorded that the board was not reachable, so its evidence was the image's own banner. With the card back in the Tang and the board enumerating again as `ffff:5454` on `/dev/ttyACM0`, all three links in the chain were read on hardware instead. `platform` answered `bl616/freertos, tinytang 3a31690-dirty.cd6a5d5`, with `fpga` reporting core 84 answering on UART1 at 2 Mbaud and `tangini` reporting `layout lora` and `core 0x54 (ABI 1.6) has 0xc0 = 0x0080, as declared`, so the board is on the same image and in the same state entries 23 and 25 describe. `ls -l /` from the board showed `bl616-firmware.bin` at 698,944 bytes and `tinytang-upload.bin` at the same size, which is a size and not a content. The content was then fetched back over the console with `tangget`, the way entry 19 verified the card README: 698,944 bytes, SHA-256 `88ce23b2cdd003e64f7d7672530f3ba3f7299e5af9ee0ffdc202ce487232e6a3`, and the `bl616/freertos, tinytang 3a31690-dirty.cd6a5d5` banner present inside the returned bytes. That digest is the one `build/build_out/tinytang_bl616.bin` produces, so the file the board reads is byte-for-byte the file the tree builds, and it is the image the board is running. This matters more than a redundant check would, because the copy travelled from a host mount to the card and then into the board, and a truncated or stale write is exactly what the cycle exists to prevent. The tool's board-side path, which entry 25 had tested only against a stub, was then exercised against the real Tang: with a scratch directory standing in for the card, `--port /dev/ttyACM0 --dry-run` read `3a31690-dirty.cd6a5d5` off the board, matched it to the image, and proceeded, while a synthetic image carrying `deadbee-dirty.feedfac` produced `refusing: the board runs 3a31690-dirty.cd6a5d5 and <image> is deadbee-dirty.feedfac` with exit status 1 and nothing written. That is the refusal the tool exists for, and it now has two ways of failing that were shown to bite rather than described: planted faults in entry 25's host suite, and a real board disagreeing with a real image here. One behaviour was confirmed rather than assumed: the tool refuses when the card is not mounted, which it did when it was first pointed at `/run/media/vash/TINYTEST` after the card had been moved into the board, rather than creating a directory or writing somewhere else. No source, test, documentation or firmware file changed this cycle, so the host gate carries at 46 of 46 from entry 25 and was not re-run, and nothing was flashed or deployed; the board ran the same image throughout and the card was not modified, the fetch being a read. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten — entry 25's "the board was not reachable during this cycle" is left as the accurate statement it was, and this entry supplies the evidence that cycle could not get — and validated this entry as number 26 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, `None.` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+Two items remain on the card and both are the operator's to decide rather than the next cycle's: `tinytang-upload.bin` at the root, byte-identical to `bl616-firmware.bin` and not in the card README's tree, which is clutter now that the two agree but is also where entry 18's flash left it and where the next flash will stage again; and `root/ble/bonds.bin`, 252 bytes of the operator's own pairing keys, which belong to a person and not to a release. `.Trash-1000/`, 5.8 MB of files deleted through the desktop, was carried from entry 24 and remains. The one improvement worth making when the next cycle touches the flash path is to fold the card refresh into `tools/tinytang_flash.py`, which already stages the image on the card as `tinytang-upload.bin`: doing both in one command would make the drift entry 24 and entry 25 both had to fix impossible rather than merely detectable, and it is the same argument this log keeps making, that a guarantee belongs in a mechanism rather than in what someone remembers to do. Nothing else is open on the firmware side, the board and the card now provably agree, and the release layout is clean of copyrighted material.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
