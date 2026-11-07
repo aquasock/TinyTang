@@ -226,6 +226,7 @@ revision that closes the hole cannot pass silently.
 |---|---|---|
 | host | HDMI raster, VGA mirror, no left-edge leak | `test_desktop_video` |
 | host | Audio clock regeneration | `test_composite` |
+| silicon | **Audio reaches HDMI and the PMOD I2S2 from three emulator cores** — TinyNES, TinyGBC and TinySNES each played with sound on both outputs, heard by the operator on 2026-11-06 | §5.2 |
 | host | Link framing, ID, no unprompted frames | `test_desktop_link` |
 | host | I2C master bit timing, NACK, stall | `test_desktop_core` (`tb_i2c_master`) |
 | host | Mux channel select and retry | `test_i2c_mux` |
@@ -339,10 +340,10 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 
 | Status | App | Note |
 |---|---|---|
-| partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project |
-| untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not |
+| partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project. **Its volume slider does not reach the core — see 5.2** |
+| untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not. **Its volume slider does not reach the core either — see 5.2** |
 | untested | Tiny89 | no host test in this tree. **Its save stalls after the state lands — see 5.1** |
-| partial | TinySNES | in scope from 2026-11-06. `test_snes_load` covers the loader and `tb_snes_ini` the settings; the window is not covered, and no cartridge has been launched through it yet |
+| silicon | TinySNES | in scope from 2026-11-06. `test_snes_load` covers the loader and `tb_snes_ini` the settings; the window has no host test. **A cartridge was launched and played on the release card, with sound on both HDMI and the PMOD I2S2 — see 5.2** |
 | host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested |
 | untested | TinyWiki, TinyGutenberg | `test_wiki_pack` covers the pack format, not the apps |
 | untested | TinyNode | no host test |
@@ -404,19 +405,63 @@ one entry older than Tiny89's HEAD, and Tiny89's tree has uncommitted work —
 the archive attribute for the variable-send header — which touches the install
 path and not the save path.
 
+### 5.2 Audio, and why a silent card was not a broken one
+
+The operator reported no HDMI audio from any emulator on the release card, and
+the card's own settings were the first suspect: `tinytang.ini` declared no PMOD
+layout there, while the working card declared `lora`.  Changing the settings to
+match appeared to fix it.  **That was the wrong conclusion**, and the board said
+so when asked.
+
+``tangload tinysnes.bin`` followed by ``tangini`` answers
+``core 0x02 has no PMOD sockets``.  `pmod_sockets.cpp`'s table holds two
+entries, Phosphor (0x50) and the desktop core (0x54); no emulator core is in it,
+and TinyNES does not answer a core-ID probe at all because its AE350 boot ROM
+speaks the `TinyNES LOAD` protocol instead (PROT-010).  So **no emulator core
+has ever been sent a socket word**, and no layout can silence one.
+
+The pin map agrees.  A released socket is `1'bz` and `lora` drives PMOD0, so
+under either setting PMOD1 — where `pmod1_dac` puts the I2S2's MCLK, LRCK, SCLK
+and SDIN — carries exactly the same thing: nothing.  And `tangload` reconfigures
+the FPGA, so nothing of the previous core's pin state survives a load either.
+
+What the silence actually was: the first cartridges tried were homebrew, and
+AccuracyCoin, FamiDash and Snake have sparse or deliberately minimal sound.
+Super Mario Bros. 3 starts with music.  With the forty retail games on the card
+the operator then heard sound from **TinyNES, TinyGBC and TinySNES, on both HDMI
+and the PMOD I2S2** — which is the row this section exists to support, and it is
+the first time audio was heard from these cores through this board's HDMI at
+all.
+
+**Two defects the investigation found, both real and neither yet fixed.**
+
+*The volume slider on the NES and TinyGBC windows does nothing.*
+`tang_audio_gain()` in `tang_settings_ini.c` has exactly one caller,
+`tang_snes_load.c:461`, which sends frame `0x1C` to the SNES core.
+`tinynes_app.cpp` and `tinygbc_app.cpp` read, store, save and draw the value —
+a three-digit percentage and a mute checkbox — and nothing carries it to their
+cores, whose players use their own `SOUND_VOLUME`.  A control that reports a
+level it does not set is the honest-control question §5's TinySNES pages
+raised, now measured.
+
+*`tangini` cannot inspect an emulator core, and says so ambiguously.*  Against
+SNES it reports "core 0x02 has no PMOD sockets", which is true; against TinyNES
+it reports "no core answering", which reads as a fault rather than as the
+different protocol it is.  Neither message is wrong and both invite the same
+wrong conclusion this section records.
+
 **TinySNES is in scope from 2026-11-06**, by the operator's decision, and the
 release card carries its core.  It was out of scope as "a single core that
 reintegrates later"; the reason to bring it back was that this firmware already
 has its window, its cartridge loader and its three settings pages, and the card
 had eleven homebrew games and a hardware test for a core that was not there.
-Status is `partial`: the launcher (`tinysnes_app.cpp`) and the loader it shares
-with `snesload` (`tang_snes_load.c`, covered by `test_snes_load`) are in the
-tree and board-tested, and the core itself is board-accepted in its own project.
-What is not yet proven here is a cartridge launched end to end through this
-window: `tinysnes.bin` at SHA-256 `6b7489d0…` was loaded with `tangload` on the
-release card and answered as core 2, and the desktop core was put back, which
-proves the file and the load path but not the stream.  The first launch is the
-test that closes it.
+The launcher (`tinysnes_app.cpp`) and the loader it shares with `snesload`
+(`tang_snes_load.c`, covered by `test_snes_load`) are in the tree and
+board-tested, the core is board-accepted in its own project, and a cartridge has
+now been launched through this window on the release card: the operator played
+one and heard its sound on both HDMI and the PMOD I2S2 (§5.2).  The window
+itself still has no host test, which is what keeps this from a clean silicon
+row in the applications table.
 
 TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not shipping.
 

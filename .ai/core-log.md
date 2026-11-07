@@ -635,3 +635,33 @@ One launch closes this cycle and it is the operator's: open the TinySNES window,
 - User Test: NOT RUN
 
 ---
+
+## 20 COMMIT Unreleased 2026-11-06T17:39:50-07:00
+
+#### Coming From:
+
+Unreleased a42b641
+
+#### Purpose:
+
+Record that audio works from all three emulator cores through HDMI and the PMOD I2S2, and record the two defects the false alarm about it exposed.
+
+#### Outcome:
+
+The operator reported no HDMI audio from any emulator on the release card, and the card's settings were the first suspect: `tinytang.ini` there declared no PMOD layout while the working card declared `lora`, so the four `.ini` files were copied from the working card to the release card over the CDC console with `tangput` and fetched back with `tangget` for comparison, all four byte-identical at `f73740e0…` for `tinynes.ini`, `fe51d572…` for `tinygbc.ini`, `0abb5b02…` for `tinysnes.ini` and `fa5d55f1…` for `tinytang.ini`, and `tangini apply` put the `lora` word on the loaded desktop core. That appeared to fix it and did not. The board was then asked directly and contradicted the theory: `tangload` of `tinysnes.bin` followed by `tangini` answered "core 0x02 has no PMOD sockets", and TinyNES answered nothing at all because its AE350 boot ROM speaks the `TinyNES LOAD` protocol rather than the 0xAA frames (PROT-010), so `pmod_sockets.cpp`'s two-entry table — Phosphor 0x50 and the desktop core 0x54 — means no emulator core has ever been sent a socket word on either card. The pin map agrees with that rather than merely permitting it: in `desktop_pmod.sv` a released socket is `1'bz` and personality 8 drives PMOD0, so under no layout and under `lora` the PMOD1 pins carrying `pmod1_dac`'s MCLK, LRCK, SCLK and SDIN are identical, and `tangload` reconfigures the FPGA so no previous core's pin state survives. The real explanation was the content: the first cartridges tried were homebrew, and AccuracyCoin, FamiDash and Snake have sparse or deliberately minimal sound, so with forty retail games on the card the operator played Super Mario Bros. and heard it, and reported sound from TinyNES, TinyGBC and TinySNES on both HDMI and the PMOD I2S2. That is the first time audio was heard from these cores through this board's HDMI, and it is now a silicon row in the desktop core's video matrix. The forty games were added to the release card in four `commercial` folders, ten per system, taken from this machine's MiSTer image and chosen by Metacritic rank: NES and both Game Boy sets stay zipped because their players inflate a `.zip` themselves, and the SNES ten are extracted to raw `.sfc` because TinySNES has no inflater. Two things were checked before they were left there — every archive unpacks through the player's own reader, the NES ten through TinyNES's `test_cart_zip.sh` with 0 bad and the twenty Game Boy ones through TinyGBC's real `cart_zip.c` under sanitizers, and every SNES ROM carries a valid LoROM or HiROM header — and one thing was caught that would have failed silently: the Game Boy library skips any file whose name reaches its 56-byte `LIB_NAME_BYTES` rather than truncating it, and seven of the twenty had names of 58 to 99 characters, among them a 87-character Pokemon Yellow, so all twenty were renamed to short form. The card README gained the four folders in its tree and a rewritten "Not shippable" section naming all forty games and saying to delete the four folders before the layout is published, beside the TI-89 operating system that was already there. Two real defects came out of the false alarm and are recorded in `docs/qualification.md` §5.2 rather than fixed. The volume slider on the NES and TinyGBC windows does nothing: `tang_audio_gain()` has exactly one caller, `tang_snes_load.c:461`, which sends frame 0x1C to the SNES core, while `tinynes_app.cpp` and `tinygbc_app.cpp` read, store, save and draw the value as a percentage with a mute checkbox and never carry it to their cores, whose players use their own `SOUND_VOLUME`. And `tangini` cannot inspect an emulator core, reporting "core 0x02 has no PMOD sockets" against SNES and "no core answering" against TinyNES, both true and both inviting the wrong conclusion this cycle spent hours on. The TinySNES row moved from `partial` to `silicon` because the cartridge that had never been launched now has been. The host gate is 45 of 45. No firmware was built or flashed, so the board still runs entry 18's `3a31690-dirty.cd6a5d5`, confirmed by `platform` after the operator's reboot with core 84 answering and `0xc0 = 0x0080` as declared. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 20 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only `docs/qualification.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The volume slider is the next cycle worth doing and it is small: `tinynes_app.cpp` and `tinygbc_app.cpp` need a frame that carries `tang_audio_gain()`'s result to their cores, and each core needs to apply it to the player it runs, which is the same shape as SNES frame 0x1C that `tang_snes_load.c` already sends. Doing it for one system first would show the contract before the second repeats it. `tangini`'s two messages should also be made to distinguish "this core has no sockets" from "this core does not answer", since the first is normal for an emulator and the second is not. The card still carries forty retail games and the TI-89 operating system, both to be removed before the layout is published, and `tinytang-upload.bin` at its root from entry 18's flash. Nothing else changed: the Tiny89 save stall stays a known issue, the pack contents list is still unwritten, and the carried release qualification rows are as entries 17 to 19 left them.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
