@@ -879,3 +879,33 @@ The operator creates the `v0.2.0` tag and the GitHub release on this commit, in 
 - User Test: N/A
 
 ---
+
+## 28 COMMIT Unreleased 2026-11-07T10:52:02-07:00
+
+#### Coming From:
+
+Unreleased a298f73
+
+#### Purpose:
+
+Retract two claims entry 27 made about reproducibility that were never verified, and record what measurement actually established, now that `v0.2.0` is published.
+
+#### Outcome:
+
+Entry 27 stated that "a comparison of every compiled input between `4284991` and `7ed12e4` found no difference, so the release image is reproducible from committed source", and that the board's previous image "was built from a tree state that was never committed" because "no committed input explains it". Neither held up, and both are retracted here rather than edited there. The first was inferred from rebuilds performed in the one directory that had produced the binary, which cannot detect a cross-checkout difference: a build test confined to a single working tree proves determinism, not reproducibility. The second was speculation presented as a finding, and the evidence for it never existed, because the only copy of that image was in the board's flash and was overwritten before it could be compared against anything. What measurement established, and what `docs/releases/v0.2.0.md` now says in place of the false paragraph, is narrower and better founded. A single checkout is deterministic: the local tree rebuilt in place after `rm -rf build` reproduced `25c6e858` twice, and a clone copied wholesale to a second directory and rebuilt there reproduced `027ffee7` twice, so the same tree always yields the same bytes. Two checkouts of the same commit, though, do not agree with each other -- `a298f73` built to `25c6e858` in this repository and to `027ffee7` in a fresh clone, differing by 16,684 bytes after the build identity in both was normalised, and the difference sits in the code and read-only-data sections even though the preprocessed sources were byte-identical apart from absolute path strings and the printable strings in the differing region were the same set in both. That rules out stale build state, which a full `rm -rf build` disproved; the nested `third_party/tinydesk/third_party/tdsh` submodule, which was populated in one tree and empty in the other when first compared and made no difference when initialised; the build directory, since the clone reproduced itself at two paths; and the SDK and toolchain, which have not changed since September and October. `file(GLOB)` at four sites in `CMakeLists.txt` was the leading hypothesis and was disproved too: the link line's source order was identical in both trees. The cause is therefore not established, and the release notes say so rather than implying a fix that does not exist. That is worth stating plainly because it sets the requirement the next cycle has to meet, which is the one the operator named: a commit must build to the same bytes every time, on any machine, or the archive cannot be verified by anyone who downloads it. The notes now tell a reader that a fresh clone will produce a working firmware whose digest is not the published one, which is honest and is also the defect. One correction is owed in the other direction as well: entry 27 recorded that the release firmware "has not run on the board", and since then it has been flashed, power-cycled and read back -- `platform` reports `7ed12e4-dirty.45fed98`, `fpga` answers core 84, `tangini` reports `0xc0 = 0x0000` as declared and `crash` reports a clean power-up with 104,272 bytes of heap free -- so the shipped artifact is a running artifact, and board, card and published zip all carry `a8e00405`. The release itself was published by the operator at 2026-11-07T17:50:33Z as `TinyTang 0.2.0`, marked latest, with `TinyTang.v0.2.0.zip` as its single asset; the uploaded file was downloaded again and confirmed at SHA-256 `a99a89ea…`, its notes confirmed byte-identical to this tree's copy before this correction, and its extracted firmware confirmed at `a8e00405…`. The corrected notes are in the repository only: the GitHub release body still carries the paragraph this entry retracts, since editing a published release is the operator's call. No source, test, tool or firmware file changed and nothing was built, flashed or deployed this cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and that entry 27 was not rewritten -- the retraction is recorded here, where a settled entry's error belongs -- and validated this entry as number 28 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, only `docs/releases/v0.2.0.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The cross-checkout nondeterminism is now the project's one open release defect and deserves its own cycle with a real gate behind it: build the same commit in two directories and fail if the SHA-256 differs, so the property is measured on every change instead of being asserted in prose after a release. The search should start from what is already excluded rather than repeating it, which is a deterministic single checkout, matching source order, matching preprocessed sources apart from paths, and an untouched SDK -- leaving the remaining candidates in how absolute paths reach the object files, since `-fdebug-prefix-map` and `-fmacro-prefix-map` are set for the SDK alone and not for this repository, and `-save-temps=obj` is on. A suspected cause worth testing first is that the differing sections are code and read-only data rather than debug information, which a prefix map would not explain by itself, so the first measurement should be a build in two directories with the SDK path held identical and every object compared by section. Second and smaller, the GitHub release body still carries the retracted paragraph; the operator can edit the release description in the browser from the corrected `docs/releases/v0.2.0.md` whenever they choose, and until then the published page is less accurate than the repository. Everything else carried from entry 27 stands: the TinyDesk patches that keep every identity `-dirty`, the personality-8 flip-bit deviation and the Tiny89 flash-save stall recorded as known issues, and the card now holding no copyrighted material and no personal settings.
+
+#### Files Modified:
+
+- docs/releases/v0.2.0.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
