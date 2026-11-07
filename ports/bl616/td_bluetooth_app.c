@@ -10,8 +10,12 @@
 // work is the same as blekbd's and blemouse's, run as jobs on tang_ble.c's
 // ble task, so nothing here blocks the desktop: a request returns at once, or
 // says why it was refused, and the window follows the job and the slots
-// through tang_ble_info().  Opening the window does not start the radio; a
-// scan does, and only with enough heap free.
+// through tang_bt_ops_t's status().  Opening the window does not start the
+// radio; a scan does, and only with enough heap free.
+//
+// Everything here goes through the port's Bluetooth table (tang_bt_ops.h) and
+// not through tang_ble.c's own API, so TinyDesk can adopt the interface later
+// without this file being rewritten -- see tinydesk issue #7.
 //
 // Letting go of a device that is connected confirms first, since it may be
 // the keyboard or mouse driving this desktop.
@@ -22,8 +26,19 @@
 #include <string.h>
 
 #include "tinydesk/td.h"
-#include "tang_ble.h"
+#include "tang_bt_ops.h"
 #include "tang_heap.h"
+
+/* The port's Bluetooth surface.  NULL only on a build without Bluetooth, which
+ * this one is not; the window declines to open rather than dereferencing it. */
+static const td_bt_ops_t *bt(void)
+{
+    static const td_bt_ops_t *ops;
+    if (ops == NULL) {
+        ops = td_bt_port_ops();
+    }
+    return ops;
+}
 
 #define WIN_W        72
 #define WIN_H        34
@@ -35,18 +50,18 @@
 #define LIST_ROWS    8
 
 static td_window_t *s_win;
-static tang_ble_info_t s_info;
+static td_bt_status_t s_info;
 static tang_heap_info_t s_heap;
 static unsigned s_ticks;
 
-static td_widget_t *s_pair[TANG_BOND_SLOTS], *s_toggle[TANG_BOND_SLOTS],
-                   *s_forget[TANG_BOND_SLOTS];
+static td_widget_t *s_pair[TANG_BT_SLOTS], *s_toggle[TANG_BT_SLOTS],
+                   *s_forget[TANG_BT_SLOTS];
 static td_widget_t *s_list, *s_scroll, *s_pick, *s_rescan, *s_cancel;
 
 /* The slot a scan is choosing a device for, or -1 when no scan is shown. */
 static int s_scan_slot = -1;
 static bool s_scan_pending;          /* our scan job has not reported yet */
-static tang_ble_device_t s_found[TANG_BLE_MAX_DEVICES];
+static td_bt_device_t s_found[TANG_BT_MAX_DEVICES];
 static int s_found_count;
 
 /* A line of the window's own, such as why a request was refused; it gives
@@ -58,10 +73,10 @@ static enum { ACT_NONE, ACT_OFF, ACT_FORGET, ACT_PAIR } s_act;
 static int s_act_slot;
 static int s_act_device;
 
-static const char *const s_slot_names[TANG_BOND_SLOTS] = {"Keyboard", "Mouse", "Combo"};
-static const char *const s_slot_lower[TANG_BOND_SLOTS] = {"keyboard", "mouse", "combo"};
-static const tang_ble_kind_t s_slot_kind[TANG_BOND_SLOTS] = {
-    TANG_BLE_KIND_KEYBOARD, TANG_BLE_KIND_MOUSE, TANG_BLE_KIND_HID,
+static const char *const s_slot_names[TANG_BT_SLOTS] = {"Keyboard", "Mouse", "Combo"};
+static const char *const s_slot_lower[TANG_BT_SLOTS] = {"keyboard", "mouse", "combo"};
+static const td_bt_kind_t s_slot_kind[TANG_BT_SLOTS] = {
+    TD_BT_KIND_KEYBOARD, TD_BT_KIND_MOUSE, TD_BT_KIND_HID,
 };
 
 static void note(const char *text)
@@ -75,13 +90,13 @@ static void format_addr(char *out, size_t n, const uint8_t a[6])
     snprintf(out, n, "%02X:%02X:%02X:%02X:%02X:%02X", a[5], a[4], a[3], a[2], a[1], a[0]);
 }
 
-static const char *kind_name(tang_ble_kind_t k)
+static const char *kind_name(td_bt_kind_t k)
 {
     switch (k) {
-    case TANG_BLE_KIND_KEYBOARD: return "keyboard";
-    case TANG_BLE_KIND_MOUSE:    return "mouse";
-    case TANG_BLE_KIND_HID:      return "HID";
-    default:                     return "other";
+    case TD_BT_KIND_KEYBOARD: return "keyboard";
+    case TD_BT_KIND_MOUSE:    return "mouse";
+    case TD_BT_KIND_HID:      return "HID";
+    default:                  return "other";
     }
 }
 
@@ -92,15 +107,15 @@ static const char *kind_name(tang_ble_kind_t k)
  * device that does not advertise its kind -- each strongest first. */
 static void collect(int slot)
 {
-    tang_ble_device_t all[TANG_BLE_MAX_DEVICES];
-    const int n = tang_ble_scan_results(all, TANG_BLE_MAX_DEVICES);
+    td_bt_device_t all[TANG_BT_MAX_DEVICES];
+    const int n = bt()->scan_results(all, TANG_BT_MAX_DEVICES);
     s_found_count = 0;
     for (int pass = 0; pass < 3; pass++) {
         for (int i = 0; i < n; i++) {
-            const tang_ble_device_t *d = &all[i];
+            const td_bt_device_t *d = &all[i];
             const bool mine = d->kind == s_slot_kind[slot];
-            const bool hid = !mine && d->kind != TANG_BLE_KIND_OTHER;
-            const bool named = d->kind == TANG_BLE_KIND_OTHER && d->name[0] != '\0';
+            const bool hid = !mine && d->kind != TD_BT_KIND_OTHER;
+            const bool named = d->kind == TD_BT_KIND_OTHER && d->name[0] != '\0';
             if ((pass == 0 && mine) || (pass == 1 && hid) || (pass == 2 && named)) {
                 s_found[s_found_count++] = *d;
             }
@@ -120,7 +135,7 @@ static const char *get_item(td_widget_t *w, int index, int *fg, void *user)
     if (index < 0 || index >= s_found_count) {
         return "";
     }
-    const tang_ble_device_t *d = &s_found[index];
+    const td_bt_device_t *d = &s_found[index];
     char addr[18];
     format_addr(addr, sizeof(addr), d->addr);
     snprintf(line, sizeof(line), " %-8s  %-24s %4d dBm  %s", kind_name(d->kind),
@@ -148,9 +163,11 @@ static void start_scan(int slot)
 {
     s_found_count = 0;
     td_list_set_count(s_list, 0);
-    const char *why = tang_ble_scan_start();
-    if (why != NULL) {
-        note(why);
+    if (!bt()->scan()) {
+        /* The reason is the interface's: status().message carries it. */
+        td_bt_status_t st;
+        bt()->status(&st);
+        note(st.message);
         show_scan(false);
         return;
     }
@@ -167,21 +184,30 @@ static void run(void)
 {
     const int slot = s_act_slot;
     const char *why = NULL;
+    td_bt_status_t st;
     switch (s_act) {
     case ACT_OFF:
-        why = tang_ble_set_reconnect(slot, false);
+        if (!bt()->disconnect(slot)) {
+            bt()->status(&st);
+            why = st.message;
+        }
         break;
     case ACT_FORGET:
-        why = tang_ble_forget(slot);
+        if (!bt()->forget(slot)) {
+            bt()->status(&st);
+            why = st.message;
+        }
         break;
     case ACT_PAIR:
         if (s_act_device < 0 || s_act_device >= s_found_count) {
             why = "choose a device in the list first";
             break;
         }
-        why = tang_ble_pair_start(slot, &s_found[s_act_device]);
-        if (why == NULL) {
+        if (bt()->pair(slot, &s_found[s_act_device])) {
             show_scan(false);
+        } else {
+            bt()->status(&st);
+            why = st.message;
         }
         break;
     case ACT_NONE:
@@ -207,7 +233,7 @@ static void confirm_answer(int button, void *user)
 /* The slot's device by name, or its kind when it has none. */
 static const char *slot_device(int slot)
 {
-    const tang_ble_slot_info_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = &s_info.slot[slot];
     if (s->paired && s->paired_name[0]) {
         return s->paired_name;
     }
@@ -217,7 +243,7 @@ static const char *slot_device(int slot)
 static void ask(const char *buttons, const char *fmt_question, int slot)
 {
     char text[320];
-    const tang_ble_slot_info_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = &s_info.slot[slot];
     int n = snprintf(text, sizeof(text), fmt_question, s_slot_lower[slot], slot_device(slot));
     if (s->ready && n > 0 && n < (int)sizeof(text)) {
         snprintf(text + n, sizeof(text) - (size_t)n,
@@ -239,7 +265,13 @@ static void on_toggle(td_widget_t *w, void *user)
     (void)w;
     const int slot = (int)(intptr_t)user;
     if (!s_info.slot[slot].reconnects) {
-        note(tang_ble_set_reconnect(slot, true));
+        td_bt_status_t st;
+        if (!bt()->set_reconnect(slot, true)) {
+            bt()->status(&st);
+            note(st.message);
+        } else {
+            note(NULL);
+        }
         return;
     }
     s_act = ACT_OFF;
@@ -276,7 +308,7 @@ static void pick(void)
     s_act = ACT_PAIR;
     s_act_slot = slot;
     s_act_device = index;
-    const tang_ble_slot_info_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = &s_info.slot[slot];
     if (s->paired && memcmp(s->paired_addr, s_found[index].addr, 6) != 0) {
         ask("Replace|Cancel", "The %s %s is paired now. Pairing this one\n"
                               "forgets it.", slot);
@@ -324,7 +356,7 @@ static void row(int y, int w, const char *heading, const char *value, uint8_t fg
 static void draw_slot(int y, int w, int i)
 {
     const td_theme_t *t = td_theme();
-    const tang_ble_slot_info_t *s = &s_info.slot[i];
+    const td_bt_slot_t *s = &s_info.slot[i];
     char line[128];
     char addr[18];
 
@@ -364,17 +396,17 @@ static void on_draw(td_window_t *win, int w, int h)
     td_fill(td_rect(0, 0, w, h), ' ', t->win_fg, t->win_bg);
 
     switch (s_info.radio) {
-    case TANG_BLE_RADIO_OFF:
+    case TD_BT_RADIO_OFF:
         row(1, w, "Radio", "off; a scan starts it", t->dim);
         break;
-    case TANG_BLE_RADIO_STARTING:
+    case TD_BT_RADIO_STARTING:
         row(1, w, "Radio", "starting", t->win_fg);
         break;
-    case TANG_BLE_RADIO_FAILED:
+    case TD_BT_RADIO_FAILED:
         snprintf(line, sizeof(line), "failed to start (%d)", s_info.enable_error);
         row(1, w, "Radio", line, t->win_fg);
         break;
-    case TANG_BLE_RADIO_UP:
+    case TD_BT_RADIO_UP:
         snprintf(line, sizeof(line), "up, the stack took %lu bytes of heap at start",
                  (unsigned long)s_info.stack_heap);
         row(1, w, "Radio", line, t->win_fg);
@@ -386,7 +418,7 @@ static void on_draw(td_window_t *win, int w, int h)
              (unsigned long)s_heap.free, (unsigned long)s_heap.largest);
     row(3, w, "Heap", line, t->win_fg);
 
-    for (int i = 0; i < TANG_BOND_SLOTS; i++) {
+    for (int i = 0; i < TANG_BT_SLOTS; i++) {
         draw_slot(SLOT_Y(i), w, i);
     }
 
@@ -409,10 +441,10 @@ static void on_draw(td_window_t *win, int w, int h)
     /* The bottom line: a job's progress or outcome, else the window's note. */
     const char *msg = s_note;
     bool failed = s_note[0] != '\0';
-    if (s_info.job != TANG_BLE_JOB_NONE && (s_info.job_running || s_note[0] == '\0')) {
-        msg = s_info.job_msg;
+    if (s_info.busy || (s_note[0] == '\0' && s_info.message[0] != '\0')) {
+        msg = s_info.message;
         failed = s_info.job_failed;
-        if (s_info.job_running && msg[0] == '\0') {
+        if (s_info.busy && msg[0] == '\0') {
             msg = "working...";
         }
     }
@@ -423,20 +455,21 @@ static void on_draw(td_window_t *win, int w, int h)
 
 static void refresh(void)
 {
-    tang_ble_info(&s_info);
+    bt()->status(&s_info);
     if (s_ticks++ % HEAP_TICKS == 0) {
         tang_heap_info(&s_heap);
     }
 
-    for (int i = 0; i < TANG_BOND_SLOTS; i++) {
-        const tang_ble_slot_info_t *s = &s_info.slot[i];
+    for (int i = 0; i < TANG_BT_SLOTS; i++) {
+        const td_bt_slot_t *s = &s_info.slot[i];
         td_widget_set_visible(s_toggle[i], s->paired);
         td_widget_set_visible(s_forget[i], s->paired);
         td_widget_set_text(s_toggle[i], s->reconnects ? "Off" : "On");
     }
 
-    if (s_scan_slot >= 0 && s_scan_pending && s_info.job == TANG_BLE_JOB_SCAN &&
-        !s_info.job_running) {
+    /* scan_results() is -1 while a scan runs, which is how this tells that the
+     * job has finished without knowing anything about the engine's jobs. */
+    if (s_scan_slot >= 0 && s_scan_pending && bt()->scan_results(NULL, 0) != -1) {
         s_scan_pending = false;
         collect(s_scan_slot);
         if (s_found_count > 0) {
@@ -468,6 +501,10 @@ static void on_close(td_window_t *win)
 
 static void launch(void)
 {
+    if (bt() == NULL) {
+        /* No Bluetooth on this build: there is nothing to show. */
+        return;
+    }
     if (td_win_is_open(s_win)) {
         td_win_focus(s_win);
         return;
@@ -487,7 +524,7 @@ static void launch(void)
     note(NULL);
     s_ticks = 0;
 
-    for (int i = 0; i < TANG_BOND_SLOTS; i++) {
+    for (int i = 0; i < TANG_BT_SLOTS; i++) {
         const int y = SLOT_Y(i) + 3;
         s_pair[i] = td_button(s_win, COL, y, "Pair...", on_pair, (void *)(intptr_t)i);
         s_toggle[i] = td_button(s_win, COL + 12, y, "Off", on_toggle, (void *)(intptr_t)i);

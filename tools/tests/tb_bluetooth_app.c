@@ -1,81 +1,158 @@
 /* SPDX-License-Identifier: MIT
  * Drive the real Bluetooth window (ports/bl616/td_bluetooth_app.c) inside the
- * real TinyDesk window manager, with tang_ble.c's API replaced by a recorder:
- * which requests the buttons make, which ask first, how a scan's devices are
- * offered, and how a refusal is shown.
+ * real TinyDesk window manager, with the port's Bluetooth table
+ * (ports/bl616/tang_bt_ops.h) replaced by a recorder: which requests the
+ * buttons make, which ask first, how a scan's devices are offered, and how a
+ * refusal is shown.
+ *
+ * The window reaches the engine only through td_bt_port_ops(), so this file
+ * implements that table and nothing else.  A direct call to tang_ble.c from the
+ * window would now fail to link here, which is the point: the test proves the
+ * window goes through the interface.
  */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "tinydesk/td.h"
-#include "tang_ble.h"
+#include "tang_bt_ops.h"
 #include "tang_heap.h"
 
 void td_bluetooth_register(void);
 
 /* ------------------------------------------------------- the fake engine */
 
-static tang_ble_info_t s_info;
-static tang_ble_device_t s_devs[TANG_BLE_MAX_DEVICES];
+static td_bt_status_t s_info;
+static td_bt_device_t s_devs[TANG_BT_MAX_DEVICES];
 static int s_ndevs;
 static const char *s_refuse;          /* the next request's refusal */
 static int s_scans, s_pairs, s_forgets, s_offs, s_ons;
 static int s_last_slot;
-static tang_ble_device_t s_last_dev;
+static td_bt_device_t s_last_dev;
+static bool s_scanning;               /* scan_results() answers -1 while set */
 
-void tang_ble_info(tang_ble_info_t *out) { *out = s_info; }
+static void fake_status(td_bt_status_t *out) { *out = s_info; }
 
-int tang_ble_scan_results(tang_ble_device_t *out, int max)
+static int fake_scan_results(td_bt_device_t *out, int max)
 {
+    if (s_scanning) {
+        return -1;
+    }
     const int n = s_ndevs < max ? s_ndevs : max;
-    memcpy(out, s_devs, sizeof(s_devs[0]) * (size_t)n);
+    if (out != NULL && n > 0) {
+        memcpy(out, s_devs, sizeof(s_devs[0]) * (size_t)n);
+    }
     return n;
 }
 
-static const char *take(tang_ble_job_t job, int slot)
+static bool take(bool *ok)
 {
     const char *why = s_refuse;
     s_refuse = NULL;
-    if (why == NULL) {
-        s_info.job = job;
-        s_info.job_running = true;
-        s_last_slot = slot;
+    if (why != NULL) {
+        snprintf(s_info.message, sizeof s_info.message, "%s", why);
+        *ok = false;
+        return false;
     }
-    return why;
+    s_info.message[0] = '\0';
+    *ok = true;
+    return true;
 }
 
-const char *tang_ble_scan_start(void)
+static bool fake_scan(void)
 {
-    const char *why = take(TANG_BLE_JOB_SCAN, -1);
-    s_scans += why == NULL;
-    return why;
+    bool ok;
+    const bool taken = take(&ok);
+    if (taken) {
+        s_scans++;
+        s_info.busy = true;
+        s_scanning = true;
+    }
+    s_info.job_failed = !ok;
+    return taken;
 }
 
-const char *tang_ble_pair_start(int slot, const tang_ble_device_t *dev)
+static bool fake_pair(int slot, const td_bt_device_t *dev)
 {
-    const char *why = take(TANG_BLE_JOB_PAIR, slot);
-    if (why == NULL) {
+    bool ok;
+    const bool taken = take(&ok);
+    if (taken) {
         s_pairs++;
+        s_last_slot = slot;
         s_last_dev = *dev;
     }
-    return why;
+    s_info.job_failed = !ok;
+    return taken;
 }
 
-const char *tang_ble_set_reconnect(int slot, bool on)
+static bool fake_disconnect(int slot)
 {
-    const char *why = take(on ? TANG_BLE_JOB_ON : TANG_BLE_JOB_OFF, slot);
-    if (why == NULL) {
-        on ? s_ons++ : s_offs++;
+    bool ok;
+    const bool taken = take(&ok);
+    if (taken) {
+        s_offs++;
+        s_last_slot = slot;
     }
-    return why;
+    s_info.job_failed = !ok;
+    return taken;
 }
 
-const char *tang_ble_forget(int slot)
+static bool fake_forget(int slot)
 {
-    const char *why = take(TANG_BLE_JOB_FORGET, slot);
-    s_forgets += why == NULL;
-    return why;
+    bool ok;
+    const bool taken = take(&ok);
+    if (taken) {
+        s_forgets++;
+        s_last_slot = slot;
+    }
+    s_info.job_failed = !ok;
+    return taken;
+}
+
+static bool fake_set_reconnect(int slot, bool on)
+{
+    bool ok;
+    const bool taken = take(&ok);
+    if (taken) {
+        on ? s_ons++ : s_offs++;
+        s_last_slot = slot;
+    }
+    s_info.job_failed = !ok;
+    return taken;
+}
+
+static int fake_paired(td_bt_paired_t *out, int max)
+{
+    int n = 0;
+    for (int i = 0; i < TANG_BT_SLOTS && n < max; i++) {
+        if (!s_info.slot[i].paired) {
+            continue;
+        }
+        memset(&out[n], 0, sizeof out[n]);
+        out[n].slot = i;
+        memcpy(out[n].addr, s_info.slot[i].paired_addr, sizeof out[n].addr);
+        snprintf(out[n].name, sizeof out[n].name, "%s", s_info.slot[i].paired_name);
+        out[n].connected = s_info.slot[i].ready;
+        out[n].reconnects = s_info.slot[i].reconnects;
+        n++;
+    }
+    return n;
+}
+
+static const td_bt_ops_t s_fake = {
+    .status = fake_status,
+    .scan = fake_scan,
+    .scan_results = fake_scan_results,
+    .pair = fake_pair,
+    .disconnect = fake_disconnect,
+    .paired = fake_paired,
+    .forget = fake_forget,
+    .set_reconnect = fake_set_reconnect,
+};
+
+const td_bt_ops_t *td_bt_port_ops(void)
+{
+    return &s_fake;
 }
 
 void tang_heap_info(tang_heap_info_t *out)
@@ -85,10 +162,13 @@ void tang_heap_info(tang_heap_info_t *out)
     out->largest = 60152;
 }
 
+/* The engine's job finishing.  Through the interface a scan is over when
+ * scan_results() stops answering -1; the message is what status() reports. */
 static void job_done(const char *msg)
 {
-    s_info.job_running = false;
-    snprintf(s_info.job_msg, sizeof(s_info.job_msg), "%s", msg);
+    s_info.busy = false;
+    s_scanning = false;
+    snprintf(s_info.message, sizeof s_info.message, "%s", msg);
 }
 
 /* ---------------------------------------------- TinyDesk on a fake terminal */
@@ -170,7 +250,7 @@ static void press_slot(int slot, int column) { click(s_c.x + column + 1, s_c.y +
 
 static void set_slot(int i, bool paired, bool ready, bool reconnects, uint8_t a0)
 {
-    tang_ble_slot_info_t *s = &s_info.slot[i];
+    td_bt_slot_t *s = &s_info.slot[i];
     memset(s, 0, sizeof(*s));
     s->state = ready ? "ready" : paired && reconnects ? "waiting" : "idle";
     s->ready = ready;
@@ -182,9 +262,9 @@ static void set_slot(int i, bool paired, bool ready, bool reconnects, uint8_t a0
     snprintf(s->paired_name, sizeof(s->paired_name), "%s", i == 0 ? "Logi K950" : "Logi M750");
 }
 
-static tang_ble_device_t dev(tang_ble_kind_t kind, const char *name, int rssi, uint8_t a0)
+static td_bt_device_t dev(td_bt_kind_t kind, const char *name, int rssi, uint8_t a0)
 {
-    tang_ble_device_t d;
+    td_bt_device_t d;
     memset(&d, 0, sizeof(d));
     d.kind = kind;
     d.rssi = (int8_t)rssi;
@@ -199,10 +279,23 @@ int main(void)
     td_init(&s_hal);
     td_bluetooth_register();
 
-    s_info.radio = TANG_BLE_RADIO_OFF;
+    s_info.radio = TD_BT_RADIO_OFF;
     s_info.pairings = "loaded from the card";
     set_slot(0, true, true, true, 0xD9);     /* the K950, in use */
     set_slot(1, true, false, true, 0x5C);    /* the M750, waiting */
+
+    /* The interface's "list paired devices" verb, which the window does not
+     * use -- it reads status().slot[] -- but a caller that knows only the table
+     * would.  Exercised here so it is not shipped untested. */
+    {
+        td_bt_paired_t list[TANG_BT_SLOTS];
+        const int n = td_bt_port_ops()->paired(list, TANG_BT_SLOTS);
+        assert(n == 2);
+        assert(list[0].slot == 0 && list[0].connected && list[0].reconnects);
+        assert(list[0].addr[0] == 0xD9);
+        assert(list[1].slot == 1 && !list[1].connected && list[1].reconnects);
+        assert(strcmp(list[0].name, "Logi K950") == 0);
+    }
 
     assert(td_app_launch("Bluetooth"));
     s_win = td_win_focused();
@@ -259,11 +352,11 @@ int main(void)
     tick();
     assert(on_screen("Pair a mouse", NULL));
     assert(on_screen("Listening... 6 s", NULL));
-    s_devs[0] = dev(TANG_BLE_KIND_OTHER, "", -40, 1);
-    s_devs[1] = dev(TANG_BLE_KIND_OTHER, "Living room TV", -50, 2);
-    s_devs[2] = dev(TANG_BLE_KIND_KEYBOARD, "Some keyboard", -60, 3);
-    s_devs[3] = dev(TANG_BLE_KIND_HID, "Gamepad", -65, 4);
-    s_devs[4] = dev(TANG_BLE_KIND_MOUSE, "New mouse", -70, 5);
+    s_devs[0] = dev(TD_BT_KIND_OTHER, "", -40, 1);
+    s_devs[1] = dev(TD_BT_KIND_OTHER, "Living room TV", -50, 2);
+    s_devs[2] = dev(TD_BT_KIND_KEYBOARD, "Some keyboard", -60, 3);
+    s_devs[3] = dev(TD_BT_KIND_HID, "Gamepad", -65, 4);
+    s_devs[4] = dev(TD_BT_KIND_MOUSE, "New mouse", -70, 5);
     s_ndevs = 5;
     s_info.scan_ms_left = 0;
     job_done("5 device(s) found");

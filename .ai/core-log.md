@@ -942,3 +942,37 @@ Two upstream threads are now live and both wait on the same reviewer, so the nex
 - User Test: N/A
 
 ---
+
+## 30 COMMIT Unreleased 2026-11-07T13:14:19-07:00
+
+#### Coming From:
+
+Unreleased aca8311
+
+#### Purpose:
+
+Give this port a Bluetooth surface shaped the way `tinydesk` issue #7 asked for, so TinyDesk can adopt it upstream without anything being renamed, and move the Bluetooth window onto it.
+
+#### Outcome:
+
+`ports/bl616/tang_bt_ops.h` defines `td_bt_ops_t`: `status`, `scan`, `scan_results`, `pair`, `paired`, `forget`, `disconnect` and `set_reconnect`, over a `td_bt_status_t` that carries the radio's state, every slot's live and stored pairing, `busy`, `job_failed`, `scan_ms_left` and `wifi_exclusive`. It is deliberately the shape of `td_net_ops_t` in `td_sysinfo.h` -- a flat table of function pointers whose calls all return at once, with slow work running in the background and its outcome appearing in `status()` -- because that is what the maintainer asked for on 2026-10-07: build it in the port for now, and if the interface follows that shape it can become the upstream one later without renaming. Nothing visible to the user changed, and that is the point of the cycle rather than an accident. The interface lives in the port and not in `td_sysinfo.h` for a reason worth recording: that header is inside the `tinydesk` submodule and this project already carries four patches against it, and `TOOL-010` records that a patch stops being recognised once a later cycle edits the lines it added, so a fifth patch for a member upstream has not agreed to add is a cost with no current benefit. The port publishes the table as `td_bt_port_ops()`, the window obtains it the way `network.c` obtains `td_sysinfo()->net`, and a build with no Bluetooth returns NULL, which the window handles by declining to open rather than dereferencing. `ports/bl616/tang_bt_port.c` is translation and nothing else: it forwards to the `tang_ble_*` calls that already do the work and converts the types on the way through, with two conversions that are real work rather than plumbing. The first is the refusal contract -- `td_net_ops_t` returns a bool and puts the reason in `status().message`, while `tang_ble_*` returns the reason as a string -- so the adapter keeps the last refusal and reports it there, which is what lets a caller that knows only the table show the user why a request was declined. The second is that `scan_results()` promises -1 while a scan runs, which is how a caller tells when to collect without knowing anything about jobs; the engine reports that as a job flag, so the translation happens in the adapter where the engine's vocabulary is allowed to appear. The two enums are mapped by an explicit switch rather than an assignment even though their orders agree today, so a change to the engine's enum cannot break the interface silently. `td_bluetooth_app.c` now reaches everything through the table and contains no call to `tang_ble.c` at all; `tools/tests/tb_bluetooth_app.c` stopped stubbing `tang_ble_*` and implements `td_bt_ops_t` instead, which is stronger evidence than it was: the suite builds the real window in the real window manager and links without `tang_ble.c`, so a direct engine call from the window would fail to link rather than pass unnoticed. A fault was planted to prove the test still bites -- `disconnect` replaced by `set_reconnect(slot, true)` in the window -- and it aborted at `s_offs == 1 && s_last_slot == 0`, then passed again when restored. One verb the window does not use was given a test rather than shipped untested: `paired()` is exercised directly, because the window reads slot detail from `status().slot[]` while a caller that knows only the table would want the list. The host gate is 46 of 46. The firmware builds at 699,008 bytes, 64 more than entry 25's image, with no errors and no warnings outside the vendored JTAG programmer. It was flashed and the operator power-cycled it: `platform` reports `aca8311-dirty.0698846`, and `ble` before and after the flash showed the same two pairings reconnecting by themselves from `/sd/root/ble/bonds.bin`, with heap moving from 87,420 free to 86,716 after the rebuild and back to 85,312 under load, which is the stack's own growth and not a leak. The operator then opened the Bluetooth window and reconnected, forgot and re-paired a device; the address of the keyboard moved from `DB:88:A7:81:D9:E4` to `DB:88:A7:81:D9:E5` and both slots read `ready` with 42 and 3,547 reports, which is the forget, scan, pair and reconnect path all working through the new interface. `docs/upstream/bluetooth-interface.md` drafts the comment for issue #7 that reports this and asks for two things upstream: `const td_bt_ops_t *bt` beside `net` in `td_sysinfo_t`, and nothing else. It is marked unposted and is the operator's to send. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and that entries 1 to 29 were not rewritten, and validated this entry as number 30 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The upstream comment is the one thing this cycle leaves that the operator can do without a cycle: posting it may get `td_bt_ops_t` into `td_sysinfo_t`, at which point `td_bt_port_ops()` becomes the implementation behind a `bt` member and the window's `bt()` helper reads `td_sysinfo()->bt` instead -- a change of one function and no renaming, which is exactly what the shape was chosen to allow. Two consequences of the interface are worth carrying. `status()` and `paired()` overlap: the window needs slot detail that the five verbs do not name, so `status().slot[]` carries it and `paired()` exists for callers that only want the list, and a reviewer may reasonably ask why both are there. And the table is a port detail until upstream takes it, so a future change to `tang_ble.c`'s API must be reflected in `tang_bt_port.c`; the explicit enum mapping means a change there fails to compile rather than misreporting, which is the property worth keeping. Everything else open is unchanged: the reproducibility defect in `docs/releases/v0.2.0.md`, the two upstream pull requests waiting on the same reviewer, the three shell issue drafts still unposted against STANDARDS.md §9, and the accepted known issues -- the personality-8 flip-bit deviation and the Tiny89 flash-save stall.
+
+#### Files Modified:
+
+- docs/upstream/bluetooth-interface.md
+- ports/bl616/tang_bt_ops.h
+- ports/bl616/tang_bt_port.c
+- ports/bl616/td_bluetooth_app.c
+- tools/tests/tb_bluetooth_app.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
