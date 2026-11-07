@@ -909,3 +909,36 @@ The cross-checkout nondeterminism is now the project's one open release defect a
 - User Test: N/A
 
 ---
+
+## 29 COMMIT Unreleased 2026-11-07T12:31:21-07:00
+
+#### Coming From:
+
+Unreleased 699193a
+
+#### Purpose:
+
+Record the upstream correspondence this project now has open, so the drafts, the posted text and the fix they describe live in the repository rather than only in the conversation that produced them.
+
+#### Outcome:
+
+Four files join `docs/upstream/`, which until now held the shell's issue drafts, the editor-limits reply and the script-limits PR. `nanoesp32-review-reply.md` is the reply posted to schikani's review on `tinydesk-project/tinydesk#15`, which asked for one substantive change and five smaller ones; the work it describes is commit `0cd5fa6` on the fork branch `aquasock:nanoesp32-port`. `menu-max-pr.md` is the text of `tinydesk#18`, which the operator posted after review: branch `aquasock:start-menu-max-apps` at `79806d5`, based on upstream `main` `fb07d1a`, changing `src/wm.c` and `tests/test_wm.c` and nothing else. `menu-max-issue.md` is the issue that was drafted first and then **not filed**, because the fix was already written and tested and a bare pull request is less to review than an issue plus a PR; it is kept, and marked superseded, because it explains the failure more fully than the PR body does, in particular the index arithmetic that makes "Exit" redraw instead of quit at the default `TD_MAX_APPS`. And `menu-max-fix.patch` is the exact diff that was applied and tested, kept beside the prose so the change survives if the fork branch is ever deleted; re-checked this cycle with `git apply --check` against upstream `main`, where it still applies cleanly. Each of the three prose files follows the convention the folder already had and `script-limits-pr.md` established: a preamble stating publication status, a rule, then the text as posted or as it would be posted. Two of the preambles were corrected rather than written fresh. The review reply had said "not posted yet" and now records that it was posted and where, including that the operator's posted version kept the UTF-8 BOM bullet that the draft for review had dropped -- accurate either way, and the reviewer asked for the BOM by name, so nothing needs correcting. The PR file had said nothing was on GitHub and now carries the PR number, the branch, the commit and the base, plus a note that the PR body was replaced before posting: GitHub fills that field with the commit message when a branch has one commit, so the first version of the body omitted the file-and-line references and the whole verification section, and the operator pasted the drafted markdown over it. The defect itself is worth carrying outside those documents. `MENU_MAX` was a fixed 20 in `src/wm.c` while `TD_MAX_APPS` is `#ifndef`-wrapped and meant to be overridden per port, and `start_menu_chosen()` offset the fixed entries by `s_app_count` rather than by the number of apps the menu actually placed, so a menu that dropped anything acted on the wrong item below the separator; `td_quit()` is reachable only from "Exit", so the consequence was a desktop whose start menu could not close it. The bug reproduces at the **default** configuration, not only in a port that raises the cap: `apps/session.c` adds one start item, which leaves zero margin at `TD_MAX_APPS` 16, and a second start item makes "Exit" compute an `extra` index equal to the extra count and call `td_full_redraw()` instead of `td_quit()`. That was established by measurement rather than by reading: on upstream `main` the new test fails at `CHECK(!td_step())` and passes with the two-line change, checked both ways by reverting `src/wm.c` alone and rebuilding, and the suite is 13 of 13 either way apart from that assertion. One assertion was removed from the test before the PR was posted because it proved nothing: it searched the composed frame for the last app's label, but desktop icons draw app names too, so it passed on the unfixed tree. The three fork branches that carry this work are `nanoesp32-port`, `start-menu-max-apps` and their shared ancestors; none of them is merged, and nothing in this repository depends on the upstream outcome, because TinyTang still carries patch `0004-start-menu-exit.patch` for the same defect. That patch now differs from what upstream will have if #18 merges: it also sets `TD_MAX_APPS=24` for the host suite, which was deliberately left out of the PR because the bug reproduces at the default and upstream has no reason to change what its tests are built with, so merging #18 leaves patch 0004 partly redundant rather than wholly so. No source, test, tool or build file changed in this cycle and nothing was built, flashed or deployed; the gate therefore carries at 46 of 46 from entry 25 and was not re-run. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and that entries 1 to 28 were not rewritten, and validated this entry as number 29 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, only the four eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+Two upstream threads are now live and both wait on the same reviewer, so the next move is to watch mail rather than to write more code: `tinydesk#15` has all eight of its review items addressed and is MERGEABLE, and `tinydesk#18` is a self-contained two-file fix that needs no reply unless a question comes back. When #18 merges, patch `0004-start-menu-exit.patch` should be reduced to whatever upstream does not take -- the `TD_MAX_APPS=24` compile definition, if the host suite still needs it -- and `scripts/apply-tinydesk-patches.sh` reports the rest as already applied, so the change is mechanical but should be its own cycle because it moves a carried patch and the firmware identity with it. `menu-max-issue.md` should stay in the repository marked superseded, not be deleted. The larger items this cycle did not touch are unchanged. The Bluetooth interface in issue #7, where the maintainer asked for the port's surface to follow the shape of `td_net_ops_t` (scan, pair, list, forget, status) so it can become upstream later without renaming, is the one commitment in that thread still unfulfilled and is bounded work in this tree. The three shell issue drafts in `issue-drafts.md` are still unposted against STANDARDS.md §9, which asks ports to file them. And the reproducibility defect remains the only genuine project defect open: the same commit does not build to the same bytes across checkouts, `docs/releases/v0.2.0.md` now says so plainly, and the next cycle on it should begin by building a gate that fails in that case rather than by hunting the cause again.
+
+#### Files Modified:
+
+- docs/upstream/menu-max-fix.patch
+- docs/upstream/menu-max-issue.md
+- docs/upstream/menu-max-pr.md
+- docs/upstream/nanoesp32-review-reply.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
