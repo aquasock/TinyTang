@@ -61,5 +61,16 @@ sockets released, which is the safe state.
 
 Then power-cycle. The board reports its new identity with `platform`.
 
+The card's `bl616-firmware.bin` is the image the desktop's Software Update
+app installs, so it must be the build the board is actually running; an out-of-date
+copy there makes an update a silent downgrade, and it has happened twice.
+Install the running build onto a mounted card with:
+
+     tools/tinytang_card_firmware.py /run/media/<user>/<CARD>
+
+Add `--port /dev/ttyACM0` to make it refuse unless the board's own `platform`
+answer matches the image, which is the check worth having: without it the tool
+only reports which revision it wrote.
+
 Never run `make flash`: it writes from address 0 and would overwrite
 the board's own loader.

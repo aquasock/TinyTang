@@ -438,7 +438,11 @@ python tools/tinytang_sync.py
 
 The fastest start is the release: its SD-card archive holds every core,
 script and player, and its `bl616-firmware.bin` is the firmware to install
-below.  To build everything instead, follow [BUILDING.md](BUILDING.md).
+below.  That file is the build the board is running — the desktop's Software
+Update installs it, so an out-of-date copy silently downgrades — and
+`tools/tinytang_card_firmware.py` refills it from `build/build_out/` and
+refuses when the board's own `platform` answer disagrees.  To build everything
+instead, follow [BUILDING.md](BUILDING.md).
 
 ```bash
 # Build the BL616 firmware (needs the Bouffalo SDK and the RISC-V toolchain)

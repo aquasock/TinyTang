@@ -785,3 +785,37 @@ Three items on the card are not copyrighted material and were therefore left in 
 - User Test: PASS
 
 ---
+
+## 25 COMMIT Unreleased 2026-11-07T09:38:25-07:00
+
+#### Coming From:
+
+Unreleased 20317f4
+
+#### Purpose:
+
+Make the card's `bl616-firmware.bin` the build the board runs, and make that a check rather than a habit, because an out-of-date copy there turns the desktop's Software Update into a silent downgrade.
+
+#### Outcome:
+
+`bl616-firmware.bin` on the card held `bl616/freertos, tinytang 5c58bd3-dirty.45fed98`, which is entry 15's build, while the board runs `3a31690-dirty.cd6a5d5`; `td_update_app.c` hardcodes that one path, so installing from the desktop would have replaced the running firmware with a twelve-day-older one and reported success. It now holds the running build: 698,944 bytes at SHA-256 `88ce23b2cdd003e64f7d7672530f3ba3f7299e5af9ee0ffdc202ce487232e6a3`, which is `build/build_out/tinytang_bl616.bin` and, independently, the `tinytang-upload.bin` that entry 18's flash left at the card root; the identity stamped inside the installed file reads `3a31690-dirty.cd6a5d5`, so the evidence is the binary's own banner rather than a filename or a date. That is the same pair entry 24 found by comparing digests, and it is the second time the file drifted, which is why the fix is a tool and not another copy. `tools/tinytang_card_firmware.py` refills the card file from `build/build_out/tinytang_bl616.bin`, reads the build identity out of the image's `bl616/freertos, tinytang <id>` banner, names the identity it is replacing, and verifies the written copy by SHA-256 and by re-reading its banner. With `--port /dev/ttyACM0` it also asks the board and refuses to write when `platform`'s answer disagrees with the image, which is the half that makes the rule enforceable: without it the tool would only report which revision it happened to copy. A board that answers nothing is treated as no agreement rather than as consent, and `--no-board` exists so the operator can install deliberately while saying out loud, in the tool's own output, which revision is going in. One latent defect in the first draft was fixed before commit: the post-copy flush opened the destination read-only and called `os.fsync` on it, which is portable on Linux only by tolerance, while on the vfat card the flush is precisely what stops a pulled card from keeping the old directory entry — the handle is now opened for writing. `tools/tests/check_card_firmware.py` with `test_card_firmware.sh` covers it in 22 checks with no board and no card, every path a temporary directory: the banner read, a clean build with no dirty suffix, an image with no banner, a real `platform` reply with its colour codes, the copy and its digest, that the replaced identity is named, and five refusals, four of which must leave the card file untouched — a blank image, a missing image, a missing card, a board running another revision, and a board that answers nothing, the last two spelled `--port` so a real board is never needed. Two faults were planted and both were caught, at three checks and one check respectively; the second is worth carrying because the check that caught it was not the obvious one, the blank-image refusal appearing to work only because a later identity comparison failed after the file had already been overwritten, which is exactly the ordering the untouched-file assertion exists to detect. `manual/files.md` and `README.md` now state the rule where each audience looks, the manual beside the flash command and the README beside the quick start's mention of the file, and the card's own `README.md` gained the rule with the shipped identity and digest written down so a reader can compare them without a build tree. The host gate is 46 of 46, one more than entry 24 because the new suite is the addition. Nothing was flashed and no firmware source changed, so the board still runs the image entry 18 deployed; the board was not reachable during this cycle and the check therefore rested on the build output's own banner, which matches the identity `platform` reported on 2026-11-07 earlier in the session and the digest entry 18 recorded after its power cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 25 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+`tinytang-upload.bin` is still at the card root, byte-identical to `bl616-firmware.bin` at `88ce23b2…` because entry 18's flash staged it there; it is not in the card README's tree, and now that the two agree it is clutter rather than a hazard, so it is the operator's call whether to keep the staging file on a published card or let the next flash recreate it. Two other items from entry 24 remain open on the card and neither was touched: `root/ble/bonds.bin`, 252 bytes of the operator's own pairing keys, which belong to a person rather than a release, and `.Trash-1000/`, 5.8 MB of files deleted through the desktop that are still present and would travel with any copy. The rule this cycle encodes only holds if it is used: the natural moment is after every flash, since `tools/tinytang_flash.py` already stages the image on the card and a second command keeps the installable copy in step, and a future cycle could fold the call into the flash tool so the two cannot drift at all, which is the same shape of guarantee as this tool but with nothing left to remember. Nothing else is open on the firmware side: the board is on the current rev and the card now installs that rev.
+
+#### Files Modified:
+
+- README.md
+- manual/files.md
+- tools/tinytang_card_firmware.py
+- tools/tests/check_card_firmware.py
+- tools/tests/test_card_firmware.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
