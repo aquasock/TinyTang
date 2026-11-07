@@ -449,11 +449,30 @@ The lesson is the one this section is about — an absence in one file is not an
 absence in the system, and SNES's frame `0x1C` is the live path that the other
 two do not have, not the only path.
 
-*`tangini` cannot inspect an emulator core, and says so ambiguously.*  Against
-SNES it reports "core 0x02 has no PMOD sockets", which is true; against TinyNES
-it reports "no core answering", which reads as a fault rather than as the
-different protocol it is.  Neither message is wrong and both invite the same
-wrong conclusion this section records.
+*`tangini` states literally what the link returned, and that is deliberate.*
+Against SNES it reports "core 0x02 has no PMOD sockets"; against TinyNES it
+reports "no core answering".  Both are the literal truth about an 0xAA probe —
+no emulator core is in `pmod_sockets.cpp`'s two-entry table, and TinyNES's AE350
+boot ROM speaks the `TinyNES LOAD` protocol rather than the 0xAA frames
+(PROT-010) — and neither implies an action: the module leaves every core it does
+not own alone, by its own contract (*"nothing is written to a core without the
+sockets"*).
+
+The two messages read alike only to someone expecting both to be faults.  They
+are not, and the module cannot tell them apart without keeping a record of what
+it loaded: the firmware holds no persistent "an AE350 program is running" state,
+because `tang_ae350_run` blocks for the program's lifetime and clears its own
+note when it ends.  A friendlier message would therefore have to come from a
+stored belief about the core rather than from the core, and a belief that says
+something the core does not is exactly what cost entry 18 a controller and an
+RTC: a flag cleared on the way into a load and restored only on success, left
+false over a core that never moved.
+
+**Settled 2026-11-07 by the operator's decision: this is not a defect and no
+code changes.**  The messages stay as the link's literal answer, and this
+paragraph is here so nobody reads them as a fault again — the two messages did
+invite the wrong conclusion entry 20's silence investigation records, which is
+why they were ever on the list.
 
 **TinySNES is in scope from 2026-11-06**, by the operator's decision, and the
 release card carries its core.  It was out of scope as "a single core that

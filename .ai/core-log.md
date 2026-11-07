@@ -725,3 +725,33 @@ The `tangini` ambiguity is the next cycle and is the one entry 21 named: `pmod_s
 - User Test: N/A
 
 ---
+
+## 23 COMMIT Unreleased 2026-11-07T07:36:37-07:00
+
+#### Coming From:
+
+Unreleased cca1cfa
+
+#### Purpose:
+
+Settle `tangini`'s two "no sockets" and "no answer" messages as correct diagnostic output rather than a defect to fix, by the operator's decision, and record the reason they are this way so no later cycle reads them as a fault again.
+
+#### Outcome:
+
+The operator's instruction was to drop the item and the observation that there is a reason it is this way, and reading the code confirms it. Both messages are the literal answer to the same probe. `cmd_tangini` asks the loaded core with `core_id()`, which sends `FPGA_CMD_CORE_ID` and waits for `FPGA_RESP_CORE_ID` — the 0xAA frame protocol of PROT-001 — and reports what came back: a core that answers but is not in `s_socket_cores` prints "core 0x%02x has no PMOD sockets", and a core that does not answer prints "no core answering". Against SNES the first is true and normal, because that table holds exactly two entries, Phosphor 0x50 and the desktop core 0x54, and no emulator core is ever sent a socket word; against TinyNES the second is equally true about the link, because its AE350 boot ROM speaks the `TinyNES LOAD` protocol rather than the 0xAA frames (PROT-010). Neither message implies an action, because the module's own contract at the top of `pmod_sockets.cpp` is that other cores are left alone and nothing is written to a core without the sockets, so both branches return without touching the core. The module cannot tell the two apart without keeping a record of what it loaded, and the firmware deliberately has no such record: `tang_ae350_run()` blocks for the program's lifetime and clears its own note when the run ends, so there is no persistent "an AE350 program is running" state to consult. A circumlocution that explained the second case would therefore have to be printed from a stored belief about the core rather than from the core, and a belief that says something the core does not is precisely the defect entry 18 recorded and fixed: a flag cleared on the way into a load and restored only on success, left false over a core that never moved, which killed the Wii pad and the RTC. So the current behaviour is the design, and changing it would trade a literal message for a stale one. `docs/qualification.md` section 5.2's paragraph was rewritten from a finding into the settled position: it now states both messages as the link's literal answer, quotes the module's contract, names `tang_ae350_run()`'s lifetime as the reason no such state exists, cites entry 18's failure class, and records the decision with its date. Nothing else in the file changed, so the `tangini` ambiguity stops being carried as an open item in §5.2 while the silicon row for the `lora` layout stands. No source, test, tool or build file changed and no firmware was built or flashed, so the board still runs `3a31690-dirty.cd6a5d5` as entry 22 read it, and the host gate was re-run after the change and passes 45 of 45, as it did before, because no test builds from the document and nothing the gate compiles was touched. `.codewhale/handoff.md` was updated to match: the item moved out of "Immediate next step" into the corrections list, and the next step now says plainly that nothing in the tree needs a firmware cycle and that the remaining work is card-side and host-side. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten — entry 20's framing is corrected here and in §5.2 rather than edited — and validated this entry as number 23 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+No code work is owed on this. The open list is now card-side and host-side, and the operator chooses from it: stripping the release card before the layout is published — `root/media/ti89/TI89Titanium_OS.89u`, the four `commercial` folders holding forty retail games, and `tinytang-upload.bin` at the root — is the item with a reason to happen before anything else, since it is the only one that blocks publishing; the two untried pack boundaries `A & E Home Video` in chunk 10 and `A battuta` above 2 GiB are cheap board reads that would extend the multi-chunk claim to the whole pack; a markdown pack still carries `parts = 0` so a long article has no chapter jumps; and TinyGutenberg writes `POS_REAL` through `position_save()` and never reads it while `manual/gutenberg.md` and `README.md` both claim the app resumes, with the app also clipping at 76 against the wiki's 70. The personality-8 flip-bit deviation still belongs to the final core rebuild, and a live NES/GBC volume path would ride along there if it is ever wanted, the launch-time sliders themselves being proven. The Tiny89 save stall stays an accepted known issue with no fix scheduled.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
