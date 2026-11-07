@@ -665,3 +665,33 @@ The volume slider is the next cycle worth doing and it is small: `tinynes_app.cp
 - User Test: PASS
 
 ---
+
+## 21 COMMIT Unreleased 2026-11-06T18:12:54-07:00
+
+#### Coming From:
+
+Unreleased 4d7c592
+
+#### Purpose:
+
+Withdraw entry 20's claim that the TinyNES and TinyGBC volume sliders do nothing, after the operator showed they work and the code was read again.
+
+#### Outcome:
+
+Entry 20 recorded as fact that the volume sliders on the TinyNES and TinyGBC windows do nothing, on the evidence that `tang_audio_gain()` has exactly one caller and that caller is the SNES frame 0x1C. The operator tested all three emulators, set each to about 30 percent, and heard the volume drop on HDMI and on the PMOD I2S2, which is what a working control sounds like. The claim was wrong, and the reading that produced it was wrong in the way this file's own section 5.2 warns about: an absence in one file is not an absence in the system. The sliders do reach their cores, by a different route than SNES's. Each player asks the host for its settings at startup rather than being sent them: `receive_settings()` in TinyNES's `firmware/apps/nes_bench/main.cpp` prints `TinyNES SETTINGS WANT <address> <length>` and then takes the reply into `host_settings`, and `ae350run`'s line handler in `tang_fpga_uart.c` answers it with a blob whose last four bytes are player 1's mapping, player 2's, the aspect and the palette followed by the volume and mute from `/tinynes.ini`, printing `volume=%u` in its own log line; TinyGBC's player does the same and its reply puts volume and mute in `blob[0]` and `blob[1]`. So the slider is a launch-time setting rather than a live one, and that is the only real distinction: dragging it during a game changes nothing until the next cartridge is launched, where SNES's frame 0x1C takes effect as it is moved. The correction is recorded in `docs/qualification.md` section 5.2 in place of the false claim, which now states what actually happens, names both mechanisms and their file and symbol, and says plainly that the claim was wrong and why the first reading missed it. The two application rows are corrected to match: TinyNES and TinyGBC now read that volume and mute are launch-time and sent in the settings reply, rather than that the slider does not reach the core. Nothing else in section 5.2 changed, so the `tangini` ambiguity stands as a real finding and the silicon row for audio on HDMI and the PMOD I2S2 stands as proven. The board was read to confirm the state the operator described: `/tinygbc.ini` holds `volume = 30, mute = no`, written by the window's own Save, which is the control working end to end. No source changed, so the host gate carries at 45 of 45 from entry 20 and was not re-run, and the board still runs `3a31690-dirty.cd6a5d5`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and that entry 20 was not edited — the correction is recorded here, where a settled entry's error belongs — and validated this entry as number 21 of 100 with exactly six sections, a one-sentence Purpose, prose in Outcome and Next Steps, only `docs/qualification.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The only real question the slider leaves is whether launch-time is good enough. It is for a setting a player changes between games and wrong for one they reach for because a passage is too loud, and SNES alone has the live path. Making the other two live would mean a frame in each core's `desk_link.sv` and a matching send from `tang_fpga_uart.c`, which is two core cycles with a seed sweep and a board test each, so it belongs with the next core rebuild that also closes the personality-8 flip-bit deviation rather than on its own. The `tangini` message ambiguity is the remaining finding from this investigation and is small enough to be its own cycle. Everything else carried from entry 20 stands unchanged: the card still holds forty retail games, the TI-89 operating system and `tinytang-upload.bin` to be removed before publication, the Tiny89 save stall stays a known issue, and the pack contents list is still unwritten.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

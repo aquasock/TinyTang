@@ -340,8 +340,8 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 
 | Status | App | Note |
 |---|---|---|
-| partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project. **Its volume slider does not reach the core — see 5.2** |
-| untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not. **Its volume slider does not reach the core either — see 5.2** |
+| partial | TinyNES | `test_nes_ini` covers settings; the player and window have no host test. Silicon-proven per its own project. **Volume and mute are launch-time, sent in the settings reply — see 5.2** |
+| untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not. **Volume and mute reach the player the same launch-time way — see 5.2** |
 | untested | Tiny89 | no host test in this tree. **Its save stalls after the state lands — see 5.1** |
 | silicon | TinySNES | in scope from 2026-11-06. `test_snes_load` covers the loader and `tb_snes_ini` the settings; the window has no host test. **A cartridge was launched and played on the release card, with sound on both HDMI and the PMOD I2S2 — see 5.2** |
 | host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested |
@@ -433,16 +433,20 @@ and the PMOD I2S2** — which is the row this section exists to support, and it 
 the first time audio was heard from these cores through this board's HDMI at
 all.
 
-**Two defects the investigation found, both real and neither yet fixed.**
-
-*The volume slider on the NES and TinyGBC windows does nothing.*
-`tang_audio_gain()` in `tang_settings_ini.c` has exactly one caller,
-`tang_snes_load.c:461`, which sends frame `0x1C` to the SNES core.
-`tinynes_app.cpp` and `tinygbc_app.cpp` read, store, save and draw the value —
-a three-digit percentage and a mute checkbox — and nothing carries it to their
-cores, whose players use their own `SOUND_VOLUME`.  A control that reports a
-level it does not set is the honest-control question §5's TinySNES pages
-raised, now measured.
+**The volume slider works on all three, and a claim that it did not was
+wrong.**  Reading `tang_audio_gain()`'s single caller — the SNES frame `0x1C` —
+led to the conclusion that the NES and TinyGBC sliders reached nothing.  They
+do, by a different route that the first reading missed: their players **ask the
+host** for their settings at startup.  `receive_settings()` in TinyNES's
+`main.cpp` prints `TinyNES SETTINGS WANT <address> <length>`, and
+`ae350run`'s line handler answers with a blob whose `[2*BUTTONS+2]` and `+3`
+bytes are the volume and mute from `/tinynes.ini`, the same reply carrying the
+pad mapping, the aspect and the palette.  TinyGBC's is `blob[0]` and `blob[1]`.
+So the slider is a **launch-time** setting, not a live one: it takes effect on
+the next cartridge launch, and dragging it mid-game does nothing until then.
+The lesson is the one this section is about — an absence in one file is not an
+absence in the system, and SNES's frame `0x1C` is the live path that the other
+two do not have, not the only path.
 
 *`tangini` cannot inspect an emulator core, and says so ambiguously.*  Against
 SNES it reports "core 0x02 has no PMOD sockets", which is true; against TinyNES
