@@ -434,6 +434,13 @@ and the PMOD I2S2** — which is the row this section exists to support, and it 
 the first time audio was heard from these cores through this board's HDMI at
 all.
 
+Those forty games and Texas Instruments' TI-89 operating system were removed
+from the card on 2026-11-07, together with the battery saves and save states
+made from them, because neither can be redistributed on a published card; the
+measurements above stand as what was heard on 2026-11-06, and any future audio
+test has to supply its own cartridge.  The card's `README.md` now says so and
+points the reader at `root/media/ti89/`, which is present and empty.
+
 **The volume slider works on all three, and a claim that it did not was
 wrong.**  Reading `tang_audio_gain()`'s single caller — the SNES frame `0x1C` —
 led to the conclusion that the NES and TinyGBC sliders reached nothing.  They

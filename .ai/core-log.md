@@ -755,3 +755,33 @@ No code work is owed on this. The open list is now card-side and host-side, and 
 - User Test: N/A
 
 ---
+
+## 24 COMMIT Unreleased 2026-11-07T09:29:42-07:00
+
+#### Coming From:
+
+Unreleased 737d03f
+
+#### Purpose:
+
+Remove the copyrighted material from the release card before its layout is published, and correct the two documents that described it as still being there.
+
+#### Outcome:
+
+The card at `/run/media/vash/TINYTEST` went from 101 MB to 61 MB by losing every byte that could not be redistributed, and nothing else. Forty retail games left with the four `commercial` folders holding them, ten each for NES, Game Boy, Game Boy Color and SNES, 39 MB together; `root/media/ti89/TI89Titanium_OS.89u` left, the 1.4 MB Texas Instruments operating system for the Tiny89 app. Two classes of derivative went with them because they are copies of the same work rather than data about it: `root/states/ti89/TI89Titanium_OS.state`, a 263 KB memory image of the TI OS, `root/states/gbc/Wario Land 3.state`, a save state of a retail Game Boy Color title, and six battery saves named for retail cartridges — `Dragon Warrior III.sav`, `Pokemon Gold.sav` with its `.rtc`, `Wario Land 3.sav`, `Legend of Zelda, The (USA) (Rev 1).sav`, `Donkey Kong Country (USA) (Rev 2).sav` and `Super Mario All-Stars + Super Mario World (USA).sav` — plus a zero-byte `TI89Titanium_OS.flash.part` left by a stalled save. The one save that stayed is `Nova the Squirrel.sav`, which belongs to a homebrew title. Nothing was deleted outright: all fifteen items were moved to `/run/media/vash/GIT/tinytang-scratch/card-ip-holding-2026-11-07/` with a `MANIFEST.txt` naming each one and its size, so the removal is reversible with a single move and the operator can delete the holding copy when satisfied, which is the right order for a step that cannot be undone on the card. What remains is what the card documents: six NES, three Game Boy, six Game Boy Color homebrew zips, eleven SNES homebrew `.sfc` files, the five Retro Regen tests and AccuracyCoin, twelve generated codec tones, five cores with their `.fs.gz` pairs, four AE350 players, the manual pack and the `.ini` files. The card's `README.md` was corrected rather than only trimmed, because four parts of it had become false: the tree listing lost the four `commercial` rows and the `ti89/TI89Titanium_OS.89u` row, a stale `tiny89-diag.elf` row came out since that file had already been removed by hand, the paragraph that called this "the test card exception" carrying forty retail games was replaced, and the whole "Not shippable, though it is on this card" section became "Supplying your own cartridges and the calculator's OS", which says that nothing commercial is present by design, how to add your own cartridges and in which formats, and that Tiny89 cannot run because `root/media/ti89/` is now present and empty and the operator must supply an image from a calculator they own. The final bullet under the notes was inverted to match: it used to say the TI-89 image must be removed before release, and now says the empty folder is why Tiny89 will not start. `docs/qualification.md` section 5.2 gained a paragraph recording the removal, because its audio row was measured on 2026-11-06 with those games present and a later reader would otherwise go looking for them; the measurement itself is untouched, as a settled fact, and the note says a future audio test has to supply its own cartridge. The removal was verified by asking the card rather than by trusting the moves: `find` returns zero directories named `commercial` and zero paths matching `*.89u` or `*Titanium*`, and `du` reports 61 MB against 101 MB before. Nothing was built, flashed or deployed and the board was not touched, so the firmware it runs and every core on the card are as entry 23 left them. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 24 of 100 with exactly six sections, a one-sentence Purpose, prose Outcome and Next Steps, only `docs/qualification.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+Three items on the card are not copyrighted material and were therefore left in place, each needing the operator's word rather than an assumption: `tinytang-upload.bin` at the root, 698,944 bytes at SHA-256 `88ce23b2…`, which is `tools/tinytang_flash.py`'s staging path and is the firmware the board actually runs, while `bl616-firmware.bin` beside it is the older `c84fa6a5…` that the Software Update window installs — so the card can install a build the board is not running, which is worth settling separately from this cycle; `root/ble/bonds.bin`, 252 bytes of the operator's own Bluetooth pairing keys, which belong to a person rather than a release and should probably not ship; and `.Trash-1000/`, 5.8 MB of files deleted through the desktop's file manager, which are still on the card and are included in any copy of it. The rest of the release checklist is otherwise cleared: the layout no longer carries retail games, an operating system, or saves derived from either, and the card README describes what is actually there. The one hardware consequence is that Tiny89 cannot start from this card until an operating system image is supplied, which is the intended state and is now documented rather than presented as a defect.
+
+#### Files Modified:
+
+- docs/qualification.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
