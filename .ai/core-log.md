@@ -849,3 +849,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 27 VERSION v0.2.0 2026-11-07T10:09:58-07:00
+
+#### Coming From:
+
+Unreleased 7ed12e4
+
+#### Purpose:
+
+Mark the `v0.2.0` release boundary with its release notes and with a card archive, so the second release can be published from a commit that states exactly what it contains.
+
+#### Outcome:
+
+`docs/releases/v0.2.0.md` holds the text the GitHub release is made from, in the shape `v0.1.0`'s took: what the release contains, the hardware it needs, the install steps with the first install written only at `0x40000` and `make flash` warned against, the digests of the firmware and of every core and player on the card, the known limitations, and the licence of each piece. The release is **one asset**, as `v0.1.0`'s was: `TinyTang.v0.2.0.zip`, 17,286,514 bytes at SHA-256 `a99a89eaed43e2a589431376c8f3b32bbd84aefd3c56551afd9b4946b9e73306`, whose archive root is the card root and which carries the firmware inside it, so a separate `bl616-firmware.bin` asset would be a second copy of one file. The firmware in it is 698,944 bytes at SHA-256 `a8e00405c8294789f8ba2de97aa4f13fa5f03897692cc9581ea6b1596be16fd4`, identity `7ed12e4-dirty.45fed98`, built from `7ed12e4` with the four carried TinyDesk patches applied, which is what the `-dirty` means and is the normal state of every build here. It was built twice from a `make clean` tree and produced the same digest both times, and a comparison of every compiled input between `4284991` and `7ed12e4` found no difference, so the release image is reproducible from committed source -- and the notes say plainly that a rebuild at the tag will carry a different identity and digest, because the identity embeds the commit, which is the same caveat `v0.1.0`'s notes recorded. Five judgements were made in assembling the card and each is reversible: `tinygbc.ini`'s `b = y`, `a = b` and `palette = light` were the operator's test values and went back to the defaults `b = b`, `a = a` and `palette = off`; `tinysnes.ini`'s `aspect = 8:7` went back to the default `4:3`; `tinytang.ini`'s `layout = lora` was commented out, following entry 15's rule that a shipped card declares no layout because none of the modules is seated on a new user's board; the operator's test save and `last.log` were removed; and `root/Desktop/Welcome.txt` was corrected, because it told a new user the card held no cartridges and no music when it now carries 26 homebrew titles, six hardware test suites and twelve codec tones. The card's `README.md` was corrected too: its firmware paragraph had hardcoded the previous image's identity and digest, which went stale the moment the firmware was rebuilt, so it now states the rule and quotes this release's values. One mistake of this cycle is carried rather than hidden: the staging tree was built inside `build/`, and a later `make clean` removed it, so the archive could no longer be regenerated from that tree -- the delivered zip was already written outside the repository and was verified intact afterwards, by `unzip -t`, by extracting it and checking that its firmware digest, five core digests, four player digests, 21 archive integrity tests, 10-record wiki pack and absence of any copyrighted material all hold, but a future release should stage beside the repository rather than under a directory a clean target owns. The image on the operator's board is `88ce23b2…` / `3a31690-dirty.cd6a5d5`, not the release image: 16,710 bytes differ, in scattered single-byte immediates consistent with a small code-size change, and no committed input explains it, so that board image was built from a tree state that was never committed and the `-dirty` identity could not distinguish it -- the release artifact has correct provenance but is not the image that was tested, which is recorded here and in Next Steps rather than left to be discovered. Nothing was flashed and the board was not touched. Status is `Build: PASS` for the two clean builds, and `Deployment: N/A` and `User Test: N/A` because publishing the asset is the operator's step and the release image has not run on hardware. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff and confirmed it adds this entry and nothing else, that `.ai/core.md` was not changed and no settled entry was rewritten, and validated this entry as number 27 of 100 with six sections in order, a `VERSION` type carrying the `v0.2.0` tag in the version field, a one-sentence Purpose, prose Outcome and Next Steps, only `docs/releases/v0.2.0.md` in Files Modified, allowed Status values and no self-referencing hash.
+
+#### Next Steps:
+
+The operator creates the `v0.2.0` tag and the GitHub release on this commit, in the browser, with `docs/releases/v0.2.0.md` as the release text and `TinyTang.v0.2.0.zip` from `/run/media/vash/GIT/to_deploy/` as the single asset, and GitHub's own SHA-256 for the upload should be compared against `a99a89ea…` before publishing. Two things outrank anything else on the list after that. The release firmware has not run on the board: the operator's image is a different build from an uncommitted tree, so flashing `a8e00405…` and confirming `platform` reports `7ed12e4-dirty.45fed98` is the test that makes the shipped artifact a tested one, and until it passes the honest statement is that the release image is reproducible but unproven. And the identity scheme cannot tell two dirty trees apart, which is exactly what let a board build and a release build diverge unnoticed here for two cycles; that is worth its own cycle, since the fix is either a build identity that hashes the tree rather than the diff or a rule that every image which runs on the board is built from a committed commit. Beyond those, the carried release items stand: the TinyDesk patches that keep every identity `-dirty`, the personality-8 flip-bit deviation and the Tiny89 flash-save stall recorded as known issues, and `docs/qualification.md`'s §5.1 and §3.3 as the places a fix starts.
+
+#### Files Modified:
+
+- docs/releases/v0.2.0.md
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
