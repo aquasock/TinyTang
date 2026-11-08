@@ -169,16 +169,20 @@ not.
     digest.
   - The identity keeps its `-dirty` suffix by design, and a bare one is not
     reachable without moving a pin.  `third_party/tinydesk` is pinned at
-    upstream v0.1.5 and the build applies two carried patches to it on every
+    upstream v0.1.5 and the build applies four carried patches to it on every
     configure (`scripts/apply-tinydesk-patches.sh`, run from `CMakeLists.txt`),
     so that submodule's working tree always differs from its pin.  Identify the
     patches by their own digests, not by the identity, because `git diff`
     renders a dirty submodule only as `<sha>-dirty` and the identity's hash is
     the same whatever patches are applied:
     `third_party/patches/tinydesk/0001-settings-bluetooth-button.patch`
-    `070b58c505e5c600187b96456f3a7904ac74f2cfe29746d2759512de347f77a3` and
+    `070b58c505e5c600187b96456f3a7904ac74f2cfe29746d2759512de347f77a3`,
     `third_party/patches/tinydesk/0002-cartridge-is-not-text.patch`
-    `c985f1d9bac1b0332cf8b897e83d0532516cd07b23c464037fad0f0e2e4aeec6`.
+    `c985f1d9bac1b0332cf8b897e83d0532516cd07b23c464037fad0f0e2e4aeec6`,
+    `third_party/patches/tinydesk/0003-slider-widget.patch`
+    `2a6146f0b0a9d8a204a807d73b7f882baef6692b5d14fda60d4a122034e72dbf` and
+    `third_party/patches/tinydesk/0004-start-menu-exit.patch`
+    `36af95dcaa4049cd785edbdef8cd3d9164320164ebc19c1bf4040065d5f2d3d7`.
     `third_party/tinydesk-shell` shows how it ends: its patch went upstream, the
     pin now names an `origin/main` commit, and `scripts/apply-tdsh-patches.sh`
     recognises that and applies nothing.

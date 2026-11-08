@@ -113,8 +113,9 @@ Runs every `tools/tests/test_*.sh` plus `check_help_width.py`, one line each,
 and exits non-zero if any fails. `--list` enumerates, an argument filters by
 substring, `TINYTANG_KEEP_LOGS=1` keeps the per-test logs.
 
-**Current state: 45 of 45 pass** (44 scripts plus the width gate), measured
-2026-11-07.
+**Current state: 46 of 46 pass** (45 scripts plus the width gate), measured
+2026-11-08.  `test_card_firmware` is the suite that moved it from 45 to 46 and
+this figure had not followed it; measured rather than remembered.
 
 ---
 
@@ -354,7 +355,7 @@ Phase 3 work. Listed so the release picture is complete; not qualified yet.
 | untested | TinyGBC | `tang_gbc_ini.c` is tested via `test_nes_ini`; the window and player are not. **Volume and mute reach the player the same launch-time way — see 5.2** |
 | untested | Tiny89 | no host test in this tree. **Its save stalls after the state lands — see 5.1** |
 | silicon | TinySNES | in scope from 2026-11-06. `test_snes_load` covers the loader and `tb_snes_ini` the settings; the window has no host test. **A cartridge was launched and played on the release card, with sound on both HDMI and the PMOD I2S2 — see 5.2** |
-| host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested |
+| host | TinyPhosphor | `test_phosphor_catalog`, `test_phosphor_frames`; the window's other paths are untested. Audio plays on HDMI and the PMOD I2S2 from real decoded tracks once the core carries an AE350; the card's `f2233e6b…` image boots, publishes `0x54504133` and completes a track with zero underruns, and the audible Pmod result was heard on another placement of the same RTL — see 5.2 |
 | untested | TinyWiki, TinyGutenberg | `test_wiki_pack` covers the pack format, not the apps |
 | untested | TinyNode | no host test |
 | untested | Bluetooth, Software Update | `test_bluetooth_app` covers the first; `td_update_app.c` has none |
@@ -490,6 +491,40 @@ paragraph is here so nobody reads them as a fault again — the two messages did
 invite the wrong conclusion entry 20's silence investigation records, which is
 why they were ever on the list.
 
+**TinyPhosphor's silence on the Pmod was a build gate, not the design.**  Every
+image that carried real decoder audio played on HDMI and was silent on the Pmod
+I2S2, while a bring-up tone and a square wave reached both.  Three hypotheses
+were tested and retired: the decoder is not at fault, because HDMI and the I2S2
+take the same `play_pair` and HDMI played throughout; the CS4344's auto-mute is
+not at fault, because a tone held silent for three seconds while the clocks ran
+came back afterwards; and a `bus_clk` placement branch through GB20 is not fatal
+here.  That last one is where the fault was.  TinyPhosphor's
+`tools/open/ae350_gates.py` had inherited TinyNES's rule that a bus clock
+reaching the row-0 taps through GB20 kills the A25, and applied it to a design
+where it is not true — the AE350's own clock taps come from GB10 on every
+placement measured, passing or failing the rule.  Hardware showed the rule
+wrong in both directions: `build/ae350_probe/sweep/seed-28` passed it and was
+silent on the Pmod, while seed 13 failed it and played `test.mp3` to its end
+with 480,002 samples and zero underruns, heard on both outputs.  With four
+global clock nets against four spine pairs the net lands on GB20 in roughly
+forty-seven seeds of forty-eight, so the rule was rejecting about 98 percent of
+usable placements and spending a thirty-five-minute sweep to reach an arbitrary
+survivor; four sweeps ran before the rule was questioned and the last three
+produced no winner.  TinyPhosphor's entry 23 removed it, and the card now
+carries `build/ship/seed-1`, 5,047,788 bytes at
+`f2233e6bb43d8e64d9bc3ada35cb0f1485d78a1db8e48243367ff136eb790cf2`, built at
+the first seed.
+
+Two limits on that result are recorded rather than glossed.  The audible
+confirmation was heard on seed 13 of the authoring netlist, not on the shipping
+image; the shipping image was measured on the board to boot, publish
+`0x54504133` at `0x4000`, answer as core 80 and complete a track with zero
+underruns, and its only difference from the heard placement is placement.
+And uncompressed WAV still underruns — 82,827 and 82,778 on two runs where FLAC
+and MP3 reported zero — because a ten-second file at 176.4 kB/s needs 93 percent
+of the 190 kB/s the 2 Mbaud link carries; the fix is the 5 Mbaud link TinyMaps
+measured at 431 kB/s, which is an RTL change in TinyPhosphor and not made.
+
 **TinySNES is in scope from 2026-11-06**, by the operator's decision, and the
 release card carries its core.  It was out of scope as "a single core that
 reintegrates later"; the reason to bring it back was that this firmware already
@@ -509,17 +544,20 @@ TinyCreature, TinyGBA, TinyVCMI and TinyMaps are not shipping.
 
 ## 6. Coverage summary
 
-- 44 host regressions plus the width gate, all passing; proven to bite where
+- 45 host regressions plus the width gate, all passing; proven to bite where
   fault injection was done (desktop core 6 faults, protocol 5, LoRa 5, heap 4,
   I2C 9, link 6, crash 4, FatFS 6, HID routing 8).
-- **29 of 60 port modules are built by no host test.** The eight
+- **30 of 61 port modules are built by no host test.** The eight
   this programme added — `tang_proto.c`, `tang_lora.c`, `tang_heap.c`,
   `tang_i2c.cpp`, `tang_fpga_uart.c`, `tang_crash.c`, `tdsh_fs_bl616.c` and
   `tang_hid_route.c` — are covered, and so is a ninth, `pmod_sockets.cpp`,
   which entry 18's `test_pmod_sockets.sh` compiles by naming its path on the
   compiler line. Entry 18 expected the tool not to see it; that expectation was
   wrong, the script has named the path since it landed, so the module has left
-  §6.1. Measured by:
+  §6.1. The count grew by one when the Bluetooth window was moved onto
+  `td_bt_ops_t`: `tang_bt_port.c` is the adapter and the suite now builds the
+  table rather than the adapter, so it appears in §6.1 for the first time.
+  Measured by:
 
 ```
 tools/check_test_coverage.py            # the uncovered modules
@@ -543,7 +581,7 @@ either named by path in a test script, which is how it reaches a compiler, or
 included by a test source, and it strips comments first. Section 6's numbers are
 that tool's, not a grep's.
 
-### 6.1 The other 29, deferred with reasons
+### 6.1 The other 30, deferred with reasons
 
 These are **knowingly deferred**, not overlooked. The coverage sweep was stopped
 by the operator after the seven modules that matter were covered, because driving
@@ -554,6 +592,7 @@ host suite is not the next best use of a cycle.
 | Modules | Reason |
 |---|---|
 | `tang_ble.c` (2748 after the extraction) | Needs 56 `bt_*` symbols and most of the Zephyr-derived host stack to link, so a suite would stub the stack and test the stubs. **Its one testable decision has been extracted**: report routing now lives in `tang_hid_route.c` and is covered (BLE-019, and the Logitech and Rii K06 cases). What remains in `tang_ble.c` is discovery, pairing, bonds and the stack's lifecycle, all of which need the stack or the radio. |
+| `tang_bt_port.c` (227) | The adapter between `tang_ble_*` and `td_bt_ops_t`, and pure translation: every function forwards to the engine and converts a type on the way. `tb_bluetooth_app.c` implements the table instead of building the adapter, which is what proves the window cannot reach the engine directly — the suite links without `tang_ble.c` at all, so a direct call would fail to link. Testing the adapter would mean stubbing the engine it translates, and it is the engine's contract that a stub cannot supply. |
 | `tang_jtag_programmer.c` (1102) | Vendored unmodified from nand2mario under Apache-2.0 (TOOL-007). Testing it tests a third party's code, and its behaviour is proven by every `tangload` on the board. |
 | 8 app wrappers: `tinygbc_app`, `tinynes_app`, `tinysnes_app`, `td_gutenberg_app`, `td_wiki_app`, `tiny89_app`, `tinynode_app`, `tinycreature_app` (6840 total) | Mostly widget layout and list navigation over the app's own data. A stubbed window proves the layout calls; Phase 3 exercises them end to end on the board, which is both cheaper and truer. The data-side logic (`tang_nes_ini`, `tang_gbc_ini`, `tang_snes_load`, the pack formats) is already covered separately. |
 | 8 Phosphor transport files (`phosphor_player`, `phosphor_cmd`, `fpga_file_stream`, `ae350_play`, `fpga_debug`, `oled_cmd`, `ae350_file_server`, `fpga_stream`; 2276 total) | Each is a thin layer over the extended-protocol endpoint with a core and an AE350 on the far end. The protocol itself is covered by `test_desktop_core`, `test_phosphor_frames` and `test_tang_fpga_uart`; what remains is the far end's behaviour, which only hardware supplies. |

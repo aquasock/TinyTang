@@ -49,11 +49,13 @@ treated as equal because the card has no real timestamps.
 A core drives a socket only if /tinytang.ini says what is seated there,
 because PMOD modules carry no identification. It names one layout:
 
-     layout = i2s2_oled    I2S2 beside HDMI, OLED beside USB-A
+     layout = lora_i2s2    LoRa in PMOD0, I2S2 beside HDMI in PMOD1
      layout = vga          the PmodVGA across both sockets
+     layout = lora         LoRa in PMOD0, PMOD1 released
 
 Every module is seated right side up. A missing file leaves both
-sockets released, which is the safe state.
+sockets released, which is the safe state, and so does an unknown
+layout -- including i2s2_oled, the name earlier firmware used.
 
 ## Firmware
 

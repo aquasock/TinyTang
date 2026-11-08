@@ -25,8 +25,10 @@ the app.
 
 ## No sound
 
-- The Pmod I2S2 goes in the socket beside HDMI, right side up, and
-  /tinytang.ini must say layout = i2s2_oled.
+- The Pmod I2S2 goes in the socket beside HDMI (PMOD1), right side up,
+  and /tinytang.ini must say layout = lora_i2s2. The older name
+  i2s2_oled is refused by this firmware, which then releases both
+  sockets, so sound stops for a reason that looks like hardware.
 - Audio to HDMI and to the Pmod come from the same stream, so if one
   works and the other does not, the socket is the suspect.
 
