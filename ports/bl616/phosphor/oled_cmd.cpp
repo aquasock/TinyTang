@@ -97,7 +97,7 @@ bool oled_ready(void)
         return false;
     }
     if (((sockets >> 4) & 0xfu) != PERS_OLEDRGB && ((sockets >> 8) & 0xfu) != PERS_OLEDRGB) {
-        tdsh_printf("oled: /tinytang.ini does not declare the OLED (layout = i2s2_oled)\r\n");
+        tdsh_printf("oled: /tinytang.ini does not declare the OLED, and no layout does\r\n");
         return false;
     }
     return true;

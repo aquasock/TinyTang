@@ -23,7 +23,7 @@ static const char *const s_names[] = {
 
 static const char *const s_layouts[] = {
     [TANG_LAYOUT_NONE]      = "none",
-    [TANG_LAYOUT_I2S2_OLED] = "i2s2_oled",
+    [TANG_LAYOUT_LORA_I2S2] = "lora_i2s2",
     [TANG_LAYOUT_VGA]       = "vga",
     [TANG_LAYOUT_LORA]      = "lora",
 };
@@ -152,7 +152,7 @@ static void line_done(tang_ini_t *ini)
 
     if (old_socket_key(key)) {
         ini->old_key = true;
-        note(ini, no, true, "%.12s is no longer read; write layout = i2s2_oled or vga", key);
+        note(ini, no, true, "%.12s is no longer read; write layout = lora_i2s2 or vga", key);
         return;
     }
     if (!same(key, "layout")) {
@@ -173,7 +173,7 @@ static void line_done(tang_ini_t *ini)
     }
     ini->layout = TANG_LAYOUT_NONE;
     ini->layout_bad = true;
-    note(ini, no, true, "unknown layout '%.20s'; use i2s2_oled, vga or lora", value);
+    note(ini, no, true, "unknown layout '%.20s'; use lora_i2s2, vga or lora", value);
 }
 
 void tang_ini_feed(tang_ini_t *ini, const char *bytes, size_t n)
@@ -211,10 +211,12 @@ uint32_t tang_ini_word(uint8_t layout, uint8_t core_id)
         return 0;
     }
     switch (layout) {
-    case TANG_LAYOUT_I2S2_OLED:
-        pmod0 = TANG_PMOD_OLEDRGB;
-        /* The desktop core refuses a word that names the I2S2, and would
-         * release the OLED with it (PMOD-006); its PMOD1 stays released. */
+    case TANG_LAYOUT_LORA_I2S2:
+        /* The LoRa module's five-wire header on PMOD0, the Pmod I2S2 in PMOD1
+         * beside the HDMI port.  The desktop core has no I2S2 and refuses a
+         * word that names it, and a refusal there releases the other socket
+         * with it (PMOD-006), so it is sent the LoRa half alone. */
+        pmod0 = TANG_PMOD_LORA;
         pmod1 = core_id == TANG_INI_CORE_DESKTOP ? TANG_PMOD_NONE : TANG_PMOD_I2S2;
         break;
     case TANG_LAYOUT_LORA:

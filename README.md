@@ -285,16 +285,19 @@ python tools/tinytang_sync.py
   disabled.
 - **`/tinytang.ini` names the PMOD layout.** PMOD modules cannot be detected,
   so a core with the sockets (the Phosphor core at register ABI 1.8 or later,
-  and the desktop core) drives only what the file says is seated.  Two layouts
+  and the desktop core) drives only what the file says is seated.  Three layouts
   are supported, each module in a fixed socket and seated right side up, with
-  nothing flipped or swapped: `layout = i2s2_oled` is the Pmod I2S2 in PMOD1,
-  beside the HDMI port, and the Pmod OLEDrgb in PMOD0, beside the USB-A ports;
-  `layout = vga` is the PmodVGA across both, J1 in PMOD1 and J2 in PMOD0.
+  nothing flipped or swapped: `layout = lora_i2s2` is the LoRa header in PMOD0,
+  beside the USB-A ports, and the Pmod I2S2 in PMOD1, beside the HDMI port;
+  `layout = vga` is the PmodVGA across both, J1 in PMOD1 and J2 in PMOD0; and
+  `layout = lora` is the LoRa header with PMOD1 released, for a board with no
+  I2S2 module fitted.
   `docs/tinytang.ini` is a commented example.  Each core is sent the layout as the
-  socket word it can take: Phosphor gets `0x0510` or `0x0230`, and the desktop
-  core, which has no I2S2, gets the OLED alone (`0x0010`) for `i2s2_oled` and
-  `0x0230` for `vga`.  `tangload` sends it after every core load, whichever
-  way the core arrives, and leaves cores without sockets alone.  No file, or
+  socket word it can take: Phosphor gets `0x0580`, `0x0230` or `0x0080`, and the
+  desktop core, which has no I2S2, gets the LoRa half alone (`0x0080`) for both
+  `lora_i2s2` and `lora`, and `0x0230` for `vga`.  `tangload` sends it after
+  every core load, whichever way the core arrives, and leaves cores without
+  sockets alone.  No file, or
   no layout line, leaves both sockets released; so do an unknown layout and
   the old `pmod0`, `pmod1`, `pmod0_flip` and `pmod1_flip` keys, which are
   refused with a line saying what to write instead.  Unknown keys and sections
@@ -536,7 +539,7 @@ loads `tinynes.bin`, runs the player `/root/ae350/tinynes-play.elf` with the
 cartridge, and loads the desktop core again when the game ends.  The
 controllers are Wii Classic Controllers, player 1 on the USB-A port through
 Adafruit's Wii adapter and player 2 on PMOD0, and sound needs a Pmod I2S2 on
-PMOD1, the `i2s2_oled` layout of `/tinytang.ini`.  The TinyNES window, like TinyGBC's, has a
+PMOD1, the `lora_i2s2` layout of `/tinytang.ini`.  The TinyNES window, like TinyGBC's, has a
 fixed size of 54 by 20 cells that shows twelve Library entries at a time and
 five tabs: Library, Input, Video, Audio and Saves.  Input is which controller
 button answers to each console button, one row per button, with Change stepping

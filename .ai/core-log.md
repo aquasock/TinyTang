@@ -1006,3 +1006,39 @@ None.
 - User Test: PASS
 
 ---
+
+## 32 COMMIT Unreleased 2026-11-07T21:17:03-07:00
+
+#### Coming From:
+
+Unreleased 2d6554c
+
+#### Purpose:
+
+Replace the retired `i2s2_oled` layout with `lora_i2s2`, which declares the LoRa module on PMOD0 and the Pmod I2S2 on PMOD1, and drop the OLED from every layout the firmware can produce.
+
+#### Outcome:
+
+The firmware now offers three layouts rather than four: `lora_i2s2` in the slot the OLED layout vacated, `vga` unchanged and `lora` kept so a board with no I2S2 module fitted can still declare the LoRa header alone. `TANG_LAYOUT_I2S2_OLED` became `TANG_LAYOUT_LORA_I2S2` in place, so no core sees a renumbered personality, and `tang_ini_word` sends `0x0580` to Phosphor and `0x0080` to the desktop core, which has no I2S2 and refuses a word naming it, with a refusal there releasing the other socket as well (PMOD-006). The OLEDrgb personality number stays at 1 because the wire numbering is shared with the core RTL, but no layout declares it any more, so `oled` is reachable only by writing `0xc0` by hand; the qualification matrix says so rather than dropping the row silently. `tools/tests/tb_ini.c` now asserts the pair that matters, `0x0580` and `0x0080`, and proves that `layout = i2s2_oled` reads as unknown and releases both sockets instead of quietly declaring a retired personality. The messages that hardcoded the layout list, the example card file and the README were brought into line, and the `oled` command's refusal no longer advises a layout that no longer exists. The host gate passed 46 of 46 including the new assertions. The firmware built to 699,008 bytes at SHA-256 `426544039a6e2287e33ee2c033db348f7ca84dc416e977e95071bf3349f072f8` with identity `2d6554c-dirty.e231569`, was flashed with `tangflash` and power-cycled, and `platform` reported that identity. On the card's `/tinytang.ini` set to `layout = lora_i2s2`, `tangini` declared `0xc0 = 0x0580: pmod0 lora, pmod1 i2s2` to the Phosphor core and the core read back `0x00000580`, and the desktop core was sent `0x0080` and reported it as declared, so the change is proven on both cores. The LoRa module was located by probing rather than assumed: personality 8 answered `+VER=RYLR998_REYAX_V1.2.4` on PMOD0 and timed out on PMOD1, which is what placed the LoRa header on PMOD0 and the I2S2 on PMOD1. The user heard a 48 kHz tone on both Pmod channels with this layout declared, so the socket word reaches the pins and the I2S2 lane is driven on PMOD1. The Pmod stays silent for real decoder audio on every TinyPhosphor image tried, but that is recorded as TinyPhosphor's entry 22 and is not a fault in this layout: the word this firmware sends is correct and the core stores it.
+
+#### Next Steps:
+
+The release work this cycle was folded into remains the next step: rebuild the 0.2.1 card archive with the e22 Phosphor core and the corrected `tinytang.ini`, and correct the reproducibility paragraph in `docs/releases/v0.2.0.md` to entry 31's account. Any card still carrying `layout = i2s2_oled` will now read as an unknown layout and release both sockets, which is the safe state and is reported loudly, so the release note should say to write `lora_i2s2` instead. None of this cycle's work is blocked on TinyPhosphor's open audio defect.
+
+#### Files Modified:
+
+- README.md
+- docs/qualification.md
+- docs/tinytang.ini
+- ports/bl616/phosphor/oled_cmd.cpp
+- ports/bl616/tang_ini.c
+- ports/bl616/tang_ini.h
+- tools/tests/tb_ini.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

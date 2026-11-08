@@ -213,13 +213,22 @@ whole with status 6 and both sockets keep their previous state.
 | host | Personality 8 pins: NRST on pin 8, TX on 9, RX on 10, per socket | `test_desktop_pmod` (`check_uart_pins`) |
 | **deviation** | **Flip bit 12 on a personality-8 word is accepted and misroutes the UART** — **decision 2026-11-04: closed in the next core revision**, which the operator will build as the final firmware and `tinytang.bin` before release | demonstrated: `0x1080` drives NRST/TX on pins 2 and 3 while RX keeps reading pin 10 — a half-flipped link, silently. `0x2080` (bit 13, the released socket) changes nothing. Need a host that writes `0xc0` itself; no layout the firmware can produce sets a flip bit |
 | silicon | `layout = lora` declared and accepted | `tangini`, 2026-11-04 |
-| silicon | `layout = i2s2_oled` on the desktop core | core-log entries 22–24 |
+| silicon | `layout = i2s2_oled` on the desktop core — **retired 2026-11-07**, the layout is now `lora_i2s2` and no layout declares the OLED | core-log entries 22–24 |
 
 The accept mask is `0xffffc00f`, so bits 4–13 pass unconstrained and the
 personality rules in the same expression do the real work; they never inspect
 bits 12 or 13. `test_desktop_pmod` asserts the current behaviour and fails with
 "the deviation was fixed" if the RTL ever refuses the word, so a future core
 revision that closes the hole cannot pass silently.
+
+The Phosphor core does not validate the word at all: `debug_regs.sv` latches
+bits 7:4 and 11:8 straight through, so `0x0580` (LoRa in PMOD0, I2S2 in PMOD1)
+is stored as written. Personality 8 has no arm in either socket mux there and
+falls to the released default, which is the safe state for a socket the module
+is not using. The OLEDrgb personality is retired from the layouts as of
+2026-11-07 — its number stays because the wire numbering is shared with the
+core RTL, but no layout sends it, so the `oled` command is reachable only by
+hand-writing `0xc0`.
 
 ### 3.4 Video and compositor
 

@@ -5,8 +5,9 @@
 // modules in fixed sockets and seated right side up, so the file names one:
 //
 //     [tang]
-//     layout = i2s2_oled    ; I2S2 in PMOD1 beside HDMI, OLEDrgb in PMOD0
+//     layout = lora_i2s2    ; LoRa in PMOD0, Pmod I2S2 in PMOD1 beside HDMI
 //     layout = vga          ; the PmodVGA across both, J1 in PMOD1, J2 in PMOD0
+//     layout = lora         ; LoRa in PMOD0, PMOD1 released
 //
 // There is no flip and no choice of socket.  A missing file, or a file with
 // no layout line, leaves both sockets released, which is the safe state; so
@@ -18,7 +19,7 @@
 //
 // Each core gets the layout as the socket control word it can take:
 // tang_ini_word() says which.  The desktop core has no I2S2, so for
-// i2s2_oled it is sent the OLED alone and PMOD1 stays released.
+// lora_i2s2 it is sent the LoRa half alone and PMOD1 stays released.
 //
 // This file is only the parser: bytes in, the layout and the problems out,
 // with nothing from the card or the core in it, so it can be checked on the
@@ -48,7 +49,7 @@ extern "C" {
  * the USB-A port; they are kept here only to name them. */
 enum {
     TANG_PMOD_NONE    = 0,
-    TANG_PMOD_OLEDRGB = 1,
+    TANG_PMOD_OLEDRGB = 1,   /* retired: no layout declares it any more */
     TANG_PMOD_VGA_J1  = 2,
     TANG_PMOD_VGA_J2  = 3,
     TANG_PMOD_ENCODER = 4,
@@ -60,10 +61,12 @@ enum {
     TANG_PMOD_LORA    = 8,
 };
 
-/* The supported layouts; NONE is both sockets released. */
+/* The supported layouts; NONE is both sockets released.  The OLEDrgb is
+ * retired: its personality number stays because the wire numbering is shared
+ * with the core RTL, but no layout sends it. */
 enum {
     TANG_LAYOUT_NONE      = 0,
-    TANG_LAYOUT_I2S2_OLED = 1,
+    TANG_LAYOUT_LORA_I2S2 = 1,
     TANG_LAYOUT_VGA       = 2,
     TANG_LAYOUT_LORA      = 3,
 };
@@ -107,7 +110,7 @@ void tang_ini_end(tang_ini_t *ini);
  * sockets. */
 uint32_t tang_ini_word(uint8_t layout, uint8_t core_id);
 
-/* "none", "i2s2_oled", "vga"; "?" for a number with no name. */
+/* "none", "lora_i2s2", "vga", "lora"; "?" for a number with no name. */
 const char *tang_ini_layout_name(uint8_t layout);
 /* "none", "oledrgb", ...; "?" for a number with no name. */
 const char *tang_ini_module_name(uint8_t module);
