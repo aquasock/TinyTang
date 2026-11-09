@@ -250,41 +250,83 @@ proved to be a TinyNES path this core does not answer. Rebuild and re-run with
 `phosphor run /root/cores/mpeg2probe.tpi`; the results are read from the AE350
 register block with `phosphor peek`.
 
+## How far 25 fps actually takes us
+
+Measured 2026-11-09, same baseline image, same decoder, same clip, one addition:
+the probe reads each displayed frame's three planes back out of SDRAM in raster
+order, the way a display scanout reads them, so the number covers both users of
+the memory.
+
+| | cycles | fps |
+|---|---|---|
+| decode only | 4,373,063,857 | **25.73** |
+| decode + display read-back | 5,260,732,128 | **21.38** |
+
+The read-back added 20.3 percent, at 101.5 cycles per pixel against 84.4, and
+the decode output stayed bit-identical. Of the added cycles, 16 percent are the
+loop's own instructions and 84 percent is memory stall: the concurrent read
+stream moved **64.8 MB/s** against a 150 MB/s peak, and the two clients were
+fighting for the same controller.
+
+Two honest limits on that number. The emulation reads each *displayed* frame
+once (10.9 MB/s), while a real 720p60 scanout re-reads the frame every refresh
+at **31.1 MB/s** -- 2.8 times more. And the emulation's own loop is not free.
+Scaling the stall portion by the byte volume gives about **17 fps** for a real
+720x480 scanout, which is an extrapolation within about 20 percent, not a
+measurement.
+
+Because cost per pixel is near-flat across raster sizes (84.3 cycles/px at
+720x480, 90.6 at 352x240), the measured price predicts the frame rate at any
+geometry:
+
+- **720x480 (DVD NTSC): 21.4 fps**, about 17 with a real scanout
+- **720x576 (DVD PAL): 17.8 fps**
+- **640x480: 24.1 fps**
+- **640x368: 31.4 fps** and **640x360: 32.1 fps** -- the 30 fps line sits here
+- **576x324: 39.6 fps**
+- **480x272: 56.6 fps**
+
+So the answer to "how far does 25 fps take us" is: **to 640x360 at 30 fps, or
+720x480 at about 17 to 21.** DVD's raster and DVD's frame rate are not
+simultaneously reachable on this CPU, before any allowance for demuxing, audio
+or the UI. A 640x360 picture upscaled to 1280x720 by the scanout is free in
+fabric, which makes 640x360 the sensible target: 2/3 of DVD's area, full 30 fps,
+and a 2.5 Mbit/s encode is not soft at that size.
+
+One caveat that cuts the other way: this is a decode *and read-back* loop, not
+a player. The scanout that reads the frames as they display will be fabric with
+priority over the CPU, so the CPU may pay less per frame than the emulation
+suggests -- or more, since the display takes bandwidth it cannot refuse. Only a
+built scanout settles which.
+
 ## Recommendation
 
-The probe answered the question it was built for, and the answer is that the
-decoder is not the problem -- the memory path is:
+The measurement settles the raster, so build for **640x360 at 30 fps**, not
+720x480:
 
-1. **Port the 128 KiB fabric L2** (`gateware/l2_cache.py` in Tang-PSX, 163
-   lines of Migen, re-expressed for this flow). The model says this alone takes
-   38.86 ms to 23.4 ms per frame, 25.7 fps to 42.8 fps, which is the first
-   configuration with real headroom for a 720x480 scanout and audio.
-2. **Re-measure with the L2 in place.** The model predicts; a second run of the
-   same probe measures. If it lands near 42 fps the software player is viable
-   and the remaining work is the framebuffer and scanout from the previous
-   scope note. If it does not, the stall term was not the L2's to fix.
-3. **Only then consider RISC-V kernels.** They address the 23.5 percent compute
-   term, so on their own they buy a fraction of what the L2 does, and libmpeg2's
-   ARM and Coldfire assembly cannot be transliterated -- RISC-V has no packed
-   byte arithmetic.
-4. **Re-target the bitrate to the link.** At 431 kB/s the link carries
-   3.45 Mbit/s, so the target is a 720x480 encode at 2.5-3 Mbit/s. This costs
-   nothing in HDL and removes the one ceiling no decoder work touches.
+1. **Target 640x360.** It is the largest geometry that clears 30 fps with the
+   display sharing memory (31.4 fps at 640x368, 32.1 at 640x360), it is 2/3 of
+   DVD's area so a 2.5 Mbit/s encode is genuinely good at that size, and it
+   fits the 3.45 Mbit/s link that DVD's own bitrate does not. Upscaling
+   640x360 to 1280x720 in the scanout is free.
+2. **Build the scanout next**, and treat it as the remaining unknown. It needs a
+   genuine dual-clock line store -- `ahb_sdram`'s engine is on `bus_clk` for the
+   AE350, and the open flow rejects a two-clock block RAM, so the crossing has
+   to be done in fabric without one. Tang-PSX's line stores are the reference;
+   TinyMaps avoided the crossing entirely by running its SDRAM on the pixel
+   clock, which is not available here.
+3. **Do not build a cache.** Done and measured: 33.8 percent slower (core-log
+   entry 26). The controller's line buffer already serves most of that reuse.
+4. **Keep codec kernels low priority.** 22 percent of the time is compute; the
+   other 78 percent is the memory path as built. Speedups on the IDCT would move
+   a fifth of the problem.
 
-Building the player before the L2 would produce one that cannot hold 480p, which
-is the outcome the measurement was meant to avoid. The fabric H.262 decoder
-stays in reserve: it is the answer if step 2 disappoints, and the fit estimate
-above is more favourable than the first note in this tree implied.
-
-Either way the AE350 is not wasted. It is the only thing on the board that can
-demux, serve, synchronise and run AC-3, and it already does four of those five.
+If 640x360 is not acceptable as a picture, then the fabric H.262 decoder is the
+answer and this CPU keeps the demux, AC-3, file serving and UI.
 
 ## Open questions this note does not settle
 
-- Real-world IPC for libmpeg2 on the A25: measured, 0.223 overall, and the
-  decomposition above accounts for it. What is still modelled rather than
-  counted is the miss cost specifically, because this image has no bridge
-  counters.
+- Real-world IPC for libmpeg2 on the A25: measured, 0.223 overall.
 - Whether the SDR SDRAM's 16-bit line channel, shared with a CPU cache-miss
   stream, an L2 fill stream and a video scanout, sustains the assumed split.
   Still unmeasured: the probe decoded without displaying, so scanout has not
