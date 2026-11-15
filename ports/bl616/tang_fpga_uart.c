@@ -850,6 +850,275 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
     return 0;
 }
 
+/* The TinyGBA core's loader.
+ *
+ * It sends the same three frame types nesload does, because both cores are
+ * nand2mario's and `iosys_bl616.v`'s command table is the same in each: 0x06
+ * to hold the core in reset and to release it, 0x07 for cartridge bytes, 0x08
+ * for the overlay.  What differs is what the file is.  A GBA cartridge is a
+ * raw image with no container header, so the size is the file's size and the
+ * only thing worth refusing is a file that is not a cartridge at all -- a GBA
+ * header carries a fixed 0x96 at 0xB2, which one read settles.  The BIOS on the
+ * cartridge checks the Nintendo logo itself, so validating it here would only
+ * repeat work the machine is about to do.
+ *
+ * The 1024-byte chunk and the taskYIELD between chunks are load-bearing: the
+ * core's receiver drops back to hunting for a magic byte when a frame's length
+ * high byte reaches 8, and the BL616 needs to run its USB and console tasks or
+ * the host sees the link die part-way through a large cartridge. */
+#define TANG_GBA_MAX_IMAGE     (32u * 1024u * 1024u)  /* the largest GBA cart */
+#define TANG_GBA_HEADER_MIN    0xC0u                  /* header and its fixed byte */
+#define TANG_GBA_HEADER_FIXED  0xB2u
+#define TANG_GBA_HEADER_VALUE  0x96u
+
+/* Save hardware, as the core's `config_backup_type` numbers them
+ * (fpga/gba/src/memory/gba_memory.sv).  Getting this wrong is not cosmetic:
+ * with `BACKUP_NONE` the core treats the cartridge's save window as read-only,
+ * every write the game makes is discarded, and a game that checks its save at
+ * boot -- Pokemon Emerald does -- stops on the BIOS handover's white screen.
+ * That is what BRD-080 recorded and BRD-088 diagnosed. */
+#define TANG_GBA_BACKUP_NONE   0u
+#define TANG_GBA_BACKUP_FLASH512K 1u
+#define TANG_GBA_BACKUP_FLASH1M   2u
+#define TANG_GBA_BACKUP_SRAM      3u
+#define TANG_GBA_BACKUP_EEPROM    4u
+
+/* Every GBA cart that uses save hardware carries a marker string from the
+ * library it was linked against, and that string is how the save type is
+ * determined: `FLASH1M_V` for 1 Mbit flash, `FLASH512_V` and `FLASH_V` for
+ * 512 Kbit, `SRAM_V` and `SRAM_F_V` for SRAM (`_F_` is the fast variant), and
+ * `EEPROM_V` for EEPROM.  Longer, more specific markers are matched first, so
+ * `FLASH1M_V` cannot be mistaken for `FLASH_V`.  Measured on 2026-11-14 against
+ * thirteen cartridges in this project's collection: all thirteen are detected,
+ * which is why the list carries both SRAM spellings -- Castlevania: Aria of
+ * Sorrow and Fire Emblem use `SRAM_F_V` and were missed by `SRAM_V` alone. */
+static const struct {
+    const char *mark;
+    uint8_t     type;
+} s_gba_save_marks[] = {
+    { "FLASH1M_V",  TANG_GBA_BACKUP_FLASH1M   },
+    { "FLASH512_V", TANG_GBA_BACKUP_FLASH512K },
+    { "FLASH_V",    TANG_GBA_BACKUP_FLASH512K },
+    { "SRAM_F_V",   TANG_GBA_BACKUP_SRAM      },
+    { "SRAM_V",     TANG_GBA_BACKUP_SRAM      },
+    { "EEPROM_V",   TANG_GBA_BACKUP_EEPROM    },
+};
+#define TANG_GBA_SAVE_MARK_MAX 10u   /* longest marker, for the overlap carry */
+
+/* Find a save marker in one chunk, carrying the tail of the previous chunk so a
+ * marker split across a read boundary is still seen.  Returns the type, or 0
+ * when this chunk holds none.
+ *
+ * Two searches, because one is not enough: the whole chunk, and then the join
+ * of the previous chunk's tail with the start of this one.  A first version
+ * searched only a 20-byte window at the start of the chunk and missed
+ * `FLASH1M_V` in Pokemon Emerald, which sits at offset 192 of its chunk --
+ * the marker can be anywhere in the image, so the scan has to cover all of it.
+ */
+static uint8_t gba_scan_saves(const uint8_t *buf, size_t len, uint8_t *tail,
+                              size_t *tail_len)
+{
+    const size_t nmarks = sizeof s_gba_save_marks / sizeof s_gba_save_marks[0];
+
+    /* 1. anywhere in this chunk */
+    for (size_t i = 0; i < len; i++) {
+        for (size_t m = 0; m < nmarks; m++) {
+            const char  *mark = s_gba_save_marks[m].mark;
+            const size_t ml   = strlen(mark);
+            if (i + ml <= len && memcmp(&buf[i], mark, ml) == 0)
+                return s_gba_save_marks[m].type;
+        }
+    }
+
+    /* 2. straddling the boundary between the previous chunk and this one */
+    uint8_t join[TANG_GBA_SAVE_MARK_MAX * 2];
+    size_t  n = 0;
+    for (size_t i = 0; i < *tail_len && n < sizeof join; i++)
+        join[n++] = tail[i];
+    for (size_t i = 0; i < len && n < sizeof join; i++)
+        join[n++] = buf[i];
+    for (size_t i = 0; i < n; i++) {
+        for (size_t m = 0; m < nmarks; m++) {
+            const char  *mark = s_gba_save_marks[m].mark;
+            const size_t ml   = strlen(mark);
+            if (i + ml <= n && memcmp(&join[i], mark, ml) == 0)
+                return s_gba_save_marks[m].type;
+        }
+    }
+
+    *tail_len = len < TANG_GBA_SAVE_MARK_MAX ? len : TANG_GBA_SAVE_MARK_MAX;
+    if (*tail_len)
+        memcpy(tail, &buf[len - *tail_len], *tail_len);
+    return 0u;
+}
+
+static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: gbaload <path>\r\n");
+        return 1;
+    }
+
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("gbaload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+
+    FIL file;
+    if (f_open(&file, real, FA_READ) != FR_OK) {
+        tdsh_printf("gbaload: cannot open %s\r\n", argv[1]);
+        return 1;
+    }
+
+    const uint32_t size = (uint32_t)f_size(&file);
+    if (size < TANG_GBA_HEADER_MIN) {
+        f_close(&file);
+        tdsh_printf("gbaload: %s is %u bytes, too short to be a cartridge\r\n",
+                    argv[1], (unsigned)size);
+        return 1;
+    }
+    if (size > TANG_GBA_MAX_IMAGE) {
+        f_close(&file);
+        tdsh_printf("gbaload: %u bytes is more than the 32 MiB a GBA cartridge can be\r\n",
+                    (unsigned)size);
+        return 1;
+    }
+
+    uint8_t fixed = 0;
+    UINT got = 0;
+    if (f_lseek(&file, TANG_GBA_HEADER_FIXED) != FR_OK ||
+        f_read(&file, &fixed, 1, &got) != FR_OK || got != 1u ||
+        fixed != TANG_GBA_HEADER_VALUE) {
+        f_close(&file);
+        tdsh_printf("gbaload: %s is not a GBA cartridge (no 0x96 at 0xB2)\r\n", argv[1]);
+        return 1;
+    }
+    if (f_lseek(&file, 0) != FR_OK) {
+        f_close(&file);
+        tdsh_printf("gbaload: cannot rewind\r\n");
+        return 1;
+    }
+
+    if (tang_fpga_link_open() != 0) {
+        f_close(&file);
+        tdsh_printf("gbaload: cannot bring up UART1\r\n");
+        return 1;
+    }
+
+    tdsh_printf("gbaload: %u bytes -> the core at %u baud\r\n",
+                (unsigned)size, (unsigned)s_baud);
+
+    tang_fpga_lock();
+    tang_fpga_drain();
+
+    /* Non-zero holds the core in reset while the cartridge goes in. */
+    if (tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 1 }, 1) != 0) {
+        tang_fpga_unlock();
+        f_close(&file);
+        tdsh_printf("gbaload: cannot start the load\r\n");
+        return 1;
+    }
+
+    /* Save-type detection state, carried across chunks so a marker split over
+     * a read boundary is still found. */
+    uint8_t  save_type = TANG_GBA_BACKUP_NONE;
+    uint8_t  save_tail[TANG_GBA_SAVE_MARK_MAX];
+    size_t   save_tail_len = 0;
+    bool     save_scan = true;
+
+    uint32_t sent_total = 0;
+    for (;;) {
+        UINT br = 0;
+        if (f_read(&file, s_rom_chunk, FPGA_ROM_CHUNK, &br) != FR_OK) {
+            tang_fpga_unlock();
+            f_close(&file);
+            tdsh_printf("gbaload: SD read failed at %u\r\n", (unsigned)sent_total);
+            return 1;
+        }
+        if (br == 0) {
+            break;
+        }
+        if (tang_fpga_frame(FPGA_CMD_ROM_DATA, s_rom_chunk, br) != 0) {
+            tang_fpga_unlock();
+            f_close(&file);
+            tdsh_printf("gbaload: the core stopped accepting data at %u\r\n",
+                        (unsigned)sent_total);
+            return 1;
+        }
+        sent_total += br;
+        /* The save marker is looked for as the image goes past, so the file is
+         * read once.  Detection has to finish before the stream does, because
+         * the type is sent in the configuration stage afterwards. */
+        if (save_scan) {
+            save_type = gba_scan_saves(s_rom_chunk, br, save_tail, &save_tail_len);
+            if (save_type != TANG_GBA_BACKUP_NONE)
+                save_scan = false;
+        }
+        if (br < FPGA_ROM_CHUNK) {
+            break;
+        }
+        tang_fpga_unlock();
+        taskYIELD();                    /* keep the console and USB alive */
+        tang_fpga_lock();
+    }
+
+    tang_fpga_unlock();
+
+    /* Configure the save hardware.  The core takes `config_backup_type` from
+     * the first byte of the loader's configuration stage (`loading == 3`), and
+     * a loader that never enters that stage leaves it `BACKUP_NONE` -- which
+     * makes the cartridge's save window read-only and stops any game that
+     * checks its save at boot.  Pokemon Emerald is exactly that case: BRD-080
+     * recorded it stopping at the BIOS handover, BRD-088 showed the save type
+     * alone fixes it.  Sending the stage does not disturb the image; the core
+     * only re-seeds its own address counter. */
+    if (save_type != TANG_GBA_BACKUP_NONE) {
+        static const char *const names[] = { "none", "flash512K", "flash1M",
+                                             "SRAM", "EEPROM" };
+        tang_fpga_lock();
+        int cfg = tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 3 }, 1);
+        if (cfg == 0)
+            cfg = tang_fpga_frame(FPGA_CMD_ROM_DATA,
+                                  (const uint8_t[]){ save_type, 0, 0, 0 }, 4);
+        tang_fpga_unlock();
+        if (cfg != 0) {
+            tdsh_printf("gbaload: could not set the save type (continuing)\r\n");
+        } else {
+            tdsh_printf("gbaload: save hardware = %s\r\n",
+                        names[save_type <= TANG_GBA_BACKUP_EEPROM ? save_type : 0]);
+        }
+    } else {
+        tdsh_printf("gbaload: no save marker found; save hardware left off\r\n");
+    }
+
+    /* Hide the OSD before the core starts, through the OSD module so that its
+     * own idea of the overlay stays true -- the same reason nesload does it
+     * here rather than with a bare 0x08 frame.  Dropping the lock first,
+     * because the OSD takes it itself. */
+    if (tang_osd_set(false) != 0) {
+        f_close(&file);
+        tdsh_printf("gbaload: streamed %u bytes but could not clear the OSD\r\n",
+                    (unsigned)sent_total);
+        return 1;
+    }
+
+    /* Releasing the load starts the cartridge. */
+    tang_fpga_lock();
+    const int released = tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 0 }, 1);
+    tang_fpga_unlock();
+    f_close(&file);
+
+    if (released != 0) {
+        tdsh_printf("gbaload: streamed %u bytes but could not start the core\r\n",
+                    (unsigned)sent_total);
+        return 1;
+    }
+
+    tdsh_printf("gbaload: %u bytes in; the core is running\r\n", (unsigned)sent_total);
+    return 0;
+}
+
 /* The TinySNES core's loader, shared with the desk app (tang_snes_load.c). */
 static int cmd_snesload(tdsh_session_t *session, int argc, char **argv)
 {
@@ -2369,6 +2638,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_nesload, 0 },
     { "snesload", "snesload <path>", "Stream a SNES cartridge into the TinySNES core and start it",
       cmd_snesload, 0 },
+    { "gbaload", "gbaload <path>", "Stream a GBA cartridge into the TinyGBA core and start it",
+      cmd_gbaload, 0 },
     { "fpga", "fpga", "Ask the loaded core for its ID over UART1",
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",

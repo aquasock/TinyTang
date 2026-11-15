@@ -126,6 +126,10 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 - topic_id: KIWI
   name: "Kiwix offline archives"
   description: "The openZIM container Kiwix publishes, how its clusters are compressed and where redirects hide, the trims a Wikipedia download comes in, and the FAT32 limits a converted pack on this card must respect."
+
+- topic_id: GBA
+  name: "TinyGBA cartridges"
+  description: "Loading Game Boy Advance cartridges into a GBA core from the card: the frame protocol the core's loader speaks, the save-hardware configuration the core needs and how the cartridge declares it, and what a save does and does not survive."
 ```
 
 ---
@@ -2801,3 +2805,33 @@ These ids are no longer records. Each one's facts that are still true were carri
 | BLE-013 | BLE-014 | Starting the Bluetooth stack takes 15,828 B of heap (84,120 free before, 68,292 after, of 127,248) on top of BLE-002's static cost; a connection costs about 700 B, and free heap returns to the same figure after each reconnect |
 | TOOL-008 | TOOL-016 | Linked out of the SDK, each under its own licence rather than the SDK's: FreeRTOS V10.4.6 (MIT, (C) 2021 Amazon.com) via CONFIG_FREERTOS, CherryUSB (Apache-2.0) for the CDC console and its FreeRTOS OSAL, and FatFs R0.15 w/patch3 (ChaN, source-redistribution condition only); LVGL, TJpgDec, mbedTLS, littlefs and the codecs are not linked |
 | TOOL-009 | TOOL-011 | Recorded the console's input as exclusive and the guard as looking for the desktop's markers, which stopped working once the desktop's drawing left USB (USB-007): tangput feeds the same CDC byte stream the desktop reads its typed input from, so a transfer is safe only while the console is at a shell prompt, and the desktop holding it turns a file into keystrokes; tools/tinytang_put.py's require_shell() guard checks for the desktop's markers ([Start], Terminal - tdsh, or the alternate-screen sequence) before sending |
+
+- record_id: GBA-001
+  kind: TOOLCHAIN
+  topic_id: GBA
+  title: "`gbaload` streams a GBA cartridge from the card over the core's frame protocol"
+  status: VERIFIED
+  verified_date: 2026-11-14
+  statement: "TinyGBA had no card loader: `tang_fpga_uart.c` carried `nesload` and `snesload` and nothing for the GBA core, so a GBA cartridge could only be pushed from a host over `fpgapipe`. `gbaload <path>` closes that gap and is modelled on `cmd_nesload`, because both cores are nand2mario's and `iosys_bl616.v`'s command table is the same in each: it sends `FPGA_CMD_SET_LOAD` (0x06) with 1 to hold the core in reset, `FPGA_CMD_ROM_DATA` (0x07) for cartridge bytes in 1024-byte chunks with `taskYIELD()` between chunks so the USB and console tasks keep running, then clears the OSD through `tang_osd_set(false)` so its idea of the overlay stays true, and finally sends 0x06 with 0 to start the cartridge. It refuses a file shorter than 0xC0 bytes, one without the fixed 0x96 at 0xB2, or one larger than the 32 MiB a GBA cartridge can be. The 1024-byte chunk is not arbitrary: a frame whose length high byte reaches 8 drops the core's receiver back to hunting for a magic byte. Measured on the board 2026-11-14: an 8 MiB cartridge loads in about 43 seconds and a 16 MiB one in about 85, at 2 Mbaud, and eleven retail cartridges ran from it. Before this, the host-side `fpgapipe` path failed every time at about 5.7 MB on an 8 MiB image, because `cmd_fpgapipe` aborts when UART1's FIFO stays full for 100 ms and a sustained 192 KB/s stream against a 200 KB/s core trips that on any hiccup."
+  consequence: "A GBA cartridge now loads the way every other cartridge on this card loads -- from the SD, with no host in the loop -- which is the shape TinyNES, TinySNES, TinyGBC and TinyPhosphor already had. This also fixes a trap that cost real time: a load that partially completes takes the BL616's USB console down with it, so the failure looks like a board fault rather than a transport limit, and the recovery is a power cycle. Do not reintroduce a host-side ROM stream for this core: `fpgapipe` is for passing a core's own protocol through, not for moving megabytes, and its 100 ms FIFO timeout makes a large transfer unreliable by construction."
+  sources:
+    - "`ports/bl616/tang_fpga_uart.c`: `cmd_gbaload`, the `s_gba_*` constants, and the `s_fpga_commands` entry"
+    - "`ports/bl616/tang_fpga_link.h`: `FPGA_CMD_SET_LOAD` 0x06, `FPGA_CMD_ROM_DATA` 0x07, `FPGA_CMD_OVERLAY` 0x08"
+    - "`ports/bl616/tang_fpga_uart.c`: `cmd_fpgapipe`'s `uart_write(up, n) != 0` abort, and `FPGA_ROM_CHUNK 1024`"
+    - "Board console, 2026-11-14: `gbaload: 16777216 bytes in; the core is running` for an 8 MB and a 16 MB cartridge"
+  verification: "Measured 2026-11-14 on the board: the command is in the shell's table, an 8 MiB cartridge loads in 43 seconds and a 16 MiB one in 85, and eleven retail cartridges booted from it. The `fpgapipe` limitation is recorded from five failed attempts at about 5.7 MB on one 8 MiB image, each of which dropped the CDC console."
+
+- record_id: GBA-002
+  kind: TOOLCHAIN
+  topic_id: GBA
+  title: "The core's save hardware must be configured from the cartridge's marker string, or a game that checks its save at boot stops"
+  status: VERIFIED
+  verified_date: 2026-11-14
+  statement: "The GBA core takes `config_backup_type` from the first byte of its loader's configuration stage (`loading == 3`), and until 2026-11-14 no loader in either project had ever entered that stage, so the type stayed `BACKUP_NONE`. The consequence is not cosmetic: the core's `isreadonly` treats the cartridge save window at address regions 0xE and 0xF as read-only unless the type is flash or SRAM, so every write a game makes to its save is discarded, while the window still reads back so the game sees a save area that never changes. Pokemon Emerald stops on the BIOS handover's white field in exactly that state. `gbaload` now determines the type from the marker string that every GBA save library leaves in the image and sends the stage before releasing the core. The markers and the types they select are `FLASH1M_V` 2, `FLASH512_V` and `FLASH_V` 1, `SRAM_F_V` and `SRAM_V` 3, `EEPROM_V` 4; longer and more specific markers are matched first so `FLASH1M_V` cannot be taken for `FLASH_V`, and both SRAM spellings are needed because `SRAM_F_V` is the fast variant used by some titles. Detection runs during the stream rather than in a second pass, so a 16 MiB load costs nothing extra: each 1024-byte chunk is searched in full, and separately the ten-byte tail carried from the previous chunk is searched joined to the head of this one so a marker split across a read boundary is still found. Measured on the board 2026-11-14: `gbaload` prints `save hardware = flash1M` for Emerald and it boots with no manual step, `flash512K` for Mario Kart and Advance Wars, and `SRAM` for Metroid Fusion."
+  consequence: "This is the difference between a cartridge booting and not booting for any game that checks its save early, and it applies to every cartridge, not only to the one that exposed it. Two rules follow. A marker scan must search the whole of each chunk: a first version looked only at a 20-byte window and missed Emerald's `FLASH1M_V` at offset 192 of its chunk, which produced `no save marker found` -- a symptom indistinguishable from the fault being fixed, so it reads as the fix having failed rather than as it not having run. And such a scan must be exercised against every real input before it is flashed: the corrected algorithm was simulated offline against thirteen cartridges and detected all thirteen, which cost seconds and needed no build, no flash and no power cycle. What this record does not claim: a save does not persist. The core writes the window but nothing reads it back to the card, so a save survives until the next load and no further, and EEPROM titles such as Mario Kart and Asterix & Obelix XXL take a different path inside the core (`gba_eeprom.sv`) from the SDRAM window this configuration protects."
+  sources:
+    - "`ports/bl616/tang_fpga_uart.c`: `s_gba_save_marks`, `gba_scan_saves()`, and the stage-3 write in `cmd_gbaload`"
+    - "`fpga/gba/src/memory/gba_memory.sv` in the TinyGBA tree: the `3:` loader arm assigning `config_backup_type`, `isreadonly`'s 0xE/0xF rule, and `tosdram`'s window mapping"
+    - "Board console, 2026-11-14: `save hardware = flash1M`, `flash512K` and `SRAM` for the cartridges named"
+    - "Offline simulation of the exact chunked scan over thirteen GBA images: 13 of 13 detected"
+  verification: "Measured 2026-11-14 on the board by A/B on one image: Pokemon Emerald stopped at the BIOS handover with the type unset and booted once stage 3 carried `FLASH1M`, with nothing else changed. The detection algorithm was separately simulated against thirteen cartridges before any build was flashed, and regression loads of two other save types reported the correct values."

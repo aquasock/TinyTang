@@ -1077,3 +1077,33 @@ The operator commits and publishes `v0.2.1` through the GitHub interface, using 
 - User Test: NOT RUN
 
 ---
+
+## 34 COMMIT Unreleased 2026-11-14T21:11:01-07:00
+
+#### Coming From:
+
+Unreleased 63ca128
+
+#### Purpose:
+
+Give the TinyGBA core the card loader it never had, and configure the GBA cartridge's save hardware, which no loader here had ever done and which stopped a retail cartridge from booting.
+
+#### Outcome:
+
+A GBA cartridge now loads from the card like every other core's here, and the core's save hardware is configured from the cartridge itself. `gbaload <path>` is new in `ports/bl616/tang_fpga_uart.c` and is modelled on `cmd_nesload`, because both cores are nand2mario's and `iosys_bl616.v`'s command table is the same in each: `0x06` with 1 to hold the core in reset, `0x07` for cartridge bytes in 1024-byte chunks with a `taskYIELD()` between chunks so this firmware's USB and console tasks keep running, the OSD cleared through `tang_osd_set(false)` so its own idea of the overlay stays true, then `0x06` with 0 to start. It refuses a file shorter than 0xC0 bytes, one without the fixed 0x96 at 0xB2, or one over the 32 MiB a GBA cartridge can be. Measured on the board: an 8 MiB cartridge loads in about 43 seconds and a 16 MiB one in about 85 at 2 Mbaud, and eleven retail cartridges booted from it. The absence of this command had a cost worth recording: the host-side `fpgapipe` path failed every attempt at about 5.7 MB on an 8 MiB image and took the CDC console down with it each time, because `cmd_fpgapipe` aborts when UART1's FIFO stays full for 100 ms and a sustained 192 KB/s stream against a 200 KB/s core trips that on any hiccup -- so the failure read as a board fault rather than a transport limit. The second change is the one that mattered more. The core takes `config_backup_type` from the first byte of its loader's configuration stage and no loader here had ever entered it, so the type stayed `BACKUP_NONE`; the core then treats the cartridge save window at regions 0xE and 0xF as read-only, discards every write a game makes, and any title that checks its save at boot stops. Pokemon Emerald stops on the BIOS handover's white field in exactly that state. `gbaload` now finds the marker string every GBA save library leaves in the image -- `FLASH1M_V`, `FLASH512_V`, `FLASH_V`, `SRAM_F_V`, `SRAM_V`, `EEPROM_V` -- and sends the stage with the matching type before releasing the core, with longer markers matched first so `FLASH1M_V` cannot be taken for `FLASH_V`, and both SRAM spellings carried because `SRAM_F_V` is the fast variant some titles use. Detection runs during the stream rather than in a second pass, so a 16 MiB load costs nothing extra; each chunk is searched in full and the ten-byte tail from the previous chunk is searched joined to the head of the next so a marker split across a read boundary is still found. On the board `gbaload` prints `save hardware = flash1M` for Emerald and it boots with no manual step, `flash512K` for Mario Kart, and `SRAM` for Metroid Fusion. My first version of that scan looked only at a 20-byte window and missed Emerald's marker at offset 192 of its chunk, reporting `no save marker found` -- a symptom indistinguishable from the fault being fixed, so it would have read as the fix having failed rather than as it not having run. The corrected algorithm was simulated offline against thirteen GBA cartridges before anything was flashed and detected all thirteen, which is cheaper than a build, a flash and a power cycle and should have been the first step. The firmware was built from a tree whose `ports/bl616/` diffs empty against the commit the board was already running, staged with `tools/tinytang_flash.py` and committed from TCM twice, and the board reports `63ca128-dirty` with `gbaload` in its table afterwards. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` was not changed and entries 1 to 33 were not rewritten, added the `GBA` topic to the catalog because a cartridge-loader record needs a prefix of its own, confirmed the two new records carry unique ids and the canonical field order, and validated this entry as number 34 of 100 with the six canonical sections, a one-sentence Purpose, prose in Outcome and Next Steps, and a count of thirty-four against the 100-entry limit.
+
+#### Next Steps:
+
+Make a save survive a reload, which is the one thing left before a GBA cartridge behaves like a cartridge rather than like a demo: the core already writes the save window, and `gba_memory.sv` already latches a `cartram_dirty` flag on `backup_written | eeprom_written` that nothing consumes, but the window lives in SDRAM and this firmware cannot address SDRAM, so the read-back has to be fabric work -- a loader mode in `gba_memory.sv` that walks the window, a transmit state in `iosys_bl616.v` to stream it here, and wiring between them -- followed by a command that writes it to a per-cartridge file and restores it before the cartridge starts. EEPROM titles take a different path inside the core (`gba_eeprom.sv`) from the SDRAM window, so a window-only read-back would persist SRAM and flash and not EEPROM. The operator asked for this on demand rather than automatically, so the trigger should be a command rather than the dirty flag. A cartridge RTC is the other absent capability and is also fabric work, since the core has no cartridge RTC or GPIO implementation at all; the core's own on-screen message, `clock-based events will no longer occur`, is the correct symptom and must not be read as a fault.
+
+#### Files Modified:
+
+- ports/bl616/tang_fpga_uart.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
