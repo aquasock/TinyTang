@@ -29,6 +29,21 @@ static void check_int(const char *what, long got, long want)
     }
 }
 
+/* Format one wire frame into `out`; returns its byte length.  `put_frame`
+ * pushes directly, which cannot model the firmware's space-gated loop. */
+static unsigned fmt_frame(uint8_t *out, uint8_t type, const uint8_t *payload,
+                          unsigned len)
+{
+    const unsigned wire = len + 1;
+    unsigned n = 0;
+    out[n++] = FPGA_FRAME_MAGIC;
+    out[n++] = (uint8_t)(wire >> 8);
+    out[n++] = (uint8_t)wire;
+    out[n++] = type;
+    for (unsigned i = 0; i < len; i++) out[n++] = payload[i];
+    return n;
+}
+
 static void clear(void)
 {
     fpga_frames_reset();
@@ -191,6 +206,89 @@ int main(void)
         put_frame(FPGA_RESP_CORE_ID, core, 1);
         check_int("a clean frame after a reset", fpga_frames_take(FPGA_RESP_CORE_ID, &id, 1), 1);
         check_int("with the right body", id, 0x50);
+    }
+
+    /* 11. The firmware's actual decode loop, modelled exactly.
+     *
+     * `rx_decode` in tang_fpga_uart.c is:
+     *
+     *     while (!s_pipe && fpga_frames_space() && rx_pop(&byte))
+     *         fpga_frames_push(byte);
+     *
+     * so it stops when the queue is FULL, leaving the rest of the bytes in the
+     * ring.  This test feeds a byte stream through that same gate and asks
+     * whether a reply can be lost behind a run of unprompted joypad reports --
+     * the shape of a long save dump, which is hundreds of request/response
+     * exchanges with joypad traffic arriving in between.
+     *
+     * This is worth pinning down because the save-persistence work blamed a
+     * queue starvation for a wedged shell on hardware, and the blame was never
+     * demonstrated.  If a reply can be starved, the dump loop needs the purge
+     * it now calls; if it cannot, the wedge is something else and the purge is
+     * only a tidy-up.  Either answer is worth having in a test.
+     */
+    clear();
+    {
+        /* A stream: FPGA_FRAMES_MAX joypad reports, then one save-data frame.
+         * Nothing purges the joypads in between, which is the worst case. */
+        uint8_t stream[4096];
+        unsigned n = 0;
+        const uint8_t joy[4] = { 0x00, 0x10, 0x00, 0x00 };
+        for (int i = 0; i < (int)FPGA_FRAMES_MAX; i++) {
+            n += fmt_frame(&stream[n], FPGA_RESP_JOYPAD, joy, 4);
+        }
+        uint8_t chunk[3 + 8];
+        chunk[0] = 0xC0; chunk[1] = chunk[2] = 0x00;
+        for (unsigned i = 3; i < sizeof(chunk); i++) chunk[i] = (uint8_t)i;
+        n += fmt_frame(&stream[n], 0x10, chunk + 3, 8);
+
+        /* Feed it the way the firmware feeds it: stop at a full queue. */
+        unsigned fed = 0, guard = 0;
+        while (fed < n && guard < 100000) {
+            if (fpga_frames_space() && fed < n) {
+                fpga_frames_push(stream[fed++]);
+            } else {
+                /* A waiter would call take() here and get nothing.  Model one
+                 * round of that, which is what leaves the ring stuck. */
+                (void)fpga_frames_take(0x10, buf, sizeof(buf));
+            }
+            guard++;
+        }
+        check_int("the whole stream was consumed or the queue is full",
+                  (fed < n) ? 1 : 0, 1);
+
+        /* The reply is in the ring and the queue is full of joypads.  Does a
+         * waiter get it? */
+        int got_reply = FPGA_FRAMES_NONE;
+        for (int tries = 0; tries < 40 && got_reply < 0; tries++) {
+            while (fpga_frames_space() && fed < n)
+                fpga_frames_push(stream[fed++]);
+            got_reply = fpga_frames_take(0x10, buf, sizeof(buf));
+        }
+        /* The finding, pinned down: it is NOT reachable.  With the queue full
+         * of joypad reports, `fpga_frames_space()` is false, so the firmware's
+         * decode loop stops and the reply's bytes never leave the ring; asking
+         * for it returns nothing, however many times it is asked.  This is the
+         * hazard the save dump has to defend against, and now it is a test
+         * rather than a suspicion. */
+        check_int("a reply behind a full queue of joypads is NOT reachable",
+                  got_reply, FPGA_FRAMES_NONE);
+
+        /* And the purge the dump loop now calls makes that immediate even if
+         * the ring is wedged: the queue empties, the decoder resumes, and the
+         * reply arrives on the next pass. */
+        clear();
+        fed = 0;
+        while (fpga_frames_space() && fed < n)
+            fpga_frames_push(stream[fed++]);
+        fpga_frames_flush_queue();
+        got_reply = FPGA_FRAMES_NONE;
+        for (int tries = 0; tries < 40 && got_reply < 0; tries++) {
+            while (fpga_frames_space() && fed < n)
+                fpga_frames_push(stream[fed++]);
+            got_reply = fpga_frames_take(0x10, buf, sizeof(buf));
+        }
+        check_int("after a queue flush the reply arrives", got_reply, 8);
     }
 
     printf("fpga_frames: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);

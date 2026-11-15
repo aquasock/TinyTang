@@ -60,6 +60,11 @@ bool fpga_frames_space(void)
     return s_q_count < FPGA_FRAMES_MAX;
 }
 
+void fpga_frames_flush_queue(void)
+{
+    s_q_count = 0;
+}
+
 void fpga_frames_push(uint8_t byte)
 {
     switch (s_state) {

@@ -68,6 +68,14 @@
 #define FPGA_CMD_SET_LOAD   0x06u   /* one byte; 0 starts the core   */
 #define FPGA_CMD_ROM_DATA   0x07u   /* ROM bytes                     */
 
+/* Save persistence.  One exchange moves 128 bytes of cartridge save memory;
+ * the address is in the window the core's save engine understands, where
+ * 0x700000 is the first byte of the save.  A read is answered by one data
+ * frame, a write by one acknowledgement, and the exchange is strictly one
+ * request to one answer -- so a chunk either arrives or it times out. */
+#define FPGA_CMD_SAVE_READ  0x0eu   /* addr[23:0]        -> RESP_SAVE_DATA */
+#define FPGA_CMD_SAVE_WRITE 0x0fu   /* addr[23:0] + 128B -> RESP_SAVE_ACK  */
+
 /* ------------------------------------------------- responses from the core
  *
  * The frame format and the response types live with the decoder that reads

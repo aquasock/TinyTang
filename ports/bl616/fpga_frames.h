@@ -40,6 +40,10 @@
 /* A TinyNES core's AE350 text in link mode: the program's output, a line or
  * up to 128 bytes at a time (TinyNES fpga/ae350_soc/desk_link.sv). */
 #define FPGA_RESP_AE350_TEXT 0x20u
+/* Save persistence: 128 bytes of cartridge save memory, and the acknowledgement
+ * of a 128-byte write (address echoed back, then a status byte). */
+#define FPGA_RESP_SAVE_DATA 0x10u
+#define FPGA_RESP_SAVE_ACK  0x11u
 
 /* How many frames and how much of each are kept.  A waiter's own reply plus a
  * few unprompted joypad reports is the realistic worst case, except for link
@@ -67,6 +71,22 @@ void fpga_frames_push(uint8_t byte);
  * this is false, leaving the bytes it has not read in the receive ring, so a
  * full queue delays frames instead of discarding the oldest of them. */
 bool fpga_frames_space(void);
+
+/* Empty the queue but leave the byte-level decoder exactly as it is, so a frame
+ * half-received across this call is still finished correctly.
+ *
+ * This exists because `fpga_frames_take` removes only the type it was asked
+ * for, and the core sends unprompted joypad reports while a command is running.
+ * A long command therefore accumulates reports of types it is not waiting on
+ * until the queue is full, at which point `fpga_frames_space` goes false and
+ * `rx_decode` stops feeding the decoder -- so the reply the caller wants never
+ * arrives and the caller times out.  A save dump is 64 to 1024 such exchanges in
+ * a row, which is exactly the shape that fills a sixteen-frame queue.
+ *
+ * Safe to call between exchanges of a strict request/response protocol: nothing
+ * legitimate is in flight at that moment, and joypad state is cached separately
+ * (`fpga_frames_joypad`), so dropping those frames loses nothing. */
+void fpga_frames_flush_queue(void);
 
 /* Take the oldest frame of the given type.
  *

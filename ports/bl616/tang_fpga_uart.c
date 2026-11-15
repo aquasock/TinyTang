@@ -952,6 +952,11 @@ static uint8_t gba_scan_saves(const uint8_t *buf, size_t len, uint8_t *tail,
     return 0u;
 }
 
+/* Defined below, next to the rest of the save path; declared here because the
+ * loader calls it before the core is released. */
+static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
+                             uint8_t type);
+
 static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
 {
     if (argc < 2) {
@@ -1092,6 +1097,14 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
         tdsh_printf("gbaload: no save marker found; save hardware left off\r\n");
     }
 
+    /* Put the cartridge's stored save back while the core is still held.  The
+     * engine writes straight into the save window, so this has to happen after
+     * the image is in and before the core is released -- and it must not happen
+     * before the save type is configured, because the EEPROM is only reachable
+     * once the core knows the cartridge has one. */
+    if (save_type != TANG_GBA_BACKUP_NONE)
+        gba_save_restore(session, real, save_type);
+
     /* Hide the OSD before the core starts, through the OSD module so that its
      * own idea of the overlay stays true -- the same reason nesload does it
      * here rather than with a bare 0x08 frame.  Dropping the lock first,
@@ -1117,6 +1130,313 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
 
     tdsh_printf("gbaload: %u bytes in; the core is running\r\n", (unsigned)sent_total);
     return 0;
+}
+
+/* ------------------------------------------------------ save persistence
+ *
+ * A cartridge's save memory is reachable from here through the core's save
+ * engine (`fpga/gba/src/memory/gba_save.v`), 128 bytes at a time, in the window
+ * that starts at 0x700000.  The engine is the lowest-priority user of the SDRAM
+ * controller, so a dump taken while a game is running steals cycles rather than
+ * stalling the machine -- which is the point of asking for it on demand instead
+ * of capturing it at load time.
+ *
+ * Every save type the core knows is a whole number of 128-byte chunks, which is
+ * why the chunk is that size and why neither side needs a partial-chunk case:
+ *
+ *      SRAM 32 KB    flash512K 64 KB    flash1M 128 KB    EEPROM 8 KB
+ *
+ * Each exchange is one request followed by one answer, so a chunk either
+ * arrives or it times out; the address is echoed in the answer and checked, so
+ * an out-of-order or stale frame cannot be filed under the wrong offset.
+ */
+#define TANG_GBA_SAVE_CHUNK      128u
+#define TANG_GBA_SAVE_BASE       0x700000u
+#define TANG_GBA_SAVE_TIMEOUT_MS 250u
+
+static uint8_t s_save_chunk[TANG_GBA_SAVE_CHUNK];
+
+static uint32_t gba_save_bytes(uint8_t type)
+{
+    switch (type) {
+    case TANG_GBA_BACKUP_SRAM:      return 32u * 1024u;
+    case TANG_GBA_BACKUP_FLASH512K: return 64u * 1024u;
+    case TANG_GBA_BACKUP_FLASH1M:   return 128u * 1024u;
+    case TANG_GBA_BACKUP_EEPROM:    return 8u * 1024u;
+    default:                        return 0u;
+    }
+}
+
+static void gba_addr24(uint32_t addr, uint8_t out[3])
+{
+    out[0] = (uint8_t)(addr >> 16);
+    out[1] = (uint8_t)(addr >> 8);
+    out[2] = (uint8_t)addr;
+}
+
+/* One 128-byte chunk out of the cartridge.  Caller holds the lock. */
+static int gba_save_read(uint32_t addr, uint8_t *out)
+{
+    uint8_t req[3];
+    uint8_t rsp[3 + TANG_GBA_SAVE_CHUNK];
+
+    /* Drop anything queued before this exchange.  The core sends unprompted
+     * joypad reports while a dump runs; `fpga_frames_take` leaves those in the
+     * queue, and once sixteen have accumulated `rx_decode` stops feeding the
+     * decoder, so the reply we want can never be decoded and every remaining
+     * chunk times out.  Nothing legitimate is pending between exchanges of a
+     * strict request/response protocol. */
+    fpga_frames_flush_queue();
+
+    gba_addr24(addr, req);
+    if (tang_fpga_frame(FPGA_CMD_SAVE_READ, req, sizeof req) != 0)
+        return -1;
+    if (tang_fpga_wait(FPGA_RESP_SAVE_DATA, rsp, sizeof rsp,
+                       TANG_GBA_SAVE_TIMEOUT_MS) != (int)sizeof rsp)
+        return -1;
+    if (rsp[0] != req[0] || rsp[1] != req[1] || rsp[2] != req[2])
+        return -1;
+    memcpy(out, &rsp[3], TANG_GBA_SAVE_CHUNK);
+    return 0;
+}
+
+/* One 128-byte chunk into the cartridge.  Caller holds the lock. */
+static int gba_save_write(uint32_t addr, const uint8_t *in)
+{
+    uint8_t req[3 + TANG_GBA_SAVE_CHUNK];
+    uint8_t ack[4];
+
+    fpga_frames_flush_queue();      /* see gba_save_read */
+    gba_addr24(addr, req);
+    memcpy(&req[3], in, TANG_GBA_SAVE_CHUNK);
+    if (tang_fpga_frame(FPGA_CMD_SAVE_WRITE, req, sizeof req) != 0)
+        return -1;
+    if (tang_fpga_wait(FPGA_RESP_SAVE_ACK, ack, sizeof ack,
+                       TANG_GBA_SAVE_TIMEOUT_MS) != (int)sizeof ack)
+        return -1;
+    if (ack[0] != req[0] || ack[1] != req[1] || ack[2] != req[2] || ack[3] != 0)
+        return -1;
+    return 0;
+}
+
+/* The save type a cartridge declares, found by scanning its image for the
+ * library marker -- the same scan, over the same list, that gbaload runs while
+ * it streams.  Returns TANG_GBA_BACKUP_NONE when the image declares none. */
+static uint8_t gba_save_type_of(const char *rom_real)
+{
+    FIL rom;
+    if (f_open(&rom, rom_real, FA_READ) != FR_OK)
+        return TANG_GBA_BACKUP_NONE;
+
+    uint8_t type = TANG_GBA_BACKUP_NONE;
+    uint8_t tail[TANG_GBA_SAVE_MARK_MAX];
+    size_t  tail_len = 0;
+
+    for (;;) {
+        UINT br = 0;
+        if (f_read(&rom, s_rom_chunk, FPGA_ROM_CHUNK, &br) != FR_OK || br == 0)
+            break;
+        type = gba_scan_saves(s_rom_chunk, br, tail, &tail_len);
+        if (type != TANG_GBA_BACKUP_NONE)
+            break;
+        if (br < FPGA_ROM_CHUNK)
+            break;
+    }
+    f_close(&rom);
+    return type;
+}
+
+static const char *gba_save_type_name(uint8_t type)
+{
+    static const char *const names[] = { "none", "flash512K", "flash1M",
+                                         "SRAM", "EEPROM" };
+    return names[type <= TANG_GBA_BACKUP_EEPROM ? type : 0];
+}
+
+/* Write the running cartridge's save to `<rom>.sav`.
+ *
+ * The save is read from the machine, not from a file the emulator kept: what
+ * comes back is the save window exactly as the game left it, so a title that
+ * saves only when it feels like it needs no cooperation here. */
+static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: gbasave <rom-path>   (writes <rom-path>.sav)\r\n");
+        return 1;
+    }
+
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("gbasave: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+
+    const uint8_t type = gba_save_type_of(real);
+    if (type == TANG_GBA_BACKUP_NONE) {
+        tdsh_printf("gbasave: %s declares no save hardware, so there is nothing to read\r\n",
+                    argv[1]);
+        return 1;
+    }
+    const uint32_t bytes = gba_save_bytes(type);
+
+    char path[TDSH_MAX_REAL_PATH + 8];
+    (void)snprintf(path, sizeof path, "%s.sav", real);
+
+    if (tang_fpga_link_open() != 0) {
+        tdsh_printf("gbasave: cannot bring up UART1\r\n");
+        return 1;
+    }
+
+    FIL sav;
+    if (f_open(&sav, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+        tdsh_printf("gbasave: cannot create %s\r\n", path);
+        return 1;
+    }
+
+    /* Say what is about to happen before the first exchange, so that a command
+     * which produces no further output is telling us something specific
+     * ("silent after the header" = stuck in the transfer) instead of leaving a
+     * blank screen that cannot be diagnosed.  An earlier version printed nothing
+     * until it finished, and when the console died mid-dump there was no way to
+     * tell whether the transfer, the SD write or the lock had stalled. */
+    tdsh_printf("gbasave: dumping %u bytes of %s\r\n",
+                (unsigned)bytes, gba_save_type_name(type));
+    fflush(stdout);
+
+    /* Bounded: if another task holds the transmit lock, report it rather than
+     * blocking this console forever.  `tang_fpga_lock()` waits portMAX_DELAY,
+     * and a shell command that never returns is indistinguishable from a wedged
+     * board. */
+    if (!tang_fpga_lock_within(5000)) {
+        f_close(&sav);
+        f_unlink(path);
+        tdsh_printf("gbasave: the FPGA link is held by another task; try again\r\n");
+        return 1;
+    }
+    tang_fpga_drain();
+
+    const uint32_t chunks = (bytes + TANG_GBA_SAVE_CHUNK - 1) / TANG_GBA_SAVE_CHUNK;
+    uint32_t off = 0;
+    int      rc  = 0;
+    int      consec = 0;
+    for (off = 0; off < bytes; off += TANG_GBA_SAVE_CHUNK) {
+        if (gba_save_read(TANG_GBA_SAVE_BASE + off, s_save_chunk) != 0) {
+            /* Three in a row is a dead link, not a hiccup; one retry would be
+             * reasonable but the core is not expected to drop a reply. */
+            if (++consec >= 3) { rc = 1; break; }
+            continue;
+        }
+        consec = 0;
+        UINT bw = 0;
+        if (f_write(&sav, s_save_chunk, TANG_GBA_SAVE_CHUNK, &bw) != FR_OK ||
+            bw != TANG_GBA_SAVE_CHUNK) {
+            rc = 2;
+            break;
+        }
+        /* Yield every chunk.  The previous version yielded every 64th, which
+         * for an 8 KB EEPROM dump is never -- the whole transfer ran with the
+         * console and USB starved.  That is the shape that can wedge the shell,
+         * and it costs one scheduling round trip per 128 bytes. */
+        tang_fpga_unlock();
+        taskYIELD();
+        if (!tang_fpga_lock_within(5000)) { rc = 3; break; }
+
+        if ((off / TANG_GBA_SAVE_CHUNK) % 64 == 0)
+            tdsh_printf("gbasave: %u/%u chunks\r\n",
+                        (unsigned)(off / TANG_GBA_SAVE_CHUNK), (unsigned)chunks);
+    }
+    tang_fpga_unlock();
+    f_close(&sav);
+
+    if (rc == 1) {
+        f_unlink(path);             /* half a save is worse than none */
+        tdsh_printf("gbasave: the core stopped answering at offset %u; %s not written\r\n",
+                    (unsigned)off, path);
+        return 1;
+    }
+    if (rc == 2) {
+        f_unlink(path);
+        tdsh_printf("gbasave: SD write failed at offset %u; %s not written\r\n",
+                    (unsigned)off, path);
+        return 1;
+    }
+    if (rc == 3) {
+        f_unlink(path);
+        tdsh_printf("gbasave: lost the FPGA link at offset %u; %s not written\r\n",
+                    (unsigned)off, path);
+        return 1;
+    }
+
+    tdsh_printf("gbasave: %u bytes of %s -> %s\r\n",
+                (unsigned)bytes, gba_save_type_name(type), path);
+    return 0;
+}
+
+/* Put a stored save back, called by gbaload before the cartridge is started.
+ * Prints its own result; a cartridge with no .sav simply says nothing. */
+static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
+                             uint8_t type)
+{
+    (void)session;
+
+    char path[TDSH_MAX_REAL_PATH + 8];
+    (void)snprintf(path, sizeof path, "%s.sav", rom_real);
+
+    FIL sav;
+    if (f_open(&sav, path, FA_READ) != FR_OK)
+        return;                     /* no save for this title yet */
+
+    const uint32_t want = gba_save_bytes(type);
+    const uint32_t have = (uint32_t)f_size(&sav);
+    if (have != want) {
+        tdsh_printf("gbaload: %s is %u bytes but this cartridge's %s save needs %u; not restored\r\n",
+                    path, (unsigned)have, gba_save_type_name(type), (unsigned)want);
+        f_close(&sav);
+        return;
+    }
+
+    tdsh_printf("gbaload: restoring %u bytes of %s\r\n",
+                (unsigned)want, gba_save_type_name(type));
+
+    if (!tang_fpga_lock_within(5000)) {
+        f_close(&sav);
+        tdsh_printf("gbaload: the FPGA link is held by another task; save not restored\r\n");
+        return;
+    }
+    tang_fpga_drain();
+
+    uint32_t off = 0;
+    int      rc  = 0;
+    int      consec = 0;
+    for (off = 0; off < want; off += TANG_GBA_SAVE_CHUNK) {
+        UINT br = 0;
+        if (f_read(&sav, s_save_chunk, TANG_GBA_SAVE_CHUNK, &br) != FR_OK ||
+            br != TANG_GBA_SAVE_CHUNK) {
+            rc = 1;
+            break;
+        }
+        if (gba_save_write(TANG_GBA_SAVE_BASE + off, s_save_chunk) != 0) {
+            if (++consec >= 3) { rc = 2; break; }
+            continue;
+        }
+        consec = 0;
+        /* Yield every chunk, for the reason given in cmd_gbasave. */
+        tang_fpga_unlock();
+        taskYIELD();
+        if (!tang_fpga_lock_within(5000)) { rc = 3; break; }
+    }
+    tang_fpga_unlock();
+    f_close(&sav);
+
+    if (rc == 1)
+        tdsh_printf("gbaload: SD read failed at %u of the save\r\n", (unsigned)off);
+    else if (rc == 2)
+        tdsh_printf("gbaload: the core stopped taking save data at %u\r\n", (unsigned)off);
+    else if (rc == 3)
+        tdsh_printf("gbaload: lost the FPGA link at %u of the save\r\n", (unsigned)off);
+    else
+        tdsh_printf("gbaload: save restored, %u bytes of %s\r\n",
+                    (unsigned)want, gba_save_type_name(type));
 }
 
 /* The TinySNES core's loader, shared with the desk app (tang_snes_load.c). */
@@ -2640,6 +2960,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_snesload, 0 },
     { "gbaload", "gbaload <path>", "Stream a GBA cartridge into the TinyGBA core and start it",
       cmd_gbaload, 0 },
+    { "gbasave", "gbasave <rom-path>", "Write the cartridge's save from the running core to <rom-path>.sav",
+      cmd_gbasave, 0 },
     { "fpga", "fpga", "Ask the loaded core for its ID over UART1",
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",
