@@ -1140,3 +1140,33 @@ Build the Saves page next, because it is the one remaining page that needs nothi
 - User Test: PASS
 
 ---
+## 36 COMMIT Unreleased 2026-11-16T21:28:03-07:00
+
+#### Coming From:
+
+Unreleased fdebc90
+
+#### Purpose:
+
+Recover a board that had been reported as bricked after an unlogged firmware cycle, and correct the ROM-bootloader recovery command that made the recovery look impossible.
+
+#### Outcome:
+
+The board was never bricked; it was a firmware that would not run, a recovery command that wrote nothing, and a boot script that had been switched off, and each of the three made the next one look worse than it was. After entry 35 another agent session kept working on `ports/bl616/tang_fpga_uart.c`, `ports/bl616/tang_gba_load.h` and `ports/bl616/tinygba_app.cpp` and built a firmware from those uncommitted changes at 20:23; that session wrote no log entry and its transcript is not on this machine, so whether and how that image was installed is not recorded, and the reconstruction here comes from the host's kernel log and the board itself. From 20:32 the board enumerated only as the FT2232 `0403:6010`, which is what the vendor loader presents when TinyTang is not running (FLS-003), the card was out in the host's reader from 20:39 to 20:41, and the operator was then told the board was bricked and to hold BOOT. That worked: the ROM bootloader enumerated as `349b:6160` at 20:57:43 and again at 20:57:52, which proves the mask-ROM path was intact the whole time. The recovery still failed, because the README's command was never copied from a run, as BRD-009's own verification admitted, and it is wrong: `BLFlashCommand --write --start=0x40000 --file=<image>` handshakes, reads the chip ID and then prints `No input file is found to write to flash` and `All programming failed` with nothing written. It also needs `--flash` and a hex `--len`, and the argument parser rejects a decimal length. The board was recovered with a firmware known to work rather than the one that had just failed: `fdebc90`, the image entry 35 tested on the board, was built in a detached worktree so the other session's uncommitted changes were not touched, giving `build/build_out/tinytang_bl616.bin` at 707,312 bytes, SHA-256 `c64c71935d39e772c9d764334dd19ee510153177986d957b38158c0bf7208a09`, identity `fdebc90-dirty.6cd347f`, where the dirty component is the carried TinyDesk patches as on every build. With BOOT held it was written to 0x40000 alone with `--flash --write --start=0x40000 --len=0xacaf0`, the device's XIP SHA-256 matched the host's, Sipeed's loader at 0x0 was not touched, and on the next power-up the board enumerated as `ffff:5454` TinyTang CDC with `platform` reporting `fdebc90-dirty.6cd347f` and `crash` reporting no reset since power-up. HDMI then showed the TangCore splash and stayed on it, which looked like a second failure and was not one: `fpga` reported core 0, the factory core in the FPGA's own configuration flash (DEV-006), because `/root/scripts/boot.tdsh` had been renamed to `boot.tdsh.disabled` on the card, so nothing loaded the desktop core. The script's contents were read on the board and are the normal script, and `/crash.log` holds only records from older firmware (`848a575` and `4d6de4b`), nothing from this evening. Running the script's steps by hand loaded `tinytang.bin` as core 84 and put the console on HDMI, and the file was then renamed back to `boot.tdsh` with `mv` on the board's shell. The operator power-cycled in two-wire mode and the board came up normally with the console on HDMI. The README now gives the command that was actually run, says what the failure prints so the next person does not mistake a wrong command line for a dead board, and says to recover with the last firmware tested on the board, built in a worktree, and to check for `boot.tdsh` if the TangCore splash stays up. The recovery hint printed by `tools/tinytang_flash.py` named the same incomplete `--write` form and now names the full one, and BRD-009 was revised to the form that was run. The card is left with two files from the other session in its root, `tinytang-upload.bin` and `tinytang-upload.padbuild.bin`, which are not used by anything at boot and were not removed. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the BRD-009 revision only, BRD-009's index line, statement, consequence, verified date and verification were revised in place with a dated revision note as entry 63 established, and this entry was validated as number 36 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The other session's uncommitted changes to `ports/bl616/tang_fpga_uart.c`, `ports/bl616/tang_gba_load.h` and `ports/bl616/tinygba_app.cpp` are still in the working tree and are the leading suspect for the firmware that would not run, so they must not be flashed again until the fault in them is found, by building that tree and running it on the board with the console attached and the crash recorder read straight afterwards, or until they are discarded deliberately. Whoever resumes that work should also say why `boot.tdsh` was disabled, since nothing recorded it. The two `tinytang-upload*.bin` files in the card's root can be deleted once nobody needs them. The detached worktree used to build the recovery image sits in a scratch directory outside the repository and should be removed with `git worktree remove` when it is no longer wanted as a known-good image.
+
+#### Files Modified:
+
+- README.md
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

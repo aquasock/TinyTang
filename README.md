@@ -456,10 +456,27 @@ make CHIP=bl616 BOARD=bl616dk
 # /dev/ttyACM0.  Write ONLY the application, at 0x40000.  Never run
 # `make flash`: it writes from 0x0 and overwrites Sipeed's loader, and with it
 # the FT2232 debugger and the one-wire mode (BRD-009).
+#
+# --flash and --len are both required, and --len must be hex with a 0x prefix.
+# Without them the tool handshakes, reads the chip ID, prints "No input file is
+# found to write to flash" and "All programming failed", and writes nothing --
+# which looks like a dead board when it is a wrong command line.  Success ends
+# with "Verification succeeded": the device's SHA-256 of what it wrote must
+# match the host's.
+FW=build/build_out/tinytang_bl616.bin
 $BL_SDK_BASE/tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu \
     --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 \
-    --write --start=0x40000 --file=build/build_out/tinytang_bl616.bin
+    --flash --write --start=0x40000 --len=$(printf '0x%x' $(stat -c%s $FW)) \
+    --file=$(realpath $FW)
 #   ... then power-cycle without BOOT, and `platform` reports the build identity
+#
+# Recovering a board that will not start TinyTang: flash a firmware known to
+# work, not the one that just failed.  Build it from the last commit that was
+# tested on the board, in a separate worktree so uncommitted work is untouched
+# (`git worktree add --detach <dir> <commit>`, then the submodule and patch
+# steps in BUILDING.md).  If HDMI then shows the TangCore splash and stays
+# there, the firmware is fine and nothing loaded a core: check that
+# /root/scripts/boot.tdsh exists on the card (DEV-006).
 
 # From then on, reflash over USB with no BOOT button:
 tools/tinytang_flash.py build/build_out/tinytang_bl616.bin

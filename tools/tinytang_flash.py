@@ -95,7 +95,9 @@ def main():
           "up as an FT2232. Afterwards `platform` reports the new build identity. "
           "If it does not come back, hold BOOT at power-up: the BL616 then presents "
           "its ROM bootloader as 349b:6160 on /dev/ttyACM0, and a recovery writes "
-          "only the application at 0x40000 with BLFlashCommand --write. Never run "
+          "only the application at 0x40000 with BLFlashCommand --flash --write "
+          "--start=0x40000 --len=0x<size in hex> --file=<image>, as the README "
+          "gives it; without --flash and --len it writes nothing. Never run "
           "`make flash`, which would overwrite Sipeed's loader at 0x0 (BRD-009).")
 
 
