@@ -1199,3 +1199,35 @@ None.
 - User Test: FAIL
 
 ---
+## 38 COMMIT Unreleased 2026-11-17T07:02:08-07:00
+
+#### Coming From:
+
+Unreleased 9777863
+
+#### Purpose:
+
+Measure the TinyGBA exit chord that entry 37 left unreliable, and commit the exit-and-save firmware if it held up on the board.
+
+#### Outcome:
+
+The exit chord works and the three files entry 36 and entry 37 held back are committed as they were built and tested, unchanged, with no rebuild or reflash in this cycle (GBA-004). The board ran `fdebc90-dirty.c62e9ec` throughout, the image entry 37 rebuilt from this working tree, whose three sources were last modified at 20:23 on 2026-11-16, before that build. With TinyGBA's exit-chord core loaded by `tangload` and Metroid Fusion started by a shell `gbaload`, the new `pad` command was read from the host with timestamps: idle was `0000` on every load, minus alone `0004`, a HOME tap `0400` for 250 ms, and twelve chords in both press orders and both release orders `8004`, with no stray tap, so the core's word is correct and TinyGBA records that half as BRD-122. Three runs that appeared to leave the game at the HOME step were not exits: after a shell launch the desk layer is off, and `desk_watch_toggle()` brings TinyDesk up on a tap, showing the shell over a game that keeps running, which the operator confirmed by switching back to it. Nothing watches bit 15 after a shell launch, so no combination ends such a game. After a power-up the operator launched from the TinyGBA library and the chord ended the game and restored the desktop, in one to two seconds because `play_task` saves through `tang_gba_save()` before the desktop core is reloaded, which is what had been read the night before as the chord not working. Afterwards the console answered, `fpga` reported core 84, `crash` reported no record and no kept resets since the power-up, and the SD was mounted. One behaviour of the new command is wrong: `pad` prints `ctrl-c stops early`, but ctrl-c did not stop it, so it held the console for its full duration twice in this session; this is recorded rather than fixed, since a fix would need a rebuild and reflash the operator did not ask for. The README now describes TinyGBA's launcher, its exit and the `pad` command. `third_party/tinydesk` still shows the carried TinyDesk patches entry 36 describes and is not part of this commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and GBA-004 only, and this entry was validated as number 38 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 171 records and 171 unique ids.
+
+#### Next Steps:
+
+No work remains on the exit chord, and the board can stay on `c62e9ec`, which is now the committed source; the known-good image in `/run/media/vash/GIT/tinytang-scratch/firmware-backup/2026-11-16/` remains the recovery path. Small items left over: make `pad` stop on ctrl-c or drop the claim from its banner at the next firmware build; consider a status line or OSD message the moment the chord is seen, so the one-to-two-second save does not read as a missed press; and a power cut straight after a library save-and-exit, entry 37's suspected sequence for the 2026-11-16 failure to start, has not been run and the operator judged it unnecessary. The `tinytang-upload*.bin` files in the card's root and the detached build worktrees from entries 36 and 37 can be removed when nobody needs them.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gba_load.h
+- ports/bl616/tinygba_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

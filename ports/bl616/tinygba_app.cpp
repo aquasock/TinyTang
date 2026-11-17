@@ -286,6 +286,10 @@ void overlay_record(bool shown)
     tang_fpga_unlock();
 }
 
+/* Declared here because launch_task starts the exit watcher, which is defined
+ * below it; the watcher needs the same statics, so one order has to be chosen. */
+void play_task(void *);
+
 /* Program the TinyGBA core, then stream the cartridge into it.  The game keeps
  * running after the task ends; nothing here waits for it.
  *
@@ -304,8 +308,18 @@ void launch_task(void *)
         if (rc == 0) {
             ok = true;
             s_playing = true;
+            /* The game is up, so hand the pad to the watcher: from here HOME
+             * shows the desk and HOME+SELECT ends the game. */
+            if (xTaskCreate(play_task, "gbplay", LAUNCH_STACK_WORDS, nullptr,
+                            tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
+                snprintf(s_task_say, sizeof s_task_say,
+                         "Playing, but the exit key will not work");
+                tdsh_printf("tinygba: no memory for the exit watcher\r\n");
+                vTaskDelete(NULL);
+                return;
+            }
             snprintf(s_task_say, sizeof s_task_say,
-                     "Playing.  HOME shows the desk.");
+                     "Playing.  HOME shows the desk, minus+HOME ends.");
         } else {
             snprintf(s_task_say, sizeof s_task_say, "Not started: %s", why);
             tdsh_printf("tinygba: %s: %s\r\n", s_launch_cart, why);
@@ -323,6 +337,56 @@ void launch_task(void *)
         (void)tang_core_load(DESKTOP_REAL);
         s_playing = false;
     }
+    s_launching = false;
+    s_lib_reload = true;
+    vTaskDelete(NULL);
+}
+
+/* ------------------------------------------------------------- the exit --
+ *
+ * How often the watcher looks at the pad.  The core reports a change within
+ * 20 ms, and the exit is a held level rather than a tap, so 50 ms cannot miss a
+ * chord the player is still holding. */
+constexpr uint32_t PLAY_POLL_MS = 50;
+
+/* Watch the pad while a game runs, then store the cartridge's save and put the
+ * desktop core back.  Same shape as tinysnes_app.cpp's play_task for the same
+ * reason: one task whose loop is ended by the thing it watches, rather than a
+ * watcher and a finisher racing each other.
+ *
+ * The save is best-effort and the exit is not.  TCL-064 records that every
+ * console death this project has seen happened during an SD write -- twice in
+ * this very command -- so a failed or hung save must not be allowed to strand a
+ * player inside a game with no way out.  If the save fails, the desktop comes
+ * back anyway and the status line says so. */
+void play_task(void *)
+{
+    for (;;) {
+        uint16_t joy1 = 0, joy2 = 0;
+        tang_fpga_joypad(&joy1, &joy2);
+        if ((joy1 & TANG_GBA_PAD_EXIT) != 0) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(PLAY_POLL_MS));
+    }
+
+    /* Own the core from here until this task ends, so a Launch from the desk
+     * cannot stream a second cartridge into the one being saved. */
+    s_launching = true;
+    s_task_say[0] = '\0';
+
+    char why[160] = "";
+    const int saved = tang_gba_save(s_launch_cart, s_launch_cart, why, sizeof why);
+
+    overlay_record(true);
+    if (tang_core_load(DESKTOP_REAL) != TANG_LOAD_OK) {
+        snprintf(s_task_say, sizeof s_task_say, "Save stored, but the desktop did not come back");
+    } else if (saved != 0) {
+        snprintf(s_task_say, sizeof s_task_say, "Left the game, save not kept: %s", why);
+    } else {
+        snprintf(s_task_say, sizeof s_task_say, "Save stored.");
+    }
+    s_playing = false;
     s_launching = false;
     s_lib_reload = true;
     vTaskDelete(NULL);

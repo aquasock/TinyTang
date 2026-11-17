@@ -38,6 +38,14 @@ extern "C" {
 /* The largest image the core's 25-bit cartridge window maps. */
 #define TANG_GBA_MAX_IMAGE (32u * 1024u * 1024u)
 
+/* The pad word's exit bit, set by the core while HOME and SELECT are both held
+ * ("minus + HOME" on a Classic Controller, where minus is SELECT).  TinyTang's
+ * SNES app watches bit 15 for the same purpose, so the gesture is the same one a
+ * player already knows from that console.  It is a level, not a tap, so a poll
+ * cannot miss it; SELECT being down also stops the core treating the HOME press
+ * as a desk toggle, so asking to leave a game does not open the desktop over it. */
+#define TANG_GBA_PAD_EXIT 0x8000u
+
 /* A GBA header is 0xC0 bytes and carries a fixed 0x96 at 0xB2.  One read
  * settles whether a file is a cartridge at all; the BIOS checks the Nintendo
  * logo itself, so validating that here would only repeat the machine's work. */
@@ -55,6 +63,17 @@ extern "C" {
  * called from a task, never from the desktop's own loop.  The overlay is hidden
  * before the core is released, so the game is what appears, not the desktop. */
 int tang_gba_load(const char *label, const char *real, char *why, size_t why_len);
+
+/* Dump the running cartridge's save window to `<real>.sav` and report the
+ * outcome in `why`.  0 on success; otherwise non-zero.  The shell's `gbasave`
+ * and the desk app's exit gesture both call this.
+ *
+ * This is the one path in the project that has wedged the console: TCL-064
+ * records every console death seen here as happening during an SD write, twice
+ * in this command.  Callers that cannot afford to hang -- a game exit, where a
+ * wedged board would strand a player mid-game -- should treat it as best-effort
+ * and make sure the exit happens even if the save does not. */
+int tang_gba_save(const char *label, const char *real, char *why, size_t why_len);
 
 #ifdef __cplusplus
 }

@@ -1293,23 +1293,24 @@ static const char *gba_save_type_name(uint8_t type)
  * The save is read from the machine, not from a file the emulator kept: what
  * comes back is the save window exactly as the game left it, so a title that
  * saves only when it feels like it needs no cooperation here. */
-static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
+/* Dump the running cartridge's save window to `<real>.sav`.  `label` is what
+ * the caller called the cartridge, for messages; 0 on success, otherwise
+ * non-zero with the reason in `why`.
+ *
+ * Extracted from cmd_gbasave for the same reason tang_gba_load() was extracted
+ * from cmd_gbaload: the desk app has to save a cartridge when the player asks to
+ * leave a game, and the shell command has to save on demand, and two copies of a
+ * chunked transfer would drift.  The transfer itself is untouched, including the
+ * yield between chunks that TCL-064 records as necessary -- that record also
+ * notes that every console death this project has seen happened during an SD
+ * write, so this path is the one that has wedged the board before. */
+int tang_gba_save(const char *label, const char *real, char *why, size_t why_len)
 {
-    if (argc < 2) {
-        tdsh_printf("usage: gbasave <rom-path>   (writes <rom-path>.sav)\r\n");
-        return 1;
-    }
-
-    char real[TDSH_MAX_REAL_PATH];
-    if (!resolve_path(session, argv[1], real, sizeof(real))) {
-        tdsh_printf("gbasave: bad path %s\r\n", argv[1]);
-        return 1;
-    }
 
     const uint8_t type = gba_save_type_of(real);
     if (type == TANG_GBA_BACKUP_NONE) {
-        tdsh_printf("gbasave: %s declares no save hardware, so there is nothing to read\r\n",
-                    argv[1]);
+        gba_say(why, why_len, "%s declares no save hardware, so there is nothing to read\r\n",
+                    label);
         return 1;
     }
     const uint32_t bytes = gba_save_bytes(type);
@@ -1318,13 +1319,13 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
     (void)snprintf(path, sizeof path, "%s.sav", real);
 
     if (tang_fpga_link_open() != 0) {
-        tdsh_printf("gbasave: cannot bring up UART1\r\n");
+        gba_say(why, why_len, "cannot bring up UART1\r\n");
         return 1;
     }
 
     FIL sav;
     if (f_open(&sav, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
-        tdsh_printf("gbasave: cannot create %s\r\n", path);
+        gba_say(why, why_len, "cannot create %s\r\n", path);
         return 1;
     }
 
@@ -1334,7 +1335,7 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
      * blank screen that cannot be diagnosed.  An earlier version printed nothing
      * until it finished, and when the console died mid-dump there was no way to
      * tell whether the transfer, the SD write or the lock had stalled. */
-    tdsh_printf("gbasave: dumping %u bytes of %s\r\n",
+    gba_say(why, why_len, "dumping %u bytes of %s\r\n",
                 (unsigned)bytes, gba_save_type_name(type));
     fflush(stdout);
 
@@ -1345,7 +1346,7 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
     if (!tang_fpga_lock_within(5000)) {
         f_close(&sav);
         f_unlink(path);
-        tdsh_printf("gbasave: the FPGA link is held by another task; try again\r\n");
+        gba_say(why, why_len, "the FPGA link is held by another task; try again\r\n");
         return 1;
     }
     tang_fpga_drain();
@@ -1377,7 +1378,7 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
         if (!tang_fpga_lock_within(5000)) { rc = 3; break; }
 
         if ((off / TANG_GBA_SAVE_CHUNK) % 64 == 0)
-            tdsh_printf("gbasave: %u/%u chunks\r\n",
+            gba_say(why, why_len, "%u/%u chunks\r\n",
                         (unsigned)(off / TANG_GBA_SAVE_CHUNK), (unsigned)chunks);
     }
     tang_fpga_unlock();
@@ -1385,25 +1386,106 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
 
     if (rc == 1) {
         f_unlink(path);             /* half a save is worse than none */
-        tdsh_printf("gbasave: the core stopped answering at offset %u; %s not written\r\n",
+        gba_say(why, why_len, "the core stopped answering at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
     if (rc == 2) {
         f_unlink(path);
-        tdsh_printf("gbasave: SD write failed at offset %u; %s not written\r\n",
+        gba_say(why, why_len, "SD write failed at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
     if (rc == 3) {
         f_unlink(path);
-        tdsh_printf("gbasave: lost the FPGA link at offset %u; %s not written\r\n",
+        gba_say(why, why_len, "lost the FPGA link at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
 
-    tdsh_printf("gbasave: %u bytes of %s -> %s\r\n",
+    gba_say(why, why_len, "%u bytes of %s -> %s\r\n",
                 (unsigned)bytes, gba_save_type_name(type), path);
+    return 0;
+}
+
+/* The shell front end, kept thin so the app and the console take one path. */
+static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: gbasave <rom-path>   (writes <rom-path>.sav)\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("gbasave: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+    char why[160] = "";
+    return tang_gba_save(argv[1], real, why, sizeof why);
+}
+
+/* Print the pad word the core is reporting, and keep printing it while it
+ * changes until the player presses Enter.
+ *
+ * This exists because a pad change cannot be checked any other way: the word is
+ * the only place the core's report becomes visible, and until now nothing on the
+ * host could read it back, so every claim about an input gesture rested on
+ * somebody pressing buttons and describing what happened.  A single press of a
+ * key that does not show up here is a fact; a gesture that "sometimes works" is
+ * not.  Cost is one shell command and no RTL.
+ *
+ * Bits 11:0 are the keypad in (R L X A RT LT DN UP START SELECT Y B) order, bit
+ * 10 is the desk toggle the core synthesises from a HOME tap, and bit 15 is the
+ * exit chord, set while HOME and SELECT are both held. */
+static int cmd_pad(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    int seconds = 10;
+    if (argc > 1) {
+        seconds = atoi(argv[1]);
+        if (seconds <= 0) {
+            seconds = 10;
+        }
+    }
+
+    uint16_t last1 = 0xFFFF, last2 = 0xFFFF;
+    tdsh_printf("pad: watching for %d s; press buttons.  ctrl-c stops early.\r\n",
+                seconds);
+    tdsh_printf("pad: bits 11:0 = (R L X A RT LT DN UP START SELECT Y B),"
+                " bit 10 = desk tap, bit 15 = exit chord\r\n");
+    for (int i = 0; i < seconds * 20; i++) {
+        uint16_t joy1 = 0, joy2 = 0;
+        tang_fpga_joypad(&joy1, &joy2);
+        if (joy1 != last1) {
+            /* Name the bits that are set, so a held chord is readable without
+             * decoding hex at a terminal. */
+            char bits[64] = "";
+            static const char *const names[12] = {
+                "B", "Y", "SELECT", "START", "UP", "DOWN",
+                "LEFT", "RIGHT", "A", "X", "DESK_TAP", "R",
+            };
+            for (int b = 0; b < 12; b++) {
+                if ((joy1 & (1u << b)) != 0) {
+                    if (bits[0] != '\0') {
+                        strncat(bits, "+", sizeof bits - strlen(bits) - 1);
+                    }
+                    strncat(bits, names[b], sizeof bits - strlen(bits) - 1);
+                }
+            }
+            if ((joy1 & TANG_GBA_PAD_EXIT) != 0) {
+                if (bits[0] != '\0') {
+                    strncat(bits, "+", sizeof bits - strlen(bits) - 1);
+                }
+                strncat(bits, "EXIT", sizeof bits - strlen(bits) - 1);
+            }
+            tdsh_printf("pad: %04x  %s\r\n", (unsigned)joy1,
+                        bits[0] != '\0' ? bits : "(none)");
+            last1 = joy1;
+            (void)last2;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    tdsh_printf("pad: done\r\n");
     return 0;
 }
 
@@ -2996,6 +3078,8 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_gbaload, 0 },
     { "gbasave", "gbasave <rom-path>", "Write the cartridge's save from the running core to <rom-path>.sav",
       cmd_gbasave, 0 },
+    { "pad", "pad [seconds]", "Print the pad word the core reports while buttons are pressed",
+      cmd_pad, 0 },
     { "fpga", "fpga", "Ask the loaded core for its ID over UART1",
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",
