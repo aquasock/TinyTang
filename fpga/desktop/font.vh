@@ -1,29 +1,29 @@
 
 localparam [7:0] FONT[0:127][0:7] = '{
     '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0000 (nul)
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0001
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0002
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0003
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0004
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0005
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0006
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0007
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0008
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0009
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000A
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000B
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000C
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000D
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000E
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000F
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0010
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0011
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0012
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0013
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0014
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0015
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0016
-    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0017
+    '{ 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0001: U+2580 upper half (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'hFF, 8'hFF, 8'hFF, 8'hFF},   // U+0002: U+2584 lower half (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'hFF},   // U+0003: U+2588 full block (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'h0F},   // U+0004: U+258C left half (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'hF0},   // U+0005: U+2590 right half (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h11, 8'h44, 8'h11, 8'h44, 8'h11, 8'h44, 8'h11, 8'h44},   // U+0006: U+2591 light shade (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h55, 8'hAA, 8'h55, 8'hAA, 8'h55, 8'hAA, 8'h55, 8'hAA},   // U+0007: U+2592 medium shade (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hEE, 8'hBB, 8'hEE, 8'hBB, 8'hEE, 8'hBB, 8'hEE, 8'hBB},   // U+0008: U+2593 dark shade (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h0F, 8'h0F, 8'h0F, 8'h0F},   // U+0009: U+2596 quadrant LL (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'hF0, 8'hF0, 8'hF0, 8'hF0},   // U+000A: U+2597 quadrant LR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'h00, 8'h00, 8'h00, 8'h00},   // U+000B: U+2598 quadrant UL (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'hFF, 8'hFF, 8'hFF, 8'hFF},   // U+000C: U+2599 quadrant UL LL LR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h0F, 8'h0F, 8'h0F, 8'h0F, 8'hF0, 8'hF0, 8'hF0, 8'hF0},   // U+000D: U+259A quadrant UL LR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'h0F, 8'h0F, 8'h0F, 8'h0F},   // U+000E: U+259B quadrant UL UR LL (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hFF, 8'hFF, 8'hFF, 8'hFF, 8'hF0, 8'hF0, 8'hF0, 8'hF0},   // U+000F: U+259C quadrant UL UR LR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0010: U+259D quadrant UR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'h0F, 8'h0F, 8'h0F, 8'h0F},   // U+0011: U+259E quadrant UR LL (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'hF0, 8'hF0, 8'hF0, 8'hF0, 8'hFF, 8'hFF, 8'hFF, 8'hFF},   // U+0012: U+259F quadrant UR LL LR (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h18, 8'h18, 8'h3C, 8'h3C, 8'h7E, 8'h7E, 8'h00},   // U+0013: U+25B2 up triangle (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h06, 8'h1E, 8'h7E, 8'h7E, 8'h1E, 8'h06, 8'h00},   // U+0014: U+25BA right pointer (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h7E, 8'h7E, 8'h3C, 8'h3C, 8'h18, 8'h18, 8'h00},   // U+0015: U+25BC down triangle (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h60, 8'h78, 8'h7E, 8'h7E, 8'h78, 8'h60, 8'h00},   // U+0016: U+25C4 left pointer (TinyTang: block glyph, desktop ABI 1.7)
+    '{ 8'h00, 8'h7E, 8'h7E, 8'h7E, 8'h7E, 8'h7E, 8'h7E, 8'h00},   // U+0017: U+25A0 black square (TinyTang: block glyph, desktop ABI 1.7)
     '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0018
     '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+0019
     '{ 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00},   // U+001A

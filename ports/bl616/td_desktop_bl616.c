@@ -239,6 +239,8 @@ void td_apps_register_all(void)
     td_update_register();       /* td_update_app.c: from the card, not the network */
     td_bluetooth_register();    /* td_bluetooth_app.c: Settings' Bluetooth button */
     td_tinynode_register();     /* tinynode_app.cpp: TinyNode relays and sensors */
+    td_imageview_register();    /* TinyDesk 0.5: BMP, PPM and PGM pictures */
+    td_trash_register();        /* TinyDesk 0.5: deletes go to the Recycle Bin */
     td_about_register();
     td_datetime_install_clock();
     td_session_init();

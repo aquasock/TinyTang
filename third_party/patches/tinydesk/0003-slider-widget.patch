@@ -1,5 +1,34 @@
+diff --git a/api/tinydesk.api b/api/tinydesk.api
+index 1777aac..8452af9 100644
+--- a/api/tinydesk.api
++++ b/api/tinydesk.api
+@@ -548,7 +548,7 @@ td_vterm.h: void td_vterm_write(td_vterm_t *vt, const uint8_t *data, int len);
+ td_vterm.h: int td_vterm_scrollback_lines(const td_vterm_t *vt);
+ td_vterm.h: void td_vterm_draw(const td_vterm_t *vt, int x, int y, int scroll_back, bool show_cursor);
+ td_widgets.h: #define TD_COLOR_DEFAULT (-1)
+-td_widgets.h: typedef enum { TD_WT_LABEL, TD_WT_BUTTON, TD_WT_CHECKBOX, TD_WT_TEXTBOX, TD_WT_LIST, TD_WT_PROGRESS, TD_WT_SCROLLBAR, } td_widget_type_t;
++td_widgets.h: typedef enum { TD_WT_LABEL, TD_WT_BUTTON, TD_WT_CHECKBOX, TD_WT_TEXTBOX, TD_WT_LIST, TD_WT_PROGRESS, TD_WT_SCROLLBAR, TD_WT_SLIDER, } td_widget_type_t;
+ td_widgets.h: typedef enum { TD_ALIGN_LEFT, TD_ALIGN_CENTER, TD_ALIGN_RIGHT } td_align_t;
+ td_widgets.h: typedef void (*td_widget_fn)(td_widget_t *w, void *user);
+ td_widgets.h: typedef const char *(*td_list_item_fn)(td_widget_t *w, int index, int *fg, void *user);
+@@ -560,6 +560,7 @@ td_widgets.h: td_widget_t *td_textbox(td_window_t *win, int x, int y, int width,
+ td_widgets.h: bool td_widgets_paste(td_window_t *win);
+ td_widgets.h: td_widget_t *td_list(td_window_t *win, td_rect_t rect, td_list_item_fn get_item, td_widget_fn fn, void *user);
+ td_widgets.h: td_widget_t *td_progress(td_window_t *win, int x, int y, int width);
++td_widgets.h: td_widget_t *td_slider(td_window_t *win, int x, int y, int width, int step, td_widget_fn fn, void *user);
+ td_widgets.h: td_widget_t *td_scrollbar(td_window_t *win, int x, int y, int height, td_widget_t *target);
+ td_widgets.h: void td_widget_set_text(td_widget_t *w, const char *text);
+ td_widgets.h: const char *td_widget_text(const td_widget_t *w);
+@@ -573,6 +574,7 @@ td_widgets.h: td_rect_t td_widget_rect(const td_widget_t *w);
+ td_widgets.h: bool td_checkbox_get(const td_widget_t *w);
+ td_widgets.h: void td_checkbox_set(td_widget_t *w, bool checked);
+ td_widgets.h: void td_progress_set(td_widget_t *w, int percent);
++td_widgets.h: void td_slider_set(td_widget_t *w, int percent);
+ td_widgets.h: void td_list_set_count(td_widget_t *w, int count);
+ td_widgets.h: int td_list_selected(const td_widget_t *w);
+ td_widgets.h: void td_list_set_view(td_widget_t *w, int selected, int scroll);
 diff --git a/include/tinydesk/td_widgets.h b/include/tinydesk/td_widgets.h
-index e6fcf7b..d5b1657 100644
+index ff69eea..f7dc4d7 100644
 --- a/include/tinydesk/td_widgets.h
 +++ b/include/tinydesk/td_widgets.h
 @@ -1,6 +1,6 @@
@@ -18,7 +47,7 @@ index e6fcf7b..d5b1657 100644
  } td_widget_type_t;
  
  typedef enum
-@@ -98,6 +99,12 @@ td_widget_t *td_list(td_window_t *win, td_rect_t rect, td_list_item_fn get_item,
+@@ -108,6 +109,12 @@ td_widget_t *td_list(td_window_t *win, td_rect_t rect, td_list_item_fn get_item,
  /* Horizontal bar, 0..100 %. */
  td_widget_t *td_progress(td_window_t *win, int x, int y, int width);
  
@@ -31,7 +60,7 @@ index e6fcf7b..d5b1657 100644
  /* Vertical scrollbar that follows and controls `target` (a list). */
  td_widget_t *td_scrollbar(td_window_t *win, int x, int y, int height, td_widget_t *target);
  
-@@ -128,6 +135,9 @@ void td_checkbox_set(td_widget_t *w, bool checked);
+@@ -138,6 +145,9 @@ void td_checkbox_set(td_widget_t *w, bool checked);
  /* Progress bar. */
  void td_progress_set(td_widget_t *w, int percent);
  
@@ -42,7 +71,7 @@ index e6fcf7b..d5b1657 100644
  void td_list_set_count(td_widget_t *w, int count);
  int td_list_selected(const td_widget_t *w);
 diff --git a/src/widgets.c b/src/widgets.c
-index b6b0dee..2cd2019 100644
+index 7cea56c..ea180a3 100644
 --- a/src/widgets.c
 +++ b/src/widgets.c
 @@ -1,5 +1,5 @@
@@ -52,7 +81,7 @@ index b6b0dee..2cd2019 100644
   * scrollbar and the modal message box.
   *
   * Widgets come from one static pool and are linked into their window.
-@@ -196,6 +196,18 @@ td_widget_t *td_progress(td_window_t *win, int x, int y, int width)
+@@ -224,6 +224,18 @@ td_widget_t *td_progress(td_window_t *win, int x, int y, int width)
      return alloc_widget(win, TD_WT_PROGRESS, td_rect(x, y, width, 1), false);
  }
  
@@ -71,7 +100,7 @@ index b6b0dee..2cd2019 100644
  td_widget_t *td_scrollbar(td_window_t *win, int x, int y, int height, td_widget_t *target)
  {
      td_widget_t *w = alloc_widget(win, TD_WT_SCROLLBAR, td_rect(x, y, 1, height), false);
-@@ -399,6 +411,11 @@ static void draw_button(const td_widget_t *w, td_rect_t r, bool focused, const t
+@@ -609,6 +621,11 @@ static void draw_button(const td_widget_t *w, td_rect_t r, bool focused, const t
      td_putc(r.x + r.w - 1, r.y, ']', fg, bg, attr);
  }
  
@@ -83,7 +112,7 @@ index b6b0dee..2cd2019 100644
  static void draw_checkbox(const td_widget_t *w, td_rect_t r, bool focused, const td_theme_t *t)
  {
      uint8_t fg = pick(w->fg, t->win_fg);
-@@ -466,6 +483,16 @@ static void draw_progress(const td_widget_t *w, td_rect_t r, const td_theme_t *t
+@@ -681,6 +698,16 @@ static void draw_progress(const td_widget_t *w, td_rect_t r, const td_theme_t *t
          td_putc(r.x + x, r.y, x < filled ? 0x2588 : 0x2591, fg, bg, 0);
  }
  
@@ -100,7 +129,7 @@ index b6b0dee..2cd2019 100644
  static void draw_scrollbar(const td_widget_t *w, td_rect_t r, const td_theme_t *t)
  {
      const td_widget_t *list = w->target;
-@@ -512,6 +539,9 @@ void td_widgets_draw(td_window_t *win)
+@@ -727,6 +754,9 @@ void td_widgets_draw(td_window_t *win)
          case TD_WT_SCROLLBAR:
              draw_scrollbar(w, r, t);
              break;
@@ -110,7 +139,7 @@ index b6b0dee..2cd2019 100644
          default:
              break;
          }
-@@ -557,6 +587,50 @@ static void checkbox_toggle(td_widget_t *w)
+@@ -772,6 +802,50 @@ static void checkbox_toggle(td_widget_t *w)
      activate(w);
  }
  
@@ -161,7 +190,7 @@ index b6b0dee..2cd2019 100644
  static bool textbox_key(td_widget_t *w, const td_event_t *ev)
  {
      int len = (int)strlen(TXT(w));
-@@ -702,6 +776,8 @@ static bool widget_key(td_widget_t *w, const td_event_t *ev)
+@@ -984,6 +1058,8 @@ static bool widget_key(td_widget_t *w, const td_event_t *ev)
          return textbox_key(w, ev);
      case TD_WT_LIST:
          return list_key(w, ev);
@@ -170,7 +199,7 @@ index b6b0dee..2cd2019 100644
      default:
          return false;
      }
-@@ -782,6 +858,10 @@ static void widget_press(td_widget_t *w, const td_event_t *ev, td_rect_t r)
+@@ -1087,6 +1163,10 @@ static void widget_press(td_widget_t *w, const td_event_t *ev, td_rect_t r)
          (void)page;
          break;
      }
@@ -181,7 +210,7 @@ index b6b0dee..2cd2019 100644
      default:
          break;
      }
-@@ -799,6 +879,8 @@ static bool widgets_mouse(td_window_t *win, const td_event_t *ev)
+@@ -1132,6 +1212,8 @@ static bool widgets_mouse(td_window_t *win, const td_event_t *ev)
          {
              if (w->type == TD_WT_SCROLLBAR)
                  scrollbar_track(w, ev->y);

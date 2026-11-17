@@ -150,6 +150,10 @@ int  tang_fpga_wait(uint8_t want_type, uint8_t *out, size_t cap,
  * within timeout_ms. */
 bool tang_fpga_core_id(uint8_t *id, uint32_t timeout_ms);
 
+/* The desktop core's ABI word (register 4: major << 16 | minor) when the loaded
+ * core answers with the desktop's magic at register 0; false otherwise. */
+bool tang_fpga_desktop_abi(uint32_t *abi);
+
 /* One 32-bit register of the loaded core, through the CRC-protected extended
  * endpoint.  False when nothing answered or the core reported a non-zero
  * status.  Takes the lock for the request and releases it before waiting. */

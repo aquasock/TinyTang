@@ -277,6 +277,54 @@ int main(void)
     flush();
     check(g_frames == 0, "an unchanged screen sent frames");
 
+    /* ---- block glyphs (desktop ABI 1.7) ---------------------------------
+     * Upper half, lower half, a quadrant, a scroll arrow and a character with
+     * no slot.  Off: TinyDesk's ASCII fallback, which is what every core got
+     * before 1.7 and what a game core's font can still draw.  On: the slots
+     * fpga/desktop/font.vh fills, and the character with no slot still falls
+     * back.  Turning it on must repaint without the cells having changed. */
+    frames_clear();
+    feed("\x1b[2J\x1b[H\x1b[0m");
+    feed("\xe2\x96\x80\xe2\x96\x84\xe2\x96\x9f\xe2\x96\xbc\xe2\x99\xaa");  /* ▀▄▟▼♪ */
+    flush();
+    check(!tang_osd_desk_block_glyphs(), "block glyphs on by default");
+    {
+        const uint8_t *run = g_frames >= 2 ? g_payload[1] : NULL;
+        check(run != NULL && run[0] == '#' && run[5] == '#',
+              "half blocks without the glyphs are not the '#' fallback");
+        check(run != NULL && run[20] == (uint8_t)td_ascii_fallback(0x266Au),
+              "a character with no slot does not take the fallback");
+    }
+    frames_clear();
+    tang_osd_desk_set_block_glyphs(true);
+    flush();
+    check(g_frames >= 2, "turning the glyphs on did not repaint");
+    {
+        int found = -1;
+        for (int f = 0; f < g_frames; f++) {
+            if (g_type[f] == 0x14 && f > 0 && g_type[f - 1] == 0x13 &&
+                g_payload[f - 1][1] == 0 && g_payload[f - 1][0] == 0) {
+                found = f;
+                break;
+            }
+        }
+        check(found >= 0, "row 0 was not resent after the change");
+        if (found >= 0) {
+            const uint8_t *run = g_payload[found];
+            check(run[0] == 0x01 && run[5] == 0x02, "half blocks did not map to slots 1 and 2");
+            check(run[10] == 0x12, "quadrant U+259F did not map to slot 0x12");
+            check(run[15] == 0x15, "down triangle did not map to slot 0x15");
+            check(run[20] == (uint8_t)td_ascii_fallback(0x266Au),
+                  "a character with no slot did not keep the fallback");
+        }
+    }
+    check(tang_osd_desk_block_slot(0x2588u) == 0x03 && tang_osd_desk_block_slot(0x25A0u) == 0x17 &&
+          tang_osd_desk_block_slot('A') == 0 && tang_osd_desk_block_slot(0x2500u) == 0,
+          "the slot table is not the one font.vh fills");
+    tang_osd_desk_set_block_glyphs(false);
+    frames_clear();
+    flush();
+
     /* ---- the size answer -------------------------------------------------
      * The desktop asks by moving the cursor past the corner and reading it
      * back, so the answer is the layer's own grid.  45 rows by 80 columns. */

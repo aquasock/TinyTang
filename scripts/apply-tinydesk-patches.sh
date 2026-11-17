@@ -6,10 +6,10 @@ set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 checkout="${1:-$root/third_party/tinydesk}"
-base=feaf84130f03594845e5e9284817dca785b4d878
+base=c6ceffc15dbfbe002d23bd0b5d44dc4410654183
 
 if [[ "$(git -C "$checkout" rev-parse HEAD)" != "$base" ]]; then
-    echo "apply-tinydesk-patches: expected TinyDesk v0.1.5 ($base)" >&2
+    echo "apply-tinydesk-patches: expected TinyDesk v0.5.2 ($base)" >&2
     exit 1
 fi
 

@@ -75,8 +75,7 @@ documents this provenance.
 The shell this firmware runs, consumed as `third_party/tinydesk-shell`:
 
 - Project: https://github.com/tinydesk-project/tinydesk-shell
-- Commit: `a067fa7` (upstream `main`, ahead of the 0.1.6 release; `8456dd1`,
-  v0.1.5, is the last release tag)
+- Commit: `53e8681` (v0.5.1, the shell TinyDesk 0.5.2 pins for itself)
 - License: MIT
 
 TinyTang carries `third_party/patches/tdsh/0001-configurable-script-limits.patch`
@@ -99,19 +98,27 @@ upstream code it modifies. Remove it when a pinned release provides the guards.
 The desktop environment, consumed as `third_party/tinydesk`:
 
 - Project: https://github.com/tinydesk-project/tinydesk
-- Commit: `feaf84130f03594845e5e9284817dca785b4d878` (v0.1.5)
+- Commit: `c6ceffc15dbfbe002d23bd0b5d44dc4410654183` (v0.5.2)
 - License: MIT
 
 TinyTang carries two patches in `third_party/patches/tinydesk/` against that
 commit, applied in order and idempotently by `scripts/apply-tinydesk-patches.sh`
-during CMake configuration. `0001-settings-bluetooth-button.patch` changes Settings' Network button, whose app this
-port leaves out, into a Bluetooth button that launches TinyTang's own Bluetooth
-window (`ports/bl616/td_bluetooth_app.c`), and moves the Date & time button
-two columns right to make room. `0002-cartridge-is-not-text.patch` makes the
+during CMake configuration. `0002-cartridge-is-not-text.patch` makes the
 Editor refuse a cartridge: `td_editor_open()` answers a `.nes` with a message
 pointing at the TinyNES app's Library instead of reading a binary file it
-cannot render and could save over. Both
-patches are MIT, as is the upstream code they modify.
+cannot render and could save over. `0003-slider-widget.patch` adds the
+`td_slider` widget the console apps' Audio pages use. Both patches are MIT, as
+is the upstream code they modify.
+
+Two earlier patches were retired at the move to v0.5.2 because upstream made
+the same changes: `0001-settings-bluetooth-button.patch` (Settings' Bluetooth
+button, which upstream adopted from this project's Bluetooth window, tinydesk
+issue #7) and `0004-start-menu-exit.patch` (the start menu's tail with a full
+app registry, upstream `501b83a`). Git history keeps both.
+
+TinyDesk 0.5 also carries its own shell checkout under its `third_party/tdsh`;
+this build compiles only `third_party/tinydesk-shell`, so the image has one
+shell.
 
 ## nestang core UART protocol (read as a specification, no code copied)
 

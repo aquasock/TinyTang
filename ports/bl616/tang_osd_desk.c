@@ -68,7 +68,68 @@ typedef struct {
 static desk_kbd_t   s_ble;
 
 static td_vterm_t  s_vt;
+
 static td_vcell_t  s_shadow[TANG_DESK_ROWS][TANG_DESK_COLS];
+
+/* Block glyphs.  TinyDesk draws pictures with half-block and quadrant
+ * characters, and its scrollbars and lists with shades and pointers; the
+ * layer's font is ASCII, so all of those used to reach it as '#', ':' or '?'.
+ * Desktop ABI 1.7 puts 23 of them in font slots 0x01-0x17, which are control
+ * codes the font left blank, so the 7-bit cell is unchanged.  Only that font
+ * has them: a game core's desk layer, or an older desktop core, still draws
+ * blanks there, so the slots are used only while tang_core_load has seen a
+ * desktop core that reports ABI 1.7 or later, and everything else keeps the
+ * ASCII fallback.  The table is TinyTang's; the slots match fpga/desktop/font.vh. */
+static volatile bool s_blocks;
+
+void tang_osd_desk_set_block_glyphs(bool on)
+{
+    if (s_blocks == on) {
+        return;
+    }
+    /* The shadow records what each cell held in Unicode, not what was sent, so
+     * a change of font would not resend a cell that did not change.  Forget
+     * the shadow and the next flush repaints the grid in the new mapping. */
+    taskENTER_CRITICAL();
+    s_blocks = on;
+    memset(s_shadow, 0xFF, sizeof s_shadow);
+    taskEXIT_CRITICAL();
+}
+
+bool tang_osd_desk_block_glyphs(void)
+{
+    return s_blocks;
+}
+
+uint8_t tang_osd_desk_block_slot(uint32_t ch)
+{
+    switch (ch) {
+    case 0x2580u: return 0x01u;   /* upper half */
+    case 0x2584u: return 0x02u;   /* lower half */
+    case 0x2588u: return 0x03u;   /* full block */
+    case 0x258Cu: return 0x04u;   /* left half */
+    case 0x2590u: return 0x05u;   /* right half */
+    case 0x2591u: return 0x06u;   /* light shade */
+    case 0x2592u: return 0x07u;   /* medium shade */
+    case 0x2593u: return 0x08u;   /* dark shade */
+    case 0x2596u: return 0x09u;   /* quadrant lower left */
+    case 0x2597u: return 0x0Au;   /* quadrant lower right */
+    case 0x2598u: return 0x0Bu;   /* quadrant upper left */
+    case 0x2599u: return 0x0Cu;   /* quadrants UL, LL, LR */
+    case 0x259Au: return 0x0Du;   /* quadrants UL, LR */
+    case 0x259Bu: return 0x0Eu;   /* quadrants UL, UR, LL */
+    case 0x259Cu: return 0x0Fu;   /* quadrants UL, UR, LR */
+    case 0x259Du: return 0x10u;   /* quadrant upper right */
+    case 0x259Eu: return 0x11u;   /* quadrants UR, LL */
+    case 0x259Fu: return 0x12u;   /* quadrants UR, LL, LR */
+    case 0x25B2u: return 0x13u;   /* up triangle */
+    case 0x25BAu: return 0x14u;   /* right pointer */
+    case 0x25BCu: return 0x15u;   /* down triangle */
+    case 0x25C4u: return 0x16u;   /* left pointer */
+    case 0x25A0u: return 0x17u;   /* black square */
+    default:      return 0u;
+    }
+}
 
 static bool        s_enabled;
 static bool        s_task_started;
@@ -250,7 +311,8 @@ static bool flush_row(int y)
              * The mapping is tinydesk's own, so the two cannot disagree. */
             uint32_t ch = c.ch;
             if (ch >= 0x80u) {
-                ch = td_ascii_fallback(ch);
+                const uint8_t slot = s_blocks ? tang_osd_desk_block_slot(ch) : 0u;
+                ch = slot != 0u ? slot : td_ascii_fallback(ch);
             }
 
             s_payload[n++] = (uint8_t)(ch & 0x7Fu);

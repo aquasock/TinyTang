@@ -286,7 +286,8 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        request(1,4,0,0,0,32'h00010006);
+        // ABI 1.7: block glyphs in the font's slots 0x01-0x17 (font.vh).
+        request(1,4,0,0,0,32'h00010007);
         // ABI 1.6 adds personality 8, the PMOD UART, to the bitmap.
         request(1,8,0,0,0,32'h0000010f);
         request(1,32'hc0,0,0,0,0);

@@ -1351,3 +1351,57 @@ The placeholder pages become real one at a time as TinyGBA grows the frames behi
 - User Test: PASS
 
 ---
+## 43 COMMIT Unreleased 2026-11-17T14:36:02-07:00
+
+#### Coming From:
+
+Unreleased e1df16a
+
+#### Purpose:
+
+Move TinyTang to TinyDesk 0.5.2 and TinyDesk Shell 0.5.1, and give the desktop core block glyphs so TinyDesk's Image Viewer and window furniture draw properly on the desk layer.
+
+#### Outcome:
+
+TinyTang now runs TinyDesk 0.5.2 with TinyDesk Shell 0.5.1, with the Image Viewer and Recycle Bin added and a desktop core whose font carries block glyphs, accepted by the operator on the board (TDESK-018). Two of the four carried TinyDesk patches were retired because upstream absorbed them, the slider patch was regenerated to record its API in upstream's snapshot, and the port needed only its Bluetooth types taken from upstream, nine more TinyDesk sources in the build, and two registrations. The desktop core's `font.vh` gained 23 glyphs in the blank control-code slots 0x01-0x17 and reports desktop ABI 1.7, and the firmware maps half blocks, quadrants, shades and pointers to those slots only after `tang_core_load` has asked a freshly loaded `tinytang.bin` for its ABI and found 1.7 or later, so game cores and older desktop cores keep the ASCII fallback. The desktop core was built at eight seeds in parallel and all eight passed every gate with identical utilisation -- 8,014 LUT4, 2,916 DFF, 14 BSRAM, 1,464 ALU -- differing only in timing, `clk` 67.24 to 77.42 MHz, pixel clock 76.34 to 88.39 MHz against 74.25, system clock 123.89 to 155.50 MHz; seed 3, the script's default and the seed of record, was deployed at 77.42, 83.00 and 144.84 MHz. Host tests went from 41 to 46 of 46 after their harnesses caught up: `tb_tang_flash` gained stand-ins and now pins that only the desktop core is asked and that ABI 1.6 or no answer leaves the glyphs off; `test_editor_limits` reads its app list from `CMakeLists.txt`; `tb_desktop_uart` expects ABI 1.7; `test_osd_desk` checks the new mapping, its repaint, and that the firmware table and `font.vh` agree slot for slot; and `test_script_limits` and `test_tinydesk_patches` now compare build diagnostics with unmodified upstream, because 0.5.2's own tests emit a deliberate format-truncation warning. The card's previous desktop core, the recorded `00d8b48c...` ABI 1.6 image, was copied to `/run/media/vash/GIT/tinytang-scratch/desktop-core-backup-2026-11-17/` before the new pair was written; the firmware `e1df16a-dirty.86c746c` was installed with `tools/tinytang_flash.py --yes` on the port found by USB identity and booted by the relay sequence, after which the shell reported 0.5.1, `fpgar 4` read `0x00010007`, `crash` had no record, and the heap stood at 84,076 of 117,800 bytes free with a 29,504-byte largest block, about 18 KB below the previous image. A test BMP was put at `/root/Desktop/testcard.bmp`. The operator passed the build and played a GBA game through the launcher. The ESP32 another agent drives was not touched. README, BUILDING.md and THIRD_PARTY.md name the new pins and the new desktop core. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and TDESK-018 only, and this entry was validated as number 43 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 173 records.
+
+#### Next Steps:
+
+The operator will exercise more of 0.5.2 as work continues; the parts not yet looked at are its sign-in and account features, the Recycle Bin, and the Image Viewer on large pictures, which matters because the heap is about 18 KB smaller and its largest free block 11.5 KB smaller than before. Game cores still draw TinyDesk in ASCII over a running game; giving TinyGBA's and TinySNES's desk fonts the same slots, and reporting it so the firmware can tell, would bring them level. Earlier items stand: the shell `gbaload` stall, `pad` and ctrl-c, feedback during the exit save, and the card's `bl616-firmware.bin` being older than the running firmware.
+
+#### Files Modified:
+
+- BUILDING.md
+- CMakeLists.txt
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/font.vh
+- ports/bl616/tang_bt_ops.h
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_osd_desk.h
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- scripts/apply-tinydesk-patches.sh
+- third_party/patches/tinydesk/0001-settings-bluetooth-button.patch
+- third_party/patches/tinydesk/0003-slider-widget.patch
+- third_party/patches/tinydesk/0004-start-menu-exit.patch
+- third_party/tinydesk
+- third_party/tinydesk-shell
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_tang_flash.c
+- tools/tests/test_editor_limits.sh
+- tools/tests/test_osd_desk.sh
+- tools/tests/test_script_limits.sh
+- tools/tests/test_tinydesk_patches.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

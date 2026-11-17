@@ -28,9 +28,25 @@ run_suites() {
         "-DCMAKE_C_FLAGS=$flags" >"$work/desk-$label.log" 2>&1
     cmake --build "$work/desk-$label" -j4 >>"$work/desk-$label.log" 2>&1
     ctest --test-dir "$work/desk-$label" --output-on-failure || failed=1
-    if rg -n 'warning:|error:' "$work/shell-$label.log" "$work/desk-$label.log"; then
-        echo "test_script_limits: upstream build diagnostics in $label" >&2
-        return 1
+    # Diagnostics are compared with what unmodified upstream already emits (the
+    # "pinned" run): a warning upstream ships with -- TinyDesk 0.5.2's own
+    # tests/test_task_snapshot.c clips a long name on purpose and GCC says so --
+    # is upstream's, and this test is about what TinyTang's limits introduce.
+    local diags
+    diags="$(grep -ohE '[^ :]+\.(c|h|cc|cpp):[0-9]+:[0-9]+: (warning|error):.*' \
+                 "$work/shell-$label.log" "$work/desk-$label.log" |
+             sed "s|$work/[^/]*/||" | sort -u || true)"
+    if [[ "$label" == pinned ]]; then
+        printf '%s\n' "$diags" >"$work/upstream.diags"
+        [[ -z "$diags" ]] || { echo "test_script_limits: upstream's own diagnostics (baseline):"; printf '  %s\n' "$diags"; }
+    else
+        local new
+        new="$(comm -23 <(printf '%s\n' "$diags") "$work/upstream.diags" | sed '/^$/d')"
+        if [[ -n "$new" ]]; then
+            printf '%s\n' "$new"
+            echo "test_script_limits: new build diagnostics in $label" >&2
+            return 1
+        fi
     fi
 }
 

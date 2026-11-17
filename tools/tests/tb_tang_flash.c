@@ -199,6 +199,19 @@ void tang_i2c_mux_for_game_core(void)
     hook(g_i2c_bus ? "mux-select" : "mux-select-NOBUS");
 }
 void tang_osd_desk_core_reloaded(void) { hook("osd-reloaded"); }
+/* Block glyphs (desktop ABI 1.7): the loader asks the desktop core its ABI and
+ * tells the desk layer which font it has.  Both record into the hook trace, so
+ * the order and the question -- asked only of the desktop core -- are pinned. */
+static uint32_t g_abi = 0x00010007u;
+static bool g_abi_answers = true;
+bool tang_fpga_desktop_abi(uint32_t *abi)
+{
+    hook("abi-query");
+    if (!g_abi_answers) return false;
+    *abi = g_abi;
+    return true;
+}
+void tang_osd_desk_set_block_glyphs(bool on) { hook(on ? "glyphs-on" : "glyphs-off"); }
 void tang_ini_core_loaded(void) { g_i2c_bus = true; hook("ini-loaded"); }
 
 static void clear(void)
@@ -344,7 +357,30 @@ int main(void)
     g_release = true;
     clear();
     CHECK(tangload() == 0);
-    CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program osd-reloaded ini-loaded ") == 0);
+    CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program "
+                          "abi-query glyphs-on osd-reloaded ini-loaded ") == 0);
+
+    /* An older desktop core (ABI 1.6) has no block glyphs in its font. */
+    g_abi = 0x00010006u;
+    clear();
+    CHECK(tangload() == 0);
+    CHECK(strstr(g_hooks, "abi-query glyphs-off osd-reloaded") != NULL);
+    /* A desktop that does not answer is treated the same way. */
+    g_abi = 0x00010007u;
+    g_abi_answers = false;
+    clear();
+    CHECK(tangload() == 0);
+    CHECK(strstr(g_hooks, "abi-query glyphs-off osd-reloaded") != NULL);
+    g_abi_answers = true;
+    /* A game core is never asked -- it would not answer, and the wait would be
+     * paid on every launch -- and its desk layer gets the ASCII fallback. */
+    {
+        char *game[] = {"tangload", "/root/cores/console138k/tinygba.bin"};
+        clear();
+        CHECK(cmd_tangload(NULL, 2, game) == 0);
+        CHECK(strstr(g_hooks, "abi-query") == NULL);
+        CHECK(strstr(g_hooks, "program glyphs-off osd-reloaded") != NULL);
+    }
 
     /* A second load while the first programs is refused and touches nothing. */
     g_release = false;

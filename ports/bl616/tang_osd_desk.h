@@ -80,6 +80,14 @@ int  tang_osd_desk_command(int argc, char **argv);
  * back.  Called by the loader, not by the user. */
 void tang_osd_desk_core_reloaded(void);
 
+/* Block glyphs (desktop ABI 1.7): whether the loaded core's font holds them in
+ * slots 0x01-0x17, set by tang_core_load after asking the core, and the slot a
+ * code point maps to (0 when it has none).  While off, the layer gets TinyDesk's
+ * ASCII fallback, as every core did before 1.7. */
+void tang_osd_desk_set_block_glyphs(bool on);
+bool tang_osd_desk_block_glyphs(void);
+uint8_t tang_osd_desk_block_slot(uint32_t ch);
+
 /* Whether the pointer exists.  Only the desktop wants one: it turns on mouse
  * reporting and draws windows to point at.  At the bare console there is
  * nothing to point at, and the pointer's mouse reports would reach the shell

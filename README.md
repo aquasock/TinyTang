@@ -32,11 +32,10 @@ For a dedicated game launcher with his full library of cores, see
 TinyTang is a port of TinyDesk Shell, with TinyDesk, to the BL616.
 
 - **Platform:** `bl616/freertos`, on the Sipeed Tang Console 138K.
-- **Built against:** TinyDesk Shell at upstream `main` (`a067fa7`), ahead of the
-  0.1.6 release because that is where `peek`/`poke` and the configurable limits
-  live, and TinyDesk 0.1.5 at its `v0.1.5` tag. For a build against v0.1.5 the
-  shell still needs the carried patch `THIRD_PARTY.md` lists; with this pin the
-  script finds the change already present and applies nothing.
+- **Built against:** TinyDesk Shell 0.5.1 (`53e8681`) and TinyDesk 0.5.2
+  (`c6ceffc`), the pair TinyDesk 0.5.2 itself pins. The shell's carried patch is
+  upstream at this pin, so its script applies nothing; TinyDesk carries two
+  patches, listed in `THIRD_PARTY.md`.
 - **Prefix:** `tang` -- `tang_` in C, `TANG_` in macros, and commands such as
   `tangload`, `tangput` and `tangflash`.
 - **Adds:** the desktop drawn over HDMI by the FPGA core and mirrored over USB
@@ -646,7 +645,7 @@ core, its keyboard link and its scripts were retired in core-log entry 25;
 ### What the board boots
 
 `/root/scripts/boot.tdsh` runs at power-up. It loads the core named by its `CORE`
-line -- `tinytang.bin`, desktop ABI 1.6, the single desktop core a card carries
+line -- `tinytang.bin`, desktop ABI 1.7, the single desktop core a card carries
 -- probes it, applies `/tinytang.ini`, enables the desktop layer and stops at
 the prompt. That one core takes every socket word the older builds did and adds
 personality 8, so a card declaring `layout = lora` has its radio from power-up

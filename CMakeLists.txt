@@ -51,8 +51,8 @@ else()
     if(NOT TINYTANG_TDSH_PATCH_RESULT EQUAL 0)
         message(FATAL_ERROR "TinyDesk Shell patches could not be applied")
     endif()
-    # The same for third_party/tinydesk: Settings opens this port's Bluetooth
-    # window instead of the Network app it leaves out.
+    # The same for third_party/tinydesk: a cartridge is not text, and the
+    # slider widget the console apps' Audio pages use.
     execute_process(
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/apply-tinydesk-patches.sh"
         RESULT_VARIABLE TINYTANG_TINYDESK_PATCH_RESULT)
@@ -76,11 +76,10 @@ else()
     target_include_directories(app PRIVATE ports/bl616/phosphor)
     file(GLOB TDSH_CORE_SOURCES "third_party/tinydesk-shell/src/core/*.c")
 
-    # TinyDesk, the desktop environment.  Its core and apps are compiled here
-    # against the shell we already have -- TinyDesk pins the shell at 8456dd1
-    # (v0.1.5) and this tree moved to v0.1.6 on 2026-10-21, so the two are no
-    # longer the same revision; TinyDesk carries no copy of the shell core, so
-    # there is still no second copy to keep in step.  The filesystem
+    # TinyDesk, the desktop environment, at v0.5.2.  Its core and apps are
+    # compiled here against third_party/tinydesk-shell; TinyDesk 0.5 also
+    # carries a nested shell checkout (its third_party/tdsh), which this build
+    # never compiles, so there is still one shell in the image.  The filesystem
     # comes from its own ports/common/td_fs_stdio.c, which is written against
     # stdio, <dirent.h> and <sys/stat.h> and therefore lands on this port's
     # FatFS shim unmodified.
@@ -109,7 +108,21 @@ else()
         third_party/tinydesk/apps/settings.c
         third_party/tinydesk/apps/sysmon.c
         third_party/tinydesk/apps/taskmgr.c
-        third_party/tinydesk/apps/terminal.c)
+        third_party/tinydesk/apps/terminal.c
+        # TinyDesk 0.5: the Image Viewer and the Recycle Bin are registered by
+        # this port; the rest are what 0.5's desktop, Files, Editor and session
+        # call into (shortcuts, the bin, the on-screen keyboard, sign-in, kiosk,
+        # picture files, the Editor's Python lexer, and pyui's detach hook, which
+        # has nothing to detach on a board without Python).
+        third_party/tinydesk/apps/imageview.c
+        third_party/tinydesk/apps/imagefile.c
+        third_party/tinydesk/apps/trash.c
+        third_party/tinydesk/apps/shortcut.c
+        third_party/tinydesk/apps/osk.c
+        third_party/tinydesk/apps/login.c
+        third_party/tinydesk/apps/kiosk.c
+        third_party/tinydesk/apps/editor_py.c
+        third_party/tinydesk/apps/pyui.c)
     sdk_add_include_directories(
         third_party/tinydesk/include
         third_party/tinydesk/apps

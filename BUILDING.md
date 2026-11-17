@@ -85,10 +85,33 @@ not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to the build directory it is given (the section below records the
-  ABI 1.6 core that is on the card, which is what a card should carry;
-  the ABI 1.3 entry that follows is kept as the older record of this flow)
+  ABI 1.7 core that is on the card, which is what a card should carry; the
+  ABI 1.6 and 1.3 entries that follow are kept as the older records of this flow)
 
-- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.6**,
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.7**,
+  built 2026-11-17 from the tree `e1df16a` plus the uncommitted font and ABI
+  change that its commit carries, at seed 3 into `build/desk17-s3/out/`, one of
+  eight seeds built in parallel that all passed every gate.  ABI 1.7 puts 23
+  block glyphs (halves, shades, quadrants, pointers, a square) in the font's
+  slots 0x01-0x17, which the firmware uses only when this core answers 1.7.
+  - `desktop.bin` sha256
+    `ee07082bf4e51b624d6adf6ca2facea74d5b9b4b348da1e563d93b84261ee114`,
+    4,492,268 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `d31c1784cf3e5ebe90888c724b9577418c465446b6002dfa0560b6834ed21516`,
+    35,962,597 bytes; the card's `tinytang.fs.gz` is `gzip -9 -n` of it,
+    398,809 bytes
+  - Gates passed with nothing overridden: setup and hold met (`clk` 77.42,
+    pixel 83.00, sys 144.84 MHz against 21.49, 74.25 and 50), no clock-topology
+    regression, no `clk` pip through SPINE17.  Proven on the board the same
+    day: `fpgar 4` read `0x00010007`, and TinyDesk 0.5.2 drew its pictures and
+    window furniture in the new glyphs.
+  - Provenance: `source_sha256`
+    `b6e459e4eaef888b044a5c65f644dfd8c5db816e78f3045ad9a360775f48f384`,
+    apicula `495661a`, nextpnr `16237b0f`, in `provenance.txt` beside it.
+
+
+- **desktop core, ABI 1.6** (the card's file until 2026-11-17),
   built 2026-11-03 from `207f9af`'s `fpga/desktop` at the script's default
   seed 3 into `build/desktop-rev/out/`
   - `desktop.bin` sha256
@@ -169,7 +192,7 @@ not.
     digest.
   - The identity keeps its `-dirty` suffix by design, and a bare one is not
     reachable without moving a pin.  `third_party/tinydesk` is pinned at
-    upstream v0.1.5 and the build applies four carried patches to it on every
+    upstream v0.5.2 and the build applies two carried patches to it on every
     configure (`scripts/apply-tinydesk-patches.sh`, run from `CMakeLists.txt`),
     so that submodule's working tree always differs from its pin.  Identify the
     patches by their own digests, not by the identity, because `git diff`

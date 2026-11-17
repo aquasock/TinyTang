@@ -14,6 +14,7 @@
 #include "tang_i2c_mux.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
+#include "tang_fpga_link.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -269,6 +270,19 @@ tang_load_result_t tang_core_load(const char *real)
 
     const bool ok = fpga_program(real);
     if (ok) {
+        /* Which font the desk layer now has.  Only the desktop core is asked,
+         * by its file name: a game core does not answer the register frame,
+         * and asking it would cost a reply timeout on every launch.  Anything
+         * else, or a desktop older than ABI 1.7, gets the ASCII fallback. */
+        bool blocks = false;
+        const size_t n = strlen(real);
+        static const char desktop_name[] = "/tinytang.bin";
+        if (n >= sizeof desktop_name - 1 &&
+            strcmp(real + n - (sizeof desktop_name - 1), desktop_name) == 0) {
+            uint32_t abi = 0;
+            blocks = tang_fpga_desktop_abi(&abi) && abi >= 0x00010007u;
+        }
+        tang_osd_desk_set_block_glyphs(blocks);
         /* Reconfiguring the FPGA wipes anything the core was holding, the
          * desktop layer included.  Tell it, or the layer stays gone with no
          * sign of why. */

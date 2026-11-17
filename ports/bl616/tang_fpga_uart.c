@@ -523,6 +523,32 @@ static bool fpga_ext_read32(uint32_t address, uint32_t *value, uint8_t *status)
     return true;
 }
 
+/* The desktop core's ABI word, for a caller that has just loaded a core and
+ * wants to know what its desk layer's font can draw.  Register 0 must hold the
+ * desktop's magic, so a core that answers the extended frame but is not the
+ * desktop is not mistaken for one; a core that does not answer at all costs
+ * one reply timeout per try.  A freshly configured core is given three tries. */
+bool tang_fpga_desktop_abi(uint32_t *abi)
+{
+    if (tang_fpga_link_open() != 0) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint32_t magic = 0, word = 0;
+        uint8_t st0 = 1, st1 = 1;
+        if (fpga_ext_read32(0x00u, &magic, &st0) && st0 == 0 &&
+            fpga_ext_read32(0x04u, &word, &st1) && st1 == 0) {
+            if (magic != 0x00544453u) {
+                return false;
+            }
+            *abi = word;
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return false;
+}
+
 /* Write one 32-bit register through the same endpoint: opcode 2 carries the
  * value in bytes 8..11, big-endian, and the reply's status says whether the
  * register accepted it.  Same 14-byte request, same CRC, same 15-byte reply. */
