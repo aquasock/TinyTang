@@ -1170,3 +1170,32 @@ The other session's uncommitted changes to `ports/bl616/tang_fpga_uart.c`, `port
 - User Test: PASS
 
 ---
+## 37 COMMIT Unreleased 2026-11-16T22:41:48-07:00
+
+#### Coming From:
+
+Unreleased 004b41b
+
+#### Purpose:
+
+Find the firmware fault behind the board that stopped starting TinyTang on 2026-11-16, by identifying which image actually failed and testing it against a bench control.
+
+#### Outcome:
+
+The failing image is identified, the bench is cleared, and the fault did not reproduce from cold starts alone; the hunt stopped at the operator's direction with the exit chord misbehaving and the board left on the suspect firmware. The host kernel log rewrote the account entry 36 started from: an image flashed at 20:02 came up as the TinyTang CDC on three relay cold starts at 20:02, 20:08 and 20:13, and every cold start from 20:16 onwards came up as the FT2232 `0403:6010`, with no flash in between, since a commit shows as an instant CDC-to-FT2232 swap (as at 19:27:46 and 20:02:34) and none appears from 20:13 to 20:16. The 20:23 build entry 36 suspected was therefore never installed, because TinyTang never ran again to install it. Both staged images on the card were fetched with `tangget` through `tools/tinytang_sync.py` and compared with their build-identity strings blanked: `/tinytang-upload.bin`, `fdebc90-dirty.17f81b2` at `f17d3603...`, is byte-identical in code to the known-good `fdebc90` image entry 36 flashed, so it was the other session's clean recovery build; `/tinytang-upload.padbuild.bin`, `fdebc90-dirty.37aba55` at `ac9db8d2...`, is byte-identical in code to a rebuild of the uncommitted working tree, which carries `tang_gba_save()` extracted from `gbasave`, a `pad` command, and a `play_task` in `tinygba_app.cpp` that watches the pad for an exit chord and then saves and reloads the desktop core, so padbuild is almost certainly the image flashed at 20:02. All three images carry valid boot headers -- magic at 0x00, 0x08 and 0x64, body length at 0x84 matching the file, CRC-32 of the first 252 bytes correct -- so a malformed image is ruled out. The crash recorder in `ports/bl616/tang_crash.c` reads its flash record at 0x3FF000 on every boot including power-ups, and the 21:18 recovery boot found none, so the failing image either hung with interrupts off, which the recorder cannot catch, or died before the recorder started. The bench was then cleared as a cause: seven relay two-wire cold starts on the known-good `fdebc90-dirty.6cd347f` all acknowledged three steps, showed a real disconnect, and came back as the CDC, the planned ten being cut to seven at the operator's request. The suspect tree was rebuilt in a detached worktree as `fdebc90-dirty.c62e9ec`, 707,328 bytes at SHA-256 `3be550199110daf297697b094fafc247d684a6f3969d5657cf7e437e1176ef70`, code-identical to padbuild, installed with `tools/tinytang_flash.py`, and cold-started four times by relay, run by run: all four came up as the CDC with `platform` reporting `c62e9ec`, no kept resets and no crash record, including the fourth start, which is the one the 20:02 image failed on, so the failure is not a property of booting this image. The card's `/root/cores/console138k/tinygba.bin` is 5,063,660 bytes, the size of TinyGBA's `build/exitkey`, the core with the HOME-with-SELECT exit chord, so what the 20:02 session most likely did before 20:16 was exercise the new paths. The operator then launched games from the TinyGBA library and found the exit chord unreliable: minus with HOME does not reliably trigger it, it behaves as HOME with some other button, and which button differs from one game launch to the next. Whether a `.sav` was written or the save path ran during those attempts was not observed, because the desktop held the console. The three images are kept outside the repository at `/run/media/vash/GIT/tinytang-scratch/firmware-backup/2026-11-16/` with a `SHA256SUMS.txt`, because the card's known-good staging copy was overwritten by the suspect's upload and the build worktrees live in a scratch directory. No source in this repository was changed by this cycle.
+
+#### Next Steps:
+
+The board is on the suspect firmware `fdebc90-dirty.c62e9ec`, which has booted cleanly four times but is the code most likely to have stopped the board tonight, so the first decision is whether to leave it for the next test or put `known-good_fdebc90-dirty.6cd347f.bin` back with `tools/tinytang_flash.py` first; if it stops booting, recovery is BOOT plus the README's `BLFlashCommand --flash --write` form with that file. The exit chord is the lead, and the instrument for it is already on the board: run `pad` at the prompt with the TinyGBA exit-chord core loaded and press minus, HOME and both, which reads the word the core reports and shows directly which bit minus lands on and whether bit 15 asserts -- the observed behaviour, HOME plus a button that changes per launch, points at the core's `save_exit = home & joy1[2]` reading a bit whose meaning depends on the pad path rather than at the firmware, and TinyGBA's log carries that half. Only once the chord is reliable is it worth driving `play_task` through `tang_gba_save()` with the console attached, then a cold start, which is the 20:13 to 20:16 sequence that preceded the failure; `gbasave`'s SD write is the path TCL-064 records as wedging the console, so a failure there is the leading hypothesis for how this image stopped. Until that sequence has been run and survived, the three uncommitted files in `ports/bl616/` stay uncommitted.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---
