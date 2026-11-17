@@ -1231,3 +1231,32 @@ No work remains on the exit chord, and the board can stay on `c62e9ec`, which is
 - User Test: PASS
 
 ---
+## 39 COMMIT Unreleased 2026-11-17T09:32:13-07:00
+
+#### Coming From:
+
+Unreleased cec966c
+
+#### Purpose:
+
+Remove the two firmware staging images that entries 36 and 38 left in the SD card's root.
+
+#### Outcome:
+
+`/tinytang-upload.bin` and `/tinytang-upload.padbuild.bin`, both 707,328 bytes, were deleted with `rm` at the board's shell and a listing of the card root afterwards showed only `README.md`, `bl616-firmware.bin`, the four `.ini` files, `crash.log` and the `root` and `LICENSES` directories. Neither file is read at boot. `/tinytang-upload.bin` is the staging path `tools/tinytang_flash.py` writes before every flash, so it returns on the next one, and the code of both images is preserved in `/run/media/vash/GIT/tinytang-scratch/firmware-backup/2026-11-16/`, the padbuild image as `card-padbuild_fdebc90-dirty.37aba55.bin` and the other's code as the known-good `fdebc90-dirty.6cd347f` image entry 37 found it identical to. The deletion was part of a wider card cleanup recorded in TinyGBA's log entry 13, which also found that the library exit committed in entry 38 most likely wrote a `.sav` of power-up SDRAM for a cartridge that had never saved (TinyGBA record BRD-123): `play_task` calls `tang_gba_save()` on every exit, and the save window is neither cleared nor restored when a cartridge has no `.sav`. `bl616-firmware.bin` was kept; at 699,008 bytes it is older than the running `fdebc90-dirty.c62e9ec`. No repository source changed and nothing was built or deployed. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry only, and this entry was validated as number 39 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Two firmware items are now open on this side. The exit save should not write a `.sav` for a cartridge that had none at launch and never wrote its save window, unless TinyGBA fills that window with `0xFF` on reset instead, and the choice between the two belongs with whichever repository takes it up after BRD-123's mechanism is reproduced. The card's `bl616-firmware.bin` is older than the running firmware, so the desktop's Software update would install an older image until `tools/tinytang_card_firmware.py` replaces it. Entry 38's smaller items stand: `pad` does not stop on ctrl-c, and the exit gives no feedback during its save.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
