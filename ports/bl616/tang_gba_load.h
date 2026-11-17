@@ -75,6 +75,18 @@ int tang_gba_load(const char *label, const char *real, char *why, size_t why_len
  * and make sure the exit happens even if the save does not. */
 int tang_gba_save(const char *label, const char *real, char *why, size_t why_len);
 
+/* Save facts for the TinyGBA window's Saves page.  `tang_gba_save_info` scans
+ * the cartridge image `rom_real` for its save marker, as gbaload does, and puts
+ * the TANG_GBA_BACKUP_* type in `*type` (NONE when the image declares none); it
+ * returns non-zero only when the image cannot be read.  It reads the whole
+ * image when there is no marker -- seconds for a large cartridge -- so it is for
+ * a task, not the desktop's loop.  It uses its own buffer, so it does not
+ * disturb a load, but the caller should not run it during one: they share the
+ * card.  The other two are the size of a type's save and its name. */
+int tang_gba_save_info(const char *rom_real, uint8_t *type);
+uint32_t tang_gba_save_bytes(uint8_t type);
+const char *tang_gba_save_type_name(uint8_t type);
+
 #ifdef __cplusplus
 }
 #endif

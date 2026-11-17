@@ -1318,3 +1318,36 @@ None.
 - User Test: N/A
 
 ---
+## 42 COMMIT Unreleased 2026-11-17T13:38:04-07:00
+
+#### Coming From:
+
+Unreleased eb7b5a3
+
+#### Purpose:
+
+Give the TinyGBA window TinySNES's tabs, with a working Saves page and placeholder Input, Video and Audio pages, after setting the board's clock that the save times depend on.
+
+#### Outcome:
+
+TinyGBA's window now has Library, Input, Video, Audio and Saves, and the operator accepted it on the board (GBA-005). The clock was fixed first: the DS3231 read 2000-01-01 with its oscillator-stop flag set and `/tinydesk_tz` was missing from the card, so the RTC was set to UTC with `tangi2c rtc set`, timed to a second boundary from the host clock, and `/tinydesk_tz` was written as `-25200` for America/Phoenix; the RTC then read back with the flag clear and `tangi2c rtc` reported local 13:06. The Saves page follows TinySNES's lines for the selected cartridge -- name, where the `.sav` lives, its size against its save type's size, and the last attempt from `/root/saves/last.log` -- with the save type found by a new `tang_gba_save_info()` scan running in its own task with its own buffer and cached per cartridge, because a GBA image declares its save type only as a marker string. `tang_gba_save()` now stamps `arm` and `finish` lines into that log, which is what lets the page say when a save was written. Input, Video and Audio carry TinySNES's layout with placeholder values and controls that only report that they are not connected, since the core has no frames for them. The README's TinyGBA paragraph says so. The firmware `eb7b5a3-dirty.7141e1c` built cleanly in the changed files, all 46 host tests passed including a new save-log case for GBA names, and it was installed with `tools/tinytang_flash.py --yes` on the port found by USB identity and booted by the relay sequence, after which `crash` showed no record and the desktop core loaded. The operator confirmed the tabs and the placeholders, saved a new Minish Cap game and saw its time on the Saves page, and the card's log holds the `arm` and `finish ... written` lines stamped 13:28:23-07:00. Throughout, the ESP32 another agent drives on a neighbouring port was left alone, and the relay was reached over UDP. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and GBA-005 only, and this entry was validated as number 42 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 172 records.
+
+#### Next Steps:
+
+The placeholder pages become real one at a time as TinyGBA grows the frames behind them -- a pad map first, since the Input page already lists the core's current map -- and each should keep TinySNES's pattern of writing a settings file that the next launch sends. The save work the operator is continuing now has a page to show its results on. Open items from earlier entries stand: the shell `gbaload` stall of entries 40 and 41, `pad` not stopping on ctrl-c, no feedback during the exit's save, and the card's `bl616-firmware.bin` being older than the running firmware -- which is now further behind, at `eb7b5a3-dirty.7141e1c`.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gba_load.h
+- ports/bl616/tinygba_app.cpp
+- tools/tests/tb_saves_log.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -610,7 +610,8 @@ game and TinyDesk; HOME and `-` held together end it.  The core and the player
 come from the TinyNES repository, whose `tools/deploy_tinytang.sh` puts them on
 the card.
 
-TinyGBA's window is a Library page only, browsing `/root/media/gba`.  Launch
+TinyGBA's window carries the same five tabs as TinySNES's.  The Library browses
+`/root/media/gba`.  Launch
 programs `/root/cores/console138k/tinygba.bin` and streams the cartridge through
 the same `tang_gba_load()` the shell's `gbaload` calls.  In the game a tap of
 HOME swaps to TinyDesk and back, and HOME with `-` held ends it: the core sets
@@ -622,6 +623,13 @@ app watches bit 15; there, a tap of HOME with the desk layer off brings TinyDesk
 up over the game, showing the shell, while the game keeps running.  `pad
 [seconds]` at the shell prints the word the loaded core reports each time it
 changes, which is how a gesture is checked without guessing (GBA-004).
+The Saves page shows the selected cartridge's `.sav` beside it, its save type and
+the size that type holds (found by scanning the image for its save marker, in a
+task of its own, since a GBA cartridge has no header field for it), and when the
+save was last written, from the `arm` and `finish` lines `tang_gba_save()` now
+stamps into `/root/saves/last.log`.  Input, Video and Audio are laid out as
+TinySNES's but hold placeholder values and change nothing, because the core has
+no frame for a pad map, a picture shape or a volume yet (GBA-005).
 
 A cartridge with a battery saves under `/root/saves/nes/`, named after the
 cartridge: `Zelda II - The Adventure of Link (USA).nes` saves to the same name

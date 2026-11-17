@@ -125,6 +125,40 @@ static void test_two_files(void)
     CHECK(batt.want == 8192);
 }
 
+/* TinyGBA's save, as tang_gba_save writes it: the save sits beside its
+ * cartridge, so the name carries spaces, commas and parentheses, and the GBA
+ * path reads nothing back, so both CRC fields are zero. */
+static void test_gba(void)
+{
+    const char *log =
+        "2026-11-17T13:20:00-07:00 arm /sd/root/media/gba/Legend of Zelda, The - "
+        "The Minish Cap (USA).gba.sav: 8192 bytes, crc 00000000, save\n"
+        "2026-11-17T13:20:02-07:00 finish /sd/root/media/gba/Legend of Zelda, The - "
+        "The Minish Cap (USA).gba.sav: 8192 of 8192 bytes, crc 00000000 of 00000000, written\n"
+        "2026-11-17T13:25:00-07:00 arm /sd/root/media/gba/Metroid Fusion (USA).gba.sav: "
+        "32768 bytes, crc 00000000, save\n";
+
+    td_saves_attempt_t zelda = {};
+    feed_all(&zelda, "/Legend of Zelda, The - The Minish Cap (USA).gba.sav", log);
+    CHECK(!zelda.armed);
+    CHECK(strcmp(zelda.verdict, "written") == 0);
+    CHECK(zelda.got == 8192 && zelda.want == 8192);
+    CHECK(strcmp(zelda.stamp, "2026-11-17T13:20:02-07:00") == 0);
+
+    /* Armed and never finished: a save that hung on the card. */
+    td_saves_attempt_t metroid = {};
+    feed_all(&metroid, "/Metroid Fusion (USA).gba.sav", log);
+    CHECK(metroid.armed);
+    CHECK(metroid.verdict[0] == '\0');
+    CHECK(strcmp(metroid.stamp, "2026-11-17T13:25:00-07:00") == 0);
+
+    /* The needle is the whole file name, so a cartridge whose name ends
+     * another's does not borrow its record. */
+    td_saves_attempt_t none = {};
+    feed_all(&none, "/Fusion (USA).gba.sav", log);
+    CHECK(none.verdict[0] == '\0' && !none.armed);
+}
+
 static void test_split_line(void)
 {
     /* The reader is fed 256 bytes at a time; a line straddles the boundary. */
@@ -200,6 +234,7 @@ static void test_overlong_line(void)
 
 int main(void)
 {
+    test_gba();
     test_when();
     test_finish();
     test_arm_and_cancel();

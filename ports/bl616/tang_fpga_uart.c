@@ -1288,6 +1288,90 @@ static const char *gba_save_type_name(uint8_t type)
     return names[type <= TANG_GBA_BACKUP_EEPROM ? type : 0];
 }
 
+/* ---------------------------------------------- save facts for the desk app
+ *
+ * The TinyGBA window's Saves page says what kind of save a cartridge has and
+ * how large it should be, as TinySNES's does from its header.  A GBA cartridge
+ * carries no such header: the type is a marker string somewhere in the image,
+ * which is what gbaload finds while it streams.  The page cannot borrow that
+ * scan -- it runs on the loader's shared `s_rom_chunk` -- so this one reads with
+ * its own buffer, and tests a marker's first letter before comparing, because
+ * the page reads a whole image straight from the card and a cartridge with no
+ * save at all is read to its end. */
+uint32_t tang_gba_save_bytes(uint8_t type) { return gba_save_bytes(type); }
+
+const char *tang_gba_save_type_name(uint8_t type) { return gba_save_type_name(type); }
+
+int tang_gba_save_info(const char *rom_real, uint8_t *type)
+{
+    enum { CHUNK = 4096u };
+    const size_t nmarks = sizeof s_gba_save_marks / sizeof s_gba_save_marks[0];
+    *type = TANG_GBA_BACKUP_NONE;
+
+    FIL rom;
+    if (f_open(&rom, rom_real, FA_READ) != FR_OK)
+        return 1;
+    uint8_t *buf = (uint8_t *)malloc(CHUNK + TANG_GBA_SAVE_MARK_MAX);
+    if (buf == NULL) {
+        (void)f_close(&rom);
+        return 1;
+    }
+
+    /* The buffer holds the previous read's last bytes ahead of this read's, so
+     * a marker split across two reads is one string here. */
+    size_t carry = 0;
+    for (;;) {
+        UINT br = 0;
+        if (f_read(&rom, buf + carry, CHUNK, &br) != FR_OK || br == 0)
+            break;
+        const size_t n = carry + br;
+        for (size_t i = 0; i < n && *type == TANG_GBA_BACKUP_NONE; i++) {
+            const uint8_t c = buf[i];
+            if (c != 'F' && c != 'S' && c != 'E')
+                continue;
+            for (size_t m = 0; m < nmarks; m++) {
+                const char  *mark = s_gba_save_marks[m].mark;
+                const size_t ml   = strlen(mark);
+                if (i + ml <= n && memcmp(&buf[i], mark, ml) == 0) {
+                    *type = s_gba_save_marks[m].type;
+                    break;
+                }
+            }
+        }
+        if (*type != TANG_GBA_BACKUP_NONE || br < CHUNK)
+            break;
+        carry = n < TANG_GBA_SAVE_MARK_MAX ? n : TANG_GBA_SAVE_MARK_MAX;
+        memmove(buf, buf + n - carry, carry);
+        taskYIELD();                /* a whole image is long; let others run */
+    }
+    free(buf);
+    (void)f_close(&rom);
+    return 0;
+}
+
+/* The save log, /root/saves/last.log, in the shape td_saves_log.h parses: an
+ * arm line when a save starts and a finish line when it ends, each stamped
+ * with the RTC-kept clock by tang_ae350_note.  FatFS gives a file no date, so
+ * this is how the Saves page knows when a save was written and whether it
+ * finished.  The GBA save is not read back, so there is no CRC to report and
+ * both fields are zero; the verdict is one word, as the parser reads it. */
+static void gba_log_arm(const char *path, uint32_t bytes)
+{
+    char line[TDSH_MAX_REAL_PATH + 64];
+    snprintf(line, sizeof line, "arm %s: %lu bytes, crc %08lx, save",
+             path, (unsigned long)bytes, 0ul);
+    tang_ae350_note(line);
+}
+
+static void gba_log_finish(const char *path, uint32_t got, uint32_t want,
+                           const char *verdict)
+{
+    char line[TDSH_MAX_REAL_PATH + 80];
+    snprintf(line, sizeof line, "finish %s: %lu of %lu bytes, crc %08lx of %08lx, %s",
+             path, (unsigned long)got, (unsigned long)want, 0ul, 0ul, verdict);
+    tang_ae350_note(line);
+}
+
 /* Write the running cartridge's save to `<rom>.sav`.
  *
  * The save is read from the machine, not from a file the emulator kept: what
@@ -1328,6 +1412,7 @@ int tang_gba_save(const char *label, const char *real, char *why, size_t why_len
         gba_say(why, why_len, "cannot create %s\r\n", path);
         return 1;
     }
+    gba_log_arm(path, bytes);
 
     /* Say what is about to happen before the first exchange, so that a command
      * which produces no further output is telling us something specific
@@ -1346,6 +1431,7 @@ int tang_gba_save(const char *label, const char *real, char *why, size_t why_len
     if (!tang_fpga_lock_within(5000)) {
         f_close(&sav);
         f_unlink(path);
+        gba_log_finish(path, 0, bytes, "failed");
         gba_say(why, why_len, "the FPGA link is held by another task; try again\r\n");
         return 1;
     }
@@ -1386,23 +1472,27 @@ int tang_gba_save(const char *label, const char *real, char *why, size_t why_len
 
     if (rc == 1) {
         f_unlink(path);             /* half a save is worse than none */
+        gba_log_finish(path, off, bytes, "failed");
         gba_say(why, why_len, "the core stopped answering at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
     if (rc == 2) {
         f_unlink(path);
+        gba_log_finish(path, off, bytes, "failed");
         gba_say(why, why_len, "SD write failed at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
     if (rc == 3) {
         f_unlink(path);
+        gba_log_finish(path, off, bytes, "failed");
         gba_say(why, why_len, "lost the FPGA link at offset %u; %s not written\r\n",
                     (unsigned)off, path);
         return 1;
     }
 
+    gba_log_finish(path, bytes, bytes, "written");
     gba_say(why, why_len, "%u bytes of %s -> %s\r\n",
                 (unsigned)bytes, gba_save_type_name(type), path);
     return 0;
