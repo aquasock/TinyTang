@@ -1289,3 +1289,32 @@ None.
 - User Test: N/A
 
 ---
+## 41 COMMIT Unreleased 2026-11-17T13:00:08-07:00
+
+#### Coming From:
+
+Unreleased 2a4856c
+
+#### Purpose:
+
+Correct entry 40's condition for the shell `gbaload` stall with an observation made while TinyGBA's save-store fix was tested.
+
+#### Outcome:
+
+Entry 40 tied the stall to a boot on which TinyDesk had run; that is too narrow. On 2026-11-17, after a relay power-up on which TinyDesk was never started, a shell `gbaload` of Mario Kart completed normally on firmware `fdebc90-dirty.c62e9ec` and TinyGBA's `build/blankfill2_s5`, then two save-window dumps were taken with TinyGBA's `tools/save/pipe_save_dump.py` over `fpgapipe` and a file was fetched with `tangget`, and the next shell `gbaload`, of Metroid Fusion, printed its first line and nothing more for 40 seconds. The load itself finished: the restored save window read back identical to the card's `.sav` and the shell answered afterwards. So the stall follows earlier console file or pipe use, or something common to it and to TinyDesk, and the silence is in the command's output rather than necessarily in the load; earlier stalls in entry 40 left the core held, so the two may not be one fault. The same cycle found the card's `/root/media/gba/Metroid Fusion (USA).gba.sav` to be 32,768 bytes of the constant `0x5A`, written by no tool either repository contains; TinyGBA records it in BRD-125 and the operator replaced it with a new save. The TinyGBA library's save-on-exit was exercised end to end with a new Minish Cap save that survived exit, reboot and reload. No source changed and nothing was built or deployed here. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry only, and this entry was validated as number 41 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` under Files Modified and allowed Status values.
+
+#### Next Steps:
+
+When the stall is investigated, start from what `fpgapipe` and `tangget` leave behind on the console or the FPGA link -- a lock, a mode, a queue -- as well as from TinyDesk's tasks, and add progress output to `cmd_gbaload` so a stall shows where it stopped. Watch for any other `.sav` turning into a constant pattern, which would mean the writer of the `0x5A` file is still live. Entry 39's items stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
