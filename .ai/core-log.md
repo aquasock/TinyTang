@@ -1260,3 +1260,32 @@ None.
 - User Test: N/A
 
 ---
+## 40 COMMIT Unreleased 2026-11-17T11:22:03-07:00
+
+#### Coming From:
+
+Unreleased 1f4320b
+
+#### Purpose:
+
+Record a shell `gbaload` stall found on the board while TinyGBA's boot screen was being tested, so it is not lost before it is investigated.
+
+#### Outcome:
+
+On firmware `fdebc90-dirty.c62e9ec`, on a boot where TinyDesk has run, `gbaload` at the shell prints `<n> bytes -> the core at 2000000 baud` and then nothing further: no `save hardware =` line, no save restore, and no `the core is running`, for 30 seconds against the seven a 4 MiB-to-8 MiB cartridge normally takes. It was reproduced five times on 2026-11-17 with Pokemon Emerald and Metroid Fusion: three times on TinyGBA's new boot-screen core `build/bootbars_s7`, once on the earlier `build/exitkey` core, which loaded normally through the same command on the same firmware before that morning's reboot, and once more after a fresh power-up and a library session. It happened with `osd desk status` reporting the desk layer on and also after `osd desk off`, so the console mirror is not the cause. Ctrl-c returns the prompt each time, and the core then runs whatever cartridge image the SDRAM holds, so a game may appear without its save having been restored. In the same power sessions the TinyGBA library's launch, which calls the same `tang_gba_load()`, completed normally, including a Castlevania: Aria of Sorrow launch that the operator accepted, and the exit chord's save and desktop reload worked. What distinguishes the failing runs is not established: the shell path versus the desk app's task, state left by TinyDesk having run, and the absence of any progress output while the load is in flight are all open. No source changed and nothing was built or deployed. TinyGBA's log entry 14 and record BRD-124 record the same observation from the core's side. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry only, and this entry was validated as number 40 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` under Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Investigate the stall when it is next taken up: compare `cmd_gbaload` with the library's call of `tang_gba_load()`, especially which task runs the load and what holds or waits on `tang_fpga_lock()` while TinyDesk's tasks are alive, and add a progress line or a timeout so a stalled load says where it stopped instead of going silent. Until it is fixed, launch TinyGBA cartridges from the library, and treat a shell load that needed ctrl-c as having run without its save restored. Entry 39's items stand: the exit save can write a junk `.sav` for a cartridge that never saved, the card's `bl616-firmware.bin` is older than the running firmware, `pad` does not stop on ctrl-c, and the exit gives no feedback during its save.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
