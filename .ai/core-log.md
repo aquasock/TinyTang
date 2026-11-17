@@ -1107,3 +1107,36 @@ Make a save survive a reload, which is the one thing left before a GBA cartridge
 - User Test: PASS
 
 ---
+## 35 COMMIT Unreleased 2026-11-16T19:31:10-07:00
+
+#### Coming From:
+
+Unreleased 8abefad
+
+#### Purpose:
+
+Give TinyGBA a desktop app so a cartridge can be booted from the library instead of from a shell, sharing the load path with `gbaload` rather than copying it.
+
+#### Outcome:
+
+TinyGBA now appears in the Start menu and boots cartridges from its Library page, and the operator confirmed the whole route on hardware: the window opens with the cartridge list, Launch boots the game, HOME brings the desktop back over it and returns to the game, and a second title loaded from the same window afterwards (GBA-003). The loading was made shared rather than duplicated, which is the part that matters for maintenance: `tang_gba_load()` is the body of `cmd_gbaload` lifted into a callable function with the same contract as `tang_snes_load()`, so the shell command is now only path resolution and the desk app calls the same function directly. The implementation stays in `tang_fpga_uart.c` beside the save helpers it shares with `gbasave` on purpose -- this is the load path both projects have proved on hardware most often, and moving six hundred lines to a new file would be risk without benefit -- while the constants and the contract live in `tang_gba_load.h` so the save-type numbers are defined once. A new `gba_say()` writes each message to both the console and a caller buffer, so one line can reach a terminal and a window. Two things were corrected while building it. The app first used a window API this TinyDesk does not have (`td_window`, `td_window_set_tick`, `td_window_focus`); it now uses the `td_win_create` with a `td_window_desc_t` that tinysnes_app.cpp uses, and spells out `AM_VOLUME_LABEL` as that file does because this build's FatFS header does not export it. And `gba_save_restore()` still printed through `tdsh_printf` with a `gbaload:` prefix after the extraction, so its seven messages were converted to the shared helper and the prefix dropped, which makes the shell output consistent and lets the app's status row report whether a save came back; the firmware was then rebuilt, reflashed and `gbaload` re-tested end to end rather than left unrun. The Input, Video and Audio pages were deliberately not built: TinyGBA implements no frame for a pad map, a video shape or a volume, so those pages would present controls that do nothing, and the reason is written in the app's own header so the next person adding a tab knows what stands in the way. The Saves page was also left out of this pass even though the proven save path would support it, because the goal was one page that works and it is the natural next one. The board reports `tinytang 8abefad-dirty.032e2ad` after flashing and a relay power cycle, and the only new files are the header and the app itself.
+
+#### Next Steps:
+
+Build the Saves page next, because it is the one remaining page that needs nothing new in the core: the save path is proven on hardware for all four types, `gbasave` already exists, and a page that lists the selected cartridge's save, its size against what the header says it should be, and a Restore button would be the first launcher page beyond the library that does real work. The Input, Video and Audio pages should wait until TinyGBA implements the frames behind them, or they will be controls that do nothing. One small gap in the library worth closing when convenient: the status row shows the last line of a load, so a failure is visible, but per-chunk progress still goes only to the console, which is hidden while a game runs -- a progress widget fed from the same `gba_say()` buffer would make a 32 MiB title's load visible. The `third_party/tinydesk` submodule still carries uncommitted slider work that predates this cycle and is not part of it; it should be committed or discarded deliberately rather than left dirty. And this app has no test of its own: the library listing, the descending and the launch refusal paths were exercised by hand, so a host-side check of the list logic would be worth having before the page set grows.
+
+#### Files Modified:
+
+- CMakeLists.txt
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tang_gba_load.h
+- ports/bl616/tinygba_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -81,6 +81,7 @@
 
 #include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
+#include "tang_gba_load.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -866,10 +867,9 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
  * core's receiver drops back to hunting for a magic byte when a frame's length
  * high byte reaches 8, and the BL616 needs to run its USB and console tasks or
  * the host sees the link die part-way through a large cartridge. */
-#define TANG_GBA_MAX_IMAGE     (32u * 1024u * 1024u)  /* the largest GBA cart */
-#define TANG_GBA_HEADER_MIN    0xC0u                  /* header and its fixed byte */
-#define TANG_GBA_HEADER_FIXED  0xB2u
-#define TANG_GBA_HEADER_VALUE  0x96u
+/* TANG_GBA_MAX_IMAGE, TANG_GBA_HEADER_* and TANG_GBA_BACKUP_* live in
+ * tang_gba_load.h, because the desk app needs the save-type numbers too and two
+ * copies of a wire protocol is how they drift. */
 
 /* Save hardware, as the core's `config_backup_type` numbers them
  * (fpga/gba/src/memory/gba_memory.sv).  Getting this wrong is not cosmetic:
@@ -877,11 +877,6 @@ static int cmd_nesload(tdsh_session_t *session, int argc, char **argv)
  * every write the game makes is discarded, and a game that checks its save at
  * boot -- Pokemon Emerald does -- stops on the BIOS handover's white screen.
  * That is what BRD-080 recorded and BRD-088 diagnosed. */
-#define TANG_GBA_BACKUP_NONE   0u
-#define TANG_GBA_BACKUP_FLASH512K 1u
-#define TANG_GBA_BACKUP_FLASH1M   2u
-#define TANG_GBA_BACKUP_SRAM      3u
-#define TANG_GBA_BACKUP_EEPROM    4u
 
 /* Every GBA cart that uses save hardware carries a marker string from the
  * library it was linked against, and that string is how the save type is
@@ -954,38 +949,61 @@ static uint8_t gba_scan_saves(const uint8_t *buf, size_t len, uint8_t *tail,
 
 /* Defined below, next to the rest of the save path; declared here because the
  * loader calls it before the core is released. */
-static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
+/* Says what it did through `gba_say`, so the desk app's window learns whether
+ * the save came back as well as the console does. */
+static void gba_save_restore(char *why, size_t why_len, const char *rom_real,
                              uint8_t type);
 
-static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
+/* Load the cartridge at `real` (a FatFS path, /sd/...) into the running
+ * TinyGBA core and start it.  0 on success; otherwise non-zero with the reason
+ * in `why`.  `label` is what the caller called the file, used in messages.
+ *
+ * TinySNES has tang_snes_load() for exactly this reason and its header says why:
+ * the shell command and the desk app both call one function, so the two cannot
+ * drift apart.  This is the same arrangement, kept in this file rather than moved
+ * to a new one so that the load path this project has proved on hardware many
+ * times is edited in place rather than relocated. */
+/* Say one line to both the console and the caller's `why` buffer.  The desk app
+ * has no console of its own while it is hidden behind a game, so the same text
+ * has to reach a window; the shell wants it on the terminal.  One function for
+ * both keeps the two from drifting, which is the whole reason the load is shared
+ * rather than duplicated. */
+static void gba_say(char *why, size_t why_len, const char *fmt, ...)
 {
-    if (argc < 2) {
-        tdsh_printf("usage: gbaload <path>\r\n");
-        return 1;
+    char    line[160];
+    va_list ap;
+    va_start(ap, fmt);
+    (void)vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    tdsh_printf("%s", line);
+    if (why != NULL && why_len > 0) {
+        /* The trailing CRLF belongs on a console, not in a widget. */
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+            line[--n] = '\0';
+        snprintf(why, why_len, "%s", line);
     }
+}
 
-    char real[TDSH_MAX_REAL_PATH];
-    if (!resolve_path(session, argv[1], real, sizeof(real))) {
-        tdsh_printf("gbaload: bad path %s\r\n", argv[1]);
-        return 1;
-    }
+int tang_gba_load(const char *label, const char *real, char *why, size_t why_len)
+{
 
     FIL file;
     if (f_open(&file, real, FA_READ) != FR_OK) {
-        tdsh_printf("gbaload: cannot open %s\r\n", argv[1]);
+        gba_say(why, why_len, "cannot open %s\r\n", label);
         return 1;
     }
 
     const uint32_t size = (uint32_t)f_size(&file);
     if (size < TANG_GBA_HEADER_MIN) {
         f_close(&file);
-        tdsh_printf("gbaload: %s is %u bytes, too short to be a cartridge\r\n",
-                    argv[1], (unsigned)size);
+        gba_say(why, why_len, "%s is %u bytes, too short to be a cartridge\r\n",
+                    label, (unsigned)size);
         return 1;
     }
     if (size > TANG_GBA_MAX_IMAGE) {
         f_close(&file);
-        tdsh_printf("gbaload: %u bytes is more than the 32 MiB a GBA cartridge can be\r\n",
+        gba_say(why, why_len, "%u bytes is more than the 32 MiB a GBA cartridge can be\r\n",
                     (unsigned)size);
         return 1;
     }
@@ -996,22 +1014,22 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
         f_read(&file, &fixed, 1, &got) != FR_OK || got != 1u ||
         fixed != TANG_GBA_HEADER_VALUE) {
         f_close(&file);
-        tdsh_printf("gbaload: %s is not a GBA cartridge (no 0x96 at 0xB2)\r\n", argv[1]);
+        gba_say(why, why_len, "%s is not a GBA cartridge (no 0x96 at 0xB2)\r\n", label);
         return 1;
     }
     if (f_lseek(&file, 0) != FR_OK) {
         f_close(&file);
-        tdsh_printf("gbaload: cannot rewind\r\n");
+        gba_say(why, why_len, "cannot rewind\r\n");
         return 1;
     }
 
     if (tang_fpga_link_open() != 0) {
         f_close(&file);
-        tdsh_printf("gbaload: cannot bring up UART1\r\n");
+        gba_say(why, why_len, "cannot bring up UART1\r\n");
         return 1;
     }
 
-    tdsh_printf("gbaload: %u bytes -> the core at %u baud\r\n",
+    gba_say(why, why_len, "%u bytes -> the core at %u baud\r\n",
                 (unsigned)size, (unsigned)s_baud);
 
     tang_fpga_lock();
@@ -1021,7 +1039,7 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
     if (tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 1 }, 1) != 0) {
         tang_fpga_unlock();
         f_close(&file);
-        tdsh_printf("gbaload: cannot start the load\r\n");
+        gba_say(why, why_len, "cannot start the load\r\n");
         return 1;
     }
 
@@ -1038,7 +1056,7 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
         if (f_read(&file, s_rom_chunk, FPGA_ROM_CHUNK, &br) != FR_OK) {
             tang_fpga_unlock();
             f_close(&file);
-            tdsh_printf("gbaload: SD read failed at %u\r\n", (unsigned)sent_total);
+            gba_say(why, why_len, "SD read failed at %u\r\n", (unsigned)sent_total);
             return 1;
         }
         if (br == 0) {
@@ -1047,7 +1065,7 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
         if (tang_fpga_frame(FPGA_CMD_ROM_DATA, s_rom_chunk, br) != 0) {
             tang_fpga_unlock();
             f_close(&file);
-            tdsh_printf("gbaload: the core stopped accepting data at %u\r\n",
+            gba_say(why, why_len, "the core stopped accepting data at %u\r\n",
                         (unsigned)sent_total);
             return 1;
         }
@@ -1088,13 +1106,13 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
                                   (const uint8_t[]){ save_type, 0, 0, 0 }, 4);
         tang_fpga_unlock();
         if (cfg != 0) {
-            tdsh_printf("gbaload: could not set the save type (continuing)\r\n");
+            gba_say(why, why_len, "could not set the save type (continuing)\r\n");
         } else {
-            tdsh_printf("gbaload: save hardware = %s\r\n",
+            gba_say(why, why_len, "save hardware = %s\r\n",
                         names[save_type <= TANG_GBA_BACKUP_EEPROM ? save_type : 0]);
         }
     } else {
-        tdsh_printf("gbaload: no save marker found; save hardware left off\r\n");
+        gba_say(why, why_len, "no save marker found; save hardware left off\r\n");
     }
 
     /* Put the cartridge's stored save back while the core is still held.  The
@@ -1103,7 +1121,7 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
      * before the save type is configured, because the EEPROM is only reachable
      * once the core knows the cartridge has one. */
     if (save_type != TANG_GBA_BACKUP_NONE)
-        gba_save_restore(session, real, save_type);
+        gba_save_restore(why, why_len, real, save_type);
 
     /* Hide the OSD before the core starts, through the OSD module so that its
      * own idea of the overlay stays true -- the same reason nesload does it
@@ -1111,7 +1129,7 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
      * because the OSD takes it itself. */
     if (tang_osd_set(false) != 0) {
         f_close(&file);
-        tdsh_printf("gbaload: streamed %u bytes but could not clear the OSD\r\n",
+        gba_say(why, why_len, "streamed %u bytes but could not clear the OSD\r\n",
                     (unsigned)sent_total);
         return 1;
     }
@@ -1123,13 +1141,30 @@ static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
     f_close(&file);
 
     if (released != 0) {
-        tdsh_printf("gbaload: streamed %u bytes but could not start the core\r\n",
+        gba_say(why, why_len, "streamed %u bytes but could not start the core\r\n",
                     (unsigned)sent_total);
         return 1;
     }
 
-    tdsh_printf("gbaload: %u bytes in; the core is running\r\n", (unsigned)sent_total);
+    gba_say(why, why_len, "%u bytes in; the core is running\r\n", (unsigned)sent_total);
     return 0;
+}
+
+/* The shell front end.  The desk app calls tang_gba_load() directly, so this is
+ * only the path resolution and the message, exactly as cmd_snesload is. */
+static int cmd_gbaload(tdsh_session_t *session, int argc, char **argv)
+{
+    if (argc < 2) {
+        tdsh_printf("usage: gbaload <path>\r\n");
+        return 1;
+    }
+    char real[TDSH_MAX_REAL_PATH];
+    if (!resolve_path(session, argv[1], real, sizeof(real))) {
+        tdsh_printf("gbaload: bad path %s\r\n", argv[1]);
+        return 1;
+    }
+    char why[160] = "";
+    return tang_gba_load(argv[1], real, why, sizeof why);
 }
 
 /* ------------------------------------------------------ save persistence
@@ -1374,10 +1409,9 @@ static int cmd_gbasave(tdsh_session_t *session, int argc, char **argv)
 
 /* Put a stored save back, called by gbaload before the cartridge is started.
  * Prints its own result; a cartridge with no .sav simply says nothing. */
-static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
+static void gba_save_restore(char *why, size_t why_len, const char *rom_real,
                              uint8_t type)
 {
-    (void)session;
 
     char path[TDSH_MAX_REAL_PATH + 8];
     (void)snprintf(path, sizeof path, "%s.sav", rom_real);
@@ -1389,18 +1423,18 @@ static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
     const uint32_t want = gba_save_bytes(type);
     const uint32_t have = (uint32_t)f_size(&sav);
     if (have != want) {
-        tdsh_printf("gbaload: %s is %u bytes but this cartridge's %s save needs %u; not restored\r\n",
+        gba_say(why, why_len, "%s is %u bytes but this cartridge's %s save needs %u; not restored\r\n",
                     path, (unsigned)have, gba_save_type_name(type), (unsigned)want);
         f_close(&sav);
         return;
     }
 
-    tdsh_printf("gbaload: restoring %u bytes of %s\r\n",
+    gba_say(why, why_len, "restoring %u bytes of %s\r\n",
                 (unsigned)want, gba_save_type_name(type));
 
     if (!tang_fpga_lock_within(5000)) {
         f_close(&sav);
-        tdsh_printf("gbaload: the FPGA link is held by another task; save not restored\r\n");
+        gba_say(why, why_len, "the FPGA link is held by another task; save not restored\r\n");
         return;
     }
     tang_fpga_drain();
@@ -1429,13 +1463,13 @@ static void gba_save_restore(tdsh_session_t *session, const char *rom_real,
     f_close(&sav);
 
     if (rc == 1)
-        tdsh_printf("gbaload: SD read failed at %u of the save\r\n", (unsigned)off);
+        gba_say(why, why_len, "SD read failed at %u of the save\r\n", (unsigned)off);
     else if (rc == 2)
-        tdsh_printf("gbaload: the core stopped taking save data at %u\r\n", (unsigned)off);
+        gba_say(why, why_len, "the core stopped taking save data at %u\r\n", (unsigned)off);
     else if (rc == 3)
-        tdsh_printf("gbaload: lost the FPGA link at %u of the save\r\n", (unsigned)off);
+        gba_say(why, why_len, "lost the FPGA link at %u of the save\r\n", (unsigned)off);
     else
-        tdsh_printf("gbaload: save restored, %u bytes of %s\r\n",
+        gba_say(why, why_len, "save restored, %u bytes of %s\r\n",
                     (unsigned)want, gba_save_type_name(type));
 }
 

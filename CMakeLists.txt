@@ -149,6 +149,8 @@ else()
                                ports/bl616/tinygbc_app.cpp
                                # TinySNES: the cartridge library; the BL616 streams the ROM.
                                ports/bl616/tinysnes_app.cpp
+                               # TinyGBA: the cartridge library, page one.
+                               ports/bl616/tinygba_app.cpp
                                ports/bl616/tiny89_app.cpp
                                # TinyCreature: its fixed Celtic scene launcher.
                                ports/bl616/tinycreature_app.cpp
