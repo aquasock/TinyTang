@@ -23,6 +23,12 @@ module desktop_hdmi (
     input [14:0] wide_bg,
     input        wide_on,
 
+    // The pixel plane's write port (main logic clock) and enable (pixplane.sv).
+    input        plane_we,
+    input [17:0] plane_waddr,
+    input [15:0] plane_wdata,
+    input        plane_on,
+
     output [10:0] desktop_cx,
     output [9:0] desktop_cy,
     output [23:0] desktop_rgb,
@@ -96,12 +102,35 @@ always @(posedge clk_pixel) begin
     wide_on_rr <= wide_on_r;
 end
 
+// The pixel plane: 640x360 RGB565 at 2x, the same look-ahead depth as the text
+// layer, so either can be selected below without a shift.
+wire [23:0] plane_rgb;
+
+pixplane u_plane (
+    .clk(clk), .hclk(clk_pixel),
+    .we(plane_we), .waddr(plane_waddr), .wdata(plane_wdata),
+    .cx(cx), .cy(cy),
+    .frame_width(frameWidth), .frame_height(frameHeight),
+    .rgb(plane_rgb)
+);
+
+reg plane_on_r, plane_on_rr;
+always @(posedge clk_pixel) begin
+    plane_on_r  <= plane_on;
+    plane_on_rr <= plane_on_r;
+end
+
 // calc rgb value to hdmi
 //
 // The layer is shown when the overlay is asserted as well as enabled, so the
 // BL616's overlay command (0x08) can still hide it.
+//
+// The plane, when an app has claimed the screen with it, replaces both: an app
+// that owns the screen owns all of it, as on TinyDesk's panel ports.
 always @(posedge clk_pixel) begin
-    if (wide_on_rr && overlay)
+    if (plane_on_rr)
+        rgb <= plane_rgb;
+    else if (wide_on_rr && overlay)
         rgb <= {wide_color[4:0],3'b0,wide_color[9:5],3'b0,wide_color[14:10],3'b0};                 // BGR5 to RGB8
     else rgb <= 24'h000000;
 end

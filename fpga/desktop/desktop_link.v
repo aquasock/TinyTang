@@ -32,6 +32,11 @@ module desktop_link #(
     output reg  [14:0] wide_bg,
     output reg         wide_we,
     output reg         wide_on,
+    // The pixel plane's write port and enable (desktop ABI 1.8, pixplane.sv).
+    output reg         plane_we,
+    output reg  [17:0] plane_waddr,    // y * 640 + x
+    output reg  [15:0] plane_wdata,    // RGB565
+    output reg         plane_on,
     output wire [15:0] desktop_socket_word,
     output wire desktop_socket_request,
     input desktop_socket_ack,
@@ -177,6 +182,11 @@ reg [2:0] wide_phase;            // byte within a 5-byte cell
 reg [7:0] wide_fgh;
 reg [7:0] wide_bgh;
 
+// The pixel plane's write cursor and pixel assembly.
+reg [17:0] plane_addr;           // the next pixel's linear address
+reg        plane_phase;          // 0: the high byte is next
+reg [7:0]  plane_hi;
+
 reg [7:0] response_type;
 reg response_req;
 reg response_ack;
@@ -272,6 +282,10 @@ always @(posedge clk) begin
         wide_cy <= 0;
         wide_phase <= 0;
         wide_on <= 0;
+        plane_addr <= 0;
+        plane_phase <= 0;
+        plane_on <= 0;
+        plane_we <= 0;
         response_req <= 0;
         response_type <= 0;
         wide_we <= 0;
@@ -279,6 +293,7 @@ always @(posedge clk) begin
         rom_do_valid <= 0;
         we <= 0;
         wide_we <= 0;
+        plane_we <= 0;
         wide_x <= wide_cx;
         wide_y <= wide_cy;
         mgmt_write <= 0;
@@ -321,6 +336,8 @@ always @(posedge clk) begin
                 // Leaving it to carry over would let a short or malformed
                 // frame misalign every cell after it.
                 wide_phase <= 3'd0;
+                // The same for a plane pixel's two bytes.
+                plane_phase <= 1'b0;
             end
             
             RECV_PARAM: if (rx_valid) begin
@@ -429,6 +446,45 @@ always @(posedge clk) begin
                         wide_phase <= (wide_phase == 3'd4) ? 3'd0 : wide_phase + 3'd1;
                     end
                     'h15: wide_on <= rx_data[0];
+                    // The pixel plane (desktop ABI 1.8, pixplane.sv).
+                    //   0x18 x[15:0] y[15:0]     move the plane's write cursor
+                    //   0x19 <2 bytes per pixel> write RGB565 pixels from the
+                    //                           cursor, high byte first; the
+                    //                           address runs on across rows
+                    //   0x1A x[7:0]              x[0]: show the plane instead
+                    //                           of the text layer
+                    // A frame holds at most 2047 bytes, so 1021 pixels; one
+                    // 640-pixel row is one frame.
+                    'h18: begin
+                        if (data_cnt == 3) begin
+                            // data_reg holds x_hi, x_lo, y_hi; this is y_lo.
+                            // y * 640 + x is y * 512 + y * 128 + x.
+                            // A y of 512 or more cannot be on the plane:
+                            // park the cursor past its end, where pixplane
+                            // drops the writes.
+                            if (data_reg[7:1] != 7'd0)
+                                plane_addr <= 18'h3FFFF;
+                            else
+                                plane_addr <= {data_reg[0], rx_data, 9'd0} +
+                                              {2'd0, data_reg[0], rx_data, 7'd0} +
+                                              {8'd0, data_reg[17:8]};
+                        end
+                    end
+                    'h19: begin
+                        if (!plane_phase) begin
+                            plane_hi <= rx_data;
+                        end else begin
+                            plane_wdata <= {plane_hi, rx_data};
+                            plane_waddr <= plane_addr;
+                            plane_we <= 1;
+                            // Saturate rather than wrap: a cursor parked past
+                            // the end must not come back round to the top.
+                            if (plane_addr != 18'h3FFFF)
+                                plane_addr <= plane_addr + 18'd1;
+                        end
+                        plane_phase <= ~plane_phase;
+                    end
+                    'h1a: plane_on <= rx_data[0];
                     default: begin
                         // unknown command: consume all data and return
                     end

@@ -6,7 +6,7 @@ add_file -type sdc src/desktop/desktop.sdc
 foreach source {
     src/desktop/pll/gowin_pll_27.v src/desktop/pll/gowin_pll_hdmi.v src/desktop/pll/gowin_pll_nes.v
     src/desktop/desktop_link.v src/desktop/uart_fixed.v
-    src/desktop/textdisp_wide.sv src/desktop/desktop_hdmi.sv src/desktop/desktop_top.sv
+    src/desktop/textdisp_wide.sv src/desktop/pixplane.sv src/desktop/desktop_hdmi.sv src/desktop/desktop_top.sv
     src/desktop/clock_monitor.sv
     src/desktop/desktop_regs.sv src/desktop/desktop_pmod.sv src/desktop/i2c_master.sv
     src/desktop/pmod_uart.sv

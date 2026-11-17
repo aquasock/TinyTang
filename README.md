@@ -622,6 +622,15 @@ app watches bit 15; there, a tap of HOME with the desk layer off brings TinyDesk
 up over the game, showing the shell, while the game keeps running.  `pad
 [seconds]` at the shell prints the word the loaded core reports each time it
 changes, which is how a gesture is checked without guessing (GBA-004).
+
+The Reader shows pictures at the desktop core's own pixel resolution rather
+than in block characters: desktop ABI 1.8 adds a 640x360 RGB565 plane that HDMI
+shows at 2x instead of the text layer while an app owns the screen.  It lists
+BMP, PPM and PGM files under `/root/media/reader`; opening one goes full screen
+and draws it row by row as the file streams in.  `+` and `-`, or A and B on the
+pad, zoom (A on the point under the pointer), the arrows and the wheel pan,
+PgUp and PgDn turn pages, `0` shows the whole picture, Esc goes back.  A
+scanned magazine page converted to a 1280-wide BMP reads at 2x (TDESK-019).
 The Saves page shows the selected cartridge's `.sav` beside it, its save type and
 the size that type holds (found by scanning the image for its save marker, in a
 task of its own, since a GBA cartridge has no header field for it), and when the

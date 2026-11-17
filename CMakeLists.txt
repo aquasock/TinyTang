@@ -137,12 +137,12 @@ else()
     sdk_add_compile_definitions(
         -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45
         -DTD_VT_SCROLLBACK=4 -DTD_MAX_WIDGETS=64)
-    # This port registers nineteen apps -- the nine built-ins plus the ten this
-    # card adds -- and TinyDesk's registry holds sixteen by default and answers
-    # -1 past that, silently: with the default, the last three registered
-    # (Update, Bluetooth, TinyNode) never reach the start menu.  Twenty-four
-    # leaves room and costs a pointer each (td_wm.h, td_app_register).
-    sdk_add_compile_definitions(-DTD_MAX_APPS=24)
+    # This port registers twenty-four apps since the Reader (TinyDesk 0.5's Image
+    # Viewer and Recycle Bin, the port's console apps and readers), and
+    # TinyDesk's registry answers -1 past its size, silently: an app registered
+    # last would never reach the start menu.  Twenty-eight leaves room and costs
+    # a pointer each (td_wm.h, td_app_register).
+    sdk_add_compile_definitions(-DTD_MAX_APPS=28)
     # The Editor allocates its whole buffer and undo history when it opens,
     # about 25 KB at the defaults (16 KB + 8.7 KB).  8 KB files and 2 KB of
     # undo text halve that; larger files open read-only (TDESK-016).
@@ -164,6 +164,7 @@ else()
                                ports/bl616/tinysnes_app.cpp
                                # TinyGBA: the cartridge library, page one.
                                ports/bl616/tinygba_app.cpp
+                               ports/bl616/tinyreader_app.cpp
                                ports/bl616/tiny89_app.cpp
                                # TinyCreature: its fixed Celtic scene launcher.
                                ports/bl616/tinycreature_app.cpp

@@ -1405,3 +1405,51 @@ The operator will exercise more of 0.5.2 as work continues; the parts not yet lo
 - User Test: PASS
 
 ---
+## 44 COMMIT Unreleased 2026-11-17T16:43:59-07:00
+
+#### Coming From:
+
+Unreleased 86ff89c
+
+#### Purpose:
+
+Give the desktop core a pixel framebuffer and the BL616 a full-screen Reader that draws pictures on it, so scanned pages can be read at real pixel resolution.
+
+#### Outcome:
+
+The desktop core now has a 640x360 RGB565 pixel plane at desktop ABI 1.8, and the new Reader app draws pictures on it full screen; the operator opened a scanned Nintendo Power page and passed it (TDESK-019). The plane is `fpga/desktop/pixplane.sv`, 228 block RAMs read with the text layer's four-pixel look-ahead and shown at 2x instead of the cells while it is on, written through three new link frames, 0x18 cursor, 0x19 pixels and 0x1A show, with the geometry at register 0x0c. A new end-to-end bench drives real UART frames through the link and the raster and checks 20 pixels, and fails under a short look-ahead or a missing doubling; it found nothing wrong with the design, only a capture bug of its own that was fixed. The firmware caches the desktop ABI at core load, which gates both the block glyphs and the plane, and `tang_plane.c` and `tinyreader_app.cpp` stream a BMP, PPM or PGM row by row from the card through TinyDesk's image reader, scale it, and send each finished row, with zoom, pan and page turns; the Reader was registered and the app registry raised to 28. A header-guard collision between `TANG_PLANE_H` and the plane-height macro was caught by a compiler warning and fixed by renaming the size macros. The eight-seed desktop build passed at only one seed: seed 3, pixel clock 81.26 MHz against 74.25, with `clk` 67.40 and sys 155.04 MHz; the other seven missed the pixel clock at 58.7 to 69.2 MHz with a clock-topology regression, on the unchanged HDMI encoder's TMDS path, which the plane's block RAMs displace. Utilisation was 8,853 LUT4, 3,073 DFF, 242 BSRAM and 1,466 ALU at every seed. Host tests were 47 of 47 with the plane bench added and two benches updated for ABI 1.8. A 1280x1726 BMP of the page was put in `/root/media/reader`; the core pair and firmware `86ff89c-dirty.958a440` were deployed and booted by the relay sequence after the operator reconnected the board, and `fpgar` read ABI `0x00010008` and geometry `0x02800168` with the heap at 77,964 bytes free. An HDMI capture of the Reader could not be taken because the capture card had no signal at the time. The ESP32 another agent drives was not touched. README and BUILDING.md describe the Reader and the new core. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and TDESK-019 only, and this entry was validated as number 44 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 174 records.
+
+#### Next Steps:
+
+The operator likes the row-by-row loading as it is, so speed is not the next item; formats are: a JPEG decoder (TJpgDec, a few KB of working memory and built-in 1/2 to 1/8 scaling) would let pages be stored as JPEG instead of 6.6 MB BMPs, and a small PC script could convert a whole JPEG 2000 issue in one step. The plane is also ready for TinyDesk's RGB picture sink, which would give the upstream Image Viewer and other apps real pixels. The 1.8 core's one-in-eight seed yield is the risk to watch on any further desktop-core change. Earlier items stand: the shell `gbaload` stall, game-core desk fonts without block glyphs, `pad` and ctrl-c, feedback during the exit save, and the stale `bl616-firmware.bin`.
+
+#### Files Modified:
+
+- BUILDING.md
+- CMakeLists.txt
+- README.md
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop_hdmi.sv
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/pixplane.sv
+- ports/bl616/tang_core_load.h
+- ports/bl616/tang_plane.c
+- ports/bl616/tang_plane.h
+- ports/bl616/td_desktop_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- ports/bl616/tinyreader_app.cpp
+- tools/desktop_open/synth.ys
+- tools/tests/sim/tb_desktop_plane.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_plane.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -81,6 +81,12 @@ wire [14:0] wide_bg;
 wire        wide_we;
 wire        wide_on;
 
+// The pixel plane's write port and enable, from the link to desktop_hdmi.
+wire        plane_we;
+wire [17:0] plane_waddr;
+wire [15:0] plane_wdata;
+wire        plane_on;
+
 wire [10:0] desktop_cx;
 wire [9:0] desktop_cy;
 wire [23:0] desktop_rgb;
@@ -129,6 +135,8 @@ desktop_hdmi u_hdmi (
     .overlay(overlay),
     .wide_we(wide_we), .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
     .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_on(wide_on),
+    .plane_we(plane_we), .plane_waddr(plane_waddr), .plane_wdata(plane_wdata),
+    .plane_on(plane_on),
     .desktop_cx(desktop_cx), .desktop_cy(desktop_cy), .desktop_rgb(desktop_rgb),
     .clk_pixel(hclk), .clk_5x_pixel(hclk5),
     .tmds_clk_n(tmds_clk_n), .tmds_clk_p(tmds_clk_p),
@@ -143,6 +151,8 @@ desktop_link #(.FREQ(21_492_000), .CORE_ID(THIS_CORE_ID))
     .overlay(overlay),
     .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
     .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
+    .plane_we(plane_we), .plane_waddr(plane_waddr), .plane_wdata(plane_wdata),
+    .plane_on(plane_on),
     .hid1(hid1), .hid2(hid2),
     .uart_tx(UART_TXD), .uart_rx(UART_RXD),
     // The clock monitor's crystal reference.

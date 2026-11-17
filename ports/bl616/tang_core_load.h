@@ -30,4 +30,11 @@ typedef enum {
  * whole erase and programming time. */
 tang_load_result_t tang_core_load(const char *real_path);
 
+/* The loaded desktop core's ABI word (major << 16 | minor), as tang_core_load
+ * read it when it loaded `.../tinytang.bin`; 0 for any other core, or for a
+ * desktop that did not answer.  Desktop ABI 1.7 has block glyphs, 1.8 the
+ * pixel plane. */
+#include <stdint.h>
+uint32_t tang_core_desktop_abi(void);
+
 #endif

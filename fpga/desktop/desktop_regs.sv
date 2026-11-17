@@ -130,7 +130,8 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010007; // desktop ABI 1.7: block glyphs in font slots 0x01-0x17 (1.6: PMOD UART)
+                32'h04:read_data=32'h00010008; // desktop ABI 1.8: pixel plane, frames 0x18-0x1A (1.7: block glyphs; 1.6: PMOD UART)
+                32'h0c:read_data={16'd640,16'd360}; // the pixel plane's width and height (ABI 1.8)
                 32'h08:read_data=32'h0000010f; // none, OLED, VGA J1/J2, UART (8)
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,

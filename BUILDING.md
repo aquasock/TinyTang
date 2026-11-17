@@ -85,10 +85,31 @@ not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to the build directory it is given (the section below records the
-  ABI 1.7 core that is on the card, which is what a card should carry; the
-  ABI 1.6 and 1.3 entries that follow are kept as the older records of this flow)
+  ABI 1.8 core that is on the card, which is what a card should carry; the
+  ABI 1.7, 1.6 and 1.3 entries that follow are kept as the older records)
 
-- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.7**,
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.8**,
+  built 2026-11-17 at seed 3 into `build/desk18-s3/out/`.  ABI 1.8 adds the
+  640x360 RGB565 pixel plane (`fpga/desktop/pixplane.sv`, frames 0x18-0x1A,
+  geometry at register 0x0c), which takes 228 block RAMs (242 in all).
+  - `desktop.bin` sha256
+    `13989970c925b5f960ec68fbedc57a882eb2a558c1137cf2746722ac1e033300`,
+    5,174,764 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `57b392049972d08e719be449baa59e9fff7950deb838ac9158218bfdb6f9b1c1`,
+    41,433,573 bytes; `tinytang.fs.gz` is `gzip -9 -n` of it, 721,631 bytes
+  - Gates passed with nothing overridden: setup and hold met (`clk` 67.40,
+    pixel 81.26, sys 155.04 MHz against 21.49, 74.25 and 50), no clock-topology
+    regression.  **Only seed 3 of eight passed**: the other seven missed the
+    pixel clock at 58.7 to 69.2 MHz and regressed the clock topology.  The
+    failing path is the unchanged HDMI encoder's TMDS adder chain, displaced
+    by the plane's block RAMs, so a later change to this core may need a wider
+    seed sweep, or an 8-bit plane at half the block RAM.
+  - Provenance: `source_sha256`
+    `e9e2a104901e36202806a2497eb766b4ea0fd1223f855f7802476c76f785c17c`.
+
+
+- **desktop core, ABI 1.7** (the card's file until the ABI 1.8 core),
   built 2026-11-17 from the tree `e1df16a` plus the uncommitted font and ABI
   change that its commit carries, at seed 3 into `build/desk17-s3/out/`, one of
   eight seeds built in parallel that all passed every gate.  ABI 1.7 puts 23

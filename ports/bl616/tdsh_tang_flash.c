@@ -246,6 +246,16 @@ void tang_phosphor_core_replacing(void);
  * is refused. */
 static bool s_programming;
 
+/* The desktop core's ABI word as the last load found it, 0 when the loaded
+ * core is not the desktop or did not answer.  Read by what depends on a
+ * desktop feature: block glyphs from 1.7, the pixel plane from 1.8. */
+static volatile uint32_t s_desktop_abi;
+
+uint32_t tang_core_desktop_abi(void)
+{
+    return s_desktop_abi;
+}
+
 tang_load_result_t tang_core_load(const char *real)
 {
     taskENTER_CRITICAL();
@@ -274,15 +284,16 @@ tang_load_result_t tang_core_load(const char *real)
          * by its file name: a game core does not answer the register frame,
          * and asking it would cost a reply timeout on every launch.  Anything
          * else, or a desktop older than ABI 1.7, gets the ASCII fallback. */
-        bool blocks = false;
+        uint32_t abi = 0;
         const size_t n = strlen(real);
         static const char desktop_name[] = "/tinytang.bin";
         if (n >= sizeof desktop_name - 1 &&
-            strcmp(real + n - (sizeof desktop_name - 1), desktop_name) == 0) {
-            uint32_t abi = 0;
-            blocks = tang_fpga_desktop_abi(&abi) && abi >= 0x00010007u;
+            strcmp(real + n - (sizeof desktop_name - 1), desktop_name) == 0 &&
+            !tang_fpga_desktop_abi(&abi)) {
+            abi = 0;
         }
-        tang_osd_desk_set_block_glyphs(blocks);
+        s_desktop_abi = abi;
+        tang_osd_desk_set_block_glyphs(abi >= 0x00010007u);
         /* Reconfiguring the FPGA wipes anything the core was holding, the
          * desktop layer included.  Tell it, or the layer stays gone with no
          * sign of why. */
