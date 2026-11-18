@@ -1920,3 +1920,42 @@ Write the Bluetooth input proposal from BLE-021 and BLE-022: the Classic HID hos
 - User Test: N/A
 
 ---
+## 57 COMMIT Unreleased 2026-11-18T12:03:52-07:00
+
+#### Coming From:
+
+Unreleased 3b72d27
+
+#### Purpose:
+
+Build Phase 1 of the approved Bluetooth input plan, a Classic gamepad host for Switch-mode pads with pairings kept on the card, and make the Classic build the default firmware once it passed.
+
+#### Outcome:
+
+A Classic pad now pairs once and then works from power-up at the console and on the desktop, and the operator passed it (BLE-023). The new `ports/bl616/tang_btpad.c` replaces entry 54's `bthid` test code and takes `btscan` with it: `btpad pair` finds the gamepad in pairing mode by inquiry and pairs it into one of two slots, its link key goes to `/sd/root/ble/br_keys.bin` in a CRC-checked format (`tang_btpad_codec.c`), and each radio start puts the keys back into the host's table, registers the HID servers and turns on page scan, with the radio started at boot when a pad is saved; `tang_ble.c` hands it every Classic link and runs its card writes and channel opening in its background task. The first build saved no key, because the controller reports pairing complete before it delivers the link key, so the key is now read once encryption is up or a channel opens. The pad drives the desktop through the wired Wii Classic Controller's key map: the operator ran `desktop` from the shell's history with the D-pad and A and used the pointer, clicks and home. During the test home and L both toggled the desktop, so only home does now; the R-held pointer mode was dropped because the left stick is the pointer, and the stick's top speed was halved to 48 counts a poll after the operator found it too fast. After a relay power cycle the pairing loaded from the card and the woken pad reconnected by itself. The tested firmware was `3b72d27-dirty.3eec454`, 1,050,464 bytes, after five earlier installs in the cycle, all through `tools/tinytang_flash.py`; one attempt was refused because the desktop was running, and the board was power-cycled to the prompt first. Static RAM rose 1,909 bytes. `defconfig` now selects the BR/EDR controller library with A2DP and AVRCP off, as approved, and the default build was confirmed to differ from the tested image only in its 6-byte build identity. Host tests are 54 of 54, with `test_btpad.sh` at 87 checks and `test_osd_desk.sh` at 136, each new section failing under mutation. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, the new BLE-023 with its index row and summary line, and dated revisions to the verifications of BLE-002, BLE-020 and BLE-021, and this entry was validated as number 57 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 190 records.
+
+#### Next Steps:
+
+The approved test work comes next: a host test of `tang_btpad.c` against a fake Bluetooth stack replaying the event orders seen on the board, a script that builds both the default and the LE-only firmware, and a quick mode for `run_all` that skips the FPGA simulations and upstream suites unless their sources changed. After that, Phase 2 is the Wii family handler with its legacy PIN reply (BLE-022), then the LE checks of Phase 3. A game-core load and a TinyNES run on the Classic firmware should still be confirmed, entry 50's zoom mode still awaits its test, and the updater's silent sector failure is still unfixed.
+
+#### Files Modified:
+
+- defconfig
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_btpad.c
+- ports/bl616/tang_btpad.h
+- ports/bl616/tang_btpad_codec.c
+- ports/bl616/tang_btpad_codec.h
+- ports/bl616/tang_btpad_hooks.h
+- ports/bl616/tang_osd_desk.c
+- tools/tests/tb_btpad.c
+- tools/tests/tb_osd_desk.c
+- tools/tests/test_btpad.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

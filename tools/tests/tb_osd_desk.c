@@ -98,6 +98,25 @@ int tang_osd_toggle(void)
     return tang_osd_set(!g_osd_last);
 }
 
+/* A Classic Bluetooth pad (tang_btpad.h): its word, and what its poll adds
+ * to the desktop's input -- movement and keys -- set by the test. */
+static uint16_t g_btpad_word;
+static int g_btpad_dx;
+static const char *g_btpad_keys = "";
+static int g_btpad_console = -1;      /* the mode the last poll was asked for */
+uint16_t tang_btpad_pad_word(int pad) { return pad == 0 ? g_btpad_word : 0; }
+void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
+{
+    g_btpad_console = console_mode;
+    m->dx += g_btpad_dx;
+    if (k != NULL) {
+        for (const char *c = g_btpad_keys; *c && k->n < TANG_WIIPAD_KEYS_MAX; c++) {
+            k->keys[k->n++] = *c;
+        }
+    }
+    g_btpad_keys = "";
+}
+
 /* The Bluetooth keyboard: a report the test sets, live while "connected". */
 static uint8_t g_ble_rep[8];
 static bool    g_ble_live;
@@ -992,6 +1011,53 @@ int main(void)
         check(!tang_osd_desk_enabled(), "a held L brought the layer back up");
         g_joy = 0;
         desk_watch_toggle();
+    }
+
+    /* ---- a Classic Bluetooth pad drives the desktop like the dock's -------
+     * Its home is LB in its word (tang_btpad.h), joined to the dock pad's,
+     * which brings the layer up and hides it; nothing else of the word is,
+     * because the pad's controls come through its poll, beside the Wii
+     * pad's: movement for the pointer and keys for the desktop. */
+    {
+        (void)tang_osd_desk_set(false);
+        g_joy = 0;
+        g_btpad_word = 0;
+        desk_watch_toggle();
+        g_btpad_word = TANG_PAD_LB;
+        desk_watch_toggle();
+        check(tang_osd_desk_enabled() && tang_osd_shown(),
+              "a Bluetooth pad's home did not bring the desktop up");
+        g_btpad_word = 0;
+        desk_poll();
+        tang_osd_desk_set_pointer(true);
+        int x0 = s_pad.x;
+        g_btpad_word = TANG_PAD_RIGHT;
+        for (int i = 0; i < 8; i++) {
+            desk_poll();
+        }
+        check(s_pad.x == x0, "a Bluetooth pad's word moved the pointer (only LB should pass)");
+        g_btpad_word = 0;
+        g_btpad_dx = TANG_MOUSE_COUNTS_PER_CELL;
+        for (int i = 0; i < 4; i++) {
+            desk_poll();
+        }
+        g_btpad_dx = 0;
+        check(s_pad.x > x0, "a Bluetooth pad's stick did not move the pointer");
+        check(g_btpad_console == 0, "the desktop polled the Bluetooth pad in console mode");
+        char typed[32];
+        read_typed(typed, sizeof typed);      /* what the moves sent */
+        g_btpad_keys = "\x1b[A";              /* the D-pad's up arrow */
+        desk_poll();
+        read_typed(typed, sizeof typed);
+        check(strstr(typed, "\x1b[A") != NULL, "a Bluetooth pad's key did not reach the desktop");
+        desk_poll();
+        g_btpad_word = TANG_PAD_LB;
+        desk_poll();
+        check(!tang_osd_shown(), "a Bluetooth pad's home did not hide the desktop");
+        g_btpad_word = 0;
+        desk_poll();
+        tang_osd_desk_set_pointer(false);
+        frames_clear();               /* the recorder holds MAX_FRAMES */
     }
 
     local_display_checks();

@@ -17,6 +17,7 @@
 #include "tang_pad.h"
 #include "tang_key.h"
 #include "tang_ble.h"
+#include "tang_btpad.h"
 #include "tang_wiipad.h"
 #include "tdsh_bl616.h"
 
@@ -571,6 +572,18 @@ void tang_osd_desk_core_reloaded(void)
     ensure_task();
 }
 
+/* The pad word: the dock's pad as the core relays it, with a Classic
+ * Bluetooth pad's home joined to it as LB (tang_btpad.h), so it shows and
+ * hides the desktop as the dock pad's home tap does.  Only LB: the rest of a
+ * Bluetooth pad drives the desktop through tang_btpad_poll(), with the wired
+ * Wii pad's key map, and its directions here would move the pointer as well
+ * as typing arrows. */
+static void desk_joypad(uint16_t *joy1, uint16_t *joy2)
+{
+    tang_fpga_joypad(joy1, joy2);
+    *joy1 |= (uint16_t)((tang_btpad_pad_word(0) | tang_btpad_pad_word(1)) & TANG_PAD_LB);
+}
+
 /* The reserved toggle key's press, from one report.  Edge, not level: the
  * report is state, and a held F12 is one switch, not one per poll. */
 static bool toggle_pressed(desk_kbd_t *src, const uint8_t rep[8])
@@ -721,7 +734,7 @@ static void desk_poll(void)
     }
 
     uint16_t joy1 = 0, joy2 = 0;
-    tang_fpga_joypad(&joy1, &joy2);
+    desk_joypad(&joy1, &joy2);
 
     /* The Bluetooth keyboard, read once per poll whatever is on screen, so
      * the toggle and the typing share one report.  It is the HID boot
@@ -747,6 +760,8 @@ static void desk_poll(void)
     tang_wii_keys_t padkeys;
     memset(&padkeys, 0, sizeof padkeys);
     (void)tang_wiipad_poll(&mouse, !s_pointer, &padkeys);
+    /* A Classic Bluetooth pad, with the same key map. */
+    tang_btpad_poll(&mouse, !s_pointer, &padkeys);
     pointer_frame(&mouse);
     if (padkeys.n > 0) {
         desk_in_push(padkeys.keys, (size_t)padkeys.n);
@@ -834,7 +849,7 @@ static void desk_watch_toggle(void)
         return;
     }
     uint16_t joy1 = 0, joy2 = 0;
-    tang_fpga_joypad(&joy1, &joy2);
+    desk_joypad(&joy1, &joy2);
     const bool pad_toggle =
         ((uint16_t)(joy1 & (uint16_t)~s_pad.prev) & TANG_PAD_LB) != 0;
     s_pad.prev = joy1;
@@ -866,6 +881,7 @@ static void desk_poll_hidden(void)
     tang_mouse_t mouse;
     (void)tang_ble_mouse(&mouse);
     (void)tang_wiipad_poll(&mouse, false, NULL);
+    tang_btpad_poll(&mouse, false, NULL);
     pointer_frame(&mouse);
 
     /* After the pointer, so a keystroke and a pointer move arriving in the
