@@ -818,10 +818,14 @@ session. `.ai/core-reference.md` holds the full records and their sources.
    init does not touch it, and without it `f_mount` returns `FR_NOT_READY`.
 4. **The FPGA's JTAG pins are GPIO 0/1/2/3** (TMS/TCK/TDO/TDI), driven for the
    vendored programmer's fast bit-bang path.
-5. **The application lives at flash `0x40000`, up to 896 KB (`0xE0000`).**
+5. **The application lives at flash `0x40000`, up to 1.75 MB (`0x1C0000`).**
    The vendor loader below it and the vendor data record at `0x200000` are
-   never touched; `tangflash` stages an image at `0x120000`, verifies it, and
-   only then commits it from TCM.
+   never touched; `tangflash` stages an image at `0x210000`, above that record
+   and below the crash recorder's sector at `0x3FF000`, verifies it, and only
+   then commits it from TCM.  A board running firmware from before 2026-11-18
+   has a 896 KB slot with staging at `0x120000` and refuses larger images, so
+   it is moved across with two installs: a normal-sized image first, then a
+   large one.
 6. **A `tangflash` normally needs a power cycle.** Its soft reset usually lands
    in the vendor loader, and the board shows up as an FT2232 until it is
    power-cycled. Once, on 2026-10-04, it came straight back to the console

@@ -1713,3 +1713,36 @@ Install the zoom firmware with the fixed `tools/tinytang_flash.py` and let it co
 - User Test: NOT RUN
 
 ---
+## 51 COMMIT Unreleased 2026-11-18T07:50:26-07:00
+
+#### Coming From:
+
+Unreleased bef2658
+
+#### Purpose:
+
+Double the BL616 application slot by moving the update staging area above the vendor data record, and use the room to test whether this board can see Classic Bluetooth gamepads.
+
+#### Outcome:
+
+The board now takes firmware up to 1.75 MiB and, on a test build, finds Classic gamepads that no LE scan can (FLS-002, BLE-020). The evening began with the operator's Xbox Wireless Controller, retried on the LE build: it bonded, set up and then sent nothing and dropped the link, BLE-017's failure unchanged; an 8BitDo pad in four modes and a Wii U Pro Controller never appeared in LE scans, being Classic devices. Bouffalo SDK 2.3.36 ships a BL616 controller library with BR/EDR, ble1m2s1bredr1, keeping all LE roles with two LE connections (BLE-002), but no BR/EDR-only one, so dropping LE would not shrink it; built with it the image is 1,074,784 bytes, past the 917,504-byte slot. The factory flash read-back shows 0x201000 to 0x3FF000 erased, so `ports/bl616/tang_fw_update.c` now gives the application 0x40000 to 0x200000 and stages at 0x210000, below the crash record, with static assertions on every bound, and `tools/tinytang_flash.py`'s limit and README fact 5 match. The board was moved across in two installs with the fixed flashing tool, whose wait for the loader saw the commits end after 3 and 5 seconds: `bef2658-dirty.876b3f9`, 803,632 bytes with the new layout, through the old updater, then `bef2658-dirty.aa1a253`, the 1,074,784-byte Classic build made with `CONFIG_BTBLECONTROLLER_LIB=ble1m2s1bredr1 CONFIG_BT_BREDR=y` on the make command line in `build-btclassic`, through the new one; the vendor loader booted both, `platform` and `crash` confirmed each, and the ABI 1.11 core answered. `ports/bl616/tang_ble.c` gains `btscan`, a Classic inquiry compiled only into that build, and with the operator's 8BitDo pad pairing it reported E4:17:D8:17:4D:7F at -71 dBm, class 002508, gamepad, 'Pro Controller'. The SDK has no Classic HID host, so nothing connects yet. The Classic build leaves 42,828 bytes of heap free before the radio, against 72,332 on the ordinary build, and LE keyboards and mice were not tried on it. Starting the radio dropped the USB console for a few seconds on both builds. The board is left on the Classic test firmware, which also carries entry 50's zoom mode, still untried by the operator. `.gitignore` now ignores `build-*` directories. Host tests are 52 of 52; the ordinary build was rebuilt with the new layout and is the one installed first. The operator watched the scan but gave no pass or fail. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, the new BLE-020 with its index row and summary line, and dated revisions to FLS-002 (summary line, title, verified date, a leading statement sentence and its verification) and to the verifications of BLE-002, BLE-007 and BLE-017, and this entry was validated as number 51 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 185 records.
+
+#### Next Steps:
+
+The next Classic step is a connection test before any driver: pair with the 8BitDo pad in Switch mode, open its HID control and interrupt channels (L2CAP PSM 0x11 and 0x13) over the SDK's Classic L2CAP, and print raw input reports while buttons are pressed; only if they arrive is a Classic HID host with per-family setup worth writing, with Bluepad32 as the reference for each family's handshake. Whether LE keyboards and mice still pair on the Classic build, and the heap with the desktop running on it, need checking before it could become the default. Entry 50's zoom mode still awaits its book upload and the operator's test, and the firmware's silent failure of a sector that differs after three attempts is still unfixed. Earlier items stand.
+
+#### Files Modified:
+
+- .gitignore
+- README.md
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_fw_update.c
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

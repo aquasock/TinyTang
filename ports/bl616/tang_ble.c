@@ -39,6 +39,7 @@
 #include "task.h"
 
 #include "bluetooth.h"
+#include "bflb_mtimer.h"
 #include "conn.h"
 #include "gatt.h"
 #include "bt_uuid.h"
@@ -432,6 +433,144 @@ static const char *ble_kind(const ble_device_t *d)
     }
     return d->hid ? "hid" : "-";
 }
+
+#if defined(CONFIG_BT_BREDR)
+/* ------------------------------------------------- Bluetooth Classic (test)
+ *
+ * `btscan`: a Classic inquiry, in a test build that links the BL616's
+ * BR/EDR controller library instead of the LE-only one -- all LE roles, but 2
+ * LE connections instead of 10:
+ *
+ *   make CHIP=bl616 BOARD=bl616dk BUILD_DIR=build-btclassic \
+ *        CONFIG_BTBLECONTROLLER_LIB=ble1m2s1bredr1 CONFIG_BT_BREDR=y
+ *
+ * The ordinary build (defconfig) does not include it.  It answers
+ * one question before any Classic HID host is written: can this board see a
+ * Classic gamepad in pairing mode at all.  Nothing connects. */
+
+#define BT_SCAN_MAX 16
+static struct bt_br_discovery_result s_br_results[BT_SCAN_MAX];
+static volatile int s_br_found = -1;     /* -1 while the inquiry runs */
+
+static void br_discovery_done(struct bt_br_discovery_result *results, size_t count)
+{
+    (void)results;
+    s_br_found = (int)count;
+}
+
+/* The device's name from its Extended Inquiry Response: complete (0x09) or
+ * shortened (0x08). */
+static void br_eir_name(const uint8_t *eir, size_t len, char *out, size_t cap)
+{
+    out[0] = '\0';
+    for (size_t i = 0; i + 1 < len && eir[i] != 0;) {
+        const size_t field = eir[i];
+        if (i + 1 + field > len) {
+            break;
+        }
+        const uint8_t type = eir[i + 1];
+        if (type == 0x08 || type == 0x09) {
+            size_t n = field - 1;
+            if (n >= cap) {
+                n = cap - 1;
+            }
+            memcpy(out, &eir[i + 2], n);
+            out[n] = '\0';
+            if (type == 0x09) {
+                return;
+            }
+        }
+        i += 1 + field;
+    }
+}
+
+/* The Class of Device's major class, and for a peripheral its kind. */
+static const char *br_cod_kind(const uint8_t cod[3])
+{
+    const unsigned major = cod[1] & 0x1F;
+    const unsigned minor = (cod[0] >> 2) & 0x3F;
+    switch (major) {
+    case 0x01: return "computer";
+    case 0x02: return "phone";
+    case 0x04: return "audio";
+    case 0x05:
+        switch (minor & 0x0F) {
+        case 0x01: return "joystick";
+        case 0x02: return "gamepad";
+        case 0x03: return "remote";
+        default: break;
+        }
+        switch (minor >> 4) {
+        case 0x01: return "keyboard";
+        case 0x02: return "mouse";
+        case 0x03: return "kbd+mouse";
+        default: return "peripheral";
+        }
+    default: return "-";
+    }
+}
+
+static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    int secs = 10;
+    if (argc >= 2) {
+        secs = atoi(argv[1]);
+        if (secs < 2 || secs > 60) {
+            tdsh_printf("usage: btscan [seconds 2-60]\r\n");
+            return 1;
+        }
+    }
+    if (!ble_claim()) {
+        tdsh_printf("btscan: Bluetooth is busy with the Bluetooth window; try again\r\n");
+        return 1;
+    }
+    if (ble_start() != 0) {
+        ble_release();
+        return 1;
+    }
+    memset(s_br_results, 0, sizeof s_br_results);
+    s_br_found = -1;
+    /* Inquiry length is in units of 1.28 s. */
+    const struct bt_br_discovery_param param = {
+        .length = (uint8_t)((secs * 100 + 127) / 128),
+        .limited = false,
+    };
+    tdsh_printf("btscan: Classic inquiry for about %d s...\r\n", secs);
+    const int err = bt_br_discovery_start(&param, s_br_results, BT_SCAN_MAX, br_discovery_done);
+    if (err != 0) {
+        ble_release();
+        tdsh_printf("btscan: inquiry did not start (%d)\r\n", err);
+        return 1;
+    }
+    const uint64_t deadline = bflb_mtimer_get_time_ms() + (uint64_t)secs * 1000u + 5000u;
+    while (s_br_found < 0 && bflb_mtimer_get_time_ms() < deadline) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    if (s_br_found < 0) {
+        (void)bt_br_discovery_stop();
+        ble_release();
+        tdsh_printf("btscan: the inquiry never finished\r\n");
+        return 1;
+    }
+    ble_release();
+    tdsh_printf("btscan: %d device(s)\r\n", s_br_found);
+    if (s_br_found > 0) {
+        tdsh_printf("  address            rssi  class     kind        name\r\n");
+    }
+    for (int i = 0; i < s_br_found && i < BT_SCAN_MAX; i++) {
+        const struct bt_br_discovery_result *r = &s_br_results[i];
+        char name[40];
+        br_eir_name(r->eir, sizeof r->eir, name, sizeof name);
+        const uint8_t *a = r->addr.val;
+        tdsh_printf("  %02X:%02X:%02X:%02X:%02X:%02X  %4d  %02x%02x%02x  %-10s  %s\r\n",
+                    a[5], a[4], a[3], a[2], a[1], a[0], r->rssi,
+                    r->cod[2], r->cod[1], r->cod[0], br_cod_kind(r->cod),
+                    name[0] ? name : "-");
+    }
+    return 0;
+}
+#endif /* CONFIG_BT_BREDR */
 
 static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
 {
@@ -2724,6 +2863,10 @@ static const tdsh_command_t s_ble_commands[] = {
     { "ble", "ble",
       "Bluetooth radio, heap, pairings and every slot",
       cmd_ble, 0 },
+#if defined(CONFIG_BT_BREDR)
+    { "btscan", "btscan [seconds]", "Classic Bluetooth inquiry (test build): list devices in range",
+      cmd_btscan, 0 },
+#endif
     { "blescan", "blescan [seconds]",
       "List Bluetooth LE devices by signal strength (dBm)",
       cmd_blescan, 0 },

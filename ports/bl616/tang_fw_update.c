@@ -4,8 +4,14 @@
 //
 //   * The application lives at flash offset 0x40000, and the code executes
 //     from that same XIP flash.  The image therefore cannot be written in
-//     place: it is staged in an erased region at 0x120000 first, verified, and
+//     place: it is staged in an erased region at 0x210000 first, verified, and
 //     only then copied into the application slot.
+//   * The slot runs from 0x40000 to the vendor's data record at 0x200000,
+//     1.75 MiB; the staging area, as large, sits above that record and below
+//     the crash recorder's sector at 0x3FF000.  The factory read-back holds
+//     nothing above 0x201000 (FLS-002).  Until 2026-11-18 the slot was 896 KiB
+//     with staging at 0x120000, which both fitted below 0x200000; a Classic
+//     Bluetooth build does not fit that.
 //   * The copy itself must run from TCM.  The moment the first application
 //     sector is erased, no instruction may be fetched from the application's
 //     flash, so commit_staged_image() is placed in .tcm_code, runs with
@@ -28,17 +34,20 @@
 #include "compiler/compiler_ld.h"
 
 #define FW_APP_BASE        0x00040000u
-#define FW_APP_MAX_SIZE    0x000E0000u
-#define FW_STAGING_BASE    0x00120000u
+#define FW_APP_MAX_SIZE    0x001C0000u
 #define FW_VENDOR_DATA     0x00200000u
+#define FW_STAGING_BASE    0x00210000u
+#define FW_CRASH_SECTOR    0x003FF000u    /* tang_crash.c's record */
 #define FW_SECTOR_SIZE     0x1000u
 #define FW_BOOT_HEADER     0x100u
 #define FW_HEADER_REGION   0x1000u
 
-/* The slot and the staging area share the erased gap below the vendor's data
- * record at 0x200000 (FLS-002). */
-_Static_assert(FW_APP_BASE + FW_APP_MAX_SIZE <= FW_STAGING_BASE, "app slot overlaps staging");
-_Static_assert(FW_STAGING_BASE + FW_APP_MAX_SIZE <= FW_VENDOR_DATA, "staging overlaps vendor data");
+/* The slot ends at the vendor's data record; the staging area starts past
+ * that record's sector and ends before the crash recorder's (FLS-002). */
+_Static_assert(FW_APP_BASE + FW_APP_MAX_SIZE <= FW_VENDOR_DATA, "app slot overlaps vendor data");
+_Static_assert(FW_STAGING_BASE >= FW_VENDOR_DATA + 0x1000u, "staging overlaps vendor data");
+_Static_assert(FW_STAGING_BASE + FW_APP_MAX_SIZE <= FW_CRASH_SECTOR, "staging overlaps the crash record");
+_Static_assert(FW_STAGING_BASE % FW_SECTOR_SIZE == 0, "staging is not sector-aligned");
 
 /* File data, and flash read back; the commit reuses both. */
 static uint8_t s_file[FW_SECTOR_SIZE];

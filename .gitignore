@@ -1,5 +1,7 @@
 # Bouffalo SDK build output.
 /build/
+# Other build directories, e.g. the Classic Bluetooth test build (build-btclassic).
+/build-*/
 
 # Editor / tooling noise.
 __pycache__/

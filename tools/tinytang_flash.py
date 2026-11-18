@@ -32,9 +32,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 
 REMOTE_PATH = "/tinytang-upload.bin"
-# Must match FW_APP_MAX_SIZE in ports/bl616/tdsh_tang_flash.c (FLS-002). A
-# board still running a pre-FLS-002 build refuses anything over 0x80000 itself.
-FW_APP_MAX = 0xE0000
+# Must match FW_APP_MAX_SIZE in ports/bl616/tang_fw_update.c (FLS-002). A board
+# still running a build from before 2026-11-18 refuses anything over 0xE0000
+# itself, so moving it across takes two installs: an image under 0xE0000 built
+# with the new layout, then the large one.
+FW_APP_MAX = 0x1C0000
 
 
 CDC_ID = (0xFFFF, 0x5454)          # TinyTang's console
