@@ -11,8 +11,13 @@ the operator pressed each control.
 The PC paired with a NoInputNoOutput agent, the IO capability the Tang has,
 and every device paired without a passkey. BlueZ's `LegacyPairing` property
 is not a reliable indicator: the same Wiimote reported `no` once and `yes`
-twice. Whether the Wii devices used a legacy PIN is open; BlueZ's wiimote
-plugin answers the PIN itself, so only a `btmon` capture (root) settles it.
+twice. A `btmon` capture settled it for the Wii U Pro Controller paired from
+its sync button: it sends PIN Code Request (legacy pairing, no SSP), and
+BlueZ's wiimote plugin answers with a 6-byte binary PIN that is the host's
+own Bluetooth address, lowest byte first (`87 b7 c9 4e 47 c4` for
+`C4:47:4E:C9:B7:87`). A Tang answering it must send those six bytes with
+their length: the SDK's `bt_conn_auth_pincode_entry()` uses `strlen`, which
+a `0x00` address byte would cut short.
 
 | File | Device | Link | Vendor:product | Linux driver | Input format | Before input |
 |---|---|---|---|---|---|---|

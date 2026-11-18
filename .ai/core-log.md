@@ -1891,3 +1891,32 @@ Propose the Bluetooth input work from these profiles: a Classic HID host that ke
 - User Test: PASS
 
 ---
+## 56 COMMIT Unreleased 2026-11-18T10:51:51-07:00
+
+#### Coming From:
+
+Unreleased f421dee
+
+#### Purpose:
+
+Settle with a packet capture whether the Wii devices pair with a legacy PIN, the question entry 55 left open.
+
+#### Outcome:
+
+The Wii U Pro Controller pairs by legacy PIN (BLE-022, revised). The operator ran `btmon` as root while `tools/bt_profile.py` paired the pad from its sync button, and the capture, read back without root, shows a negative Link Key Request reply followed by the pad's PIN Code Request, which BlueZ's wiimote plugin answered with a 6-byte binary PIN equal to the host's Bluetooth address lowest byte first; the pad then issued a combination link key and encryption came up. The SDK's `bt_conn_auth_pincode_entry()` measures its PIN with `strlen`, so the Tang's Wii handler must send the reply with an explicit length. BLE-022 and `docs/bt-profiles/README.md` record this, and the pad was unpaired from the PC again. The capture itself, which holds a link key, stays out of the repository. Nothing was built or deployed, the Tang stayed powered off, and the ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and dated revisions to BLE-022's statement, consequence and summary line, and this entry was validated as number 56 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 189 records.
+
+#### Next Steps:
+
+Write the Bluetooth input proposal from BLE-021 and BLE-022: the Classic HID host with link keys on the card, a Switch Pro handler and a Wii Remote handler that answers the PIN with the Tang's address, boot protocol or a descriptor decoder for LE mice and keyboards, and one retry of the Xbox pad on the Classic build. The Wiimote's own pairing was not captured; it is expected to match the Wii U Pro's and should be confirmed when the handler is tested. Entry 54's other items stand.
+
+#### Files Modified:
+
+- docs/bt-profiles/README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
