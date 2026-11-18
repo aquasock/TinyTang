@@ -1453,3 +1453,35 @@ The operator likes the row-by-row loading as it is, so speed is not the next ite
 - User Test: PASS
 
 ---
+## 45 COMMIT Unreleased 2026-11-17T17:04:34-07:00
+
+#### Coming From:
+
+Unreleased 638e0c3
+
+#### Purpose:
+
+Design a 1280x720 framebuffer controller for the dock's SDRAM and prove it in simulation before it touches the desktop core, as phases 0 and 1 of the plan to free the plane's block RAM.
+
+#### Outcome:
+
+The SDRAM framebuffer works in simulation against a model that checks the part's timing (TDESK-020). Phase 0 settled the choices from records rather than new measurement: one W9825G6KH-6 die, run on the 74.25 MHz pixel clock with CAS latency 2, which needs no new PLL and keeps the controller and scanout in one domain; line y at word y*1536 of bank 0; and a per-line budget of about 1,300 of 1,650 clocks for the next line's fetch, with refresh and writes in the remainder. `fpga/desktop/fb_sdram.sv` fetches each next line in seamless eight-word bursts into a two-line buffer, owes four refreshes a line, and drains a 64-entry write FIFO from the link's clock; its scanout keeps the plane's four-pixel look-ahead at 1:1. Because TinyGBA's model answers one word per command and forgives early commands, a new pin-level model, `sdram_w9825_model.sv`, implements bursts and auto-precharge and counts every timing violation. `test_fb_sdram.sh` compares all 921,600 pixels of a frame after writing 1,597 at ten times UART speed and passes with no mismatch, no violation, no underrun and no dropped write, the longest fetch 1,297 clocks, and 3,000 refreshes a frame against 2,133 needed. Only READ_DELAY 2 passes; removing refresh or shortening tRCD fails. Two faults were found and fixed on the way: a 16-entry FIFO overflowed while a fetch held the part, and the bench compared colours one raster position late, which hid a one-word capture offset behind an equal and opposite one. Synthesised alone the controller is about 1,500 cells with 3 block RAMs, against the 228 the 640x360 plane uses. Host tests are 48 of 48. Nothing was wired into the desktop core, built into a bitstream or deployed, and the board still runs the ABI 1.8 plane. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and TDESK-020 only, and this entry was validated as number 45 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 175 records.
+
+#### Next Steps:
+
+Phase 2 integrates it: replace `pixplane`'s store with `fb_sdram` in `desktop_hdmi`, widen the link's cursor to 1280x720 as x and y rather than a linear address, report 1280x720 at register 0x0c, add the SDRAM pins from TinyGBA's constraints and drive the part's clock as the inverse of the pixel clock, and make the read alignment a register so the board's value can be found without a rebuild. Then an eight-seed build, expecting block RAM near 17 and a better pixel-clock yield than 1.8's one seed in eight, and a hardware check with a 1:1 test pattern. Phase 3 teaches the Reader the 1280x720 geometry and two frames per row; a faster link is a separate, optional step.
+
+#### Files Modified:
+
+- fpga/desktop/fb_sdram.sv
+- tools/tests/sim/sdram_w9825_model.sv
+- tools/tests/sim/tb_fb_sdram.sv
+- tools/tests/test_fb_sdram.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
