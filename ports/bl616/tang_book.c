@@ -31,14 +31,28 @@ int tang_book_parse(const uint8_t *h, size_t n, uint64_t file_bytes, tang_book_t
     b.flags = le16(h + 26);
     memcpy(b.title, h + 32, 64);
     b.title[64] = '\0';
+    b.zoom_offset = le32(h + 96);
+    b.zoom_count = le16(h + 100);
 
     if (header_bytes != TANG_BOOK_HEADER_BYTES || b.width == 0 || b.height == 0 ||
         b.count == 0 || b.spread_bytes != (uint32_t)b.width * b.height * 2u ||
-        b.data_offset < TANG_BOOK_HEADER_BYTES + 8u * b.count || b.data_offset % 512u != 0) {
+        b.data_offset < TANG_BOOK_HEADER_BYTES + 8u * ((uint32_t)b.count + b.zoom_count) ||
+        b.data_offset % 512u != 0) {
         return TANG_BOOK_GEOMETRY;
     }
     if ((uint64_t)b.data_offset + (uint64_t)b.count * b.spread_bytes > file_bytes) {
         return TANG_BOOK_TRUNCATED;
+    }
+    if (b.zoom_count == 0) {
+        b.zoom_offset = 0;
+    } else {
+        if (b.zoom_offset % 512u != 0 ||
+            b.zoom_offset < (uint64_t)b.data_offset + (uint64_t)b.count * b.spread_bytes) {
+            return TANG_BOOK_GEOMETRY;
+        }
+        if ((uint64_t)b.zoom_offset + (uint64_t)b.zoom_count * b.spread_bytes > file_bytes) {
+            return TANG_BOOK_TRUNCATED;
+        }
     }
     *out = b;
     return TANG_BOOK_OK;
@@ -47,6 +61,35 @@ int tang_book_parse(const uint8_t *h, size_t n, uint64_t file_bytes, tang_book_t
 uint64_t tang_book_offset(const tang_book_t *book, int spread)
 {
     return (uint64_t)book->data_offset + (uint64_t)spread * book->spread_bytes;
+}
+
+uint64_t tang_book_zoom_offset(const tang_book_t *book, int view)
+{
+    return (uint64_t)book->zoom_offset + (uint64_t)view * book->spread_bytes;
+}
+
+uint32_t tang_book_zoom_table(const tang_book_t *book)
+{
+    return TANG_BOOK_HEADER_BYTES + 8u * book->count;
+}
+
+int tang_book_zoom_spread(const uint8_t *table, int count, int view)
+{
+    if (view < 0 || view >= count) return 0;
+    return le16(table + TANG_BOOK_ZOOM_ENTRY * (uint32_t)view + 4u);
+}
+
+int tang_book_zoom_first(const uint8_t *table, int count, int spread)
+{
+    int best = 0;
+    for (int i = 0; i < count; i++) {
+        const int s = tang_book_zoom_spread(table, count, i);
+        if (s == spread) return i;
+        if (s > spread) break;
+        /* The last view of the nearest spread before: its first view below. */
+        if (i == 0 || s != tang_book_zoom_spread(table, count, i - 1)) best = i;
+    }
+    return best;
 }
 
 const char *tang_book_error(int rc)
@@ -75,11 +118,16 @@ void tang_book_cache_init(tang_book_cache_t *c, int first_buffer, int n)
     }
 }
 
+void tang_book_cache_rebase(tang_book_cache_t *c, int base)
+{
+    c->base = base;
+}
+
 int tang_book_cache_find(const tang_book_cache_t *c, int s)
 {
     if (s < 0) return -1;
     for (int i = 0; i < c->n; i++) {
-        if (c->spread[i] == s) return i;
+        if (c->spread[i] == s + c->base) return i;
     }
     return -1;
 }
@@ -91,7 +139,7 @@ void tang_book_cache_touch(tang_book_cache_t *c, int slot)
 
 void tang_book_cache_set(tang_book_cache_t *c, int slot, int s)
 {
-    if (slot >= 0 && slot < c->n) c->spread[slot] = s;
+    if (slot >= 0 && slot < c->n) c->spread[slot] = s < 0 ? -1 : s + c->base;
 }
 
 /* Offsets from cur in window order: 0, +1, -1, +2, +3, -2, +4, +5, -3, ... */
@@ -145,7 +193,7 @@ int tang_book_cache_victim(const tang_book_cache_t *c, int cur, int count, int s
     for (int i = 0; i < c->n; i++) {
         if (i == shown) continue;
         if (c->spread[i] < 0) return i;
-        if (tang_book_in_window(cur, count, c->n, c->spread[i])) continue;
+        if (tang_book_in_window(cur, count, c->n, c->spread[i] - c->base)) continue;
         if (best < 0 || c->used[i] < c->used[best]) best = i;
     }
     return best;

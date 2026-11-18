@@ -169,6 +169,11 @@ void tang_wiipad_reset(void);
  * Returns true when a report was read. */
 bool tang_wiipad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k);
 
+/* How many times X has been pressed since boot.  X types Escape like the
+ * keyboard's key, so an app that gives X a meaning of its own -- TinyReader's
+ * zoom -- tells the two apart by whether this moved with the Escape. */
+uint32_t tang_wiipad_x_presses(void);
+
 /* ---- the pieces, for the host test ---- */
 /* The report to the sticks and the two buttons, in `kind`'s packing: six
  * bytes for a nunchuck, eight for a Classic in format 3. */

@@ -31,10 +31,18 @@
 // was left is kept beside it in <book>.trb.pos.  On a core before ABI 1.11 a
 // book still opens, each spread drawn in as it is turned to.
 //
+// Zoom mode.  A book made with zoom views (make_book.py's default) also holds
+// every page's top and bottom halves, each filling the screen: about twice a
+// spread's size.  With the window's Zoom box ticked a book opens in them, and
+// X on the pad or Z switches while reading, staying on the same page: page 1
+// top, page 1 bottom, page 2 top and so on.  The cache holds both kinds, so
+// switching back finds the spreads still loaded.
+//
 // While a book is up:
-//   right  down  PgDn  space  n   next spread (also A on the pad, the wheel)
-//   left  up  PgUp  p  b          previous spread
-//   Home  0       the cover; End the last spread
+//   right  down  PgDn  space  n   next spread or half page (also A, the wheel)
+//   left  up  PgUp  p  b          previous one
+//   Home  0       the cover; End the last
+//   X on the pad, z               zoom mode on or off
 //   Esc  q        back to the list (also B on the pad)
 //
 // While a picture is up:
@@ -56,6 +64,7 @@ extern "C" {
 #include "tang_plane.h"
 #include "tang_book.h"
 #include "tang_fpga_link.h"
+#include "tang_wiipad.h"
 #include "td_fs_stdio.h"
 #include "tdsh.h"
 #include "bflb_mtimer.h"
@@ -133,8 +142,13 @@ bool s_book;                            // the view is a book
 volatile bool s_book_open;              // the loader should keep going
 volatile bool s_book_busy;              // the loader task is running
 volatile bool s_book_failed;            // it gave up; the tick leaves the view
-volatile int s_book_cur;                // the spread being read
-volatile int s_book_count;
+volatile int s_book_cur;                // the spread or zoom view being read
+volatile int s_book_count;              // in the sequence being read
+volatile bool s_book_zoom_want;         // the reader's choice of mode
+volatile bool s_book_zoom;              // the mode the loader is in
+bool s_zoom_pref;                       // the window's Zoom box
+td_widget_t *s_zoom_box;
+uint32_t s_x_seen;                      // the pad's X presses already acted on
 TaskHandle_t s_book_task;              // cleared, with s_book_busy, as it ends
 /* The last spread loaded: microseconds reading the card and sending it. */
 uint32_t s_book_t_card, s_book_t_link;
@@ -478,6 +492,7 @@ struct book_load {
     int spread;                 // what is being loaded
     int seen_cur;               // s_book_cur when last looked at
     bool interactive;
+    bool zoom;                  // the mode it is loaded for
 };
 
 bool show_slot(tang_book_cache_t *c, int *shown, int slot)
@@ -493,6 +508,7 @@ bool book_keep_going(book_load *ld)
 {
     if (!ld->interactive) return true;
     if (!s_book_open) return false;
+    if (s_book_zoom_want != ld->zoom) return false;     // the reader switched mode
     const int now = s_book_cur;
     if (now == ld->seen_cur) return true;
     ld->seen_cur = now;
@@ -504,13 +520,14 @@ bool book_keep_going(book_load *ld)
     return tang_book_in_window(now, s_book_count, ld->cache->n, ld->spread);
 }
 
-/* Spread `spread` of the open book into plane buffer `buffer`, straight from
- * the card: the file holds it in the link's byte order. */
-bool book_load_spread(FIL *f, const tang_book_t *b, int spread, int buffer, uint8_t *chunk,
+/* The screen at file offset `at` -- a spread or a zoom view -- into plane
+ * buffer `buffer`, straight from the card: the file holds it in the link's
+ * byte order. */
+bool book_load_spread(FIL *f, const tang_book_t *b, uint64_t at, int buffer, uint8_t *chunk,
                       UINT chunk_bytes, book_load *ld)
 {
     uint64_t t_card = 0, t_link = 0;
-    if (f_lseek(f, (FSIZE_t)tang_book_offset(b, spread)) != FR_OK) return false;
+    if (f_lseek(f, (FSIZE_t)at) != FR_OK) return false;
     for (uint32_t pos = 0; pos < b->spread_bytes; pos += chunk_bytes) {
         if (!book_keep_going(ld)) return false;
         const UINT want = b->spread_bytes - pos < chunk_bytes ? b->spread_bytes - pos : chunk_bytes;
@@ -568,26 +585,29 @@ const char *book_open(FIL *f, const char *path, tang_book_t *b)
 
 void book_pos_path(char *out, size_t n) { snprintf(out, n, "%s.pos", s_view_real); }
 
-int book_pos_read(void)
+/* "12" is spread 12; "40 z" is zoom view 40. */
+int book_pos_read(bool *zoom)
 {
     char path[sizeof s_view_real + 8];
     book_pos_path(path, sizeof path);
     FIL f;
     char text[16] = {};
     UINT got = 0;
+    *zoom = false;
     if (f_open(&f, path, FA_READ) != FR_OK) return 0;
     (void)f_read(&f, text, sizeof text - 1, &got);
     f_close(&f);
+    *zoom = strchr(text, 'z') != nullptr;
     return atoi(text);
 }
 
-void book_pos_write(int spread)
+void book_pos_write(int at, bool zoom)
 {
     char path[sizeof s_view_real + 8];
     book_pos_path(path, sizeof path);
     FIL f;
     char text[16];
-    const int n = snprintf(text, sizeof text, "%d\n", spread);
+    const int n = snprintf(text, sizeof text, zoom ? "%d z\n" : "%d\n", at);
     UINT put = 0;
     if (f_open(&f, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return;
     (void)f_write(&f, text, (UINT)n, &put);
@@ -613,25 +633,76 @@ void book_task(void *)
     if (why != nullptr) {
         book_fail(why);
     } else {
-        s_book_count = b.count;
-        int start = book_pos_read();
-        if (start < 0 || start >= b.count) start = 0;
-        s_book_cur = start;
-        const int saved = start;
-        /* Eleven buffers beside the pictures' on ABI 1.11; before it, the one. */
+        /* The zoom table, for moving between a spread and its pages. */
+        uint8_t *ztable = nullptr;
+        const int zn = b.zoom_count;
+        if (zn > 0) {
+            ztable = static_cast<uint8_t *>(malloc((size_t)zn * TANG_BOOK_ZOOM_ENTRY));
+            UINT got = 0;
+            if (ztable != nullptr &&
+                (f_lseek(f, tang_book_zoom_table(&b)) != FR_OK ||
+                 f_read(f, ztable, (UINT)zn * TANG_BOOK_ZOOM_ENTRY, &got) != FR_OK ||
+                 got != (UINT)zn * TANG_BOOK_ZOOM_ENTRY)) {
+                free(ztable);
+                ztable = nullptr;
+            }
+        }
+        const bool can_zoom = ztable != nullptr;
+        /* Where the reader was, carried into the mode asked for. */
+        bool zoom_saved = false;
+        int at = book_pos_read(&zoom_saved);
+        if (at < 0 || at >= (zoom_saved ? zn : b.count) || (zoom_saved && !can_zoom)) {
+            at = 0;
+            zoom_saved = false;
+        }
+        if (s_book_zoom_want && !can_zoom) {
+            s_book_zoom_want = false;
+            snprintf(s_render_say, sizeof s_render_say, "This book has no zoom views");
+            s_render_said = true;
+        }
+        bool zoom = s_book_zoom_want;
+        if (zoom && !zoom_saved) at = tang_book_zoom_first(ztable, zn, at);
+        if (!zoom && zoom_saved) at = tang_book_zoom_spread(ztable, zn, at);
+        const int saved_at = at;
+        const bool saved_zoom = zoom;
+        s_book_zoom = zoom;
+        s_book_count = zoom ? zn : b.count;
+        s_book_cur = at;
+        /* Eleven buffers beside the pictures' on ABI 1.11; before it, the one.
+         * Zoom views are numbered after the spreads, so one cache holds both. */
         tang_book_cache_t cache;
         if (tang_plane_buffers() > BOOK_FIRST_BUFFER) {
             tang_book_cache_init(&cache, BOOK_FIRST_BUFFER, tang_plane_buffers() - BOOK_FIRST_BUFFER);
         } else {
             tang_book_cache_init(&cache, 0, 1);
         }
+        tang_book_cache_rebase(&cache, zoom ? b.count : 0);
         int shown = -1;
         while (s_book_open) {
+            /* A switch of mode keeps the page: the top of a spread's first
+             * page going in, the spread a half page is in coming out. */
+            if (s_book_zoom_want != zoom) {
+                if (!can_zoom) {
+                    s_book_zoom_want = false;
+                    snprintf(s_render_say, sizeof s_render_say, "This book has no zoom views");
+                    s_render_said = true;
+                } else {
+                    const int was = s_book_cur;
+                    zoom = s_book_zoom_want;
+                    const int now = zoom ? tang_book_zoom_first(ztable, zn, was)
+                                         : tang_book_zoom_spread(ztable, zn, was);
+                    s_book_count = zoom ? zn : b.count;
+                    s_book_cur = now;
+                    s_book_zoom = zoom;
+                    tang_book_cache_rebase(&cache, zoom ? b.count : 0);
+                }
+            }
+            const int count = zoom ? zn : b.count;
             const int cur = s_book_cur;
             const int slot = tang_book_cache_find(&cache, cur);
             if (slot >= 0 && slot != shown) (void)show_slot(&cache, &shown, slot);
-            const int next = tang_book_next_wanted(&cache, cur, b.count);
-            int victim = next >= 0 ? tang_book_cache_victim(&cache, cur, b.count, shown) : -1;
+            const int next = tang_book_next_wanted(&cache, cur, count);
+            int victim = next >= 0 ? tang_book_cache_victim(&cache, cur, count, shown) : -1;
             /* One buffer (a core before ABI 1.11): it is both the shown one
              * and the only one to load into. */
             if (next >= 0 && victim < 0 && cache.n == 1) victim = 0;
@@ -642,16 +713,18 @@ void book_task(void *)
             tang_book_cache_set(&cache, victim, -1);
             /* The one being read is shown while it loads, drawing in. */
             if (next == cur) (void)show_slot(&cache, &shown, victim);
-            book_load ld = { &cache, &shown, next, cur, true };
-            if (book_load_spread(f, &b, next, cache.buffer[victim], chunk, chunk_bytes, &ld)) {
+            book_load ld = { &cache, &shown, next, cur, true, zoom };
+            const uint64_t at_file = zoom ? tang_book_zoom_offset(&b, next) : tang_book_offset(&b, next);
+            if (book_load_spread(f, &b, at_file, cache.buffer[victim], chunk, chunk_bytes, &ld)) {
                 tang_book_cache_set(&cache, victim, next);
-            } else if (s_book_open && ld.seen_cur == cur) {
+            } else if (s_book_open && ld.seen_cur == cur && s_book_zoom_want == zoom) {
                 /* Not abandoned for the reader: the card or the link failed. */
                 book_fail("The book could not be read");
                 break;
             }
         }
-        if (s_book_cur != saved) book_pos_write(s_book_cur);
+        if (s_book_cur != saved_at || zoom != saved_zoom) book_pos_write(s_book_cur, zoom);
+        free(ztable);
         f_close(f);
         /* The buffer shown stays as it is until the plane is hidden: showing
          * buffer 0 now would flash the last picture.  A picture view selects
@@ -672,6 +745,15 @@ void book_wake(void)
     taskENTER_CRITICAL();
     if (s_book_task != nullptr) xTaskNotifyGive(s_book_task);
     taskEXIT_CRITICAL();
+}
+
+/* Zoom mode on or off, in place; the loader moves the page across. */
+void book_toggle_zoom(void)
+{
+    s_book_zoom_want = !s_book_zoom_want;
+    s_zoom_pref = s_book_zoom_want;
+    if (s_zoom_box != nullptr) td_checkbox_set(s_zoom_box, s_zoom_pref);
+    book_wake();
 }
 
 void book_turn(int to)
@@ -714,6 +796,8 @@ void view_enter(int index)
     if (s_book) {
         s_book_open = true;
         s_book_failed = false;
+        s_book_zoom_want = s_zoom_pref;
+        s_x_seen = tang_wiipad_x_presses();
         s_book_busy = true;
         s_book_count = 0;
         s_viewing = true;
@@ -803,7 +887,20 @@ bool on_book_event(const td_event_t *ev)
 {
     if (ev->type == TD_EV_KEY) {
         switch (ev->key) {
-        case TD_KEY_ESC: case 'q': case TD_KEY_BACKSPACE: view_leave(); return true;
+        case TD_KEY_ESC: {
+            /* The pad's X types Escape too; an Escape that came with an X
+             * press is the zoom switch, the keyboard's leaves. */
+            const uint32_t x = tang_wiipad_x_presses();
+            if (x != s_x_seen) {
+                s_x_seen = x;
+                book_toggle_zoom();
+            } else {
+                view_leave();
+            }
+            return true;
+        }
+        case 'z': case 'Z': book_toggle_zoom(); return true;
+        case 'q': case TD_KEY_BACKSPACE: view_leave(); return true;
         case TD_KEY_RIGHT: case TD_KEY_DOWN: case TD_KEY_PGDN: case ' ': case 'n':
             book_turn(s_book_cur + 1); return true;
         case TD_KEY_LEFT: case TD_KEY_UP: case TD_KEY_PGUP: case 'p': case 'b':
@@ -870,6 +967,7 @@ void on_activate(td_widget_t *, void *)
 }
 
 void on_up(td_widget_t *, void *) { descend(".."); }
+void on_zoom_box(td_widget_t *w, void *) { s_zoom_pref = td_checkbox_get(w); }
 void on_refresh(td_widget_t *, void *) { load(); }
 
 void on_tick(td_window_t *)
@@ -898,6 +996,7 @@ void on_close(td_window_t *)
     s_list = nullptr;
     s_path = nullptr;
     s_status = nullptr;
+    s_zoom_box = nullptr;
     free(s_entries);
     s_entries = nullptr;
     s_count = 0;
@@ -930,6 +1029,7 @@ void launch(void)
     td_button(s_win, 1, 15, "Open", on_activate, nullptr);
     td_button(s_win, 10, 15, "Up", on_up, nullptr);
     td_button(s_win, 17, 15, "Refresh", on_refresh, nullptr);
+    s_zoom_box = td_checkbox(s_win, 30, 15, "Zoom (X)", s_zoom_pref, on_zoom_box, nullptr);
     s_status = td_label(s_win, 1, 17, 0, "");
     load();
     if (!tang_plane_available()) {
@@ -941,10 +1041,10 @@ void launch(void)
 
 const td_app_t s_app = { "TinyReader", launch, "RD" };
 
-/* `readerdraw <book.trb> [spread [buffer]]`: one spread of a book into a plane
- * buffer (by default the first a book uses) as TinyReader loads it, then
- * shown; with the time on the card and on the link. */
-int readerdraw_book(const char *path, int spread, int buffer)
+/* `readerdraw <book.trb> [spread|z<view> [buffer]]`: one spread or zoom view
+ * of a book into a plane buffer (by default the first a book uses) as
+ * TinyReader loads it, then shown; with the time on the card and on the link. */
+int readerdraw_book(const char *path, int spread, bool zoom, int buffer)
 {
     if (s_viewing || s_render_busy || s_book_busy) {
         tdsh_printf("readerdraw: TinyReader is showing something\r\n");
@@ -964,17 +1064,22 @@ int readerdraw_book(const char *path, int spread, int buffer)
     int rc = 1;
     if (why != nullptr) {
         tdsh_printf("readerdraw: %s\r\n", why);
-    } else if (spread < 0 || spread >= b.count) {
+    } else if (!zoom && (spread < 0 || spread >= b.count)) {
         tdsh_printf("readerdraw: the book has spreads 0 to %d\r\n", b.count - 1);
+        f_close(f);
+    } else if (zoom && (spread < 0 || spread >= b.zoom_count)) {
+        if (b.zoom_count == 0) tdsh_printf("readerdraw: the book has no zoom views\r\n");
+        else tdsh_printf("readerdraw: the book has zoom views z0 to z%d\r\n", b.zoom_count - 1);
         f_close(f);
     } else if (buffer >= tang_plane_buffers()) {
         tdsh_printf("readerdraw: the core has buffers 0 to %d\r\n", tang_plane_buffers() - 1);
         f_close(f);
     } else {
         if (buffer < 0) buffer = tang_plane_buffers() > BOOK_FIRST_BUFFER ? BOOK_FIRST_BUFFER : 0;
-        book_load ld = { nullptr, nullptr, spread, 0, false };
+        book_load ld = { nullptr, nullptr, spread, 0, false, zoom };
         const uint64_t t0 = bflb_mtimer_get_time_us();
-        const bool ok = book_load_spread(f, &b, spread, buffer, chunk, chunk_bytes, &ld);
+        const uint64_t at = zoom ? tang_book_zoom_offset(&b, spread) : tang_book_offset(&b, spread);
+        const bool ok = book_load_spread(f, &b, at, buffer, chunk, chunk_bytes, &ld);
         const uint32_t ms = (uint32_t)((bflb_mtimer_get_time_us() - t0) / 1000u);
         f_close(f);
         if (!ok) {
@@ -982,9 +1087,10 @@ int readerdraw_book(const char *path, int spread, int buffer)
         } else {
             (void)tang_plane_show_buffer(buffer);
             (void)tang_plane_show(true);
-            tdsh_printf("readerdraw: \"%s\", spread %d of %d into buffer %d: %u ms (card %u,"
+            tdsh_printf("readerdraw: \"%s\", %s %d of %d into buffer %d: %u ms (card %u,"
                         " link %u) in %u-byte reads at %u baud\r\n",
-                        b.title, spread, b.count, buffer, (unsigned)ms,
+                        b.title, zoom ? "zoom view" : "spread", spread,
+                        zoom ? b.zoom_count : b.count, buffer, (unsigned)ms,
                         (unsigned)(s_book_t_card / 1000u), (unsigned)(s_book_t_link / 1000u),
                         (unsigned)chunk_bytes, (unsigned)tang_fpga_baud());
             rc = 0;
@@ -1005,11 +1111,12 @@ int cmd_readerdraw(tdsh_session_t *session, int argc, char **argv)
     (void)session;
     if (argc < 2 || argv[1][0] != '/') {
         tdsh_printf("usage: readerdraw </path/to/picture> [zoom 1-%d]"
-                    " | readerdraw </path/to/book.trb> [spread [buffer]]\r\n", MAX_ZOOM);
+                    " | readerdraw </path/to/book.trb> [spread|z<view> [buffer]]\r\n", MAX_ZOOM);
         return 1;
     }
     if (is_book(argv[1])) {
-        return readerdraw_book(argv[1], argc >= 3 ? atoi(argv[2]) : 0,
+        const bool zoom = argc >= 3 && (argv[2][0] == 'z' || argv[2][0] == 'Z');
+        return readerdraw_book(argv[1], argc >= 3 ? atoi(argv[2] + (zoom ? 1 : 0)) : 0, zoom,
                                argc >= 4 ? atoi(argv[3]) : -1);
     }
     const int zoom = argc >= 3 ? atoi(argv[2]) : 1;

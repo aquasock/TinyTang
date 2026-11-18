@@ -34,6 +34,8 @@ typedef struct {
     uint16_t flags;
     uint32_t data_offset;       /* spread 0's first byte */
     uint32_t spread_bytes;
+    uint32_t zoom_offset;       /* zoom view 0's first byte; 0 for none */
+    uint16_t zoom_count;        /* half-page zoom views */
     char title[65];
 } tang_book_t;
 
@@ -52,8 +54,20 @@ enum {
  * is the caller's to compare with width and height. */
 int tang_book_parse(const uint8_t *header, size_t n, uint64_t file_bytes, tang_book_t *out);
 
-/* The file offset of spread i. */
+/* The file offset of spread i, or of zoom view i. */
 uint64_t tang_book_offset(const tang_book_t *book, int spread);
+uint64_t tang_book_zoom_offset(const tang_book_t *book, int view);
+
+/* The zoom table: 8 bytes a view, from file offset tang_book_zoom_table(). */
+#define TANG_BOOK_ZOOM_ENTRY 8u
+uint32_t tang_book_zoom_table(const tang_book_t *book);
+
+/* The spread a zoom view is in. */
+int tang_book_zoom_spread(const uint8_t *table, int count, int view);
+
+/* The first zoom view of a spread -- the top of its first page -- or the
+ * nearest before it when the spread has none; 0 for an empty table. */
+int tang_book_zoom_first(const uint8_t *table, int count, int spread);
 
 /* A short reason for a refused header, for the user. */
 const char *tang_book_error(int rc);
@@ -73,13 +87,20 @@ const char *tang_book_error(int rc);
 
 typedef struct {
     int n;                                  /* slots in use */
+    int base;                               /* what local item 0 is called */
     int buffer[TANG_BOOK_SLOTS_MAX];        /* the plane buffer of each slot */
     int spread[TANG_BOOK_SLOTS_MAX];        /* what it holds, -1 for nothing */
     uint32_t used[TANG_BOOK_SLOTS_MAX];     /* when it was last shown */
     uint32_t clock;
 } tang_book_cache_t;
 
-/* n slots on plane buffers first .. first + n - 1, all empty. */
+/* A cache holds items of more than one sequence -- spreads, and a book's zoom
+ * views -- under one numbering: the functions below take an item's index in
+ * the sequence being read, and the cache adds `base`.  Items of another
+ * sequence are never found and are given up first. */
+void tang_book_cache_rebase(tang_book_cache_t *c, int base);
+
+/* n slots on plane buffers first .. first + n - 1, all empty, base 0. */
 void tang_book_cache_init(tang_book_cache_t *c, int first_buffer, int n);
 
 /* The slot holding spread s, or -1. */

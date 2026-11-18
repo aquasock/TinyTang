@@ -402,6 +402,25 @@ static void test_keys(void)
               "%s: got %d bytes", cases[i].what, k.n);
     }
 
+    /* X is counted, once a press, so an app can tell it from the keyboard's
+     * Escape; held, it is not counted again, and no other button counts. */
+    {
+        const uint32_t before = tang_wiipad_x_presses();
+        tang_wii_sample_t s = classic_sample(TANG_WII_BTN_X);
+        tang_mouse_t m = {0};
+        tang_wii_keys_t k = {0};
+        n->btn_prev = 0;
+        tang_wii_apply(n, &s, &m, false, 0, &k);
+        CHECK(tang_wiipad_x_presses() == before + 1, "X is counted");
+        k = (tang_wii_keys_t){0};
+        tang_wii_apply(n, &s, &m, false, 10, &k);
+        CHECK(tang_wiipad_x_presses() == before + 1 && k.n == 0, "a held X is not counted again");
+        tang_wii_sample_t y = classic_sample(TANG_WII_BTN_Y);
+        n->btn_prev = 0;
+        tang_wii_apply(n, &y, &m, false, 20, &k);
+        CHECK(tang_wiipad_x_presses() == before + 1, "Y is not X");
+    }
+
     /* Home is the screen switch, not a key. */
     {
         tang_wii_sample_t s = classic_sample(TANG_WII_BTN_HOME);

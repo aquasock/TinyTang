@@ -12,6 +12,7 @@ copies the file's bytes straight into the link.
     tools/make_book.py "Player's Guide.pdf" zelda.trb
     tools/make_book.py comic.cbz comic.trb --title "Comic 1"
     tools/make_book.py scans/ book.trb --no-cover      # pages paired from page 1
+    tools/make_book.py guide.pdf guide.trb --no-zoom   # spreads only, a quarter the size
 
 Layout.  Like a printed book: the cover alone, then pages 2-3, 4-5 and so on,
 even pages on the left (--no-cover pairs from page 1; --rtl puts the first of
@@ -23,6 +24,15 @@ spread is scaled to fill the height, the two pages meeting in the middle,
 with a high-quality (Lanczos) filter, and rounded to RGB565.  Unless
 --no-labels is given, the page numbers and the count go small and grey in the
 black margin at the bottom right.
+
+Zoom views.  Unless --no-zoom is given, every page is also rendered as two
+screens of its own, its top half and its bottom half, each as large as the
+screen allows -- about twice the size a page has in a spread.  TinyReader's
+zoom mode steps through them: page 1 top, page 1 bottom, page 2 top, and so
+on.  The halves overlap by --zoom-overlap of the page's height (5% unless
+given), so a line of text cut at the middle is whole in one of them.  A page
+wider than tall is two pages: its left half and then its right half, each
+split top and bottom.  They roughly quadruple the file.
 
 Needs Pillow and numpy; a PDF needs poppler's pdftoppm and pdfinfo, a CBR
 needs 7z (p7zip).
@@ -44,10 +54,19 @@ big-endian RGB565, as the link sends them.
         26     2  flags: bit 0 cover alone, bit 1 right to left, bit 2 single pages
         28     4  reserved, 0
         32    64  title, UTF-8, NUL padded
-        96    32  reserved, 0
+        96     4  zoom offset: where zoom view 0 starts, a multiple of 4096;
+                 0 when the book has none
+       100     2  zoom view count, Z
+       102     2  zoom overlap, in thousandths of a page's height
+       104    24  reserved, 0
        128  8*N  spread table: left page, right page (u16 each, 1-based source
                  pages, 0 for none), 4 reserved bytes
+   128+8N  8*Z  zoom table, in reading order: page (u16, 1-based), part (u8:
+                 0 the whole page, 1 the left half of a wide page, 2 its right
+                 half), half (u8: 0 top, 1 bottom), the spread it is in (u16,
+                 0-based), 2 reserved bytes
     data offset  spread i at data offset + i * spread bytes
+    zoom offset  zoom view i at zoom offset + i * spread bytes
 
 Every spread is a whole number of 512-byte sectors (1280 * 720 * 2 is 3600 of
 them) and starts on a 4096-byte boundary, so the card is read in whole,
@@ -195,12 +214,64 @@ def plan_spreads(count, cover, rtl, single, wide=lambda n: False):
     return spreads
 
 
+def plan_zoom(spreads, rtl, wide):
+    """[(page, part, half, spread)] in reading order: each page of each
+    spread, a wide page as its left then its right half, top then bottom."""
+    views = []
+    for si, (left, right) in enumerate(spreads):
+        order = [p for p in ((right, left) if rtl else (left, right)) if p]
+        for p in order:
+            parts = ([2, 1] if rtl else [1, 2]) if wide(p) else [0]
+            for part in parts:
+                for half in (0, 1):
+                    views.append((p, part, half, si))
+    return views
+
+
 def to_rgb565_be(img):
     a = np.asarray(img, dtype=np.uint16)
     r = (a[..., 0] * 31 + 127) // 255
     g = (a[..., 1] * 63 + 127) // 255
     b = (a[..., 2] * 31 + 127) // 255
     return ((r << 11) | (g << 5) | b).astype(">u2").tobytes()
+
+
+def label(canvas, text, right_edge):
+    """Small and grey in the right margin, if it fits there."""
+    w, h = canvas.size
+    font = ImageFont.load_default()
+    draw = ImageDraw.Draw(canvas)
+    x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=font)
+    tw, th = x1 - x0, y1 - y0
+    if w - right_edge >= tw + 8:
+        draw.text((w - tw - 4 - x0, h - th - 4 - y0), text, fill=(110, 110, 110), font=font)
+
+
+def render_zoom_page(pages, p, parts, w, h, overlap, labels, total):
+    """One page's zoom views, in order: each part, top then bottom."""
+    page = pages.page(p)
+    out = []
+    for part in parts:
+        im = page
+        if part == 1:
+            im = page.crop((0, 0, page.width // 2, page.height))
+        elif part == 2:
+            im = page.crop((page.width // 2, 0, page.width, page.height))
+        hh = min(im.height, max(1, round(im.height * (1 + overlap) / 2)))
+        for half in (0, 1):
+            top = 0 if half == 0 else im.height - hh
+            piece = im.crop((0, top, im.width, top + hh))
+            s = min(w / piece.width, h / piece.height)
+            piece = piece.resize((max(1, round(piece.width * s)), max(1, round(piece.height * s))),
+                                 Image.LANCZOS)
+            canvas = Image.new("RGB", (w, h), (0, 0, 0))
+            canvas.paste(piece, ((w - piece.width) // 2, (h - piece.height) // 2))
+            if labels:
+                side = {1: "L", 2: "R"}.get(part, "")
+                label(canvas, f"{p}{side} {'top' if half == 0 else 'bottom'}/{total}",
+                      (w + piece.width) // 2)
+            out.append(to_rgb565_be(canvas))
+    return out
 
 
 def render_spread(pages, pair, w, h, labels, total):
@@ -226,25 +297,31 @@ def render_spread(pages, pair, w, h, labels, total):
         right_edge = w // 2 + right.width
     if labels:
         nums = [str(p) for p in sorted(p for p in pair if p)]
-        text = f"{'-'.join(nums)}/{total}"
-        font = ImageFont.load_default()
-        draw = ImageDraw.Draw(canvas)
-        x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=font)
-        tw, th = x1 - x0, y1 - y0
-        if w - right_edge >= tw + 8:
-            draw.text((w - tw - 4 - x0, h - th - 4 - y0), text, fill=(110, 110, 110), font=font)
+        label(canvas, f"{'-'.join(nums)}/{total}", right_edge)
     return to_rgb565_be(canvas)
 
 
-def header(w, h, spreads, pages, flags, title):
-    n = len(spreads)
-    data_offset = -(-(HEADER_BYTES + ENTRY_BYTES * n) // ALIGN) * ALIGN
+def align(n):
+    return -(-n // ALIGN) * ALIGN
+
+
+def layout(w, h, spreads, views):
+    """(data offset, zoom offset) for these tables."""
+    data_offset = align(HEADER_BYTES + ENTRY_BYTES * (len(spreads) + len(views)))
+    zoom_offset = align(data_offset + len(spreads) * w * h * 2) if views else 0
+    return data_offset, zoom_offset
+
+
+def header(w, h, spreads, views, pages, flags, title, overlap):
+    data_offset, zoom_offset = layout(w, h, spreads, views)
     t = title.encode("utf-8")[:63]
-    head = struct.pack("<4sHHHHHHIIHHI64s32s", MAGIC, VERSION, HEADER_BYTES, w, h,
-                       FORMAT_RGB565_BE, n, data_offset, w * h * 2, pages, flags, 0,
-                       t.ljust(64, b"\0"), b"\0" * 32)
+    head = struct.pack("<4sHHHHHHIIHHI64sIHH24s", MAGIC, VERSION, HEADER_BYTES, w, h,
+                       FORMAT_RGB565_BE, len(spreads), data_offset, w * h * 2, pages, flags, 0,
+                       t.ljust(64, b"\0"), zoom_offset, len(views),
+                       round(overlap * 1000) if views else 0, b"\0" * 24)
     assert len(head) == HEADER_BYTES
     table = b"".join(struct.pack("<HHI", l, r, 0) for l, r in spreads)
+    table += b"".join(struct.pack("<HBBHH", p, part, half, si, 0) for p, part, half, si in views)
     return (head + table).ljust(data_offset, b"\0")
 
 
@@ -258,6 +335,9 @@ def main():
     ap.add_argument("--rtl", action="store_true", help="right to left: the first of a pair on the right")
     ap.add_argument("--single", action="store_true", help="one page per screen")
     ap.add_argument("--no-labels", action="store_true", help="no page numbers in the margin")
+    ap.add_argument("--no-zoom", action="store_true", help="no half-page zoom views")
+    ap.add_argument("--zoom-overlap", type=float, default=0.05,
+                    help="how much a page's two zoom halves overlap, as a fraction of its height")
     ap.add_argument("--size", default="1280x720", help="spread size (default 1280x720, the plane's)")
     ap.add_argument("--dpi", type=int, default=150, help="PDF render resolution (default 150)")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 2, help="spreads rendered at once")
@@ -270,24 +350,47 @@ def main():
     with tempfile.TemporaryDirectory() as work:
         pages = Pages(args.source, work, args.dpi)
         spreads = plan_spreads(pages.count, flags & FLAG_COVER, args.rtl, args.single, pages.wide)
-        if len(spreads) > 0xFFFF:
+        views = [] if args.no_zoom else plan_zoom(spreads, args.rtl, pages.wide)
+        if len(spreads) > 0xFFFF or len(views) > 0xFFFF:
             sys.exit("too many spreads for one book")
+        if not 0 <= args.zoom_overlap < 1:
+            sys.exit("--zoom-overlap is a fraction from 0 to under 1")
+        labels = not args.no_labels
+        data_offset, zoom_offset = layout(w, h, spreads, views)
         tmp_out = args.output + ".part"
         with open(tmp_out, "wb") as out, \
                 concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-            out.write(header(w, h, spreads, pages.count, flags, title))
+            out.write(header(w, h, spreads, views, pages.count, flags, title, args.zoom_overlap))
             done = 0
-            for data in pool.map(lambda pair: render_spread(pages, pair, w, h,
-                                                            not args.no_labels, pages.count),
-                                 spreads):
+            for data in pool.map(lambda pair: render_spread(pages, pair, w, h, labels,
+                                                            pages.count), spreads):
                 out.write(data)
                 done += 1
                 if done % 10 == 0 or done == len(spreads):
                     print(f"  {done} of {len(spreads)} spreads", flush=True)
+            if views:
+                out.write(b"\0" * (zoom_offset - out.tell()))
+                # Each page once, all its views together, in reading order.
+                order = []
+                for p, part, _half, _si in views:
+                    if not order or order[-1][0] != p:
+                        order.append((p, []))
+                    if part not in order[-1][1]:
+                        order[-1][1].append(part)
+                done = 0
+                for datas in pool.map(lambda pp: render_zoom_page(pages, pp[0], pp[1], w, h,
+                                                                  args.zoom_overlap, labels,
+                                                                  pages.count), order):
+                    for data in datas:
+                        out.write(data)
+                    done += len(datas)
+                    if done % 40 < len(datas) or done == len(views):
+                        print(f"  {done} of {len(views)} zoom views", flush=True)
+                assert out.tell() == zoom_offset + len(views) * w * h * 2
         os.replace(tmp_out, args.output)
     size = os.path.getsize(args.output)
-    print(f"{args.output}: {title!r}, {pages.count} pages in {len(spreads)} spreads of "
-          f"{w}x{h}, {size / 1e6:.1f} MB")
+    print(f"{args.output}: {title!r}, {pages.count} pages in {len(spreads)} spreads"
+          f"{f' and {len(views)} zoom views' if views else ''} of {w}x{h}, {size / 1e6:.1f} MB")
 
 
 if __name__ == "__main__":

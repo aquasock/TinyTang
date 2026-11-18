@@ -2,9 +2,12 @@
 """Reflash a TinyTang board over its USB CDC console, without BOOT mode.
 
 The image is uploaded to the card with the shell's `tangput` command and then
-installed with `tangflash`, which stages it and commits it from TCM; the board
-then needs a power cycle to run it (FLS-001).
-After the power cycle it runs the new firmware; no BOOT button, no card reader.
+installed with `tangflash`, which stages it and commits it from TCM.  The tool
+waits until the commit has finished -- the board resets into its loader and
+shows up as the FT2232 -- because power removed during the commit leaves a
+board that only starts again from BOOT mode.  Then the board needs a power
+cycle to run it (FLS-001), after which it runs the new firmware; no BOOT
+button, no card reader.
 
     tools/tinytang_flash.py build/build_out/tinytang_bl616.bin
 
@@ -32,6 +35,25 @@ REMOTE_PATH = "/tinytang-upload.bin"
 # Must match FW_APP_MAX_SIZE in ports/bl616/tdsh_tang_flash.c (FLS-002). A
 # board still running a pre-FLS-002 build refuses anything over 0x80000 itself.
 FW_APP_MAX = 0xE0000
+
+
+CDC_ID = (0xFFFF, 0x5454)          # TinyTang's console
+FT2232_ID = (0x0403, 0x6010)       # the vendor loader, after the commit's reset
+COMMIT_TIMEOUT_S = 180
+
+
+def wait_for_vendor_loader(timeout):
+    """True once the FT2232 has enumerated: the commit loop has finished and
+    reset.  Polls the host's USB serial ports; the console is gone by then."""
+    from serial.tools import list_ports
+    start = time.time()
+    while time.time() - start < timeout:
+        ids = {(p.vid, p.pid) for p in list_ports.comports() if p.vid is not None}
+        if FT2232_ID in ids and CDC_ID not in ids:
+            print(f"  loader up after {time.time() - start:.0f} s")
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def wait_for(port, needle, timeout, echo=True):
@@ -84,12 +106,23 @@ def main():
         print("staging and committing")
         port.write(f"tangflash {REMOTE_PATH}\r".encode())
         wait_for(port, "OK committing", 180)
-
-        # The board erases, copies and soft-resets into the vendor loader, where
-        # it shows up as an FT2232 until it is power-cycled (FLS-001).
-        print("\ncommitted")
     finally:
         port.close()
+
+    # "OK committing" comes BEFORE the commit: the board then erases and
+    # rewrites the whole application slot from TCM with interrupts off, about
+    # 200 sectors and many seconds, and only then soft-resets into the vendor
+    # loader, which enumerates as the FT2232.  Power removed before that leaves
+    # a half-written application that never starts again -- the board then
+    # comes up one-wire on every power-up and needs the BOOT button.  That
+    # happened on 2026-11-17: a readback showed 137 of 197 sectors rewritten.
+    # So the commit is over only when the FT2232 appears.
+    print("\nwriting the application slot -- do NOT power off the board")
+    if not wait_for_vendor_loader(COMMIT_TIMEOUT_S):
+        sys.exit(f"the board did not reset into its loader within {COMMIT_TIMEOUT_S} s. Do NOT "
+                 "power it off yet: wait several more minutes for the FT2232 (0403:6010) to "
+                 "appear, and only then power-cycle it.")
+    print("committed: the board has reset into its loader (FT2232)")
 
     print("Power-cycle the board now to run the new firmware; until then it shows "
           "up as an FT2232. Afterwards `platform` reports the new build identity. "

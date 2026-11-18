@@ -168,6 +168,13 @@ static bool plausible_center(int v)
     return v > 88 && v < 168;
 }
 
+static volatile uint32_t s_x_presses;
+
+uint32_t tang_wiipad_x_presses(void)
+{
+    return s_x_presses;
+}
+
 static void emit(tang_wii_keys_t *k, const char *s, size_t len)
 {
     if (k == NULL || k->n + (int)len > TANG_WIIPAD_KEYS_MAX) {
@@ -199,7 +206,12 @@ static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
 {
     const uint32_t pressed = s->btn & ~n->btn_prev;
 
-    if (pressed & TANG_WII_BTN_X)      emit(k, "\x1b", 1);
+    if (pressed & TANG_WII_BTN_X) {
+        /* Counted before the Escape is queued, so it has moved by the time
+         * the desktop delivers that key. */
+        s_x_presses = s_x_presses + 1u;
+        emit(k, "\x1b", 1);
+    }
     if (pressed & TANG_WII_BTN_Y)      emit(k, "\t", 1);
     if (pressed & TANG_WII_BTN_PLUS)   emit(k, "\r", 1);
     if (pressed & TANG_WII_BTN_MINUS)  emit(k, "\x1b[21~", 5);  /* F10 */

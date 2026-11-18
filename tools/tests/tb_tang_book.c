@@ -1,7 +1,7 @@
 /* Host test: the firmware's side of a TinyReader book (ports/bl616/tang_book.c)
  * against a file tools/make_book.py made, and the spread cache's planning.
  *
- *   tb_tang_book <book.trb> <spreads> <width> <height>
+ *   tb_tang_book <book.trb> <spreads> <width> <height> <zoom views>
  *
  * SPDX-License-Identifier: MIT
  */
@@ -16,8 +16,8 @@ static int failures;
 
 int main(int argc, char **argv)
 {
-    if (argc != 5) {
-        fprintf(stderr, "usage: tb_tang_book <book.trb> <spreads> <width> <height>\n");
+    if (argc != 6) {
+        fprintf(stderr, "usage: tb_tang_book <book.trb> <spreads> <width> <height> <zoom views>\n");
         return 2;
     }
     FILE *f = fopen(argv[1], "rb");
@@ -27,6 +27,11 @@ int main(int argc, char **argv)
     fseek(f, 0, SEEK_SET);
     uint8_t h[128];
     if (fread(h, 1, sizeof h, f) != sizeof h) { fprintf(stderr, "short\n"); return 2; }
+    static uint8_t ztable[8 * 1024];
+    const int zwant = atoi(argv[5]);
+    if (zwant > 1024) return 2;
+    fseek(f, 128 + 8L * atoi(argv[2]), SEEK_SET);
+    if (zwant && fread(ztable, 8, (size_t)zwant, f) != (size_t)zwant) return 2;
     fclose(f);
 
     /* ------------------------------------------------ the converter's header */
@@ -36,8 +41,29 @@ int main(int argc, char **argv)
     CHECK(b.width == atoi(argv[3]) && b.height == atoi(argv[4]));
     CHECK(b.spread_bytes == (uint32_t)b.width * b.height * 2u);
     CHECK(b.data_offset % 4096u == 0);
-    CHECK(tang_book_offset(&b, b.count - 1) + b.spread_bytes == (uint64_t)size);
+    CHECK(b.zoom_count == zwant);
+    if (zwant) {
+        CHECK(b.zoom_offset % 4096u == 0);
+        CHECK(b.zoom_offset >= tang_book_offset(&b, b.count - 1) + b.spread_bytes);
+        CHECK(tang_book_zoom_offset(&b, b.zoom_count - 1) + b.spread_bytes == (uint64_t)size);
+        CHECK(tang_book_zoom_table(&b) == 128u + 8u * b.count);
+    } else {
+        CHECK(b.zoom_offset == 0);
+        CHECK(tang_book_offset(&b, b.count - 1) + b.spread_bytes == (uint64_t)size);
+    }
     CHECK(strcmp(b.title, "Test Book") == 0);
+
+    /* The zoom table, for the five-page test book: page 1 in spread 0, pages
+     * 2 and 3 in spread 1, 4 and 5 in spread 2, two views a page. */
+    if (zwant == 10) {
+        const int spread_of[10] = { 0, 0, 1, 1, 1, 1, 2, 2, 2, 2 };
+        for (int i = 0; i < 10; i++) CHECK(tang_book_zoom_spread(ztable, 10, i) == spread_of[i]);
+        CHECK(tang_book_zoom_first(ztable, 10, 0) == 0);
+        CHECK(tang_book_zoom_first(ztable, 10, 1) == 2);
+        CHECK(tang_book_zoom_first(ztable, 10, 2) == 6);
+        CHECK(tang_book_zoom_first(ztable, 10, 9) == 6);     /* past the end: the last spread's */
+        CHECK(tang_book_zoom_spread(ztable, 10, 99) == 0);
+    }
 
     /* Refusals. */
     CHECK(tang_book_parse(h, 127, (uint64_t)size, &b) == TANG_BOOK_SHORT);
@@ -54,6 +80,16 @@ int main(int argc, char **argv)
         CHECK(tang_book_parse(bad, sizeof bad, (uint64_t)size, &b) == TANG_BOOK_GEOMETRY);
         memcpy(bad, h, sizeof bad); bad[16] = 1;              /* data offset not sector-aligned */
         CHECK(tang_book_parse(bad, sizeof bad, (uint64_t)size, &b) == TANG_BOOK_GEOMETRY);
+        if (zwant) {
+            memcpy(bad, h, sizeof bad); bad[96] = 1;          /* zoom offset not aligned */
+            CHECK(tang_book_parse(bad, sizeof bad, (uint64_t)size, &b) == TANG_BOOK_GEOMETRY);
+            memcpy(bad, h, sizeof bad); bad[100] += 1;        /* one view more than the file holds */
+            CHECK(tang_book_parse(bad, sizeof bad, (uint64_t)size, &b) != TANG_BOOK_OK);
+            /* Without its zoom fields the book still reads, as spreads alone. */
+            memcpy(bad, h, sizeof bad); memset(bad + 96, 0, 8);
+            CHECK(tang_book_parse(bad, sizeof bad, (uint64_t)size, &b) == TANG_BOOK_OK &&
+                  b.zoom_count == 0 && b.zoom_offset == 0);
+        }
     }
 
     /* ------------------------------------------------------------ the window */
@@ -121,6 +157,29 @@ int main(int argc, char **argv)
         /* A slot being overwritten (-1) is empty, and goes first. */
         tang_book_cache_set(&d, 0, -1);
         CHECK(tang_book_cache_victim(&d, 80, 100, 2) == 0);
+    }
+
+    /* ------------------------------------------- two sequences, one cache */
+    {
+        tang_book_cache_t c;
+        tang_book_cache_init(&c, 1, 3);
+        for (int i = 0; i < 3; i++) { tang_book_cache_set(&c, i, i); tang_book_cache_touch(&c, i); }
+        CHECK(tang_book_cache_find(&c, 1) == 1);
+        /* Zoom views are numbered from 1000: spread 1 is not view 1. */
+        tang_book_cache_rebase(&c, 1000);
+        CHECK(tang_book_cache_find(&c, 1) == -1);
+        CHECK(tang_book_next_wanted(&c, 0, 50) == 0);
+        /* The spreads are given up for the views, though spreads 0-2 would
+         * be inside the views' window if their numbers were taken as views. */
+        CHECK(tang_book_cache_victim(&c, 0, 50, 2) == 0);
+        tang_book_cache_set(&c, 0, 0);                         /* view 0 into slot 0 */
+        CHECK(tang_book_cache_find(&c, 0) == 0 && c.spread[0] == 1000);
+        /* Back to spreads: 1 and 2 are still held, 0 is gone. */
+        tang_book_cache_rebase(&c, 0);
+        CHECK(tang_book_cache_find(&c, 0) == -1);
+        CHECK(tang_book_cache_find(&c, 1) == 1 && tang_book_cache_find(&c, 2) == 2);
+        tang_book_cache_set(&c, 0, -1);
+        CHECK(c.spread[0] == -1);
     }
 
     if (failures) {

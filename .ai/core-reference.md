@@ -2665,6 +2665,18 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "`tools/tinytang_put.py`; `cmd_tangput` in `ports/bl616/tdsh_tang_flash.c`"
   verification: "Reproduced three times and fixed on the board on 2026-11-17 (core-log entry 49)."
 
+- record_id: TOOL-026
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "tinytang_flash.py reported the commit done before it began, and a power cycle then left a half-written firmware that only BOOT mode could fix"
+  status: VERIFIED
+  verified_date: 2026-11-18
+  statement: "`tangflash` prints 'tangflash: OK committing' and 80 ms later calls `commit_staged_image()`, which erases and rewrites the application slot at 0x40000 sector by sector from TCM with interrupts off, about 200 sectors for an 800 KB image, and only then resets into the vendor loader, which enumerates as the FT2232 0403:6010. `tools/tinytang_flash.py` stopped waiting at the message and printed 'committed' and 'Power-cycle the board now'. A relay power cycle run straight after it on 2026-11-17 cut the commit short: read back over the ROM bootloader, the slot held the new image in sectors 0 to 136, an erased sector 137 and the old image in 138 to 196, so the board came up only as the FT2232 on every power-up. The commit routine itself is sound: it and everything it calls (bflb_flash_erase, _write, _read, bflb_irq_save, GLB_SW_POR_Reset) are at 0x62fc.... in TCM or ROM, per the image's disassembly. The tool now waits, up to 180 s, until the FT2232 has enumerated and the console has gone, says not to power off meanwhile, and only then says to power-cycle; it exits with a warning not to power off if that never happens."
+  consequence: "A power cycle straight after 'OK committing' is what made a working board need the BOOT button; earlier flashes the same evening survived the same sequence only because the relay script's delay happened to outlast the commit, and core-log entry 36's unexplained loss of TinyTang also followed a tangflash. One weakness remains in the firmware: a sector that still differs after three attempts is left as it is and the reset goes ahead, with nothing reported."
+  sources:
+    - "`tools/tinytang_flash.py`; `cmd_tangflash` in `ports/bl616/tdsh_tang_flash.c`; `commit_staged_image` in `ports/bl616/tang_fw_update.c`; records FLS-002, FLS-003, BRD-009"
+  verification: "On 2026-11-18 (core-log entry 50): the readback with BLFlashCommand --flash --read --start=0x40000 --len=0xc4500, compared sector by sector with the image that had been sent; recovery with the a1ba0eb firmware, the device's SHA-256 matching; the disassembly of commit_staged_image. The new wait has not yet been run against a commit."
+
 - record_id: WII-001
   kind: EXTERNAL
   topic_id: WII

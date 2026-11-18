@@ -1672,3 +1672,44 @@ Zoom into one page of a spread, deferred from this cycle, is the next TinyReader
 - User Test: PASS
 
 ---
+## 50 COMMIT Unreleased 2026-11-18T00:21:20-07:00
+
+#### Coming From:
+
+Unreleased a1ba0eb
+
+#### Purpose:
+
+Add a zoom mode to TinyReader that shows each page's top and bottom halves full screen, switched by a window toggle, X on the pad or Z, and record why its deployment cost a BOOT-mode recovery.
+
+#### Outcome:
+
+The zoom mode is implemented and passes the host suite but has not run on the board, because its deployment failed and the cycle was stopped for the night. `tools/make_book.py` now also renders every page's top and bottom halves as full 1280x720 screens with a 5% overlap (`--zoom-overlap`, `--no-zoom`), a wide page split into its two pages first, in a zoom section described by header fields at 96 to 103 and a zoom table after the spread table, so older books still open as spreads (docs/tinyreader-books.md); the Zelda guide becomes 88 spreads and 344 views, 796 MB, and a decoded view showed the top of PDF page 41 at about 1050 pixels wide with its captions plainly readable. `ports/bl616/tang_book.c` parses and checks the zoom fields, maps a spread to its first view and a view to its spread, and lets one cache hold both sequences by a base offset. TinyReader gains a Zoom box, Z, and X on the Wii pad, which types Escape like the keyboard's key, so `tang_wiipad.c` now counts X presses and an Escape that comes with one toggles zoom while the keyboard's leaves; the loader moves the reader's page across a switch, keeps the mode in `<book>.trb.pos`, and `readerdraw` and `plane_sweep.py --zoom` handle views. Host tests are 52 of 52, with new checks for the view table, fold-out splitting, the overlap, `--no-zoom`, mapping both ways, old-style headers, the rebased cache and the X counter. The firmware `a1ba0eb-dirty.c9ff4bb` built cleanly, but it was installed by `tools/tinytang_flash.py` and the relay power cycle was run as soon as the tool said committed, before the board had finished rewriting its application slot; the board then came up only as the FT2232. With BOOT held by the operator, a readback of 0x40000 showed the new image in sectors 0 to 136, sector 137 erased and the old image from 138, which proves the commit was cut off rather than the image being bad (TOOL-026). The board was recovered with the previous cycle's tested firmware, built from `a1ba0eb` in the worktree `/run/media/vash/GIT/tinytang-good` and written to 0x40000 alone with BLFlashCommand, the device's SHA-256 matching; after the operator's power cycle `platform` reports `a1ba0eb-dirty.131fec9`, `crash` no record, and the ABI 1.11 core answers. `tools/tinytang_flash.py` now waits until the FT2232 has enumerated before it says to power-cycle, and README fact 6 says why; the wait has not yet been exercised. The card no longer holds `zelda.trb` or its `.pos`, which were deleted before the failed reboot, and still holds `/tinytang-upload.bin`, the zoom firmware. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and TOOL-026 only, and this entry was validated as number 50 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 184 records.
+
+#### Next Steps:
+
+Install the zoom firmware with the fixed `tools/tinytang_flash.py` and let it confirm the commit's end before any power cycle, which also tests the new wait; then regenerate the Zelda book with zoom views from the PDF on `/run/media/vash/USB_HDD` with `tools/make_book.py`, upload it to `/root/media/reader` with `tools/tinytang_put.py` (about 10 minutes), check a few zoom buffers with `readerdraw <book> z<view> <buffer>` and `plane_sweep.py --book --zoom`, and hand the operator the zoom test: the Zoom box, X on the pad, Z, page order and switching back. The firmware's commit should also report or refuse a sector that still differs after its three attempts instead of resetting silently. The worktree `/run/media/vash/GIT/tinytang-good` can be removed once it is no longer wanted as a recovery image. Earlier items stand: picture reads in large chunks, the card's `bl616-firmware.bin`, the shell `gbaload` stall, game-core desk fonts, `pad` and ctrl-c, and feedback during the exit save.
+
+#### Files Modified:
+
+- README.md
+- docs/tinyreader-books.md
+- ports/bl616/tang_book.c
+- ports/bl616/tang_book.h
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- ports/bl616/tinyreader_app.cpp
+- tools/make_book.py
+- tools/plane_sweep.py
+- tools/tests/tb_tang_book.c
+- tools/tests/tb_wiipad.c
+- tools/tests/test_make_book.sh
+- tools/tinytang_flash.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: FAIL
+- User Test: NOT RUN
+
+---

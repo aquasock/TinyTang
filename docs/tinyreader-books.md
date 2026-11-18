@@ -24,6 +24,14 @@ there is room. `--no-cover` pairs from page 1, `--rtl` puts the first page of
 each pair on the right, `--single` gives every page a screen of its own, and
 `--no-labels` leaves the margins black.
 
+Unless `--no-zoom` is given, every page is also rendered as two screens of
+its own, its top half and its bottom half, each as large as the screen allows,
+about twice a page's size in a spread. The halves overlap by `--zoom-overlap`
+of the page's height (0.05 unless given) so a line cut at the middle is whole
+in one of them, and a wide page is split into its left and right pages first.
+Zoom views roughly quadruple the file: the 161-page Zelda guide is 162 MB
+without them and 796 MB with its 344.
+
 Put the file in `/root/media/reader` (`tools/tinytang_put.py`, about 1.3 MB/s
 over the USB console, or an SD card reader). TinyReader keeps the spread a
 reader left a book at in `<book>.trb.pos` beside it.
@@ -49,10 +57,16 @@ it; `tools/tests/test_make_book.sh` checks the two against each other.
 | 26 | 2 | flags: bit 0 cover alone, bit 1 right to left, bit 2 single pages |
 | 28 | 4 | reserved, 0 |
 | 32 | 64 | title, UTF-8, NUL padded |
-| 96 | 32 | reserved, 0 |
+| 96 | 4 | zoom offset: where zoom view 0 starts, a multiple of 4096; 0 for none |
+| 100 | 2 | zoom view count, Z |
+| 102 | 2 | zoom overlap, in thousandths of a page's height |
+| 104 | 24 | reserved, 0 |
 | 128 | 8 x N | spread table: left page, right page (u16 each, 1-based source pages, 0 for none), 4 reserved bytes |
+| 128 + 8N | 8 x Z | zoom table, in reading order: page (u16, 1-based), part (u8: 0 whole page, 1 left half of a wide page, 2 its right half), half (u8: 0 top, 1 bottom), the spread it is in (u16), 2 reserved bytes |
 
-Spread i starts at data offset + i x spread bytes. A 1280x720 spread is
+Spread i starts at data offset + i x spread bytes, zoom view i at zoom offset
++ i x spread bytes. A book without zoom fields (all zero) is read as spreads
+alone, so books made before zoom views still open. A 1280x720 spread is
 1,843,200 bytes, 3,600 sectors, so every spread is whole, aligned sectors.
 
 ## On the board
@@ -67,6 +81,14 @@ to a loaded spread is one switch of buffer at the next frame (link frames
 loads, drawing in from the top. On a core before ABI 1.11 a book still opens,
 each spread drawn in as it is turned to.
 
-`readerdraw <book.trb> [spread [buffer]]` at the shell loads one spread and
-says where the time went, and `tools/plane_sweep.py --book <book.trb>` checks
-loaded buffers against the file by the core's frame checksum.
+Zoom mode steps through a book's zoom views instead: page 1 top, page 1
+bottom, page 2 top. The Zoom box in TinyReader's window chooses the mode a
+book opens in, and X on the Wii pad or the Z key switches while reading,
+staying on the same page; the cache holds spreads and views together, so
+switching back finds the spreads still loaded. The place kept beside the book
+records the mode too (`12` is spread 12, `40 z` zoom view 40).
+
+`readerdraw <book.trb> [spread|z<view> [buffer]]` at the shell loads one
+spread or zoom view and says where the time went, and `tools/plane_sweep.py
+--book <book.trb> [--zoom]` checks loaded buffers against the file by the
+core's frame checksum.

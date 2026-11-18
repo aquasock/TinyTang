@@ -635,7 +635,10 @@ and the wheel turn pages, Home and End go to the cover and the last spread, Esc
 or B goes back, and the place is kept beside the book.  On desktop ABI 1.11 the
 core holds eleven spreads at once and loads the ones around the page being
 read in the background, about 2 s each, so a page turn is one frame
-(TDESK-024).  A picture opens full screen and draws row by row as the file
+(TDESK-024).  With the window's Zoom box ticked, or X on the Wii pad or Z while
+reading, a book shows each page's top and bottom halves instead, each filling
+the screen at about twice a spread's size: page 1 top, page 1 bottom, page 2
+top, and so on.  A picture opens full screen and draws row by row as the file
 streams in.  `+` and `-`, or A and B on the
 pad, zoom (A on the point under the pointer), the arrows and the wheel pan,
 PgUp and PgDn turn pages, `0` shows the whole picture, Esc goes back.  A
@@ -823,7 +826,13 @@ session. `.ai/core-reference.md` holds the full records and their sources.
    in the vendor loader, and the board shows up as an FT2232 until it is
    power-cycled. Once, on 2026-10-04, it came straight back to the console
    instead; that is not explained, so power-cycle after every install and
-   confirm the build identity `platform` reports.
+   confirm the build identity `platform` reports. **But never before the
+   commit has finished:** `tangflash` prints "OK committing" and only then
+   rewrites the whole application slot, for many seconds, before that reset.
+   Power removed in between leaves a half-written firmware that never starts
+   again without the BOOT button (TOOL-026). `tools/tinytang_flash.py` waits
+   for the FT2232 to appear, which is the commit's end, before it says to
+   power-cycle.
 7. **The core's UART is the BL616's UART1: TX GPIO 28, RX GPIO 27, 2 Mbaud.**
    Every core starts at 2 Mbaud; the desktop core from ABI 1.10 is moved to
    10 Mbaud (or 5) after it loads, by register opcode 0x03, and `fpgabaud`

@@ -27,7 +27,8 @@ the one to build in.
 
 With --book, the plane's buffers (desktop ABI 1.11) are checked against a
 TinyReader book on the PC: buffer first+k must hold spread start+k, loaded
-beforehand with the shell's `readerdraw <book> <spread> <buffer>`.  Each buffer
+beforehand with the shell's `readerdraw <book> <spread> <buffer>` (with
+--zoom, zoom views: `readerdraw <book> z<view> <buffer>`).  Each buffer
 is shown in turn (frame 0x1D) and its frames' checksum compared with the
 spread's, and the switch is timed in frames.
 
@@ -136,8 +137,9 @@ class Link:
         raise TimeoutError(f"no reply reading register {addr:#x}")
 
 
-def book_sums(path, spread):
-    """The plane checksum of one spread of a .trb, as the core computes it."""
+def book_sums(path, spread, zoom=False):
+    """The plane checksum of one spread, or zoom view, of a .trb, as the core
+    computes it."""
     import numpy as np
     with open(path, "rb") as f:
         head = f.read(128)
@@ -145,6 +147,10 @@ def book_sums(path, spread):
         off, sb = struct.unpack_from("<II", head, 16)
         if head[:4] != b"TRB1" or (w, h) != (W, H):
             sys.exit(f"{path}: not a 1280x720 TinyReader book")
+        if zoom:
+            off, zn = struct.unpack_from("<IH", head, 96)
+            if spread >= zn:
+                sys.exit(f"{path}: has {zn} zoom views")
         f.seek(off + spread * sb)
         p = np.frombuffer(f.read(sb), ">u2").astype(np.int64)
     n = p.size
@@ -153,12 +159,13 @@ def book_sums(path, spread):
     return s1, s2
 
 
-def check_buffers(link, book, first_buffer, first_spread, count):
-    """Show each buffer and compare its frames with the spread it should hold."""
+def check_buffers(link, book, first_buffer, first_spread, count, zoom=False):
+    """Show each buffer and compare its frames with the spread (or zoom view)
+    it should hold."""
     bad = 0
     for k in range(count):
         b, sp = first_buffer + k, first_spread + k
-        want = book_sums(book, sp)
+        want = book_sums(book, sp, zoom)
         seen0 = link.read32(0x10) >> 16 & 0xFF
         link.frame(0x1D, bytes([b]))
         link.ser.flush()
@@ -177,7 +184,8 @@ def check_buffers(link, book, first_buffer, first_spread, count):
                     break
         ok = got == want and (st >> 12 & 15) == b
         bad += not ok
-        print(f"  buffer {b:2d}: spread {sp:3d}  {'intact' if ok else 'WRONG '}  "
+        print(f"  buffer {b:2d}: {'zoom view' if zoom else 'spread'} {sp:3d}  "
+              f"{'intact' if ok else 'WRONG '}  "
               f"shown after {frames} frame{'s' if frames != 1 else ''}  "
               f"{got[0] if got else 0:08x} {got[1] if got else 0:08x}")
     return bad
@@ -245,6 +253,8 @@ def main():
     ap.add_argument("--buffers", default="1:0", metavar="BUF:SPREAD",
                     help="with --book: the first buffer and the spread it holds (default 1:0)")
     ap.add_argument("--count", type=int, default=11, help="with --book: buffers to check")
+    ap.add_argument("--zoom", action="store_true",
+                    help="with --book: the buffers hold zoom views, not spreads")
     ap.add_argument("--frames", type=int, default=3,
                     help="frames that must match at each setting (default 3)")
     args = ap.parse_args()
@@ -296,7 +306,7 @@ def main():
         b0, s0 = (int(v) for v in args.buffers.split(":"))
         link.frame(0x1A, b"\x01")
         print(f"buffers {b0} to {b0 + args.count - 1} against {args.book}, spreads {s0} on")
-        bad = check_buffers(link, args.book, b0, s0, args.count)
+        bad = check_buffers(link, args.book, b0, s0, args.count, args.zoom)
         print(f"{args.count - bad} of {args.count} buffers intact; status {status_text(link.read32(0x10))}")
         sys.exit(1 if bad else 0)
 
