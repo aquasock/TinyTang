@@ -1,4 +1,5 @@
-// TinyTang — Reader: pictures on the desktop core's pixel plane, full screen.
+// TinyTang — TinyReader: pictures and books on the desktop core's pixel
+// plane, full screen.
 //
 // TinyDesk's Image Viewer draws with block characters, so on this board's
 // 80x45 grid a page is about 60x82 picture pixels and text cannot be read.
@@ -18,6 +19,24 @@
 // columns that can hold picture are sent -- this picture's and the last one's
 // -- so the black margins beside a page are cleared once, not on every row.
 //
+// Books.  A .trb file (tools/make_book.py, format in its header) is a book:
+// two-page spreads already rendered at the plane's 1280x720 in the link's own
+// RGB565 byte order, so nothing here decodes or scales them.  Desktop ABI 1.11
+// keeps twelve pictures in the core's SDRAM; buffer 0 stays the pictures',
+// and a book uses the other eleven as a cache of spreads around the one being
+// read (tang_book.h): a task loads them in reading order -- the next, the
+// previous, then further ahead -- while the reader reads, and a page turn to
+// a loaded spread is one buffer switch at the next frame.  A spread not yet
+// loaded is shown while it loads, drawing in from the top.  Where the book
+// was left is kept beside it in <book>.trb.pos.  On a core before ABI 1.11 a
+// book still opens, each spread drawn in as it is turned to.
+//
+// While a book is up:
+//   right  down  PgDn  space  n   next spread (also A on the pad, the wheel)
+//   left  up  PgUp  p  b          previous spread
+//   Home  0       the cover; End the last spread
+//   Esc  q        back to the list (also B on the pad)
+//
 // While a picture is up:
 //   +  -           zoom in and out (1x is the whole picture, up to 8x)
 //   arrows, wheel  pan by a quarter of the screen
@@ -35,6 +54,7 @@ extern "C" {
 #include "tinydesk/td.h"
 #include "tinydesk/td_sysinfo.h"
 #include "tang_plane.h"
+#include "tang_book.h"
 #include "tang_fpga_link.h"
 #include "td_fs_stdio.h"
 #include "tdsh.h"
@@ -104,6 +124,21 @@ int32_t s_pw = 640, s_ph = 360;         // the plane, from tang_plane_size at op
  * whenever the plane is newly shown. */
 int32_t s_lit_l = 0, s_lit_r = TANG_PLANE_MAX_WIDTH;
 
+/* The book, while one is open.  The UI writes s_book_cur and wakes the
+ * loader; only the loader touches the cache, the file and the plane's buffers. */
+constexpr int BOOK_FIRST_BUFFER = 1;    // buffer 0 is the pictures'
+constexpr uint32_t BOOK_STACK_WORDS = 2048;
+constexpr UINT BOOK_CHUNK = 16384;      // bytes read and sent at a time: 32 sectors
+bool s_book;                            // the view is a book
+volatile bool s_book_open;              // the loader should keep going
+volatile bool s_book_busy;              // the loader task is running
+volatile bool s_book_failed;            // it gave up; the tick leaves the view
+volatile int s_book_cur;                // the spread being read
+volatile int s_book_count;
+TaskHandle_t s_book_task;              // cleared, with s_book_busy, as it ends
+/* The last spread loaded: microseconds reading the card and sending it. */
+uint32_t s_book_t_card, s_book_t_link;
+
 /* Where the last finished render's time went, in microseconds: opening and
  * reading the file's rows (card and decode), sending rows to the plane (the
  * link), and the whole; the rest is the filter.  `readerdraw` reports them. */
@@ -133,13 +168,19 @@ bool is_picture(const char *name)
                               strcasecmp(dot, ".pgm") == 0);
 }
 
+bool is_book(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    return dot != nullptr && strcasecmp(dot, ".trb") == 0;
+}
+
 bool listable(const FILINFO &info)
 {
     if ((info.fattrib & (AM_HID | AM_SYS | AM_VOLUME_LABEL)) != 0 || info.fname[0] == '.' ||
         strlen(info.fname) >= NAME_BYTES) {
         return false;
     }
-    return (info.fattrib & AM_DIR) != 0 || is_picture(info.fname);
+    return (info.fattrib & AM_DIR) != 0 || is_picture(info.fname) || is_book(info.fname);
 }
 
 int compare(const void *a, const void *b)
@@ -166,7 +207,7 @@ void load(void)
     DIR dir;
     FILINFO info;
     if (f_opendir(&dir, s_real) != FR_OK) {
-        say(at_root() ? "Put BMP pictures in /root/media/reader" : "No folder here");
+        say(at_root() ? "Put pictures and .trb books in /root/media/reader" : "No folder here");
         return;
     }
     const int parent = at_root() ? 0 : 1;
@@ -200,7 +241,7 @@ void load(void)
         td_list_set_count(s_list, s_count);
         td_list_select(s_list, 0);
     }
-    say(s_count == parent ? "No pictures here" : "");
+    say(s_count == parent ? "No pictures or books here" : "");
 }
 
 void descend(const char *name)
@@ -426,6 +467,222 @@ void request(void)
     }
 }
 
+/* ------------------------------------------------------------ books */
+
+/* Called between chunks of a load: false to stop it.  Interactive loads also
+ * follow the reader -- showing a spread the moment it is turned to, if it is
+ * held -- and give up a load the reader no longer needs. */
+struct book_load {
+    tang_book_cache_t *cache;
+    int *shown;
+    int spread;                 // what is being loaded
+    int seen_cur;               // s_book_cur when last looked at
+    bool interactive;
+};
+
+bool show_slot(tang_book_cache_t *c, int *shown, int slot)
+{
+    if (tang_plane_show_buffer(c->buffer[slot]) != 0) return false;
+    *shown = slot;
+    tang_book_cache_touch(c, slot);
+    if (!s_plane_on && tang_plane_show(true) == 0) s_plane_on = true;
+    return true;
+}
+
+bool book_keep_going(book_load *ld)
+{
+    if (!ld->interactive) return true;
+    if (!s_book_open) return false;
+    const int now = s_book_cur;
+    if (now == ld->seen_cur) return true;
+    ld->seen_cur = now;
+    const int slot = tang_book_cache_find(ld->cache, now);
+    if (slot >= 0 && slot != *ld->shown) (void)show_slot(ld->cache, ld->shown, slot);
+    /* Not loaded and not this one: the reader is waiting on it, so it goes
+     * first.  Out of the window: not wanted any more. */
+    if (slot < 0 && now != ld->spread) return false;
+    return tang_book_in_window(now, s_book_count, ld->cache->n, ld->spread);
+}
+
+/* Spread `spread` of the open book into plane buffer `buffer`, straight from
+ * the card: the file holds it in the link's byte order. */
+bool book_load_spread(FIL *f, const tang_book_t *b, int spread, int buffer, uint8_t *chunk,
+                      UINT chunk_bytes, book_load *ld)
+{
+    uint64_t t_card = 0, t_link = 0;
+    if (f_lseek(f, (FSIZE_t)tang_book_offset(b, spread)) != FR_OK) return false;
+    for (uint32_t pos = 0; pos < b->spread_bytes; pos += chunk_bytes) {
+        if (!book_keep_going(ld)) return false;
+        const UINT want = b->spread_bytes - pos < chunk_bytes ? b->spread_bytes - pos : chunk_bytes;
+        UINT got = 0;
+        uint64_t t0 = bflb_mtimer_get_time_us();
+        if (f_read(f, chunk, want, &got) != FR_OK || got != want) return false;
+        t_card += bflb_mtimer_get_time_us() - t0;
+        const uint32_t px = pos / 2u;
+        t0 = bflb_mtimer_get_time_us();
+        int rc = -1;
+        /* The link can be held a moment by the desk layer: try a few times. */
+        for (int tries = 0; tries < 5 && rc != 0; tries++) {
+            rc = tang_plane_write_be(buffer, (int)(px % b->width), (int)(px / b->width), chunk,
+                                     (int)(want / 2u));
+        }
+        t_link += bflb_mtimer_get_time_us() - t0;
+        if (rc != 0) return false;
+    }
+    s_book_t_card = (uint32_t)t_card;
+    s_book_t_link = (uint32_t)t_link;
+    return true;
+}
+
+/* A buffer for chunks: as large as the heap allows, down to one row. */
+uint8_t *book_chunk(UINT *bytes)
+{
+    for (UINT n = BOOK_CHUNK; n >= 2560u; n /= 2u) {
+        uint8_t *p = static_cast<uint8_t *>(malloc(n));
+        if (p != nullptr) { *bytes = n; return p; }
+    }
+    return nullptr;
+}
+
+/* Open the book at path and check it against the plane: 0, or a message. */
+const char *book_open(FIL *f, const char *path, tang_book_t *b)
+{
+    if (f_open(f, path, FA_READ) != FR_OK) return "Cannot open the book";
+    uint8_t h[TANG_BOOK_HEADER_BYTES];
+    UINT got = 0;
+    if (f_read(f, h, sizeof h, &got) != FR_OK) { f_close(f); return "Cannot read the book"; }
+    const int rc = tang_book_parse(h, got, f_size(f), b);
+    if (rc != TANG_BOOK_OK) {
+        f_close(f);
+        static char why[80];
+        snprintf(why, sizeof why, "Not a book: %s", tang_book_error(rc));
+        return why;
+    }
+    int w = 0, h_ = 0;
+    if (!tang_plane_size(&w, &h_) || b->width != w || b->height != h_) {
+        f_close(f);
+        return "This book is made for another screen size";
+    }
+    return nullptr;
+}
+
+void book_pos_path(char *out, size_t n) { snprintf(out, n, "%s.pos", s_view_real); }
+
+int book_pos_read(void)
+{
+    char path[sizeof s_view_real + 8];
+    book_pos_path(path, sizeof path);
+    FIL f;
+    char text[16] = {};
+    UINT got = 0;
+    if (f_open(&f, path, FA_READ) != FR_OK) return 0;
+    (void)f_read(&f, text, sizeof text - 1, &got);
+    f_close(&f);
+    return atoi(text);
+}
+
+void book_pos_write(int spread)
+{
+    char path[sizeof s_view_real + 8];
+    book_pos_path(path, sizeof path);
+    FIL f;
+    char text[16];
+    const int n = snprintf(text, sizeof text, "%d\n", spread);
+    UINT put = 0;
+    if (f_open(&f, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return;
+    (void)f_write(&f, text, (UINT)n, &put);
+    f_close(&f);
+}
+
+void book_fail(const char *why)
+{
+    snprintf(s_render_say, sizeof s_render_say, "%s", why);
+    s_render_said = true;
+    s_book_failed = true;
+}
+
+void book_task(void *)
+{
+    FIL *f = static_cast<FIL *>(malloc(sizeof(FIL)));
+    UINT chunk_bytes = 0;
+    uint8_t *chunk = book_chunk(&chunk_bytes);
+    tang_book_t b;
+    const char *why = nullptr;
+    if (f == nullptr || chunk == nullptr) why = "Not enough memory for a book";
+    else why = book_open(f, s_view_real, &b);
+    if (why != nullptr) {
+        book_fail(why);
+    } else {
+        s_book_count = b.count;
+        int start = book_pos_read();
+        if (start < 0 || start >= b.count) start = 0;
+        s_book_cur = start;
+        const int saved = start;
+        /* Eleven buffers beside the pictures' on ABI 1.11; before it, the one. */
+        tang_book_cache_t cache;
+        if (tang_plane_buffers() > BOOK_FIRST_BUFFER) {
+            tang_book_cache_init(&cache, BOOK_FIRST_BUFFER, tang_plane_buffers() - BOOK_FIRST_BUFFER);
+        } else {
+            tang_book_cache_init(&cache, 0, 1);
+        }
+        int shown = -1;
+        while (s_book_open) {
+            const int cur = s_book_cur;
+            const int slot = tang_book_cache_find(&cache, cur);
+            if (slot >= 0 && slot != shown) (void)show_slot(&cache, &shown, slot);
+            const int next = tang_book_next_wanted(&cache, cur, b.count);
+            int victim = next >= 0 ? tang_book_cache_victim(&cache, cur, b.count, shown) : -1;
+            /* One buffer (a core before ABI 1.11): it is both the shown one
+             * and the only one to load into. */
+            if (next >= 0 && victim < 0 && cache.n == 1) victim = 0;
+            if (next < 0 || victim < 0) {
+                (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+                continue;
+            }
+            tang_book_cache_set(&cache, victim, -1);
+            /* The one being read is shown while it loads, drawing in. */
+            if (next == cur) (void)show_slot(&cache, &shown, victim);
+            book_load ld = { &cache, &shown, next, cur, true };
+            if (book_load_spread(f, &b, next, cache.buffer[victim], chunk, chunk_bytes, &ld)) {
+                tang_book_cache_set(&cache, victim, next);
+            } else if (s_book_open && ld.seen_cur == cur) {
+                /* Not abandoned for the reader: the card or the link failed. */
+                book_fail("The book could not be read");
+                break;
+            }
+        }
+        if (s_book_cur != saved) book_pos_write(s_book_cur);
+        f_close(f);
+        /* The buffer shown stays as it is until the plane is hidden: showing
+         * buffer 0 now would flash the last picture.  A picture view selects
+         * buffer 0 when it opens. */
+    }
+    free(chunk);
+    free(f);
+    taskENTER_CRITICAL();
+    s_book_task = nullptr;
+    s_book_busy = false;
+    taskEXIT_CRITICAL();
+    vTaskDelete(nullptr);
+}
+
+/* Wake the loader, if it is still there to wake. */
+void book_wake(void)
+{
+    taskENTER_CRITICAL();
+    if (s_book_task != nullptr) xTaskNotifyGive(s_book_task);
+    taskEXIT_CRITICAL();
+}
+
+void book_turn(int to)
+{
+    if (to < 0) to = 0;
+    if (to >= s_book_count) to = s_book_count - 1;
+    if (to == s_book_cur || to < 0) return;
+    s_book_cur = to;
+    book_wake();
+}
+
 /* ------------------------------------------------------------ the view */
 
 bool open_index(int index)
@@ -439,6 +696,7 @@ bool open_index(int index)
     s_view_index = index;
     s_zoom = 1;
     s_cx = s_cy = -1;
+    s_book = is_book(s_entries[index].name);
     return true;
 }
 
@@ -448,7 +706,29 @@ void view_enter(int index)
         say("This desktop core has no pixel plane (needs ABI 1.8)");
         return;
     }
+    if (s_book_busy) {
+        say("Still closing the last book");
+        return;
+    }
     if (!open_index(index)) return;
+    if (s_book) {
+        s_book_open = true;
+        s_book_failed = false;
+        s_book_busy = true;
+        s_book_count = 0;
+        s_viewing = true;
+        td_win_set_fullscreen(s_win, true);
+        if (xTaskCreate(book_task, "book", BOOK_STACK_WORDS, nullptr, tskIDLE_PRIORITY + 1,
+                        &s_book_task) != pdPASS) {
+            s_book_busy = false;
+            s_book_open = false;
+            s_viewing = false;
+            td_win_set_fullscreen(s_win, false);
+            say("Not enough memory to open a book");
+        }
+        return;
+    }
+    (void)tang_plane_show_buffer(0);
     int w = 0, h = 0;
     if (tang_plane_size(&w, &h)) {
         s_pw = w;
@@ -466,6 +746,10 @@ void view_leave(void)
 {
     s_viewing = false;
     s_gen = s_gen + 1;              // the render stops at its next row
+    if (s_book_open) {
+        s_book_open = false;        // the loader stops at its next chunk
+        book_wake();
+    }
     if (s_win != nullptr) td_win_set_fullscreen(s_win, false);
     /* The plane is hidden by the tick once the render has stopped, so a row
      * still in flight cannot land after the screen was handed back. */
@@ -515,9 +799,33 @@ void cell_to_picture(int cell_x, int cell_y, int32_t *px, int32_t *py)
     *py = s_sy0 + (int32_t)((int64_t)y * s_vh / s_dh);
 }
 
+bool on_book_event(const td_event_t *ev)
+{
+    if (ev->type == TD_EV_KEY) {
+        switch (ev->key) {
+        case TD_KEY_ESC: case 'q': case TD_KEY_BACKSPACE: view_leave(); return true;
+        case TD_KEY_RIGHT: case TD_KEY_DOWN: case TD_KEY_PGDN: case ' ': case 'n':
+            book_turn(s_book_cur + 1); return true;
+        case TD_KEY_LEFT: case TD_KEY_UP: case TD_KEY_PGUP: case 'p': case 'b':
+            book_turn(s_book_cur - 1); return true;
+        case TD_KEY_HOME: case '0': book_turn(0); return true;
+        case TD_KEY_END: book_turn(s_book_count - 1); return true;
+        default: return true;
+        }
+    }
+    if (ev->type == TD_EV_MOUSE && ev->action == TD_MOUSE_PRESS) {
+        if (ev->button == 0 || ev->button == 5) book_turn(s_book_cur + 1);
+        else if (ev->button == 4) book_turn(s_book_cur - 1);
+        else if (ev->button == 2) view_leave();
+        return true;
+    }
+    return ev->type == TD_EV_MOUSE;
+}
+
 bool on_event(td_window_t *, const td_event_t *ev)
 {
     if (!s_viewing) return false;
+    if (s_book) return on_book_event(ev);
     if (ev->type == TD_EV_KEY) {
         switch (ev->key) {
         case TD_KEY_ESC: case 'q': case TD_KEY_BACKSPACE: view_leave(); return true;
@@ -566,7 +874,8 @@ void on_refresh(td_widget_t *, void *) { load(); }
 
 void on_tick(td_window_t *)
 {
-    if (!s_viewing && !s_render_busy && s_plane_on) {
+    if (s_viewing && s_book && s_book_failed) view_leave();
+    if (!s_viewing && !s_render_busy && !s_book_busy && s_plane_on) {
         if (tang_plane_show(false) == 0) s_plane_on = false;
     }
     if (s_render_said) {
@@ -579,10 +888,12 @@ void on_close(td_window_t *)
 {
     s_viewing = false;
     s_gen = s_gen + 1;
+    s_book_open = false;
+    book_wake();
     /* The window is going; the render stops at its next row and the plane
      * must not outlive the app that owned it.  If the link is busy for this
      * one try, the tick of a reopened Reader hides it. */
-    if (s_plane_on && tang_plane_show(false) == 0) s_plane_on = false;
+    if (!s_book_busy && s_plane_on && tang_plane_show(false) == 0) s_plane_on = false;
     s_win = nullptr;
     s_list = nullptr;
     s_path = nullptr;
@@ -599,7 +910,7 @@ void launch(void)
         return;
     }
     td_window_desc_t d = {};
-    d.title = "Reader";
+    d.title = "TinyReader";
     d.rect = td_rect(-1, -1, WIN_W, WIN_H);
     d.flags = TD_WIN_MOVABLE | TD_WIN_CLOSABLE;
     d.min_w = WIN_W;
@@ -623,10 +934,66 @@ void launch(void)
     load();
     if (!tang_plane_available()) {
         say("No pixel plane on this core (desktop ABI 1.8)");
+    } else if (tang_plane_buffers() == 1) {
+        say("Books turn pages faster on desktop ABI 1.11");
     }
 }
 
-const td_app_t s_app = { "Reader", launch, "RD" };
+const td_app_t s_app = { "TinyReader", launch, "RD" };
+
+/* `readerdraw <book.trb> [spread [buffer]]`: one spread of a book into a plane
+ * buffer (by default the first a book uses) as TinyReader loads it, then
+ * shown; with the time on the card and on the link. */
+int readerdraw_book(const char *path, int spread, int buffer)
+{
+    if (s_viewing || s_render_busy || s_book_busy) {
+        tdsh_printf("readerdraw: TinyReader is showing something\r\n");
+        return 1;
+    }
+    if (!tang_plane_available()) {
+        tdsh_printf("readerdraw: the loaded core has no pixel plane\r\n");
+        return 1;
+    }
+    static char real[TD_PATH_MAX + 4];
+    snprintf(real, sizeof real, "/sd%s", path);
+    FIL *f = static_cast<FIL *>(malloc(sizeof(FIL)));
+    UINT chunk_bytes = 0;
+    uint8_t *chunk = book_chunk(&chunk_bytes);
+    tang_book_t b;
+    const char *why = (f == nullptr || chunk == nullptr) ? "not enough memory" : book_open(f, real, &b);
+    int rc = 1;
+    if (why != nullptr) {
+        tdsh_printf("readerdraw: %s\r\n", why);
+    } else if (spread < 0 || spread >= b.count) {
+        tdsh_printf("readerdraw: the book has spreads 0 to %d\r\n", b.count - 1);
+        f_close(f);
+    } else if (buffer >= tang_plane_buffers()) {
+        tdsh_printf("readerdraw: the core has buffers 0 to %d\r\n", tang_plane_buffers() - 1);
+        f_close(f);
+    } else {
+        if (buffer < 0) buffer = tang_plane_buffers() > BOOK_FIRST_BUFFER ? BOOK_FIRST_BUFFER : 0;
+        book_load ld = { nullptr, nullptr, spread, 0, false };
+        const uint64_t t0 = bflb_mtimer_get_time_us();
+        const bool ok = book_load_spread(f, &b, spread, buffer, chunk, chunk_bytes, &ld);
+        const uint32_t ms = (uint32_t)((bflb_mtimer_get_time_us() - t0) / 1000u);
+        f_close(f);
+        if (!ok) {
+            tdsh_printf("readerdraw: the spread could not be read or sent\r\n");
+        } else {
+            (void)tang_plane_show_buffer(buffer);
+            (void)tang_plane_show(true);
+            tdsh_printf("readerdraw: \"%s\", spread %d of %d into buffer %d: %u ms (card %u,"
+                        " link %u) in %u-byte reads at %u baud\r\n",
+                        b.title, spread, b.count, buffer, (unsigned)ms,
+                        (unsigned)(s_book_t_card / 1000u), (unsigned)(s_book_t_link / 1000u),
+                        (unsigned)chunk_bytes, (unsigned)tang_fpga_baud());
+            rc = 0;
+        }
+    }
+    free(chunk);
+    free(f);
+    return rc;
+}
 
 /* `readerdraw <path> [zoom]`: the Reader's own render, from the shell, timed.
  * It draws a picture onto the plane exactly as the app would and says where
@@ -637,8 +1004,13 @@ int cmd_readerdraw(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
     if (argc < 2 || argv[1][0] != '/') {
-        tdsh_printf("usage: readerdraw </path/to/picture> [zoom 1-%d]\r\n", MAX_ZOOM);
+        tdsh_printf("usage: readerdraw </path/to/picture> [zoom 1-%d]"
+                    " | readerdraw </path/to/book.trb> [spread [buffer]]\r\n", MAX_ZOOM);
         return 1;
+    }
+    if (is_book(argv[1])) {
+        return readerdraw_book(argv[1], argc >= 3 ? atoi(argv[2]) : 0,
+                               argc >= 4 ? atoi(argv[3]) : -1);
     }
     const int zoom = argc >= 3 ? atoi(argv[2]) : 1;
     if (zoom < 1 || zoom > MAX_ZOOM) {
@@ -662,6 +1034,7 @@ int cmd_readerdraw(tdsh_session_t *session, int argc, char **argv)
     s_lit_r = w;
     s_t_total = 0;
     s_render_said = false;
+    (void)tang_plane_show_buffer(0);
     (void)tang_plane_show(true);
     render(td_fs_stdio("/sd"), real, zoom, -1, -1, s_gen);
     if (s_render_said) {
@@ -688,8 +1061,8 @@ extern "C" void td_reader_register(void)
 extern "C" int tang_reader_register(void)
 {
     static const tdsh_command_t commands[] = {
-        {"readerdraw", "readerdraw <path> [zoom]",
-         "Draw a picture on the pixel plane as the Reader does, and time it", cmd_readerdraw, 0},
+        {"readerdraw", "readerdraw <path> [zoom|spread]",
+         "Draw a picture or book spread as TinyReader does, and time it", cmd_readerdraw, 0},
     };
     return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));
 }

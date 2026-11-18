@@ -1619,3 +1619,56 @@ The Reader is now bound by the card, about 860 KB/s reading a 6.6 MB BMP row by 
 - User Test: PASS
 
 ---
+## 49 COMMIT Unreleased 2026-11-17T23:31:57-07:00
+
+#### Coming From:
+
+Unreleased 31fd782
+
+#### Purpose:
+
+Turn the Reader into TinyReader, a book reader that shows two-page spreads full screen and turns pages in one frame from spreads held in the desktop core's SDRAM.
+
+#### Outcome:
+
+TinyReader reads books and the operator passed it on the 161-page Zelda guide (TDESK-024). Desktop ABI 1.11 keeps twelve 1280x720 pictures in the SDRAM, picked for writing by frame 0x1C and for showing by 0x1D at the next frame, with register 0x24 and 0x10[15:12] reporting them; `tools/make_book.py` renders a PDF, CBZ, CBR or image folder into a `.trb` of sector-aligned 1280x720 spreads in the link's byte order (docs/tinyreader-books.md), showing fold-out pages alone after the first build of the guide squeezed one beside its neighbour; and TinyReader, the Reader renamed, loads the spreads around the one being read into eleven buffers in the background (`ports/bl616/tang_book.c`), keeps the place in `<book>.trb.pos`, and still shows pictures from buffer 0. The new logic missed the pixel clock on all sixteen seeds tried, on the HDMI encoder's existing path; with the operator's approval `tmds_channel.sv` was pipelined by one clock, proven equal to the original one clock later by `tools/tests/test_tmds_pipeline.sh`, and all eight seeds then routed it at 86.57 to 92.99 MHz (TOOL-024). Seed 3, `desktop.a0f328f73820.bin`, and firmware `31fd782-dirty.48f603d` were deployed by the relay sequence, after which only a comment in `tinyreader_app.cpp` changed. On the board a spread loaded in about 1,995 ms, 126 ms of it on the card in 16 KB reads, which shows that TDESK-023's slow card was the Reader's row-by-row read path and is recorded there as a revision; all eleven book buffers matched their spreads' checksums from the file on the PC, each shown within two frames of its switch (once three); and HDMI captures showed a spread and a full-screen fold-out correctly. Uploading the 149 MB book exposed a fault in `tools/tinytang_put.py`, whose single serial write timed out after 30 s, now written 1 MB at a time (TOOL-025); the 162 MB book went in 127 s. Host tests are 52 of 52, with new benches for the converter and parser, the buffers in the plane bench and the encoder, and mutations caught in each. The ESP32 another agent drives was not touched. BUILDING.md records the core, README describes TinyReader, and THIRD_PARTY.md the encoder change. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, TDESK-024, TOOL-024, TOOL-025 and a revision note on TDESK-023 only, and this entry was validated as number 49 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 183 records.
+
+#### Next Steps:
+
+Zoom into one page of a spread, deferred from this cycle, is the next TinyReader feature; the converter could store each page again at 1280 wide for it. Pictures could be read in large chunks as books are, which would take most of a Reader page's 7.7 s of reading away. Page turns that outrun the 2 s per spread load could be eased by a lower-resolution placeholder or a faster link. The card's `bl616-firmware.bin` is older than the running firmware and should be refilled before a release. Earlier items stand: the shell `gbaload` stall, game-core desk fonts without the block glyphs, `pad` and ctrl-c, and feedback during the exit save.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- THIRD_PARTY.md
+- docs/tinyreader-books.md
+- fpga/desktop/desktop_hdmi.sv
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/fb_sdram.sv
+- fpga/desktop/hdmi/tmds_channel.sv
+- ports/bl616/tang_book.c
+- ports/bl616/tang_book.h
+- ports/bl616/tang_plane.c
+- ports/bl616/tang_plane.h
+- ports/bl616/tinyreader_app.cpp
+- tools/make_book.py
+- tools/plane_sweep.py
+- tools/tests/sim/tb_desktop_plane.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_tmds_pipeline.sv
+- tools/tests/tb_tang_book.c
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_make_book.sh
+- tools/tests/test_tmds_pipeline.sh
+- tools/tinytang_put.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

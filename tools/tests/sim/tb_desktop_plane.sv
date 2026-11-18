@@ -40,6 +40,7 @@ module tb_desktop_plane;
     wire [9:0]  plane_wy;
     wire [15:0] plane_wdata;
     wire [3:0]  plane_rd_cfg;
+    wire [3:0]  plane_wbuf, plane_show;
     wire [31:0] plane_status, plane_sum1, plane_sum2;
     wire        uart_tx;
 
@@ -51,6 +52,7 @@ module tb_desktop_plane;
         .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
         .plane_wdata(plane_wdata), .plane_on(plane_on),
         .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+        .plane_wbuf(plane_wbuf), .plane_show(plane_show),
         .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
         .hid1(), .hid2(),
         .sys_clk(sys_clk), .uart_rx(uart_rx), .uart_tx(uart_tx)
@@ -73,6 +75,7 @@ module tb_desktop_plane;
         .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
         .plane_wdata(plane_wdata), .plane_on(plane_on),
         .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+        .plane_wbuf(plane_wbuf), .plane_show(plane_show),
         .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
         .sd_a(sd_a), .sd_ba(sd_ba), .sd_cs_n(sd_cs_n), .sd_ras_n(sd_ras_n),
         .sd_cas_n(sd_cas_n), .sd_we_n(sd_we_n), .sd_dqm(sd_dqm), .sd_dq(sd_dq),
@@ -84,7 +87,7 @@ module tb_desktop_plane;
 
     // The part, on the inverse of the pixel clock as desktop_top's ODDR drives it.
     wire sdram_clk = ~clk_pixel;
-    sdram_w9825_model #(.SIZE_WORDS(2 * 1024 * 1024)) part (
+    sdram_w9825_model #(.SIZE_WORDS(16 * 1024 * 1024)) part (
         .clk(sdram_clk), .A(sd_a), .BA(sd_ba), .nCS(sd_cs_n), .nRAS(sd_ras_n),
         .nCAS(sd_cas_n), .nWE(sd_we_n), .DQM(sd_dqm), .DQ(sd_dq)
     );
@@ -139,8 +142,9 @@ module tb_desktop_plane;
     endtask
 
     /* The bench's own copy of the cursor and of the picture it should make. */
-    reg [15:0] want [int];                 // key y * 2048 + x
+    reg [15:0] want [int];                 // key buffer * 2^21 + y * 2048 + x
     integer bx = 0, by = 0;
+    integer wb = 0;                        // the buffer writes go to (0x1C)
 
     task cursor(input [15:0] x, input [15:0] y);
         begin
@@ -154,7 +158,7 @@ module tb_desktop_plane;
     task pixel(input [15:0] p);
         begin
             send_byte(p[15:8]); send_byte(p[7:0]);
-            if (bx < 1280 && by < 720) want[by * 2048 + bx] = p;
+            if (bx < 1280 && by < 720) want[wb * (1 << 21) + by * 2048 + bx] = p;
             if (bx >= 1279) begin bx = 0; if (by != 1023) by = by + 1; end
             else bx = bx + 1;
         end
@@ -240,14 +244,15 @@ module tb_desktop_plane;
     /* The checksum the plane should report for the picture the bench wrote:
      * s2 += s1; s1 += p over the visible pixels in raster order. */
     reg [31:0] e1, e2;
-    task expected_sums;
-        integer x, y;
+    task expected_sums(input integer b);
+        integer x, y, key;
         reg [15:0] pv;
         begin
             e1 = 0; e2 = 0;
             for (y = 0; y < 720; y = y + 1)
                 for (x = 0; x < 1280; x = x + 1) begin
-                    pv = want.exists(y * 2048 + x) ? want[y * 2048 + x] : 16'h0000;
+                    key = b * (1 << 21) + y * 2048 + x;
+                    pv = want.exists(key) ? want[key] : 16'h0000;
                     e2 = e2 + e1;
                     e1 = e1 + {16'd0, pv};
                 end
@@ -349,7 +354,7 @@ module tb_desktop_plane;
 
         // The whole frame, by the plane's own checksum.
         settle_sums();
-        expected_sums();
+        expected_sums(0);
         expect_true("the plane is ready", plane_status[31]);
         expect_true("no underrun", !plane_status[30]);
         expect_true("no write dropped", !plane_status[29]);
@@ -382,6 +387,60 @@ module tb_desktop_plane;
         frame_out();
         expect_px("plane back on, contents kept", 20, 200, 24'hFFFFFF);
         expect_px("no wrap reached the top",      0, 0, 24'hFF0000);
+
+        // ------------------------------------------- buffers (desktop ABI 1.11)
+        // Out of reset writes go to buffer 0 and buffer 0 is shown.
+        expect_true("writes and the scanout start at buffer 0",
+                    plane_wbuf == 4'd0 && plane_show == 4'd0 && plane_status[15:12] == 4'd0);
+        // Buffer 4 is bank 1, buffer 11 the last rows of bank 3.  Writes to
+        // them while buffer 0 is shown change nothing on the screen.
+        frame(8'h1C, 16'd2); send_byte(8'd4); wb = 4;
+        cursor(0, 0);    frame(8'h19, 16'd5); pixel(CYAN); pixel(MAGENTA);
+        cursor(20, 200); frame(8'h19, 16'd3); pixel(BLUE);
+        cursor(1279, 719); frame(8'h19, 16'd3); pixel(GREEN);
+        frame(8'h1C, 16'd2); send_byte(8'd11); wb = 11;
+        cursor(0, 0);    frame(8'h19, 16'd3); pixel(YELLOW);
+        cursor(640, 360); frame(8'h19, 16'd3); pixel(WHITE);
+        cursor(1279, 719); frame(8'h19, 16'd3); pixel(RED);
+        expect_true("0x1C sets the write buffer", plane_wbuf == 4'd11);
+        settle_sums(); settle_sums();
+        expected_sums(0);
+        expect_true("writes to hidden buffers leave the shown frame intact",
+                    plane_sum1 == e1 && plane_sum2 == e2);
+        // A switch asked for mid-frame lands on the next frame, whole: the
+        // frame in progress still sums to buffer 0, the next to buffer 4.
+        wait (cy == 10'd300);
+        frame(8'h1D, 16'd2); send_byte(8'd4);
+        settle_sums();
+        expect_true("the frame in progress when the switch was asked is all buffer 0",
+                    plane_sum1 == e1 && plane_sum2 == e2);
+        settle_sums();
+        expected_sums(4);
+        expect_true("the next frame is all buffer 4", plane_sum1 == e1 && plane_sum2 == e2);
+        expect_true("status reports buffer 4 shown", plane_status[15:12] == 4'd4);
+        frame_out();
+        expect_px("buffer 4, first pixel",        0, 0, widen(CYAN));
+        expect_px("buffer 4, its neighbour",      1, 0, widen(MAGENTA));
+        expect_px("buffer 4, the middle pixel",   20, 200, widen(BLUE));
+        expect_px("buffer 4, the last pixel",     1279, 719, widen(GREEN));
+        expect_px("buffer 4, unwritten is black", 0, 1, 24'h000000);
+        // A buffer number past the eleventh is ignored.
+        frame(8'h1D, 16'd2); send_byte(8'd12);
+        settle_sums(); settle_sums();
+        expect_true("show 12 is ignored", plane_show == 4'd4 && plane_status[15:12] == 4'd4);
+        // The last buffer, in bank 3.
+        frame(8'h1D, 16'd2); send_byte(8'd11);
+        settle_sums(); settle_sums();
+        expected_sums(11);
+        expect_true("buffer 11 shows what was written to it",
+                    plane_sum1 == e1 && plane_sum2 == e2 && plane_status[15:12] == 4'd11);
+        // And back: buffer 0 kept its picture throughout.
+        frame(8'h1D, 16'd2); send_byte(8'd0);
+        settle_sums(); settle_sums();
+        expected_sums(0);
+        expect_true("buffer 0 is intact after the others were written and shown",
+                    plane_sum1 == e1 && plane_sum2 == e2 && plane_status[15:12] == 4'd0);
+        expect_true("no write dropped across the buffers", !plane_status[29]);
 
         expect_true("no SDRAM timing violation", part.violations == 0);
 

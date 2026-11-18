@@ -74,7 +74,14 @@ def main():
         port.write(f'tangput {len(data)} "{args.remote}"\r'.encode())
         wait_for(port, "tangput: ready for", 30)
 
-        port.write(data)
+        # In pieces: pyserial's write timeout bounds a whole write() call, so
+        # one write of the file failed any file the board takes more than 30 s
+        # to store (about 30 MB at its 1.1 MB/s); per piece, it bounds a stall.
+        step = 1 << 20
+        for at in range(0, len(data), step):
+            port.write(data[at:at + step])
+            if len(data) > 8 * step:
+                print(f"\r  {min(at + step, len(data)) * 100 // len(data)}%", end="", flush=True)
         wait_for(port, "tangput: wrote", 180)
         print("\ntransfer complete")
     finally:

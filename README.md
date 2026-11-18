@@ -623,12 +623,20 @@ up over the game, showing the shell, while the game keeps running.  `pad
 [seconds]` at the shell prints the word the loaded core reports each time it
 changes, which is how a gesture is checked without guessing (GBA-004).
 
-The Reader shows pictures at the desktop core's own pixel resolution rather
-than in block characters: desktop ABI 1.9 has a 1280x720 RGB565 plane in the
-dock's SDRAM that HDMI shows 1:1 instead of the text layer while an app owns
-the screen (ABI 1.8 had 640x360 at 2x, and the Reader still draws on it).  It lists
-BMP, PPM and PGM files under `/root/media/reader`; opening one goes full screen
-and draws it row by row as the file streams in.  `+` and `-`, or A and B on the
+TinyReader shows pictures and books at the desktop core's own pixel
+resolution rather than in block characters: desktop ABI 1.9 has a 1280x720
+RGB565 plane in the dock's SDRAM that HDMI shows 1:1 instead of the text layer
+while an app owns the screen (ABI 1.8 had 640x360 at 2x, and TinyReader still
+draws on it).  It lists BMP, PPM and PGM pictures and `.trb` books under
+`/root/media/reader`.  A book is made on the PC from a PDF, CBZ, CBR or a
+folder of scans with `tools/make_book.py` (docs/tinyreader-books.md) and
+opens as two-page spreads, full screen: the arrows, PgUp and PgDn, Space, A
+and the wheel turn pages, Home and End go to the cover and the last spread, Esc
+or B goes back, and the place is kept beside the book.  On desktop ABI 1.11 the
+core holds eleven spreads at once and loads the ones around the page being
+read in the background, about 2 s each, so a page turn is one frame
+(TDESK-024).  A picture opens full screen and draws row by row as the file
+streams in.  `+` and `-`, or A and B on the
 pad, zoom (A on the point under the pointer), the arrows and the wheel pan,
 PgUp and PgDn turn pages, `0` shows the whole picture, Esc goes back.  A
 scanned magazine page converted to a 1280-wide BMP reads comfortably at 2x
@@ -636,7 +644,8 @@ scanned magazine page converted to a 1280-wide BMP reads comfortably at 2x
 screen crosses it in about 1.9 s (9.2 s at 2 Mbaud); a 1280x1726 page now takes
 about 10 s, most of it reading the file off the card (TDESK-023).  Only the
 columns a picture covers are resent.  `readerdraw <path> [zoom]` at the shell
-draws a picture the same way and says where the time went.
+draws a picture the same way and says where the time went, and `readerdraw
+<book.trb> [spread [buffer]]` loads one spread of a book.
 The Saves page shows the selected cartridge's `.sav` beside it, its save type and
 the size that type holds (found by scanning the image for its save marker, in a
 task of its own, since a GBA cartridge has no header field for it), and when the

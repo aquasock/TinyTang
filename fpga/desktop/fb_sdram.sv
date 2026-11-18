@@ -13,9 +13,14 @@
 // link's writes arrive at UART speed, a few per line, through a small FIFO from
 // the link's clock; it is the only crossing.
 //
-// Layout.  Line y starts at word y * 1536 of bank 0 -- three 512-word rows a
-// line, of which 2.5 are used -- so a line never shares a row with another and
-// the addressing is shifts and adds.  720 lines use 2160 of bank 0's 8192 rows.
+// Layout.  Line y starts at word y * 1536 of its buffer -- three 512-word rows
+// a line, of which 2.5 are used -- so a line never shares a row with another
+// and the addressing is shifts and adds.  A buffer's 720 lines take 2160 rows,
+// so a bank's 8192 rows hold three and the part holds twelve (desktop ABI
+// 1.11): buffer b is bank b / 3 from row (b % 3) * 2160.  Writes name their
+// buffer (wbuf, carried through the FIFO with each pixel); the scanout shows
+// show_buf, taken when the frame's line 0 is fetched, so a change of buffer
+// always lands on a frame boundary and never tears.  shown is what it took.
 //
 // Scanout.  Two line buffers, selected by line parity.  At the start of raster
 // line cy the controller fetches line cy + 1 into the other buffer (line 0
@@ -63,6 +68,7 @@ module fb_sdram #(
     input  wire [10:0] wx,
     input  wire [9:0]  wy,
     input  wire [15:0] wdata,
+    input  wire [3:0]  wbuf,               // 0-11; more is dropped
 
     // Controller and scanout, on the pixel clock.
     input  wire        clk,
@@ -89,6 +95,10 @@ module fb_sdram #(
     output reg         dropped,            // sticky: a write found the FIFO full
     output reg  [10:0] fetch_max,          // the longest fetch, in clocks
 
+    // The buffer to show (on clk, held steady by the caller), and the one shown.
+    input  wire [3:0]  show_buf,
+    output reg  [3:0]  shown,
+
     // Read alignment (see the header), on clk; and the frame checksum.
     input  wire [3:0]  rd_cfg,
     output reg  [31:0] sum1,
@@ -98,13 +108,13 @@ module fb_sdram #(
 
     // ------------------------------------------------------------ write FIFO
     //
-    // 64 entries of {y, x, pixel}, Gray-coded pointers synchronised through two
+    // 64 entries of {buffer, y, x, pixel}, Gray-coded pointers synchronised through two
     // flops each way.  Writes drain only between fetches, and a fetch holds the
     // part for up to about 17.5 us, so the FIFO must hold what arrives meanwhile:
     // two pixels at today's 2 Mbaud, and far more from a faster link or a
     // stress test.  A write into a full FIFO is dropped and counted in `dropped`.
     localparam integer FA = 6;
-    reg [36:0] fifo [0:(1<<FA)-1];
+    reg [40:0] fifo [0:(1<<FA)-1];
     reg [FA:0] wbin = 0, wgray = 0, rbin = 0, rgray = 0;
     reg [FA:0] rgray_w1 = 0, rgray_w2 = 0, wgray_r1 = 0, wgray_r2 = 0;
 
@@ -118,7 +128,7 @@ module fb_sdram #(
         rgray_w2 <= rgray_w1;
         if (we && full) dropped_w <= 1'b1;
         if (we && !full) begin
-            fifo[wbin[FA-1:0]] <= {wy, wx, wdata};
+            fifo[wbin[FA-1:0]] <= {wbuf, wy, wx, wdata};
             wbin  <= wbin_next;
             wgray <= wgray_next;
         end
@@ -132,7 +142,7 @@ module fb_sdram #(
         dropped  <= dropped_r1;
     end
     wire        empty = rgray == wgray_r2;
-    wire [36:0] head  = fifo[rbin[FA-1:0]];
+    wire [40:0] head  = fifo[rbin[FA-1:0]];
 
     // ------------------------------------------------------------ commands
     localparam [3:0] C_NOP = 4'b0111, C_ACT = 4'b0011, C_READ = 4'b0101,
@@ -188,8 +198,39 @@ module fb_sdram #(
     wire       read_tick = tick >= T_RCD && tick[2:0] == T_RCD[2:0] && read_k < seg_reads;
     wire [15:0] seg_end = T_RCD + 8 * (seg_reads - 1) + 8 + T_RP + 1;
 
-    wire [19:0] fetch_row = fetch_line * 3 + seg;           // bank 0 row
     wire [20:0] waddr = head[36:27] * STRIDE + head[26:16];  // y * STRIDE + x
+
+    // Where buffer b lives: bank b / 3, from row (b % 3) * 2160.  Twelve exist.
+    function automatic [14:0] buf_place(input [3:0] b);   // {bank, first row}
+        case (b)
+            4'd0:  buf_place = {2'd0, 13'd0};
+            4'd1:  buf_place = {2'd0, 13'd2160};
+            4'd2:  buf_place = {2'd0, 13'd4320};
+            4'd3:  buf_place = {2'd1, 13'd0};
+            4'd4:  buf_place = {2'd1, 13'd2160};
+            4'd5:  buf_place = {2'd1, 13'd4320};
+            4'd6:  buf_place = {2'd2, 13'd0};
+            4'd7:  buf_place = {2'd2, 13'd2160};
+            4'd8:  buf_place = {2'd2, 13'd4320};
+            4'd9:  buf_place = {2'd3, 13'd0};
+            4'd10: buf_place = {2'd3, 13'd2160};
+            default: buf_place = {2'd3, 13'd4320};
+        endcase
+    endfunction
+
+    // The frame being shown: its bank and first row, taken with line 0.
+    reg [1:0]  f_bank;
+    reg [12:0] f_base;
+    reg [12:0] f_row;               // the row this fetch's segment opens
+    // The FIFO head's bank and row, a clock behind the head: the head is
+    // steady for at least that clock before S_WRITE uses it (see S_IDLE).
+    reg [1:0]  w_bank;
+    reg [12:0] w_row;
+    wire [14:0] w_place = buf_place(head[40:37]);
+    always @(posedge clk) begin
+        w_bank <= w_place[14:13];
+        w_row  <= w_place[12:0] + 13'(waddr[20:9]);
+    end
 
     // ------------------------------------------------------------ scanout
     localparam integer LAT = 4;
@@ -219,6 +260,11 @@ module fb_sdram #(
             end else if (cy == frame_height - 10'd1) begin
                 fetch_pending <= 1'b1;
                 fetch_line    <= 10'd0;
+                // The next frame's buffer, for all of its lines.
+                if (show_buf < 4'd12) begin
+                    {f_bank, f_base} <= buf_place(show_buf);
+                    shown <= show_buf;
+                end
             end
             ref_owed <= (ref_owed > 4'd11) ? 4'd15 : ref_owed + 4'd4;
         end
@@ -268,6 +314,9 @@ module fb_sdram #(
             rgray <= 0;
             ready_line[0] <= 10'h3FF;
             ready_line[1] <= 10'h3FF;
+            f_bank <= 2'd0;
+            f_base <= 13'd0;
+            shown  <= 4'd0;
             for (k = 0; k < RPN; k = k + 1) rp_v[k] <= 1'b0;
             {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_DESEL;
         end else begin
@@ -317,6 +366,7 @@ module fb_sdram #(
                         seg <= 2'd0;
                         fetch_len <= 11'd0;
                         cap_line <= fetch_line;
+                        f_row <= f_base + 13'(fetch_line * 3);
                     end else if (ref_owed != 4'd0) begin
                         state <= S_REF;
                         ref_owed <= ref_owed - 4'd1;
@@ -328,11 +378,11 @@ module fb_sdram #(
                     fetch_len <= fetch_len + 11'd1;
                     if (tick == 16'd0) begin
                         {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_ACT;
-                        sd_ba <= 2'b00;
-                        sd_a  <= fetch_row[12:0];
+                        sd_ba <= f_bank;
+                        sd_a  <= f_row;
                     end else if (read_tick) begin
                         {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_READ;
-                        sd_ba <= 2'b00;
+                        sd_ba <= f_bank;
                         // A10 on the row's last READ: auto-precharge.
                         sd_a  <= {2'b00, read_k == seg_reads - 9'd1, 1'b0, read_k[5:0], 3'b000};
                         rp_v[0]    <= 1'b1;
@@ -346,6 +396,7 @@ module fb_sdram #(
                             if (fetch_len > fetch_max) fetch_max <= fetch_len;
                         end else begin
                             seg <= seg + 2'd1;
+                            f_row <= f_row + 13'd1;
                         end
                     end
                 end
@@ -358,10 +409,11 @@ module fb_sdram #(
                 end
                 S_WRITE: begin
                     if (tick == 16'd0) begin
-                        if (head[26:16] < W[10:0] && head[36:27] < H[9:0]) begin
+                        if (head[26:16] < W[10:0] && head[36:27] < H[9:0] &&
+                            head[40:37] < 4'd12) begin
                             {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_ACT;
-                            sd_ba <= 2'b00;
-                            sd_a  <= {1'b0, waddr[20:9]};
+                            sd_ba <= w_bank;
+                            sd_a  <= w_row;
                         end else begin
                             // Off the picture: dropped.
                             state <= S_IDLE;
@@ -370,7 +422,7 @@ module fb_sdram #(
                         end
                     end else if (tick == T_RCD) begin
                         {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_WRITE;
-                        sd_ba  <= 2'b00;
+                        sd_ba  <= w_bank;
                         sd_a   <= {2'b00, 1'b1, 1'b0, waddr[8:0]};   // A10: auto-precharge
                         sd_dqm <= 2'b00;
                         dq_o   <= head[15:0];
@@ -403,15 +455,15 @@ module fb_sdram #(
 
     // The frame checksum, over what rgb shows: at each clock rgb is the pixel
     // of the raster position cx, cy present with it.
-    wire [15:0] shown = {rgb[23:19], rgb[15:10], rgb[7:3]};
+    wire [15:0] shown_px = {rgb[23:19], rgb[15:10], rgb[7:3]};
     reg  [31:0] s1, s2;
     initial sum_toggle = 1'b0;
     always @(posedge clk) begin
         if (cx == 11'd0 && cy == 10'd0) begin
-            s1 <= {16'd0, shown};
+            s1 <= {16'd0, shown_px};
             s2 <= 32'd0;
         end else if (cx < 11'(W) && cy < 10'(H)) begin
-            s1 <= s1 + {16'd0, shown};
+            s1 <= s1 + {16'd0, shown_px};
             s2 <= s2 + s1;
         end
         if (cx == 11'd0 && cy == 10'(H)) begin

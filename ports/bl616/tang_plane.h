@@ -9,7 +9,9 @@
  *
  * Frames (desktop_link.v): 0x18 x y moves the write cursor, 0x19 streams
  * RGB565 pixels from it, high byte first, the cursor running on across rows;
- * 0x1A shows or hides the plane.  One frame holds at most 1021 pixels, so a
+ * 0x1A shows or hides the plane.  Desktop ABI 1.11 keeps twelve such
+ * pictures in the SDRAM: 0x1C picks the buffer writes go to, 0x1D the one
+ * shown, switched between frames.  One frame holds at most 1021 pixels, so a
  * 1280-pixel row is sent as two.  A whole 1280x720 screen is about 1.9 s at
  * the 10 Mbaud desktop ABI 1.10 negotiates, and 9.2 s at 2 Mbaud.
  *
@@ -46,6 +48,19 @@ int tang_plane_show(bool on);
  * the plane's width.  0 on success, -1 as above.  Not reentrant: one task
  * draws at a time, which is the app that owns the screen. */
 int tang_plane_write(int x, int y, const uint16_t *px, int n);
+
+/* The plane's buffers: 12 on desktop ABI 1.11, else 1.  tang_plane_write and
+ * tang_plane_show draw and show buffer 0; the others are an app's to fill
+ * while 0 or another is on screen. */
+int tang_plane_buffers(void);
+
+/* Show buffer b from the next frame.  0, or -1 as above or for no such buffer. */
+int tang_plane_show_buffer(int b);
+
+/* Write n pixels already in the link's form -- RGB565, high byte first, as a
+ * TinyReader book stores them -- into buffer b from (x, y), running on along
+ * the row and into the next ones.  0, or -1 as above. */
+int tang_plane_write_be(int b, int x, int y, const uint8_t *be, int n);
 
 #ifdef __cplusplus
 }

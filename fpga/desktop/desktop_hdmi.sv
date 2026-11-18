@@ -31,6 +31,9 @@ module desktop_hdmi (
     input [15:0] plane_wdata,
     input        plane_on,
     input  [3:0] plane_rd_cfg,
+    // The plane's buffers (desktop ABI 1.11): where writes go, and which is shown.
+    input  [3:0] plane_wbuf,
+    input  [3:0] plane_show,
     output reg [31:0] plane_status,
     output reg [31:0] plane_sum1,
     output reg [31:0] plane_sum2,
@@ -125,17 +128,27 @@ end
 wire [23:0] plane_rgb;
 reg  [1:0]  plane_rst;          // resetn, brought into the pixel clock
 reg  [3:0]  rd_cfg_r, rd_cfg_rr;
+// The buffer to show crosses as a four-bit word: it is taken only when two
+// samples in a row agree, so a change caught mid-flight is never used.
+reg  [3:0]  show_r, show_rr, show_rrr, show_s;
 always @(posedge clk_pixel) begin
     plane_rst <= {plane_rst[0], resetn};
     rd_cfg_r  <= plane_rd_cfg;
     rd_cfg_rr <= rd_cfg_r;
+    show_r    <= plane_show;
+    show_rr   <= show_r;
+    show_rrr  <= show_rr;
+    if (!plane_rst[1])           show_s <= 4'd0;
+    else if (show_rr == show_rrr) show_s <= show_rr;
 end
 wire        fb_ready, fb_underrun, fb_dropped, fb_sum_toggle;
 wire [10:0] fb_fetch_max;
 wire [31:0] fb_sum1, fb_sum2;
+wire [3:0]  fb_shown;
 
 fb_sdram u_plane (
     .clk_w(clk), .we(plane_we), .wx(plane_wx), .wy(plane_wy), .wdata(plane_wdata),
+    .wbuf(plane_wbuf), .show_buf(show_s), .shown(fb_shown),
     .clk(clk_pixel), .resetn(plane_rst[1]),
     .cx(cx), .cy(cy),
     .frame_width(frameWidth), .frame_height(frameHeight),
@@ -152,7 +165,7 @@ fb_sdram u_plane (
 // the status bits are slow and are simply resynchronised.
 reg [2:0]  sum_sync;
 reg [7:0]  sums_seen;
-reg [14:0] status_r;
+reg [17:0] status_r;
 always @(posedge clk) begin
     sum_sync <= {sum_sync[1:0], fb_sum_toggle};
     if (sum_sync[2] != sum_sync[1]) begin
@@ -160,8 +173,9 @@ always @(posedge clk) begin
         plane_sum2 <= fb_sum2;
         sums_seen  <= sums_seen + 8'd1;
     end
-    status_r     <= {fb_ready, fb_underrun, fb_dropped, fb_fetch_max};
-    plane_status <= {status_r[13:11], 1'b0, rd_cfg_rr, sums_seen, 5'd0, status_r[10:0]};
+    status_r     <= {fb_shown, fb_ready, fb_underrun, fb_dropped, fb_fetch_max};
+    plane_status <= {status_r[13:11], 1'b0, rd_cfg_rr, sums_seen, status_r[17:14], 1'b0,
+                     status_r[10:0]};
 end
 
 reg plane_on_r, plane_on_rr;

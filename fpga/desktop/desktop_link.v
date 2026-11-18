@@ -42,6 +42,10 @@ module desktop_link #(
     // The plane's read alignment (frame 0x1B, fb_sdram.sv's rd_cfg), and its
     // status and frame checksum for the register file (0x10-0x18).
     output reg  [3:0]  plane_rd_cfg,
+    // The plane's buffers (desktop ABI 1.11, frames 0x1C and 0x1D): the one
+    // writes go to and the one shown, 0-11 each.
+    output reg  [3:0]  plane_wbuf,
+    output reg  [3:0]  plane_show,
     input  wire [31:0] plane_status,
     input  wire [31:0] plane_sum1,
     input  wire [31:0] plane_sum2,
@@ -260,6 +264,7 @@ desktop_regs desktop_endpoint (
     .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status),
     .plane_status(plane_status), .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
     .link_rate(link_rate), .link_counts({link_fallbacks, link_framing_errors}),
+    .plane_bufs({8'd12, 12'd0, plane_wbuf, 4'd0, plane_show}),
     .link_baud_set(link_baud_set), .link_baud_code(link_baud_code)
 );
 
@@ -289,6 +294,8 @@ always @(posedge clk) begin
         // Three clocks from READ to capture on the rising edge: the model's 2
         // plus the board's pin and access delays (fb_sdram.sv); 0x1B moves it.
         plane_rd_cfg <= 4'd3;
+        plane_wbuf <= 4'd0;
+        plane_show <= 4'd0;
         plane_on <= 0;
         plane_we <= 0;
         response_req <= 0;
@@ -496,6 +503,10 @@ always @(posedge clk) begin
                     end
                     'h1a: plane_on <= rx_data[0];
                     'h1b: plane_rd_cfg <= rx_data[3:0];
+                    // 0x1C x: writes go to buffer x; 0x1D x: show buffer x
+                    // from the next frame.  Twelve buffers; more is ignored.
+                    'h1c: if (rx_data < 8'd12) plane_wbuf <= rx_data[3:0];
+                    'h1d: if (rx_data < 8'd12) plane_show <= rx_data[3:0];
                     default: begin
                         // unknown command: consume all data and return
                     end

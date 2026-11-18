@@ -292,12 +292,14 @@ module tb_desktop_uart;
         wait(core_count==1);
         // read32, write32, negotiated baud (bit 3, ABI 1.10), validated block write
         request(0,0,0,0,0,32'h1b);
-        // ABI 1.10: the link negotiates 5 or 10 Mbaud (1.9: the plane is
+        // ABI 1.11: twelve plane buffers (1.10: the link negotiates 5 or 10 Mbaud; 1.9: the plane is
         // 1280x720 in the SDRAM; 1.8: 640x360 in block RAM; 1.7: block glyphs
         // in font slots 0x01-0x17).
-        request(1,4,0,0,0,32'h0001000a);
+        request(1,4,0,0,0,32'h0001000b);
         // The plane's geometry, reported since 1.8: 1280 x 720.
         request(1,32'h0c,0,0,0,{16'd1280,16'd720});
+        // Its buffers since 1.11: twelve, writing to 0 and showing 0.
+        request(1,32'h24,0,0,0,{8'd12,24'd0});
         // ABI 1.6 adds personality 8, the PMOD UART, to the bitmap.
         request(1,8,0,0,0,32'h0000010f);
         request(1,32'hc0,0,0,0,0);
@@ -550,7 +552,7 @@ module tb_desktop_uart;
         request(3,0,32'd10_000_000,0,0,32'd10_000_000);
         bit_ns=100; tx_bit_ns=100;
         request(1,32'h1c,0,0,0,32'd10_000_000);
-        request(1,4,0,0,0,32'h0001000a);
+        request(1,4,0,0,0,32'h0001000b);
         block_write(32'h200,16,0,0);
         // A BL616 crystal 2% fast or slow still reads and is read at 10 Mbaud.
         tx_bit_ns=98;  request(1,0,0,0,0,32'h00544453);

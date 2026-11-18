@@ -27,7 +27,7 @@ replies=Path(sys.argv[1]).read_text().splitlines()
 # The count is pinned so a lost or duplicated reply fails here rather than
 # passing silently. Adding transactions to tb_desktop_uart.sv means updating
 # this number in the same change.
-assert len(replies)==169   # 147 + the plane-geometry read (register 0x0c, ABI 1.8 on) + 21 link-rate and opcode transactions (ABI 1.10)
+assert len(replies)==170   # 147 + the plane-geometry read (register 0x0c, ABI 1.8 on) + 21 link-rate and opcode transactions (ABI 1.10) + the buffer register (0x24, ABI 1.11)
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15

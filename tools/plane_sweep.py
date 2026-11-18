@@ -25,6 +25,14 @@ the one to build in.
                                          # BL616 draw the picture (`planefill`,
                                          # timed), then check every frame
 
+With --book, the plane's buffers (desktop ABI 1.11) are checked against a
+TinyReader book on the PC: buffer first+k must hold spread start+k, loaded
+beforehand with the shell's `readerdraw <book> <spread> <buffer>`.  Each buffer
+is shown in turn (frame 0x1D) and its frames' checksum compared with the
+spread's, and the switch is timed in frames.
+
+    tools/plane_sweep.py --book zelda.trb --buffers 1:0 --count 11
+
 With --baud the link's rate is negotiated through the shell (`fpgabaud`) before
 the pipe opens, so everything after runs at it: the frames the PC draws, and
 the CRC-checked register reads that carry the checksums back.  A clean soak
@@ -55,6 +63,7 @@ USB_VID, USB_PID = 0xFFFF, 0x5454
 W, H = 1280, 720
 ABI_19 = 0x00010009
 ABI_110 = 0x0001000A
+ABI_111 = 0x0001000B
 
 
 def find_port():
@@ -127,6 +136,53 @@ class Link:
         raise TimeoutError(f"no reply reading register {addr:#x}")
 
 
+def book_sums(path, spread):
+    """The plane checksum of one spread of a .trb, as the core computes it."""
+    import numpy as np
+    with open(path, "rb") as f:
+        head = f.read(128)
+        w, h = struct.unpack_from("<HH", head, 8)
+        off, sb = struct.unpack_from("<II", head, 16)
+        if head[:4] != b"TRB1" or (w, h) != (W, H):
+            sys.exit(f"{path}: not a 1280x720 TinyReader book")
+        f.seek(off + spread * sb)
+        p = np.frombuffer(f.read(sb), ">u2").astype(np.int64)
+    n = p.size
+    s1 = int(p.sum()) & 0xFFFFFFFF
+    s2 = int((p * (n - 1 - np.arange(n, dtype=np.int64))).sum()) & 0xFFFFFFFF
+    return s1, s2
+
+
+def check_buffers(link, book, first_buffer, first_spread, count):
+    """Show each buffer and compare its frames with the spread it should hold."""
+    bad = 0
+    for k in range(count):
+        b, sp = first_buffer + k, first_spread + k
+        want = book_sums(book, sp)
+        seen0 = link.read32(0x10) >> 16 & 0xFF
+        link.frame(0x1D, bytes([b]))
+        link.ser.flush()
+        t0 = time.time()
+        frames, got, st = 0, None, 0
+        # The switch is taken at a frame boundary: within two frames the
+        # checksum must be the spread's, and stay it.
+        while time.time() - t0 < 1.0:
+            st = link.read32(0x10)
+            seen = st >> 16 & 0xFF
+            if seen != seen0:
+                frames += (seen - seen0) & 0xFF
+                seen0 = seen
+                got = (link.read32(0x14), link.read32(0x18))
+                if got == want and (st >> 12 & 15) == b:
+                    break
+        ok = got == want and (st >> 12 & 15) == b
+        bad += not ok
+        print(f"  buffer {b:2d}: spread {sp:3d}  {'intact' if ok else 'WRONG '}  "
+              f"shown after {frames} frame{'s' if frames != 1 else ''}  "
+              f"{got[0] if got else 0:08x} {got[1] if got else 0:08x}")
+    return bad
+
+
 def pattern(x, y):
     """RGB565.  A gradient in red and green, blue from x ^ y so neighbouring
     pixels differ in every bit position over a row, a white grid every 64
@@ -169,7 +225,7 @@ def link_text(link):
 
 def status_text(st):
     return (f"ready {st >> 31 & 1} underrun {st >> 30 & 1} dropped {st >> 29 & 1} "
-            f"cfg {st >> 24 & 15:#x} fetch {st & 0x7FF}")
+            f"cfg {st >> 24 & 15:#x} shown {st >> 12 & 15} fetch {st & 0x7FF}")
 
 
 def main():
@@ -185,6 +241,10 @@ def main():
                     help="negotiate the link to 2000000, 5000000 or 10000000 first (ABI 1.10)")
     ap.add_argument("--fill", action="store_true",
                     help="have the BL616 draw the picture (shell `planefill`, timed); implies --no-draw")
+    ap.add_argument("--book", help="check buffers against this .trb (ABI 1.11)")
+    ap.add_argument("--buffers", default="1:0", metavar="BUF:SPREAD",
+                    help="with --book: the first buffer and the spread it holds (default 1:0)")
+    ap.add_argument("--count", type=int, default=11, help="with --book: buffers to check")
     ap.add_argument("--frames", type=int, default=3,
                     help="frames that must match at each setting (default 3)")
     args = ap.parse_args()
@@ -229,6 +289,16 @@ def main():
         sys.exit("the loaded core has no SDRAM plane (desktop ABI 1.9 or later)")
     if abi >= ABI_110:
         print(link_text(link))
+
+    if args.book:
+        if abi < ABI_111:
+            sys.exit("the loaded core has one plane buffer (desktop ABI 1.11 has twelve)")
+        b0, s0 = (int(v) for v in args.buffers.split(":"))
+        link.frame(0x1A, b"\x01")
+        print(f"buffers {b0} to {b0 + args.count - 1} against {args.book}, spreads {s0} on")
+        bad = check_buffers(link, args.book, b0, s0, args.count)
+        print(f"{args.count - bad} of {args.count} buffers intact; status {status_text(link.read32(0x10))}")
+        sys.exit(1 if bad else 0)
 
     if args.off:
         link.frame(0x1A, b"\x00")

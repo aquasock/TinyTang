@@ -85,11 +85,37 @@ not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to the build directory it is given (the section below records the
-  ABI 1.10 core that is on the card, which is what a card should carry, and its
-  seed, 2, which `NEXTPNR_SEED=2` selects; the ABI 1.9, 1.8, 1.7, 1.6 and 1.3
+  ABI 1.11 core that is on the card, which is what a card should carry, and its
+  seed, 3, the script's default; the ABI 1.10, 1.9, 1.8, 1.7, 1.6 and 1.3
   entries that follow are kept as the older records)
 
-- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.10**,
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.11**,
+  built 2026-11-17 at seed 3 into `build/desk111p-s3/out/` with
+  `DESKTOP_BUILD_DIR=build/desk111p-s3 NEXTPNR_SEED=3`.  ABI 1.11 keeps twelve
+  1280x720 pictures in the SDRAM (`fpga/desktop/fb_sdram.sv`: buffer b is bank
+  b / 3 from row (b % 3) * 2160): frame 0x1C picks the buffer writes go to,
+  0x1D the one shown from the next frame, register 0x24 reports twelve and
+  both choices, and 0x10[15:12] the buffer on screen.  The HDMI library's
+  `tmds_channel.sv` is pipelined by one clock, which is what lets every seed
+  meet the pixel clock (THIRD_PARTY.md).  On the board all eleven buffers a
+  book uses returned their spreads' checksums exactly, and a switch reached
+  the screen within two frames.
+  - `desktop.bin` sha256
+    `a0f328f73820ca60e6db0192e9e692737f31e1c87da1ade4c5e85383d852000c`,
+    4,558,518 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `32277255a1f4c1bd929b243e929f8ba26e489b365b405eaa7ce7664c5bdb0d04`,
+    36,493,624 bytes; `tinytang.fs.gz` is `gzip -9 -n` of it, 467,202 bytes
+  - Gates passed with nothing overridden: routed pixel clock 92.99 MHz against
+    74.25, `sys_clk` 180.83 against 50, `clk` 81.76 against 21.49, setup and
+    hold met, no clock-topology regression, `clk` not through SPINE17.  All
+    eight seeds passed, the pixel clock at 86.57 to 92.99 MHz; before the
+    encoder was pipelined, sixteen seeds of this logic reached only 65.10 to
+    72.27.  LUT4 9,726, DFF 4,309, ALU 1,822.
+  - Provenance: `source_sha256`
+    `399c23493312fb9a1095f3f1103ef788c7b4d590ab3ee102fbe9780793a97caf`.
+
+- **desktop core, desktop ABI 1.10** (the card's file until the ABI 1.11 core),
   built 2026-11-17 at seed 2 into `build/desk110-s2/out/` with
   `DESKTOP_BUILD_DIR=build/desk110-s2 NEXTPNR_SEED=2`.  ABI 1.10 replaces the
   BL616 link's UART with `fpga/desktop/link_uart.sv`, timed on the 50 MHz

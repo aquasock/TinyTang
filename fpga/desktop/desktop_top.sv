@@ -102,6 +102,7 @@ wire [9:0]  plane_wy;
 wire [15:0] plane_wdata;
 wire        plane_on;
 wire [3:0]  plane_rd_cfg;
+wire [3:0]  plane_wbuf, plane_show;    // the plane's buffers (ABI 1.11)
 wire [31:0] plane_status, plane_sum1, plane_sum2;
 
 // The SDRAM's clock is the pixel clock inverted, so the part samples the
@@ -164,6 +165,7 @@ desktop_hdmi u_hdmi (
     .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
     .plane_wdata(plane_wdata), .plane_on(plane_on),
     .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+    .plane_wbuf(plane_wbuf), .plane_show(plane_show),
     .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
     .sd_a(O_sdram_addr), .sd_ba(O_sdram_ba), .sd_cs_n(O_sdram_cs_n),
     .sd_ras_n(O_sdram_ras_n), .sd_cas_n(O_sdram_cas_n), .sd_we_n(O_sdram_wen_n),
@@ -185,6 +187,7 @@ desktop_link #(.FREQ(21_492_000), .CORE_ID(THIS_CORE_ID))
     .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
     .plane_wdata(plane_wdata), .plane_on(plane_on),
     .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+    .plane_wbuf(plane_wbuf), .plane_show(plane_show),
     .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
     .hid1(hid1), .hid2(hid2),
     .uart_tx(UART_TXD), .uart_rx(UART_RXD),

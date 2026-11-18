@@ -2640,6 +2640,31 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "Record TDESK-021 for the ABI 1.9 core"
   verification: "Observed on 2026-11-17 in the ABI 1.9 sweep: seed 3's gate printed `PASS desktop_sockets.pixel_clk 90.20 MHz` from line 17499 of its log while line 18072 read `Warning: Max frequency for clock 'desktop_sockets.pixel_clk': 72.65 MHz (FAIL at 74.25 MHz)`. All 24 logs were re-gated with the fix."
 
+- record_id: TOOL-024
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "Pipelining the HDMI library's TMDS encoder by one clock lets every seed of the desktop core meet the pixel clock"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "On every seed of the desktop core since ABI 1.9 the pixel clock's critical path ran through `fpga/desktop/hdmi/tmds_channel.sv`: video_data's count of ones, the transition-minimised q_m, its count of ones, and the disparity accumulator, in one clock. ABI 1.9 and 1.10 met 74.25 MHz on one seed in eight by under 2 MHz, and the ABI 1.11 logic on none of sixteen (65.10 to 72.27 MHz routed). Registering q_m and its count, and delaying mode, control_data and data_island_data by the same clock, makes the channel's output the original's exactly one pixel clock later; all eight seeds of ABI 1.11 then routed the pixel clock at 86.57 to 92.99 MHz. `tools/tests/test_tmds_pipeline.sh` runs it beside the original taken from commit 31fd782 on all three channels for 200,000 cycles of random modes and pixels and requires that equality; it fails if the control or mode input is left undelayed."
+  consequence: "Seed choice no longer decides whether a desktop core meets timing, and the pixel clock has about 15 MHz of margin for the next change. The whole TMDS stream is one pixel later relative to the raster, which nothing observes; an HDMI capture of the ABI 1.11 core is correct."
+  sources:
+    - "`fpga/desktop/hdmi/tmds_channel.sv`, `tools/tests/sim/tb_tmds_pipeline.sv`, `tools/tests/test_tmds_pipeline.sh`; THIRD_PARTY.md"
+    - "Seed-sweep build logs of 2026-11-17 for ABI 1.11 before (seeds 1-16) and after (seeds 1-8) the change, read by the corrected gate (TOOL-023)"
+  verification: "Built, routed and captured on the board on 2026-11-17 (core-log entry 49); the equivalence bench and two mutations of it run in the host suite."
+
+- record_id: TOOL-025
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "tinytang_put.py failed any file the board takes over 30 s to store, because one serial write carried the whole file"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "`tools/tinytang_put.py` opened the port with write_timeout=30 and sent the file with a single `write()` call, and pyserial applies the timeout to the whole call. The shell's `tangput` stores about 1.1 to 1.3 MB/s, so a 20 MB file went in 18.4 s while a 149 MB book failed with SerialTimeoutException after 32 s every time, leaving `tangput` waiting for the rest until a power cycle. The tool now writes 1 MB at a time, so the timeout bounds a stall rather than the transfer; the 162 MB book then went in 127 s."
+  consequence: "Files of any size go onto the card over USB. A failed transfer still leaves the shell's `tangput` reading the console until the board is power-cycled; the bytes reach only `tangput`, because the tool sends nothing before its ready line."
+  sources:
+    - "`tools/tinytang_put.py`; `cmd_tangput` in `ports/bl616/tdsh_tang_flash.c`"
+  verification: "Reproduced three times and fixed on the board on 2026-11-17 (core-log entry 49)."
+
 - record_id: WII-001
   kind: EXTERNAL
   topic_id: WII
@@ -3003,4 +3028,18 @@ These ids are no longer records. Each one's facts that are still true were carri
     - "`fpga/desktop/link_uart.sv`, `desktop_link.v`, `desktop_regs.sv`; `ports/bl616/tang_fpga_uart.c`, `tdsh_tang_flash.c`, `tinyreader_app.cpp`; `tools/plane_sweep.py`"
     - "Benches `tools/tests/test_link_uart.sh` (69 checks: every rate, 3% skew, exact transmit bit times, framing errors, glitches, the fallback threshold; nine mutations caught), `test_desktop_core.sh` (negotiation, refusal and fallback through the link), `test_desktop_plane.sh` (the plane at 10 Mbaud, sixteen rows back to back, no dropped write), `test_tang_fpga_uart.sh` and `test_tang_flash.sh` (the firmware's negotiation and load order)"
     - "Records EXTCTL-001 (opcode 0x03), BL6-007 (filling the TX FIFO), BL6-011 (the BL616's dividers), TDESK-022 (the Reader's lag)"
-  verification: "On the board on 2026-11-17 with the measurements above, an HDMI capture of the BL616-drawn picture, and the operator's pass of the Reader at 10 Mbaud; host tests 50 of 50."
+  verification: "On the board on 2026-11-17 with the measurements above, an HDMI capture of the BL616-drawn picture, and the operator's pass of the Reader at 10 Mbaud; host tests 50 of 50. Revised 2026-11-17 (core-log entry 49): the 7.7 s and 860 KB/s put down to the card were the Reader's row-by-row reads through td_image and the stdio layer; the same card reads a 1,843,200-byte spread in 126 ms, 14.6 MB/s, in 16 KB f_read calls (TDESK-024), so a picture page's time is in that read path, not the card."
+
+- record_id: TDESK-024
+  kind: TOOLCHAIN
+  topic_id: TDESK
+  title: "TinyReader turns book pages in one frame from twelve SDRAM buffers (desktop ABI 1.11)"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "The desktop core's plane keeps twelve 1280x720 pictures in the SDRAM: buffer b is bank b / 3 from row (b % 3) * 2160, three per bank. Each write carries its buffer through the controller's FIFO; frame 0x1C picks the write buffer and 0x1D the shown one, taken when the frame's line 0 is fetched so a switch never tears, values above 11 ignored. Register 4 reads 0x0001000b, 0x24 reads 0x0c000000 with the write buffer in bits 11:8 and the requested one in 3:0, and 0x10[15:12] the buffer on screen. The Reader app is now TinyReader and opens `.trb` books made on the PC by `tools/make_book.py` from a PDF, CBZ, CBR or image folder: 1280x720 spreads in big-endian RGB565, sector-aligned (docs/tinyreader-books.md). Buffer 0 stays the pictures'; a task loads the spreads around the one being read into the other eleven in the order current, next, previous, then two ahead for every one back (`ports/bl616/tang_book.c`), reusing the least recently shown buffer outside that window, and a turn to a held spread is one 0x1D. Pages wider than tall, eleven fold-outs in the Zelda guide, are shown alone. On the board, firmware `31fd782-dirty.48f603d` with core `a0f328f73820` loaded a spread in 1,993 to 1,996 ms, 125 to 126 ms of it reading the card in 16 KB reads and 1,866 to 1,869 ms on the 10 Mbaud link; all eleven book buffers matched their spreads' checksums computed from the file on the PC, each shown two frames after its 0x1D (once three), with no dropped write. The operator read the 161-page, 88-spread, 162 MB guide and passed it."
+  consequence: "A book reads like a book: once the window has filled, about 2 s per spread in the background, page turns are immediate, and only flipping faster than one spread every 2 s outruns the loader, which then draws the spread in. The link, not the card, sets that 2 s. A core before ABI 1.11 still opens books, one buffer, drawing each spread in."
+  sources:
+    - "`fpga/desktop/fb_sdram.sv`, `desktop_link.v`, `desktop_regs.sv`, `desktop_hdmi.sv`; `ports/bl616/tang_book.c`, `tang_plane.c`, `tinyreader_app.cpp`; `tools/make_book.py`, `tools/plane_sweep.py --book`; docs/tinyreader-books.md"
+    - "Benches `tools/tests/test_desktop_plane.sh` (hidden writes, a switch asked mid-frame landing whole on the next frame, buffers 4 and 11 in banks 1 and 3, refusal of 12; two mutations caught) and `test_make_book.sh` (layouts, fold-outs, labels, the firmware's parser and cache planning)"
+    - "Records TDESK-021 (the SDRAM plane), TDESK-023 (the 10 Mbaud link), TOOL-024 (the timing fix that let this core build)"
+  verification: "On the board on 2026-11-17 (core-log entry 49): the buffer check by `tools/plane_sweep.py --book`, HDMI captures of a spread and of a fold-out, and the operator's pass; host tests 52 of 52."

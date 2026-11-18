@@ -163,7 +163,11 @@ documented UART protocol. Provenance by file:
   scaler were removed; each file's header records its origin.
 - `hdmi/` is Sameer Puri's HDMI library
   (https://github.com/hdl-util/hdmi, `MIT OR Apache-2.0`) as nestang carried it,
-  with the open toolchain's portability edits folded in.
+  with the open toolchain's portability edits folded in. `tmds_channel.sv` is
+  also pipelined by one clock for desktop ABI 1.11 (its q_m stage registered,
+  its other inputs delayed to match, so its output is the original's one pixel
+  clock later); `tools/tests/test_tmds_pipeline.sh` checks that against the
+  original, and a comment at the change says what it is.
 - `link_uart.sv`, the BL616 wire's UART, is this project's own (desktop ABI
   1.10). It replaced `uart_fixed.v`, fpga4fun.com / KNJN LLC's RS-232 module
   as nestang carried it, which is no longer in this tree.

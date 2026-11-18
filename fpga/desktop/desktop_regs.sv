@@ -53,6 +53,8 @@ module desktop_regs (
     // 2: 10) and its fallback and framing-error counts; and a rate change
     // accepted by opcode 0x03, which the link makes after this reply.
     input  logic [1:0]  link_rate,
+    // The plane's buffers: {count[31:24], write buffer[11:8], shown request[3:0]}.
+    input  logic [31:0] plane_bufs,
     input  logic [31:0] link_counts,
     output logic        link_baud_set,
     output logic [1:0]  link_baud_code
@@ -154,7 +156,7 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h0001000a; // desktop ABI 1.10: the link negotiates 5 or 10 Mbaud, registers 0x1C/0x20 (1.9: the plane is 1280x720 in SDRAM, frames 0x18-0x1B; 1.8: 640x360 plane; 1.7: block glyphs; 1.6: PMOD UART)
+                32'h04:read_data=32'h0001000b; // desktop ABI 1.11: twelve plane buffers, frames 0x1C/0x1D, register 0x24 (1.10: the link negotiates 5 or 10 Mbaud, registers 0x1C/0x20; 1.9: the plane is 1280x720 in SDRAM, frames 0x18-0x1B; 1.8: 640x360 plane; 1.7: block glyphs; 1.6: PMOD UART)
                 32'h0c:read_data={16'd1280,16'd720}; // the pixel plane's width and height (ABI 1.8 on)
                 // The SDRAM plane: ready[31] underrun[30] dropped[29]
                 // rd_cfg[27:24] checksums seen[23:16] fetch_max[10:0]; then
@@ -166,6 +168,8 @@ module desktop_regs (
                 // 2 Mbaud[31:16] and framing errors[15:0] since configuration.
                 32'h1c:read_data=link_bps;
                 32'h20:read_data=link_counts;
+                // The plane's buffers; the one actually shown is in 0x10[15:12].
+                32'h24:read_data=plane_bufs;
                 32'h08:read_data=32'h0000010f; // none, OLED, VGA J1/J2, UART (8)
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,
