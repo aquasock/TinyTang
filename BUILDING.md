@@ -85,12 +85,38 @@ not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to the build directory it is given (the section below records the
-  ABI 1.8 core that is on the card, which is what a card should carry; the
-  ABI 1.7, 1.6 and 1.3 entries that follow are kept as the older records)
+  ABI 1.9 core that is on the card, which is what a card should carry, and its
+  seed, 4, which `NEXTPNR_SEED=4` selects; the ABI 1.8, 1.7, 1.6 and 1.3
+  entries that follow are kept as the older records)
 
-- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.8**,
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.9**,
+  built 2026-11-17 at seed 4 into `build/desk19-s4/out/` with
+  `DESKTOP_BUILD_DIR=build/desk19-s4 NEXTPNR_SEED=4`.  ABI 1.9 moves the pixel
+  plane into the dock's SDRAM at 1280x720, shown 1:1 (`fpga/desktop/fb_sdram.sv`,
+  frames 0x18-0x1B, geometry 1280x720 at register 0x0c, status and frame
+  checksum at 0x10-0x18), so block RAM falls from 242 to 17; the SDRAM pins
+  are TinyGBA's, and its clock leaves through an ODDR as the inverse of the
+  pixel clock.  The read alignment is 3 clocks on the rising edge, the only
+  one of fourteen at which `tools/plane_sweep.py` got a 1280x720 frame back
+  intact; 7,200 frames in a row then matched.
+  - `desktop.bin` sha256
+    `9c63348843e25e49d8aa3557bdc0a468bed2c8e5a9b35e66692381f072d260c3`,
+    4,508,140 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `420957e63dccbdfa82855278c7e9cb5542772f26bd83972bbaa7f5858414cc34`,
+    36,089,829 bytes; `tinytang.fs.gz` is `gzip -9 -n` of it, 432,007 bytes
+  - Gates passed with nothing overridden, with the corrected timing gate that
+    reads the routed result (`tools/desktop_open/pnr_timing.py`): routed pixel
+    clock 75.91 MHz against 74.25, setup and hold met, no clock-topology
+    regression, `clk` not through SPINE17.  Seed 4 is the only one of eight
+    whose routed pixel clock met 74.25; the others reached 70.51 to 73.58 MHz,
+    and the failing path is the HDMI encoder's TMDS adder chain, as before.
+  - Provenance: `source_sha256`
+    `371673509c3ed6573c8c4c475264b93052e751ac56045cb7d7bcc5264f847460`.
+
+- **desktop core, desktop ABI 1.8** (the card's file until the ABI 1.9 core),
   built 2026-11-17 at seed 3 into `build/desk18-s3/out/`.  ABI 1.8 adds the
-  640x360 RGB565 pixel plane (`fpga/desktop/pixplane.sv`, frames 0x18-0x1A,
+  640x360 RGB565 pixel plane (`fpga/desktop/pixplane.sv`, removed in ABI 1.9; frames 0x18-0x1A,
   geometry at register 0x0c), which takes 228 block RAMs (242 in all).
   - `desktop.bin` sha256
     `13989970c925b5f960ec68fbedc57a882eb2a558c1137cf2746722ac1e033300`,
@@ -101,7 +127,11 @@ not.
   - Gates passed with nothing overridden: setup and hold met (`clk` 67.40,
     pixel 81.26, sys 155.04 MHz against 21.49, 74.25 and 50), no clock-topology
     regression.  **Only seed 3 of eight passed**: the other seven missed the
-    pixel clock at 58.7 to 69.2 MHz and regressed the clock topology.  The
+    pixel clock at 58.7 to 69.2 MHz and regressed the clock topology.
+    **Corrected 2026-11-17:** the timing gate then read nextpnr's placement
+    estimate whenever the routed clock failed; re-read from the same logs, the
+    routed pixel clock is 66.68 to 71.87 MHz at all eight seeds, seed 3 at
+    67.12, so this core never met 74.25 MHz, though it ran on the board.  The
     failing path is the unchanged HDMI encoder's TMDS adder chain, displaced
     by the plane's block RAMs, so a later change to this core may need a wider
     seed sweep, or an 8-bit plane at half the block RAM.

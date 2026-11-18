@@ -1,8 +1,9 @@
 // TinyTang desktop core: top level for the Tang Console 138K.
 //
 // The BL616 runs TinyDesk and drives this core over UART: a full-screen text
-// layer on HDMI (desktop_hdmi), and the PMOD socket personalities and the
-// I2C bus on the USB-A port (desktop_pmod).
+// layer on HDMI (desktop_hdmi) with a 1280x720 pixel plane in the dock's SDRAM
+// (fb_sdram), and the PMOD socket personalities and the I2C bus on the USB-A
+// port (desktop_pmod).
 //
 // Derived from nestang_top.sv in nestang by nand2mario (GPL-3.0); the NES
 // machine, SDRAM, controllers and loader have been removed.
@@ -23,6 +24,18 @@ module desktop_top (
     // The populated USB-A port's data pair, an I2C bus: SDA on D+, SCL on D-
     inout usb_sda,
     inout usb_scl,
+
+    // The SDRAM module on the dock connector: one W9825G6KH-6 die (TinyGBA's
+    // pinout), holding the pixel plane.
+    output        O_sdram_clk,
+    output        O_sdram_cs_n,
+    output        O_sdram_ras_n,
+    output        O_sdram_cas_n,
+    output        O_sdram_wen_n,
+    output [12:0] O_sdram_addr,
+    output [1:0]  O_sdram_ba,
+    output [1:0]  O_sdram_dqm,
+    inout  [15:0] IO_sdram_dq,
 
     // HDMI TX
     output       tmds_clk_n,
@@ -81,11 +94,24 @@ wire [14:0] wide_bg;
 wire        wide_we;
 wire        wide_on;
 
-// The pixel plane's write port and enable, from the link to desktop_hdmi.
+// The pixel plane's write port and enable, from the link to desktop_hdmi, and
+// its read alignment, status and checksum.
 wire        plane_we;
-wire [17:0] plane_waddr;
+wire [10:0] plane_wx;
+wire [9:0]  plane_wy;
 wire [15:0] plane_wdata;
 wire        plane_on;
+wire [3:0]  plane_rd_cfg;
+wire [31:0] plane_status, plane_sum1, plane_sum2;
+
+// The SDRAM's clock is the pixel clock inverted, so the part samples the
+// controller's commands in the middle of their clock.  An ODDR makes it --
+// low after the rising edge, high after the falling one -- so the clock leaves
+// through an I/O cell like the signals it times.
+ODDR sdram_clk_oddr (
+    .D0(1'b0), .D1(1'b1), .TX(1'b0), .CLK(hclk),
+    .Q0(O_sdram_clk), .Q1()
+);
 
 wire [10:0] desktop_cx;
 wire [9:0] desktop_cy;
@@ -135,8 +161,13 @@ desktop_hdmi u_hdmi (
     .overlay(overlay),
     .wide_we(wide_we), .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
     .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_on(wide_on),
-    .plane_we(plane_we), .plane_waddr(plane_waddr), .plane_wdata(plane_wdata),
-    .plane_on(plane_on),
+    .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
+    .plane_wdata(plane_wdata), .plane_on(plane_on),
+    .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+    .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
+    .sd_a(O_sdram_addr), .sd_ba(O_sdram_ba), .sd_cs_n(O_sdram_cs_n),
+    .sd_ras_n(O_sdram_ras_n), .sd_cas_n(O_sdram_cas_n), .sd_we_n(O_sdram_wen_n),
+    .sd_dqm(O_sdram_dqm), .sd_dq(IO_sdram_dq),
     .desktop_cx(desktop_cx), .desktop_cy(desktop_cy), .desktop_rgb(desktop_rgb),
     .clk_pixel(hclk), .clk_5x_pixel(hclk5),
     .tmds_clk_n(tmds_clk_n), .tmds_clk_p(tmds_clk_p),
@@ -151,8 +182,10 @@ desktop_link #(.FREQ(21_492_000), .CORE_ID(THIS_CORE_ID))
     .overlay(overlay),
     .wide_x(wide_x), .wide_y(wide_y), .wide_ch(wide_ch),
     .wide_fg(wide_fg), .wide_bg(wide_bg), .wide_we(wide_we), .wide_on(wide_on),
-    .plane_we(plane_we), .plane_waddr(plane_waddr), .plane_wdata(plane_wdata),
-    .plane_on(plane_on),
+    .plane_we(plane_we), .plane_wx(plane_wx), .plane_wy(plane_wy),
+    .plane_wdata(plane_wdata), .plane_on(plane_on),
+    .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
+    .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
     .hid1(hid1), .hid2(hid2),
     .uart_tx(UART_TXD), .uart_rx(UART_RXD),
     // The clock monitor's crystal reference.

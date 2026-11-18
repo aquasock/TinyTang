@@ -45,7 +45,10 @@ module desktop_regs (
     output logic        uart_loopback,
     output logic        uart_rx_pop,
     input  logic [7:0]  uart_rx_data,
-    input  logic [31:0] uart_status
+    input  logic [31:0] uart_status,
+    // The SDRAM plane's status and last frame checksum (fb_sdram.sv), already
+    // in this clock's domain.
+    input  logic [31:0] plane_status, plane_sum1, plane_sum2
 );
     logic uart_nrst_r, uart_loopback_r, uart_hold_r;
     assign uart_nrst_low = uart_nrst_r;
@@ -130,8 +133,14 @@ module desktop_regs (
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010008; // desktop ABI 1.8: pixel plane, frames 0x18-0x1A (1.7: block glyphs; 1.6: PMOD UART)
-                32'h0c:read_data={16'd640,16'd360}; // the pixel plane's width and height (ABI 1.8)
+                32'h04:read_data=32'h00010009; // desktop ABI 1.9: the plane is 1280x720 in SDRAM, frames 0x18-0x1B (1.8: 640x360 plane; 1.7: block glyphs; 1.6: PMOD UART)
+                32'h0c:read_data={16'd1280,16'd720}; // the pixel plane's width and height (ABI 1.8 on)
+                // The SDRAM plane: ready[31] underrun[30] dropped[29]
+                // rd_cfg[27:24] checksums seen[23:16] fetch_max[10:0]; then
+                // the last frame's checksum pair (fb_sdram.sv).
+                32'h10:read_data=plane_status;
+                32'h14:read_data=plane_sum1;
+                32'h18:read_data=plane_sum2;
                 32'h08:read_data=32'h0000010f; // none, OLED, VGA J1/J2, UART (8)
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,

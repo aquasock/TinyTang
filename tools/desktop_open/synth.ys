@@ -74,7 +74,7 @@ read_slang --std 1800-2017 -U SYNTHESIS \
     src/desktop/desktop_link.v \
     src/desktop/uart_fixed.v \
     src/desktop/textdisp_wide.sv \
-    src/desktop/pixplane.sv \
+    src/desktop/fb_sdram.sv \
     src/desktop/desktop_hdmi.sv \
     src/desktop/desktop_top.sv \
     src/desktop/clock_monitor.sv \

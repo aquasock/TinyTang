@@ -1485,3 +1485,50 @@ Phase 2 integrates it: replace `pixplane`'s store with `fb_sdram` in `desktop_hd
 - User Test: N/A
 
 ---
+## 46 COMMIT Unreleased 2026-11-17T17:39:49-07:00
+
+#### Coming From:
+
+Unreleased bc46e92
+
+#### Purpose:
+
+Put the SDRAM framebuffer into the desktop core as a 1280x720 plane shown 1:1, build it, and prove on the board that whole frames come back from the SDRAM intact.
+
+#### Outcome:
+
+Desktop ABI 1.9 holds its pixel plane in the dock's SDRAM at 1280x720 and the board returns it intact (TDESK-021). `fb_sdram` replaced `pixplane` in `desktop_hdmi`, the link's cursor became x and y, frame 0x1B sets the read alignment at run time, registers 0x10, 0x14 and 0x18 report the plane's status and a checksum of every frame scanned out, register 0x0c reports 1280x720, and the SDRAM takes TinyGBA's pins with its clock from an ODDR as the inverse of the pixel clock. The plane bench now runs UART frames through the link and the HDMI path into the timing-checking SDRAM model and passes 36 checks, and fails when the row carry, the 0x1B decode or the cursor parking is broken; host tests are 49 of 49. The eight-seed sweep exposed a fault in the timing gate (TOOL-023): it matched only nextpnr's `Info:` lines, so a routed clock failure, printed as `Warning:`, left the passing placement estimate standing. Corrected and pinned by `test_pnr_timing.sh`, it shows the ABI 1.7 sweep still clean, the ABI 1.8 core of record routed at 67.12 MHz against 74.25 with every seed failing, and this sweep passing at seed 4 alone, 75.91 MHz. Every seed uses 17 block RAMs against 242 before, and 8,958 LUT4 against 8,853. Seed 4 was deployed to `/root/cores/console138k/` and booted by the relay sequence; `fpgar` read ABI `0x00010009`, geometry `0x050002d0` and status `0x83cb0511`, ready with a longest fetch of 1,297 clocks as in simulation. The new `tools/plane_sweep.py` drew a 1280x720 picture through `fpgapipe` in 9.4 seconds and tried all fourteen read alignments: only 3 clocks on the rising edge, the built-in value, returned the frame intact, and 7,200 consecutive frames then matched. An HDMI capture showed the picture full screen, and after a later power cycle the prompt and text layer were normal. The board dropped off USB once while the capture card was connected and came back with the relay sequence. The firmware is unchanged, so the Reader still draws 640x360 rows, which land in the top-left quarter on this core. The ESP32 another agent drives was not touched. BUILDING.md records the new core and corrects the ABI 1.8 timing. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, TOOL-023 and TDESK-021 only, and this entry was validated as number 46 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 177 records.
+
+#### Next Steps:
+
+Phase 3 teaches the Reader the new geometry: read width and height from register 0x0c, draw 1280x720 at 1:1 in two frames per row, and keep the 640x360 path for an ABI 1.8 core. The operator then looks at the Reader and the plane on the board, which has not happened yet for this core. A faster link remains optional; a full screen takes 9.4 seconds at 2 Mbaud. The TMDS encoder's adder chain is the pixel clock's critical path at every seed and is worth pipelining before the next change to this core, so that seed choice stops deciding whether it meets timing.
+
+#### Files Modified:
+
+- BUILDING.md
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop.cst
+- fpga/desktop/desktop_hdmi.sv
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/desktop_top.sv
+- fpga/desktop/fb_sdram.sv
+- fpga/desktop/pixplane.sv
+- tools/desktop_open/pnr_timing.py
+- tools/desktop_open/synth.ys
+- tools/plane_sweep.py
+- tools/tests/sim/tb_desktop_plane.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_fb_sdram.sv
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_plane.sh
+- tools/tests/test_fb_sdram.sh
+- tools/tests/test_pnr_timing.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

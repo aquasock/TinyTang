@@ -48,7 +48,12 @@ from collections import defaultdict
 
 VIO = re.compile(r"^Warning: (Setup|Hold)/min time violation for clock '([^']+)':")
 ROW = re.compile(r"^Info:\s+(\S+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(.*)$")
-FMAX = re.compile(r"^Info: Max frequency for clock\s+'([^']+)':\s+([\d.]+) MHz \((PASS|FAIL) at ([\d.]+) MHz\)")
+# nextpnr prints a passing clock as `Info:` and a failing one as `Warning:`, and
+# prints the report twice -- an estimate after placement, then the routed
+# result.  Both prefixes must match, and the last report must win: matching
+# `Info:` alone kept the placement estimate whenever the routed clock failed,
+# so a setup failure never reached this gate (TinyTang core-log entry 46).
+FMAX = re.compile(r"^(?:Info|Warning): Max frequency for clock\s+'([^']+)':\s+([\d.]+) MHz \((PASS|FAIL) at ([\d.]+) MHz\)")
 
 
 def analyse(path):
@@ -133,6 +138,9 @@ def main(argv):
 
         for name in sorted(fmax):
             achieved, constraint, verdict = fmax[name]
+            # The numbers decide, not only nextpnr's word for them.
+            if achieved < constraint:
+                verdict = "FAIL"
             if verdict == "FAIL":
                 file_failed = True
             print(f"  {verdict:4} {name:32} {achieved:8.2f} MHz  (constraint {constraint:g} MHz)")

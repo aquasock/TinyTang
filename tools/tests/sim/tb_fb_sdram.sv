@@ -14,7 +14,8 @@
 //   tools/tests/test_fb_sdram.sh
 //
 module tb_fb_sdram #(
-    parameter integer READ_DELAY = 2
+    parameter integer READ_DELAY = 2,      // rd_cfg[2:0]
+    parameter integer READ_NEG = 0         // rd_cfg[3]
 );
 
     reg clk_w = 0, clk = 0;
@@ -47,13 +48,17 @@ module tb_fb_sdram #(
     wire ready, underrun, dropped;
     wire [10:0] fetch_max;
 
-    fb_sdram #(.INIT_WAIT(300), .READ_DELAY(READ_DELAY)) dut (
+    wire [31:0] sum1, sum2;
+    wire        sum_toggle;
+    fb_sdram #(.INIT_WAIT(300)) dut (
         .clk_w(clk_w), .we(we), .wx(wx), .wy(wy), .wdata(wdata),
         .clk(clk), .resetn(resetn), .cx(cx), .cy(cy),
         .frame_width(11'(FW)), .frame_height(10'(FH)), .rgb(rgb),
         .sd_a(a), .sd_ba(ba), .sd_cs_n(cs_n), .sd_ras_n(ras_n), .sd_cas_n(cas_n),
         .sd_we_n(we_n), .sd_dqm(dqm), .sd_dq(dq),
-        .ready(ready), .underrun(underrun), .dropped(dropped), .fetch_max(fetch_max)
+        .ready(ready), .underrun(underrun), .dropped(dropped), .fetch_max(fetch_max),
+        .rd_cfg({READ_NEG[0], READ_DELAY[2:0]}),
+        .sum1(sum1), .sum2(sum2), .sum_toggle(sum_toggle)
     );
 
     sdram_w9825_model #(.SIZE_WORDS(2 * 1024 * 1024)) part (
@@ -108,6 +113,9 @@ module tb_fb_sdram #(
 
     integer i, x, y, seed, ref0, cyc0;
     longint need;
+    reg [31:0] e1, e2;
+    reg        tog0, sums_ok;
+    reg [15:0] pv;
     initial begin
         repeat (20) @(posedge clk);
         resetn = 1;
@@ -146,8 +154,20 @@ module tb_fb_sdram #(
         comparing = 0;
         wait (cx == 0 && cy == 0);
 
-        $display("fb_sdram: READ_DELAY %0d, %0d pixels written, %0d compared, %0d mismatches",
-                 READ_DELAY, nwritten, compared, mismatches);
+        // The checksum latched for the frame just compared must be the one the
+        // expected picture gives: s2 += s1; s1 += p, in raster order.
+        e1 = 0; e2 = 0;
+        for (y = 0; y < 720; y = y + 1)
+            for (x = 0; x < 1280; x = x + 1) begin
+                pv = want.exists(y * 2048 + x) ? want[y * 2048 + x] : 16'h0000;
+                e2 = e2 + e1;
+                e1 = e1 + {16'd0, pv};
+            end
+        sums_ok = sum1 == e1 && sum2 == e2;
+        $display("fb_sdram: frame checksum %08h %08h, expected %08h %08h", sum1, sum2, e1, e2);
+
+        $display("fb_sdram: READ_DELAY %0d on the %s edge, %0d pixels written, %0d compared, %0d mismatches",
+                 READ_DELAY, READ_NEG ? "fall" : "rise", nwritten, compared, mismatches);
         $display("fb_sdram: %0d SDRAM timing violations, underrun %0d, writes dropped %0d, longest fetch %0d of %0d clocks",
                  part.violations, underrun, dropped, fetch_max, FW);
         // 8192 refreshes per 64 ms, and no gap longer than eight intervals.
@@ -155,7 +175,7 @@ module tb_fb_sdram #(
         need = longint'(part.cycle - cyc0) * 64'd13468 * 64'd8192 / 64'd64_000_000_000;
         $display("fb_sdram: %0d refreshes in a frame (need %0d), longest gap %0d clocks (limit %0d)",
                  part.refreshes - ref0, need, part.max_ref_gap, 8 * 579);
-        if (mismatches == 0 && compared == 1280 * 720 && part.violations == 0 && !underrun && !dropped &&
+        if (mismatches == 0 && compared == 1280 * 720 && sums_ok && part.violations == 0 && !underrun && !dropped &&
             longint'(part.refreshes - ref0) >= need && part.max_ref_gap <= 8 * 579)
             $display("fb_sdram: PASS");
         else

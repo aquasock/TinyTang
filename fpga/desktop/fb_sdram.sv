@@ -28,13 +28,29 @@
 // (18 ns), tRP 2 (18 ns), tRAS 4 (42 ns), tRC 5 (60 ns), tWR 2, tMRD 2, and
 // 8192 refreshes per 64 ms.  Four refreshes are owed per line, about 3000 per
 // frame against the 2138 the part needs in that time.
+//
+// Read alignment.  When a burst's words reach the capture register depends on
+// the board -- the clock pin's delay, the part's access time, the data pins'
+// delay -- so it is an input, not a constant: rd_cfg[2:0] is the number of
+// clocks from a READ to its first word in the capture register (1-7; 0 acts
+// as 1), and rd_cfg[3] samples the pins on the falling edge, half a clock
+// earlier than the rising edge with the same count.  The timing-checking
+// model in tools/tests/sim passes at 2 on the rising edge only; that model has
+// no pin delays.  The desktop link sets it (frame 0x1B) and a host can sweep it
+// against the checksum below without a rebuild.
+//
+// Checksum.  Every frame, the 921,600 visible pixels as they leave the
+// scanout, RGB565 in raster order, are summed Fletcher-style into two 32-bit
+// words (s2 += s1; s1 += p; both from zero), latched as the raster leaves the
+// last visible line, with sum_toggle flipped so another clock domain can take
+// the pair safely.  A host that drew a known picture can compute the same pair
+// and know the whole frame came back from the SDRAM intact.
 
 module fb_sdram #(
     parameter integer W = 1280,
     parameter integer H = 720,
     parameter integer STRIDE = 1536,       // words per line
     parameter integer INIT_WAIT = 15000,   // clocks before the first command: > 200 us
-    parameter integer READ_DELAY = 2,      // READ issued to the first capture: 2 in simulation (CL2, the part on the inverse clock); the board may differ
     parameter integer T_RCD = 2,
     parameter integer T_RP  = 2,
     parameter integer T_RC  = 5,
@@ -71,7 +87,13 @@ module fb_sdram #(
     output reg         ready,              // initialised
     output reg         underrun,           // sticky: a line was shown before its fetch ended
     output reg         dropped,            // sticky: a write found the FIFO full
-    output reg  [10:0] fetch_max           // the longest fetch, in clocks
+    output reg  [10:0] fetch_max,          // the longest fetch, in clocks
+
+    // Read alignment (see the header), on clk; and the frame checksum.
+    input  wire [3:0]  rd_cfg,
+    output reg  [31:0] sum1,
+    output reg  [31:0] sum2,
+    output reg         sum_toggle
 );
 
     // ------------------------------------------------------------ write FIFO
@@ -130,6 +152,8 @@ module fb_sdram #(
     reg        dq_oe;
     assign sd_dq = dq_oe ? dq_o : 16'hzzzz;
     reg [15:0] dq_r;                // read data, registered at our edge
+    reg [15:0] dq_n;                // the pins sampled on the falling edge
+    always @(negedge clk) dq_n <= sd_dq;
 
     // What the raster asks for.
     reg        fetch_pending;
@@ -139,13 +163,17 @@ module fb_sdram #(
     reg [10:0] fetch_len;           // clocks the current fetch has taken
 
     // Read data in flight: a READ issued now names where its eight words go.
-    reg        rp_v [0:READ_DELAY-1];
-    reg [11:0] rp_d [0:READ_DELAY-1];
+    // Entry k is the READ issued k + 1 clocks ago; the capture takes the one
+    // rd_cfg names.
+    localparam integer RPN = 7;
+    wire [2:0] rp_tap = (rd_cfg[2:0] == 3'd0) ? 3'd0 : rd_cfg[2:0] - 3'd1;
+    reg        rp_v [0:RPN-1];
+    reg [11:0] rp_d [0:RPN-1];
     reg [3:0]  cap_n;
     reg [11:0] cap_i;
     reg [9:0]  cap_line;            // the line being captured
     reg        cap_last;            // the burst in capture is the line's last
-    reg        rp_last [0:READ_DELAY-1];
+    reg        rp_last [0:RPN-1];
     reg [9:0]  ready_line [0:1];    // the line each buffer holds complete
     reg        armed;               // a whole frame has been fetched: check for underrun
 
@@ -178,7 +206,7 @@ module fb_sdram #(
 
     always @(posedge clk) begin
         lb_we <= 1'b0;
-        dq_r  <= sd_dq;
+        dq_r  <= rd_cfg[3] ? dq_n : sd_dq;
         {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_NOP;
         sd_dqm <= 2'b00;
         dq_oe  <= 1'b0;
@@ -195,8 +223,8 @@ module fb_sdram #(
             ref_owed <= (ref_owed > 4'd11) ? 4'd15 : ref_owed + 4'd4;
         end
 
-        // Read data: a READ from READ_DELAY clocks ago starts eight captures.
-        for (k = READ_DELAY - 1; k > 0; k = k - 1) begin
+        // Read data: the READ rd_cfg clocks ago starts eight captures.
+        for (k = RPN - 1; k > 0; k = k - 1) begin
             rp_v[k]    <= rp_v[k-1];
             rp_d[k]    <= rp_d[k-1];
             rp_last[k] <= rp_last[k-1];
@@ -213,10 +241,10 @@ module fb_sdram #(
                 if (cap_line == 10'd0) armed <= 1'b1;
             end
         end
-        if (rp_v[READ_DELAY-1]) begin
-            cap_i    <= rp_d[READ_DELAY-1];
+        if (rp_v[rp_tap]) begin
+            cap_i    <= rp_d[rp_tap];
             cap_n    <= 4'd8;
-            cap_last <= rp_last[READ_DELAY-1];
+            cap_last <= rp_last[rp_tap];
             // The pipeline does not carry the line; captures run in issue
             // order, so it is the line being fetched, or the one just fetched.
         end
@@ -240,7 +268,7 @@ module fb_sdram #(
             rgray <= 0;
             ready_line[0] <= 10'h3FF;
             ready_line[1] <= 10'h3FF;
-            for (k = 0; k < READ_DELAY; k = k + 1) rp_v[k] <= 1'b0;
+            for (k = 0; k < RPN; k = k + 1) rp_v[k] <= 1'b0;
             {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} <= C_DESEL;
         end else begin
             tick <= tick + 16'd1;
@@ -371,6 +399,26 @@ module fb_sdram #(
         rgb     <= {pix_rr[15:11], pix_rr[15:13],
                     pix_rr[10:5],  pix_rr[10:9],
                     pix_rr[4:0],   pix_rr[4:2]};
+    end
+
+    // The frame checksum, over what rgb shows: at each clock rgb is the pixel
+    // of the raster position cx, cy present with it.
+    wire [15:0] shown = {rgb[23:19], rgb[15:10], rgb[7:3]};
+    reg  [31:0] s1, s2;
+    initial sum_toggle = 1'b0;
+    always @(posedge clk) begin
+        if (cx == 11'd0 && cy == 10'd0) begin
+            s1 <= {16'd0, shown};
+            s2 <= 32'd0;
+        end else if (cx < 11'(W) && cy < 10'(H)) begin
+            s1 <= s1 + {16'd0, shown};
+            s2 <= s2 + s1;
+        end
+        if (cx == 11'd0 && cy == 10'(H)) begin
+            sum1 <= s1;
+            sum2 <= s2;
+            sum_toggle <= ~sum_toggle;
+        end
     end
 
 endmodule

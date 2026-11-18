@@ -286,10 +286,11 @@ module tb_desktop_uart;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
         request(0,0,0,0,0,19);
-        // ABI 1.8: the pixel plane (1.7: block glyphs in font slots 0x01-0x17).
-        request(1,4,0,0,0,32'h00010008);
-        // ABI 1.8 reports the plane's geometry: 640 x 360.
-        request(1,32'h0c,0,0,0,{16'd640,16'd360});
+        // ABI 1.9: the plane is 1280x720 in the SDRAM (1.8: 640x360 in block
+        // RAM; 1.7: block glyphs in font slots 0x01-0x17).
+        request(1,4,0,0,0,32'h00010009);
+        // The plane's geometry, reported since 1.8: 1280 x 720.
+        request(1,32'h0c,0,0,0,{16'd1280,16'd720});
         // ABI 1.6 adds personality 8, the PMOD UART, to the bitmap.
         request(1,8,0,0,0,32'h0000010f);
         request(1,32'hc0,0,0,0,0);

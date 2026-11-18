@@ -23,11 +23,28 @@ module desktop_hdmi (
     input [14:0] wide_bg,
     input        wide_on,
 
-    // The pixel plane's write port (main logic clock) and enable (pixplane.sv).
+    // The pixel plane's write port (main logic clock) and enable (fb_sdram.sv),
+    // its read alignment, and its status and checksum back in the main clock.
     input        plane_we,
-    input [17:0] plane_waddr,
+    input [10:0] plane_wx,
+    input [9:0]  plane_wy,
     input [15:0] plane_wdata,
     input        plane_on,
+    input  [3:0] plane_rd_cfg,
+    output reg [31:0] plane_status,
+    output reg [31:0] plane_sum1,
+    output reg [31:0] plane_sum2,
+
+    // The SDRAM the plane lives in.  Its clock is driven by the caller, as the
+    // inverse of clk_pixel.
+    output [12:0] sd_a,
+    output [1:0]  sd_ba,
+    output        sd_cs_n,
+    output        sd_ras_n,
+    output        sd_cas_n,
+    output        sd_we_n,
+    output [1:0]  sd_dqm,
+    inout  [15:0] sd_dq,
 
     output [10:0] desktop_cx,
     output [9:0] desktop_cy,
@@ -102,17 +119,50 @@ always @(posedge clk_pixel) begin
     wide_on_rr <= wide_on_r;
 end
 
-// The pixel plane: 640x360 RGB565 at 2x, the same look-ahead depth as the text
-// layer, so either can be selected below without a shift.
+// The pixel plane: 1280x720 RGB565 in the SDRAM, shown 1:1, with the same
+// look-ahead depth as the text layer, so either can be selected below without
+// a shift.  Its controller runs on the pixel clock and is reset with the core.
 wire [23:0] plane_rgb;
+reg  [1:0]  plane_rst;          // resetn, brought into the pixel clock
+reg  [3:0]  rd_cfg_r, rd_cfg_rr;
+always @(posedge clk_pixel) begin
+    plane_rst <= {plane_rst[0], resetn};
+    rd_cfg_r  <= plane_rd_cfg;
+    rd_cfg_rr <= rd_cfg_r;
+end
+wire        fb_ready, fb_underrun, fb_dropped, fb_sum_toggle;
+wire [10:0] fb_fetch_max;
+wire [31:0] fb_sum1, fb_sum2;
 
-pixplane u_plane (
-    .clk(clk), .hclk(clk_pixel),
-    .we(plane_we), .waddr(plane_waddr), .wdata(plane_wdata),
+fb_sdram u_plane (
+    .clk_w(clk), .we(plane_we), .wx(plane_wx), .wy(plane_wy), .wdata(plane_wdata),
+    .clk(clk_pixel), .resetn(plane_rst[1]),
     .cx(cx), .cy(cy),
     .frame_width(frameWidth), .frame_height(frameHeight),
-    .rgb(plane_rgb)
+    .rgb(plane_rgb),
+    .sd_a(sd_a), .sd_ba(sd_ba), .sd_cs_n(sd_cs_n), .sd_ras_n(sd_ras_n),
+    .sd_cas_n(sd_cas_n), .sd_we_n(sd_we_n), .sd_dqm(sd_dqm), .sd_dq(sd_dq),
+    .ready(fb_ready), .underrun(fb_underrun), .dropped(fb_dropped),
+    .fetch_max(fb_fetch_max),
+    .rd_cfg(rd_cfg_rr), .sum1(fb_sum1), .sum2(fb_sum2), .sum_toggle(fb_sum_toggle)
 );
+
+// Back into the main clock.  The checksum pair is latched once a frame and
+// then held for a whole frame, so it is taken when its toggle has crossed;
+// the status bits are slow and are simply resynchronised.
+reg [2:0]  sum_sync;
+reg [7:0]  sums_seen;
+reg [14:0] status_r;
+always @(posedge clk) begin
+    sum_sync <= {sum_sync[1:0], fb_sum_toggle};
+    if (sum_sync[2] != sum_sync[1]) begin
+        plane_sum1 <= fb_sum1;
+        plane_sum2 <= fb_sum2;
+        sums_seen  <= sums_seen + 8'd1;
+    end
+    status_r     <= {fb_ready, fb_underrun, fb_dropped, fb_fetch_max};
+    plane_status <= {status_r[13:11], 1'b0, rd_cfg_rr, sums_seen, 5'd0, status_r[10:0]};
+end
 
 reg plane_on_r, plane_on_rr;
 always @(posedge clk_pixel) begin

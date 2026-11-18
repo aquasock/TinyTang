@@ -32,11 +32,18 @@ module desktop_link #(
     output reg  [14:0] wide_bg,
     output reg         wide_we,
     output reg         wide_on,
-    // The pixel plane's write port and enable (desktop ABI 1.8, pixplane.sv).
+    // The pixel plane's write port and enable (desktop ABI 1.9, fb_sdram.sv).
     output reg         plane_we,
-    output reg  [17:0] plane_waddr,    // y * 640 + x
+    output reg  [10:0] plane_wx,       // 0..1279; more is dropped by the plane
+    output reg  [9:0]  plane_wy,       // 0..719; more is dropped by the plane
     output reg  [15:0] plane_wdata,    // RGB565
     output reg         plane_on,
+    // The plane's read alignment (frame 0x1B, fb_sdram.sv's rd_cfg), and its
+    // status and frame checksum for the register file (0x10-0x18).
+    output reg  [3:0]  plane_rd_cfg,
+    input  wire [31:0] plane_status,
+    input  wire [31:0] plane_sum1,
+    input  wire [31:0] plane_sum2,
     output wire [15:0] desktop_socket_word,
     output wire desktop_socket_request,
     input desktop_socket_ack,
@@ -182,8 +189,12 @@ reg [2:0] wide_phase;            // byte within a 5-byte cell
 reg [7:0] wide_fgh;
 reg [7:0] wide_bgh;
 
-// The pixel plane's write cursor and pixel assembly.
-reg [17:0] plane_addr;           // the next pixel's linear address
+// The pixel plane's write cursor and pixel assembly.  The cursor runs along a
+// row and on to the start of the next; y saturates at 1023, which is off the
+// picture, so a cursor parked there stays there.
+localparam [10:0] PLANE_W = 11'd1280;
+reg [10:0] plane_cx;
+reg [9:0]  plane_cy;
 reg        plane_phase;          // 0: the high byte is next
 reg [7:0]  plane_hi;
 
@@ -259,7 +270,8 @@ desktop_regs desktop_endpoint (
     .uart_flush(desktop_uart_flush), .uart_hold(desktop_uart_hold),
     .uart_nrst_low(desktop_uart_nrst_low),
     .uart_loopback(desktop_uart_loopback), .uart_rx_pop(desktop_uart_rx_pop),
-    .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status)
+    .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status),
+    .plane_status(plane_status), .plane_sum1(plane_sum1), .plane_sum2(plane_sum2)
 );
 
 // UART RX: command processing
@@ -282,8 +294,12 @@ always @(posedge clk) begin
         wide_cy <= 0;
         wide_phase <= 0;
         wide_on <= 0;
-        plane_addr <= 0;
+        plane_cx <= 0;
+        plane_cy <= 0;
         plane_phase <= 0;
+        // Three clocks from READ to capture on the rising edge: the model's 2
+        // plus the board's pin and access delays (fb_sdram.sv); 0x1B moves it.
+        plane_rd_cfg <= 4'd3;
         plane_on <= 0;
         plane_we <= 0;
         response_req <= 0;
@@ -446,28 +462,31 @@ always @(posedge clk) begin
                         wide_phase <= (wide_phase == 3'd4) ? 3'd0 : wide_phase + 3'd1;
                     end
                     'h15: wide_on <= rx_data[0];
-                    // The pixel plane (desktop ABI 1.8, pixplane.sv).
+                    // The pixel plane (desktop ABI 1.9, fb_sdram.sv: 1280x720
+                    // in the SDRAM, shown 1:1; ABI 1.8 was 640x360 at 2x).
                     //   0x18 x[15:0] y[15:0]     move the plane's write cursor
                     //   0x19 <2 bytes per pixel> write RGB565 pixels from the
                     //                           cursor, high byte first; the
-                    //                           address runs on across rows
+                    //                           cursor runs on across rows
                     //   0x1A x[7:0]              x[0]: show the plane instead
                     //                           of the text layer
-                    // A frame holds at most 2047 bytes, so 1021 pixels; one
-                    // 640-pixel row is one frame.
+                    //   0x1B x[7:0]              the SDRAM read alignment:
+                    //                           x[2:0] clocks, x[3] falling
+                    //                           edge (fb_sdram.sv's rd_cfg)
+                    // A frame holds at most 2047 bytes, so 1021 pixels; a
+                    // 1280-pixel row is two frames.
                     'h18: begin
                         if (data_cnt == 3) begin
                             // data_reg holds x_hi, x_lo, y_hi; this is y_lo.
-                            // y * 640 + x is y * 512 + y * 128 + x.
-                            // A y of 512 or more cannot be on the plane:
-                            // park the cursor past its end, where pixplane
-                            // drops the writes.
-                            if (data_reg[7:1] != 7'd0)
-                                plane_addr <= 18'h3FFFF;
-                            else
-                                plane_addr <= {data_reg[0], rx_data, 9'd0} +
-                                              {2'd0, data_reg[0], rx_data, 7'd0} +
-                                              {8'd0, data_reg[17:8]};
+                            // A coordinate too large for the cursor parks it
+                            // off the picture, where the plane drops writes.
+                            if (data_reg[23:19] != 5'd0 || data_reg[7:2] != 6'd0) begin
+                                plane_cx <= 11'd0;
+                                plane_cy <= 10'h3FF;
+                            end else begin
+                                plane_cx <= data_reg[18:8];
+                                plane_cy <= {data_reg[1:0], rx_data};
+                            end
                         end
                     end
                     'h19: begin
@@ -475,16 +494,19 @@ always @(posedge clk) begin
                             plane_hi <= rx_data;
                         end else begin
                             plane_wdata <= {plane_hi, rx_data};
-                            plane_waddr <= plane_addr;
+                            plane_wx <= plane_cx;
+                            plane_wy <= plane_cy;
                             plane_we <= 1;
-                            // Saturate rather than wrap: a cursor parked past
-                            // the end must not come back round to the top.
-                            if (plane_addr != 18'h3FFFF)
-                                plane_addr <= plane_addr + 18'd1;
+                            if (plane_cx >= PLANE_W - 11'd1) begin
+                                plane_cx <= 11'd0;
+                                if (plane_cy != 10'h3FF) plane_cy <= plane_cy + 10'd1;
+                            end else
+                                plane_cx <= plane_cx + 11'd1;
                         end
                         plane_phase <= ~plane_phase;
                     end
                     'h1a: plane_on <= rx_data[0];
+                    'h1b: plane_rd_cfg <= rx_data[3:0];
                     default: begin
                         // unknown command: consume all data and return
                     end

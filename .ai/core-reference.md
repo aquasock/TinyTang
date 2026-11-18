@@ -2612,6 +2612,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "This project's tools/desktop_open/synth.ys: the read_slang argument list"
   verification: "Observed on 2026-10-27: adding pmod_uart.sv to build.tcl alone still failed synthesis with `unknown module 'pmod_uart'` until it was added to synth.ys as well."
 
+- record_id: TOOL-023
+  kind: TOOLCHAIN
+  topic_id: TOOL
+  title: "The desktop core's timing gate read nextpnr's placement estimate whenever the routed clock failed, so no setup failure ever reached it"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "nextpnr reports each clock's maximum frequency twice, an estimate after placement and then the routed result, and prints a passing clock as `Info: Max frequency ...` and a failing one as `Warning: Max frequency ...`. `tools/desktop_open/pnr_timing.py` matched `^Info:` only and kept the last match per clock, so when the routed clock failed, its `Warning:` line was skipped and the placement estimate's `Info: ... PASS` stood. Setup failures appear nowhere else in the log: the gate's violation pattern `Setup/min time violation` is not a string nextpnr prints for setup, so hold was the only violation the gate could see. Re-read with the corrected pattern from the same logs, the ABI 1.7 sweep of 2026-11-17 still passes at all eight seeds (routed pixel clock 76.34 to 88.39 MHz), but the ABI 1.8 sweep fails at all eight, 66.68 to 71.87 MHz against 74.25, including seed 3 at 67.12 MHz, the core that was deployed and passed by the operator; its recorded 81.26 MHz was the placement estimate. The ABI 1.9 sweep passes at seed 4 only, 75.91 MHz, with 70.51 to 73.58 MHz at the others. The gate now matches both prefixes and also fails a clock whose achieved frequency is below its constraint whatever nextpnr calls it, and `tools/tests/test_pnr_timing.sh` holds three logs that pin both rules; restoring the old pattern fails it."
+  consequence: "A seed sweep's timing column before 2026-11-17 is only trustworthy where the routed clock passed; any core recorded as passing the gate should be re-read from its log before its margin is relied on. Seed choice for this core is now about the routed pixel clock, where the HDMI encoder's TMDS adder chain is the critical path. The ABI 1.8 core ran on the board 7 MHz short of its constraint, which says the slow-corner model has margin on this die at room temperature, not that the margin can be spent."
+  sources:
+    - "`tools/desktop_open/pnr_timing.py`, `tools/tests/test_pnr_timing.sh`"
+    - "Seed-sweep build logs of 2026-11-17 for desktop ABI 1.7, 1.8 and 1.9 (eight seeds each), each holding both of nextpnr's reports"
+    - "Record TDESK-021 for the ABI 1.9 core"
+  verification: "Observed on 2026-11-17 in the ABI 1.9 sweep: seed 3's gate printed `PASS desktop_sockets.pixel_clk 90.20 MHz` from line 17499 of its log while line 18072 read `Warning: Max frequency for clock 'desktop_sockets.pixel_clk': 72.65 MHz (FAIL at 74.25 MHz)`. All 24 logs were re-gated with the fix."
+
 - record_id: WII-001
   kind: EXTERNAL
   topic_id: WII
@@ -2934,3 +2948,18 @@ These ids are no longer records. Each one's facts that are still true were carri
     - "yosys with read_slang and `synth_gowin -family gw5a` on fb_sdram.sv alone, 2026-11-17"
     - "Record TDESK-019 for the 640x360 plane this replaces"
   verification: "Simulated and mutation-tested on 2026-11-17; host tests 48 of 48. Not built into a bitstream and not run on hardware."
+
+- record_id: TDESK-021
+  kind: TOOLCHAIN
+  topic_id: TDESK
+  title: "Desktop ABI 1.9: the pixel plane is 1280x720 in the dock's SDRAM, shown 1:1, and reads back every frame intact on the board at one read alignment"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "TDESK-020's `fb_sdram.sv` replaces the 640x360 block-RAM plane in the desktop core. The link's 0x18 cursor is now x and y, 0x19 runs it along a row and on to the next with y parked at 1023 off the picture, and a new frame 0x1B sets the SDRAM read alignment at run time: bits 2:0 clocks from READ to capture, bit 3 sampling on the falling edge half a clock earlier, with 3 on the rising edge at reset. Register 4 reads 0x00010009 and 0x0c reads 1280x720; 0x10 reads the plane's status (ready, sticky underrun and dropped-write bits, the alignment in force, a count of checksums taken, the longest fetch) and 0x14/0x18 a Fletcher-style checksum of the last frame scanned out, 921,600 RGB565 pixels with s2 += s1 and s1 += p in raster order, carried into the link's clock by a toggle. The SDRAM pins are TinyGBA's, its clock is an ODDR driven low after the pixel clock's rising edge and high after its falling one, and `pixplane.sv` is gone. Block RAM falls from 242 to 17 and LUT4 rises from 8,853 to 8,958. Of eight seeds only seed 4's routed pixel clock met 74.25 MHz, at 75.91 (TOOL-023); it passed the topology and SPINE17 gates and was deployed. On the board register 0x10 read 0x83cb0511: ready, no underrun, no dropped write, alignment 3, longest fetch 1,297 clocks, the same figure as simulation. `tools/plane_sweep.py` drew a 1280x720 test picture through the shell's `fpgapipe` in 9.4 seconds and tried all fourteen alignments: only 3 on the rising edge returned the frame intact, 3 frames of 3, and the half-clock neighbours on both sides failed. At that setting 7,200 consecutive frames, two minutes, all matched. An HDMI capture showed the picture full screen with its 64-pixel grid and one-pixel checkerboard, and after a power cycle the text layer and prompt were normal."
+  consequence: "The plane no longer costs the block RAM and the screen has four times the pixels at the core's native resolution. The read window is narrower than a clock and centred on the built-in 3, so the margin is real but not wide; the sweep tool exists to re-measure it if a board, module or temperature disagrees, and 0x1B moves it without a rebuild. The firmware still draws 640x360 rows, which on this core land 1:1 in the top-left quarter until the Reader learns the geometry from 0x0c."
+  sources:
+    - "`fpga/desktop/fb_sdram.sv`, `desktop_hdmi.sv`, `desktop_link.v`, `desktop_regs.sv`, `desktop_top.sv`, `desktop.cst`"
+    - "`tools/tests/sim/tb_desktop_plane.sv` and `tb_fb_sdram.sv`; `tools/plane_sweep.py`"
+    - "Build `build/desk19-s4/out/`, `desktop.bin` sha256 9c63348843e25e49d8aa3557bdc0a468bed2c8e5a9b35e66692381f072d260c3"
+    - "Records TDESK-019 (the 640x360 plane), TDESK-020 (the controller in simulation), TOOL-023 (the timing gate)"
+  verification: "Simulated: the plane bench sends UART frames through desktop_link and desktop_hdmi into the SDRAM model, 36 checks including the frame checksum, and fails when the row carry, the 0x1B decode or the cursor parking is broken. Measured on the board on 2026-11-17 by register reads, the fourteen-setting sweep, the 7,200-frame soak and an HDMI capture. Not yet looked at by the operator."
