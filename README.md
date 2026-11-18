@@ -624,13 +624,16 @@ up over the game, showing the shell, while the game keeps running.  `pad
 changes, which is how a gesture is checked without guessing (GBA-004).
 
 The Reader shows pictures at the desktop core's own pixel resolution rather
-than in block characters: desktop ABI 1.8 adds a 640x360 RGB565 plane that HDMI
-shows at 2x instead of the text layer while an app owns the screen.  It lists
+than in block characters: desktop ABI 1.9 has a 1280x720 RGB565 plane in the
+dock's SDRAM that HDMI shows 1:1 instead of the text layer while an app owns
+the screen (ABI 1.8 had 640x360 at 2x, and the Reader still draws on it).  It lists
 BMP, PPM and PGM files under `/root/media/reader`; opening one goes full screen
 and draws it row by row as the file streams in.  `+` and `-`, or A and B on the
 pad, zoom (A on the point under the pointer), the arrows and the wheel pan,
 PgUp and PgDn turn pages, `0` shows the whole picture, Esc goes back.  A
-scanned magazine page converted to a 1280-wide BMP reads at 2x (TDESK-019).
+scanned magazine page converted to a 1280-wide BMP reads comfortably at 2x
+(TDESK-022).  A whole screen takes about 9 s over the 2 Mbaud link, so each
+zoom or pan repaints visibly; only the columns a picture covers are resent.
 The Saves page shows the selected cartridge's `.sav` beside it, its save type and
 the size that type holds (found by scanning the image for its save marker, in a
 task of its own, since a GBA cartridge has no header field for it), and when the

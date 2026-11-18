@@ -1532,3 +1532,35 @@ Phase 3 teaches the Reader the new geometry: read width and height from register
 - User Test: NOT RUN
 
 ---
+## 47 COMMIT Unreleased 2026-11-17T18:54:49-07:00
+
+#### Coming From:
+
+Unreleased 12895d5
+
+#### Purpose:
+
+Teach the plane driver and the Reader the plane's reported size, so pictures draw at 1280x720 on the ABI 1.9 core and still at 640x360 on an ABI 1.8 one.
+
+#### Outcome:
+
+The Reader draws at 1280x720 on the SDRAM plane and the operator passed it (TDESK-022). `tang_plane_size` reads register 0x0c once per loaded core with a fallback by ABI, `tang_plane_write` sends a run of up to the plane's width as a cursor frame and 640-pixel frames, and the Reader fits, scales and maps clicks to the size it is given and resends only the columns a picture can cover. Firmware `12895d5-dirty.22ce042` built without warnings in the changed files, was installed with `tools/tinytang_flash.py --yes` on the port found by USB identity and booted by the relay sequence, and `platform` and `fpgar` confirmed the build, ABI `0x00010009` and geometry `0x050002d0`. The operator opened the magazine page, zoomed in with A, reported that the input seemed to stop and then that it worked but was laggy, and passed it; an HDMI capture at 2x shows the page's text sharp and readable. The lag is the link: a full 1280-pixel row is 2.5 KB, about 12.8 ms at 2 Mbaud, so each zoom repaints visibly before the next input is drawn. Host tests are 49 of 49. The card's `bl616-firmware.bin` was not refreshed. The ESP32 another agent drives was not touched. README describes the Reader on the new plane. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and TDESK-022 only, and this entry was validated as number 47 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 178 records.
+
+#### Next Steps:
+
+The Reader's lag is the next thing worth removing, by a faster link between the BL616 and the core, which was the plan's optional fourth phase, or by redrawing only what a pan exposes and moving the rest within the SDRAM. The TMDS encoder's adder chain still decides whether a seed meets the pixel clock and is worth pipelining before the next change to the core. The card's `bl616-firmware.bin` is older than the running firmware and should be refilled with `tools/tinytang_card_firmware.py` before a release. Earlier items stand: the shell `gbaload` stall, game-core desk fonts without the block glyphs, `pad` and ctrl-c, and feedback during the exit save.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_plane.c
+- ports/bl616/tang_plane.h
+- ports/bl616/tinyreader_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

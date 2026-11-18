@@ -2963,3 +2963,16 @@ These ids are no longer records. Each one's facts that are still true were carri
     - "Build `build/desk19-s4/out/`, `desktop.bin` sha256 9c63348843e25e49d8aa3557bdc0a468bed2c8e5a9b35e66692381f072d260c3"
     - "Records TDESK-019 (the 640x360 plane), TDESK-020 (the controller in simulation), TOOL-023 (the timing gate)"
   verification: "Simulated: the plane bench sends UART frames through desktop_link and desktop_hdmi into the SDRAM model, 36 checks including the frame checksum, and fails when the row carry, the 0x1B decode or the cursor parking is broken. Measured on the board on 2026-11-17 by register reads, the fourteen-setting sweep, the 7,200-frame soak and an HDMI capture. Not yet looked at by the operator."
+
+- record_id: TDESK-022
+  kind: TOOLCHAIN
+  topic_id: TDESK
+  title: "The Reader draws at the plane's reported size, 1280x720 on desktop ABI 1.9, and a scanned magazine page reads comfortably at 2x"
+  status: VERIFIED
+  verified_date: 2026-11-17
+  statement: "`tang_plane_size` reads the plane's width and height from the core's register 0x0c once per loaded core, keyed by the cached ABI word, and falls back to 640x360 for ABI 1.8 or 1280x720 for 1.9 if the register does not answer. `tang_plane_write` takes a run of up to the plane's width and sends it as one cursor frame and frames of 640 pixels, since one frame carries at most 1,021. The Reader takes the size when a picture opens, fits and scales to it, maps a screen cell to 8 or 16 plane pixels to match, and sends only the columns that this picture or the last one can cover, clearing the rest of the plane once when it is shown, so a portrait page's black margins are not resent on every row. Firmware `12895d5-dirty.22ce042` with the ABI 1.9 core read geometry 0x050002d0 on the board, and the operator opened the 1280x1726 magazine page, zoomed with A, found it working but laggy, and passed it. An HDMI capture at 2x showed the page 1,068 pixels wide with its body text sharp and readable."
+  consequence: "The plane's fourfold pixel count reaches the screen, and the Reader still runs on a 640x360 core. Every repaint now moves up to four times the data over the same 2 Mbaud link, about 12.8 ms per full row, which is the lag the operator saw on zoom; a faster link or redrawing only what a pan exposes is what would remove it."
+  sources:
+    - "`ports/bl616/tang_plane.c`, `tang_plane.h`, `tinyreader_app.cpp`"
+    - "Records TDESK-019 (the Reader at 640x360) and TDESK-021 (the ABI 1.9 plane)"
+  verification: "Operator test on 2026-11-17, passed, with an HDMI capture of the zoomed page; host tests 49 of 49."

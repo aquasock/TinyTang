@@ -2,18 +2,21 @@
 //
 // TinyDesk's Image Viewer draws with block characters, so on this board's
 // 80x45 grid a page is about 60x82 picture pixels and text cannot be read.
-// Desktop ABI 1.8 gives the core a 640x360 RGB565 plane (pixplane.sv,
-// tang_plane.h); this app owns the whole screen with it, the way an app blits
-// into a panel on TinyDesk's LCD ports, and draws the picture at the plane's
-// own resolution with zoom and pan.
+// The desktop core has an RGB565 plane (tang_plane.h): 1280x720 in the dock's
+// SDRAM, shown 1:1, from desktop ABI 1.9, and 640x360 shown at 2x on ABI 1.8.
+// This app owns the whole screen with it, the way an app blits into a panel on
+// TinyDesk's LCD ports, and draws the picture at whatever size the plane
+// reports, with zoom and pan.
 //
 // The window is a list of pictures under /root/media/reader.  Opening one makes
 // the window full screen -- so every key and click comes here -- shows the plane,
 // and starts a task that streams the file row by row through TinyDesk's own
 // reader (td_image_*: BMP, PPM, PGM), box-filters each row down to the plane or
 // repeats pixels when zoomed past 1:1, and sends each finished row as it
-// completes.  Nothing holds a whole picture: a source row, one accumulator row
-// and the mapping tables, about 15 KB for a 1280-wide page.
+// completes.  Nothing holds a whole picture: a source row and one accumulator
+// row, about 22 KB for a 1280-wide page on the 1280x720 plane.  Only the
+// columns that can hold picture are sent -- this picture's and the last one's
+// -- so the black margins beside a page are cleared once, not on every row.
 //
 // While a picture is up:
 //   +  -           zoom in and out (1x is the whole picture, up to 8x)
@@ -90,6 +93,12 @@ volatile int32_t s_iw, s_ih;            // the picture
 volatile int32_t s_vw, s_vh;            // the part of it on screen
 volatile int32_t s_sx0, s_sy0;          // its top-left corner
 volatile int32_t s_ox, s_oy, s_dw, s_dh; // where it lies on the plane
+int32_t s_pw = 640, s_ph = 360;         // the plane, from tang_plane_size at open
+
+/* The columns of the plane that may hold anything but black: what a render
+ * must cover so nothing of the last picture is left.  Unknown, so all of it,
+ * whenever the plane is newly shown. */
+int32_t s_lit_l = 0, s_lit_r = TANG_PLANE_MAX_WIDTH;
 
 /* ------------------------------------------------------------ the list */
 
@@ -224,8 +233,9 @@ inline uint16_t rgb565(uint32_t r, uint32_t g, uint32_t b)
  * scaled by the zoom; s is the plane pixels per picture pixel in 16.16. */
 void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
 {
-    static uint16_t out[TANG_PLANE_WIDTH];
-    static uint8_t sent[(TANG_PLANE_HEIGHT + 7) / 8];
+    static uint16_t out[TANG_PLANE_MAX_WIDTH];
+    static uint8_t sent[(TANG_PLANE_MAX_HEIGHT + 7) / 8];
+    const int32_t PW = s_pw, PH = s_ph;
     td_image_t img;
     char err[64];
     if (!td_image_load(&img, td_sysinfo()->fs, path, err, (int)sizeof err)) {
@@ -234,21 +244,21 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
         return;
     }
     const int32_t iw = img.w, ih = img.h;
-    const uint64_t fit = (uint64_t)65536 * TANG_PLANE_WIDTH / (uint64_t)iw <
-                                 (uint64_t)65536 * TANG_PLANE_HEIGHT / (uint64_t)ih
-                             ? (uint64_t)65536 * TANG_PLANE_WIDTH / (uint64_t)iw
-                             : (uint64_t)65536 * TANG_PLANE_HEIGHT / (uint64_t)ih;
+    const uint64_t fit = (uint64_t)65536 * PW / (uint64_t)iw <
+                                 (uint64_t)65536 * PH / (uint64_t)ih
+                             ? (uint64_t)65536 * PW / (uint64_t)iw
+                             : (uint64_t)65536 * PH / (uint64_t)ih;
     const uint64_t s = fit * (uint64_t)zoom;
-    int32_t vw = (int32_t)(((uint64_t)TANG_PLANE_WIDTH << 16) / s);
-    int32_t vh = (int32_t)(((uint64_t)TANG_PLANE_HEIGHT << 16) / s);
+    int32_t vw = (int32_t)(((uint64_t)PW << 16) / s);
+    int32_t vh = (int32_t)(((uint64_t)PH << 16) / s);
     if (vw > iw) vw = iw;
     if (vh > ih) vh = ih;
     if (vw < 1) vw = 1;
     if (vh < 1) vh = 1;
     int32_t dw = (int32_t)(((uint64_t)vw * s) >> 16);
     int32_t dh = (int32_t)(((uint64_t)vh * s) >> 16);
-    if (dw > TANG_PLANE_WIDTH) dw = TANG_PLANE_WIDTH;
-    if (dh > TANG_PLANE_HEIGHT) dh = TANG_PLANE_HEIGHT;
+    if (dw > PW) dw = PW;
+    if (dh > PH) dh = PH;
     if (dw < 1) dw = 1;
     if (dh < 1) dh = 1;
     if (cx < 0) cx = iw / 2;
@@ -258,7 +268,7 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
     if (sy0 > ih - vh) sy0 = ih - vh;
     if (sx0 < 0) sx0 = 0;
     if (sy0 < 0) sy0 = 0;
-    const int32_t ox = (TANG_PLANE_WIDTH - dw) / 2, oy = (TANG_PLANE_HEIGHT - dh) / 2;
+    const int32_t ox = (PW - dw) / 2, oy = (PH - dh) / 2;
     s_iw = iw; s_ih = ih; s_vw = vw; s_vh = vh; s_sx0 = sx0; s_sy0 = sy0;
     s_ox = ox; s_oy = oy; s_dw = dw; s_dh = dh;
     s_cx = sx0 + vw / 2;
@@ -279,14 +289,17 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
     const uint64_t inv = ((uint64_t)1 << 32) / s;     // picture pixels per plane pixel, 16.16
     int32_t cur = -1;
 
+    /* Each row covers this picture's columns and the last one's. */
+    const int32_t L = ox < s_lit_l ? ox : s_lit_l;
+    const int32_t R = ox + dw > s_lit_r ? ox + dw : (s_lit_r > PW ? PW : s_lit_r);
     auto send = [&](int32_t ty, const uint16_t *px) {
         const int32_t py = oy + ty;
-        for (int32_t x = 0; x < TANG_PLANE_WIDTH; x++) out[x] = 0;
+        for (int32_t x = L; x < R; x++) out[x] = 0;
         memcpy(out + ox, px, (size_t)dw * 2);
-        (void)tang_plane_write(0, py, out, TANG_PLANE_WIDTH);
+        (void)tang_plane_write(L, py, out + L, R - L);
         sent[py >> 3] |= (uint8_t)(1u << (py & 7));
     };
-    static uint16_t line[TANG_PLANE_WIDTH];
+    static uint16_t line[TANG_PLANE_MAX_WIDTH];
     auto flush = [&](void) {
         if (cur < 0) return;
         for (int32_t tx = 0; tx < dw; tx++) {
@@ -339,12 +352,21 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
         /* Every row the picture did not reach -- the margins above and below,
          * and any a rounding skipped -- is cleared, so nothing of the last
          * picture is left on the plane. */
-        static uint16_t black[TANG_PLANE_WIDTH];
-        for (int32_t py = 0; py < TANG_PLANE_HEIGHT && s_gen == gen; py++) {
+        for (int32_t x = L; x < R; x++) out[x] = 0;
+        for (int32_t py = 0; py < PH && s_gen == gen; py++) {
             if (!(sent[py >> 3] & (1u << (py & 7)))) {
-                (void)tang_plane_write(0, py, black, TANG_PLANE_WIDTH);
+                (void)tang_plane_write(L, py, out + L, R - L);
             }
         }
+    }
+    /* Finished, only this picture's columns can be lit; abandoned part way,
+     * any of them can. */
+    if (s_gen == gen) {
+        s_lit_l = ox;
+        s_lit_r = ox + dw;
+    } else {
+        s_lit_l = L;
+        s_lit_r = R;
     }
     free(row); free(acc); free(cnt);
     td_image_close(&img);
@@ -403,6 +425,13 @@ void view_enter(int index)
         return;
     }
     if (!open_index(index)) return;
+    int w = 0, h = 0;
+    if (tang_plane_size(&w, &h)) {
+        s_pw = w;
+        s_ph = h;
+    }
+    s_lit_l = 0;
+    s_lit_r = s_pw;                     // whatever the plane holds is unknown
     s_viewing = true;
     td_win_set_fullscreen(s_win, true);
     if (tang_plane_show(true) == 0) s_plane_on = true;
@@ -447,10 +476,12 @@ void pan(int dx, int dy)
     zoom_at(s_zoom, s_cx + dx * sx, s_cy + dy * sy);
 }
 
-/* A screen cell is 8x8 plane pixels; this is the picture pixel under one. */
+/* The screen is 80x45 cells, so a cell is 8x8 plane pixels on the 640x360
+ * plane and 16x16 on the 1280x720 one; this is the picture pixel under one. */
 void cell_to_picture(int cell_x, int cell_y, int32_t *px, int32_t *py)
 {
-    const int32_t x = cell_x * 8 + 4 - s_ox, y = cell_y * 8 + 4 - s_oy;
+    const int32_t cw = s_pw / 80, ch = s_ph / 45;
+    const int32_t x = cell_x * cw + cw / 2 - s_ox, y = cell_y * ch + ch / 2 - s_oy;
     if (x < 0 || y < 0 || x >= s_dw || y >= s_dh || s_dw <= 0 || s_dh <= 0) {
         *px = s_cx;
         *py = s_cy;
