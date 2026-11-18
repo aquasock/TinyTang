@@ -136,7 +136,11 @@ else()
     # incomplete set rather than crashing (td_widgets.h).
     sdk_add_compile_definitions(
         -DTD_MAX_COLS=80 -DTD_MAX_ROWS=45
-        -DTD_VT_SCROLLBACK=4 -DTD_MAX_WIDGETS=64)
+        -DTD_VT_SCROLLBACK=4 -DTD_MAX_WIDGETS=64
+        -DTD_SCREENS=1 -DTD_TERMINAL_KEEP_SCREEN=0)
+    # One terminal (the desk layer; no second screen) and the Terminal app's
+    # screen only while a window shows it -- TinyDesk patches 0005 and 0006,
+    # together about 20 KB of RAM.
     # This port registers twenty-four apps since the Reader (TinyDesk 0.5's Image
     # Viewer and Recycle Bin, the port's console apps and readers), and
     # TinyDesk's registry answers -1 past its size, silently: an app registered

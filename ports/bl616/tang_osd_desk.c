@@ -1,10 +1,17 @@
 // TinyTang — the desktop layer, driven from the console tap.
 //
 // See tang_osd_desk.h for what this is and why it is shaped this way.  This
-// file is the mechanism: a terminal emulator sized to the layer, a shadow of
-// what the core has been told, a diff, and a task that sends it.
+// file is the mechanism, in two modes.  For the console: a terminal emulator
+// sized to the layer, a shadow of what the core has been told, a diff, and a
+// task that sends it.  For the desktop: TinyDesk draws the layer itself
+// (TinyDesk patch 0005, a local display) -- the task diffs TinyDesk's composed
+// screen against TinyDesk's own front buffer, which records what the core has
+// been told, and sends the difference.  No escape sequences, no emulator; the
+// console's emulator and shadow (about 30 KB) are freed for as long as the
+// desktop runs.
 
 #include "tang_osd_desk.h"
+#include "tang_osd_desk_local.h"
 #include "tang_osd.h"
 #include "tang_fpga_link.h"
 #include "tang_pad.h"
@@ -20,9 +27,13 @@ _Static_assert(sizeof(TANG_DESK_SIZE_QUERY) - 1 == TANG_DESK_SIZE_QUERY_LEN,
 
 #include <string.h>
 
+#include <stdlib.h>
+
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
+#include "tinydesk/td.h"
 #include "tinydesk/td_config.h"
 #include "tinydesk/td_screen.h"
 #include "tinydesk/td_vterm.h"
@@ -67,9 +78,25 @@ typedef struct {
 
 static desk_kbd_t   s_ble;
 
-static td_vterm_t  s_vt;
+/* The console's emulator, and the shadow of what the core has been told of
+ * it: about 30 KB, taken from the heap while the layer shows the console and
+ * given back while TinyDesk draws the layer itself (s_local). */
+typedef struct {
+    td_vterm_t vt;
+    td_vcell_t shadow[TANG_DESK_ROWS][TANG_DESK_COLS];
+} desk_console_t;
+static desk_console_t *s_con;
+#define s_vt     (s_con->vt)
+#define s_shadow (s_con->shadow)
 
-static td_vcell_t  s_shadow[TANG_DESK_ROWS][TANG_DESK_COLS];
+/* TinyDesk draws the layer: its screen and its record of what the core shows
+ * are read under s_frame_lock, which TinyDesk holds while it composes. */
+static volatile bool     s_local;
+static SemaphoreHandle_t s_frame_lock;
+static TaskHandle_t      s_task;
+
+static void desk_invalidate(void);
+static bool desk_lock(void);
 
 /* Block glyphs.  TinyDesk draws pictures with half-block and quadrant
  * characters, and its scrollbars and lists with shades and pointers; the
@@ -90,10 +117,8 @@ void tang_osd_desk_set_block_glyphs(bool on)
     /* The shadow records what each cell held in Unicode, not what was sent, so
      * a change of font would not resend a cell that did not change.  Forget
      * the shadow and the next flush repaints the grid in the new mapping. */
-    taskENTER_CRITICAL();
     s_blocks = on;
-    memset(s_shadow, 0xFF, sizeof s_shadow);
-    taskEXIT_CRITICAL();
+    desk_invalidate();
 }
 
 bool tang_osd_desk_block_glyphs(void)
@@ -271,6 +296,118 @@ static td_vcell_t pointer_cell(const td_vcell_t c, int x, int y)
     return p;
 }
 
+/* One cell into the payload, in the core's form. */
+static void put_cell(int *n, const td_vcell_t c)
+{
+    const uint16_t f = s_pal[c.fg];
+    const uint16_t b = s_pal[c.bg];
+
+    /* The core's font is ASCII (FONT[0:127]) and the desktop draws its
+     * window frames with box-drawing glyphs.  Mapping here, rather than
+     * switching the desktop into ASCII mode, keeps the console's proper
+     * Unicode boxes while the layer gets the + - | # the font actually
+     * has.  Anything with no ASCII form becomes '?', which is visibly
+     * wrong rather than silently wrong -- masking a 16-bit code point
+     * to seven bits turns U+2554 into 'T' and a frame into nonsense.
+     * The mapping is tinydesk's own, so the two cannot disagree. */
+    uint32_t ch = c.ch;
+    if (ch >= 0x80u) {
+        const uint8_t slot = s_blocks ? tang_osd_desk_block_slot(ch) : 0u;
+        ch = slot != 0u ? slot : td_ascii_fallback(ch);
+    }
+
+    s_payload[(*n)++] = (uint8_t)(ch & 0x7Fu);
+    s_payload[(*n)++] = (uint8_t)(f >> 8);
+    s_payload[(*n)++] = (uint8_t)(f & 0xFFu);
+    s_payload[(*n)++] = (uint8_t)(b >> 8);
+    s_payload[(*n)++] = (uint8_t)(b & 0xFFu);
+}
+
+/* A TinyDesk cell as the console's emulator would have left it after reading
+ * TinyDesk's escape sequences: bold brightens a system colour, reverse swaps
+ * the two, and a code point past 16 bits is '?' (vterm.c put_char).  So the
+ * layer looks the same in either mode. */
+static td_vcell_t local_cell(const td_cell_t c)
+{
+    uint8_t fg = c.fg, bg = c.bg;
+    if ((c.attr & TD_BOLD) && fg < 8) {
+        fg = (uint8_t)(fg + 8);
+    }
+    if (c.attr & TD_REVERSE) {
+        const uint8_t t = fg;
+        fg = bg;
+        bg = t;
+    }
+    td_vcell_t v = { (c.ch > 0xFFFFu) ? (uint16_t)'?' : (uint16_t)c.ch, fg, bg };
+    return v;
+}
+
+/* Local mode: one row of TinyDesk's screen, with the pointer, against
+ * TinyDesk's front buffer -- which records what the core holds, in the
+ * console emulator's terms (attr 0) -- and the span that differs sent.
+ *
+ * The frame lock (TinyDesk composing) and the link lock are never held
+ * together: the span is read under the first, sent under the second, and
+ * recorded under the first again.  Holding both would deadlock against a
+ * desktop app that talks to the core while it draws.  What is recorded is
+ * what was sent, so a screen that changed meanwhile is simply different from
+ * the record on the next pass.  -1 is a failed send (the record is then
+ * unknown), 0 nothing sent for want of the link, 1 done. */
+static td_vcell_t s_span[TANG_DESK_COLS];
+
+static int flush_local_row(int y)
+{
+    int first = -1, last = -1;
+    xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+    const td_buffer_t *screen = td_display_screen();
+    const td_buffer_t *shown = td_display_shown();
+    if (y < screen->rows && screen->cols >= TANG_DESK_COLS && shown->cols >= TANG_DESK_COLS) {
+        const td_cell_t *row = &screen->cells[y * screen->cols];
+        const td_cell_t *have = &shown->cells[y * shown->cols];
+        for (int x = 0; x < TANG_DESK_COLS; x++) {
+            const td_vcell_t c = pointer_cell(local_cell(row[x]), x, y);
+            s_span[x] = c;
+            if (c.ch != have[x].ch || c.fg != have[x].fg || c.bg != have[x].bg ||
+                have[x].attr != 0) {
+                if (first < 0) {
+                    first = x;
+                }
+                last = x;
+            }
+        }
+    }
+    xSemaphoreGive(s_frame_lock);
+    if (first < 0) {
+        return 1;
+    }
+
+    int n = 0;
+    for (int x = first; x <= last; x++) {
+        put_cell(&n, s_span[x]);
+    }
+    if (!desk_lock()) {
+        return 0;
+    }
+    const bool ok = send_cursor((uint8_t)first, (uint8_t)y) &&
+                    send_cells(s_payload, (size_t)(last - first + 1));
+    tang_fpga_unlock();
+    if (!ok) {
+        return -1;
+    }
+    s_rows++;
+
+    xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+    td_cell_t *have = &td_display_shown()->cells[y * td_display_shown()->cols];
+    for (int x = first; x <= last; x++) {
+        have[x].ch = s_span[x].ch;
+        have[x].fg = s_span[x].fg;
+        have[x].bg = s_span[x].bg;
+        have[x].attr = 0;
+    }
+    xSemaphoreGive(s_frame_lock);
+    return 1;
+}
+
 /* Compare one row against the shadow and send the span that differs.
  *
  * The shadow is updated while the row is copied, inside the critical section,
@@ -298,28 +435,7 @@ static bool flush_row(int y)
     if (first >= 0) {
         for (int x = first; x <= last; x++) {
             const td_vcell_t c = pointer_cell(s_vt.cells[y * TD_VT_MAX_COLS + x], x, y);
-            const uint16_t f = s_pal[c.fg];
-            const uint16_t b = s_pal[c.bg];
-
-            /* The core's font is ASCII (FONT[0:127]) and the desktop draws its
-             * window frames with box-drawing glyphs.  Mapping here, rather than
-             * switching the desktop into ASCII mode, keeps the console's proper
-             * Unicode boxes while the layer gets the + - | # the font actually
-             * has.  Anything with no ASCII form becomes '?', which is visibly
-             * wrong rather than silently wrong -- masking a 16-bit code point
-             * to seven bits turns U+2554 into 'T' and a frame into nonsense.
-             * The mapping is tinydesk's own, so the two cannot disagree. */
-            uint32_t ch = c.ch;
-            if (ch >= 0x80u) {
-                const uint8_t slot = s_blocks ? tang_osd_desk_block_slot(ch) : 0u;
-                ch = slot != 0u ? slot : td_ascii_fallback(ch);
-            }
-
-            s_payload[n++] = (uint8_t)(ch & 0x7Fu);
-            s_payload[n++] = (uint8_t)(f >> 8);
-            s_payload[n++] = (uint8_t)(f & 0xFFu);
-            s_payload[n++] = (uint8_t)(b >> 8);
-            s_payload[n++] = (uint8_t)(b & 0xFFu);
+            put_cell(&n, c);
             s_shadow[y][x] = c;
         }
     }
@@ -354,9 +470,65 @@ static bool desk_lock(void)
     return tang_fpga_lock_within(DESK_LOCK_MS);
 }
 
+/* Whatever the core holds is unknown: the next flush sends every cell.  The
+ * console's shadow is under the link lock's protection from a flush (the
+ * caller may hold it); TinyDesk's record is under the frame lock, which is
+ * never taken with the link lock held. */
+static void console_invalidate(void)
+{
+    taskENTER_CRITICAL();
+    if (s_con != NULL) {
+        for (int y = 0; y < TANG_DESK_ROWS; y++) {
+            for (int x = 0; x < TANG_DESK_COLS; x++) {
+                s_shadow[y][x].ch = 0xFFFFu;
+            }
+        }
+    }
+    taskEXIT_CRITICAL();
+}
+
+static void desk_invalidate(void)
+{
+    if (s_local) {
+        xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+        td_buffer_invalidate(td_display_shown());
+        xSemaphoreGive(s_frame_lock);
+        return;
+    }
+    console_invalidate();
+}
+
+/* Local mode: every row, each taking its own locks (flush_local_row). */
+static void flush_local(void)
+{
+    if (tang_fpga_link_open() != 0 || tang_fpga_pipe_open()) {
+        return;
+    }
+    for (int y = 0; y < TANG_DESK_ROWS; y++) {
+        const int r = flush_local_row(y);
+        if (r < 0) {
+            desk_invalidate();
+            s_dropped++;
+        }
+        if (r <= 0) {
+            break;
+        }
+    }
+}
+
+/* The mode and the console are switched only under the link lock
+ * (tang_osd_desk_local_begin/end), so neither changes under a flush. */
 static void flush(void)
 {
+    if (s_local) {
+        flush_local();
+        return;
+    }
     if (!desk_lock()) {
+        return;
+    }
+    if (s_local || s_con == NULL) {
+        tang_fpga_unlock();
         return;
     }
     for (int y = 0; y < TANG_DESK_ROWS; y++) {
@@ -365,11 +537,7 @@ static void flush(void)
              * already updated, so invalidate everything: the next poll
              * repaints from scratch rather than leaving the core and the
              * emulator quietly disagreeing. */
-            for (int yy = 0; yy < TANG_DESK_ROWS; yy++) {
-                for (int xx = 0; xx < TANG_DESK_COLS; xx++) {
-                    s_shadow[yy][xx].ch = 0xFFFFu;
-                }
-            }
+            console_invalidate();
             s_dropped++;
             break;
         }
@@ -549,11 +717,7 @@ static void desk_poll(void)
          * which put TinyDesk back over a running game. */
         (void)tang_osd_reassert();
         /* Whatever the core holds is unknown, so everything goes again. */
-        for (int y = 0; y < TANG_DESK_ROWS; y++) {
-            for (int x = 0; x < TANG_DESK_COLS; x++) {
-                s_shadow[y][x].ch = 0xFFFFu;
-            }
-        }
+        desk_invalidate();
     }
 
     uint16_t joy1 = 0, joy2 = 0;
@@ -716,8 +880,11 @@ static void desk_poll_hidden(void)
 static void desk_task(void *arg)
 {
     (void)arg;
+    s_task = xTaskGetCurrentTaskHandle();
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(DESK_POLL_MS));
+        /* A poll every DESK_POLL_MS, or at once when TinyDesk has composed a
+         * frame (local_frame), so a click is not answered 40 ms late. */
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DESK_POLL_MS));
         if (s_enabled) {
             desk_poll();
             flush();
@@ -745,9 +912,109 @@ void tang_osd_desk_feed(const void *data, size_t length)
     if (!s_enabled) {
         return;
     }
+    /* While TinyDesk draws the layer, the console's text is not on it. */
     taskENTER_CRITICAL();
-    td_vterm_write(&s_vt, (const uint8_t *)data, (int)length);
+    if (s_con != NULL) {
+        td_vterm_write(&s_vt, (const uint8_t *)data, (int)length);
+    }
     taskEXIT_CRITICAL();
+}
+
+/* The console's emulator and shadow, fresh: a blank grid that matches nothing
+ * the core holds.  0 or -1 when the heap has no room for it. */
+static int console_open(void)
+{
+    if (s_con == NULL) {
+        desk_console_t *c = malloc(sizeof *c);
+        if (c == NULL) {
+            return -1;
+        }
+        taskENTER_CRITICAL();
+        s_con = c;
+        taskEXIT_CRITICAL();
+    }
+    taskENTER_CRITICAL();
+    td_vterm_init(&s_vt, TANG_DESK_COLS, TANG_DESK_ROWS);
+    s_vt.reply = desk_reply;
+    s_vt.reply_user = NULL;
+    for (int y = 0; y < TANG_DESK_ROWS; y++) {
+        for (int x = 0; x < TANG_DESK_COLS; x++) {
+            s_shadow[y][x].ch = 0xFFFFu;
+            s_shadow[y][x].fg = 0xFFu;
+            s_shadow[y][x].bg = 0xFFu;
+        }
+    }
+    taskEXIT_CRITICAL();
+    return 0;
+}
+
+static void console_close(void)
+{
+    taskENTER_CRITICAL();
+    desk_console_t *c = s_con;
+    s_con = NULL;
+    taskEXIT_CRITICAL();
+    free(c);
+}
+
+/* ------------------------------------------------- TinyDesk draws the layer */
+
+static void local_lock(void *ctx)
+{
+    (void)ctx;
+    xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+}
+
+static void local_unlock(void *ctx)
+{
+    (void)ctx;
+    xSemaphoreGive(s_frame_lock);
+}
+
+static void local_frame(void *ctx)
+{
+    (void)ctx;
+    if (s_task != NULL) {
+        xTaskNotifyGive(s_task);
+    }
+}
+
+const td_local_display_t *tang_osd_desk_local_begin(void)
+{
+    static const td_local_display_t display = {
+        TANG_DESK_COLS, TANG_DESK_ROWS, local_frame, local_lock, local_unlock, NULL,
+    };
+    if (!s_enabled) {
+        return NULL;            /* no layer: the desktop draws to a terminal */
+    }
+    if (s_frame_lock == NULL) {
+        s_frame_lock = xSemaphoreCreateMutex();
+        if (s_frame_lock == NULL) {
+            return NULL;
+        }
+    }
+    tang_fpga_lock();           /* not under a flush (see flush) */
+    s_local = true;
+    console_close();
+    tang_fpga_unlock();
+    return &display;
+}
+
+void tang_osd_desk_local_end(void)
+{
+    if (!s_local) {
+        return;
+    }
+    /* Back to the console on a blank grid; the next flush clears what the
+     * desktop left on the layer.  With no room for the console, the layer
+     * goes off rather than freeze on the last desktop frame. */
+    tang_fpga_lock();           /* not under a flush (see flush) */
+    s_local = false;
+    const int rc = s_enabled ? console_open() : 0;
+    tang_fpga_unlock();
+    if (rc != 0) {
+        (void)tang_osd_desk_set(false);
+    }
 }
 
 /* ----------------------------------------------------------- the interface */
@@ -756,6 +1023,11 @@ int tang_osd_desk_set(bool on)
 {
     if (!on) {
         s_enabled = false;
+        if (!s_local) {
+            tang_fpga_lock();   /* not under a flush (see flush) */
+            console_close();
+            tang_fpga_unlock();
+        }
         if (tang_fpga_link_open() != 0) {
             return -1;
         }
@@ -784,17 +1056,12 @@ int tang_osd_desk_set(bool on)
     tang_pad_reset(&s_pad, TANG_DESK_COLS, TANG_DESK_ROWS);
     tang_wiipad_reset();
     tang_key_reset(&s_ble.kbd);
-    td_vterm_init(&s_vt, TANG_DESK_COLS, TANG_DESK_ROWS);
-    s_vt.reply = desk_reply;
-    s_vt.reply_user = NULL;
-
-    /* Nothing has been sent yet, so nothing matches: force a full repaint. */
-    for (int y = 0; y < TANG_DESK_ROWS; y++) {
-        for (int x = 0; x < TANG_DESK_COLS; x++) {
-            s_shadow[y][x].ch = 0xFFFFu;
-            s_shadow[y][x].fg = 0xFFu;
-            s_shadow[y][x].bg = 0xFFu;
-        }
+    /* Nothing has been sent yet, so nothing matches: a full repaint, from the
+     * console's emulator or from TinyDesk's screen. */
+    if (s_local) {
+        desk_invalidate();
+    } else if (console_open() != 0) {
+        return -1;
     }
     s_cells = s_rows = s_dropped = 0;
 

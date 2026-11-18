@@ -1,0 +1,535 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 233e68c..73f9e2e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -341,7 +341,7 @@ if(TD_BUILD_TESTS)
+         target_compile_options(test_users_storage PRIVATE -Wall -Wextra -Werror)
+         add_test(NAME test_users_storage COMMAND test_users_storage)
+     endif()
+-    foreach(t test_utf8 test_input test_render test_vterm test_wm test_select test_widgets test_canvas test_link test_font)
++    foreach(t test_utf8 test_input test_render test_vterm test_wm test_select test_widgets test_canvas test_link test_local_display test_font)
+         add_executable(${t} tests/${t}.c)
+         target_link_libraries(${t} PRIVATE tinydesk_core)
+         set_target_properties(${t} PROPERTIES C_STANDARD 11)
+diff --git a/api/tinydesk.api b/api/tinydesk.api
+index 8452af9..bcffae5 100644
+--- a/api/tinydesk.api
++++ b/api/tinydesk.api
+@@ -17,6 +17,10 @@ td.h: bool td_screens_display(int index, td_display_info_t *out);
+ td.h: void td_screens_set_mode(int mode);
+ td.h: int td_screens_mode(void);
+ td.h: void td_frame_hold(uint32_t timeout_ms);
++td.h: typedef struct { int cols, rows; void (*frame)(void *ctx); void (*lock)(void *ctx); void (*unlock)(void *ctx); void *ctx; } td_local_display_t;
++td.h: void td_set_local_display(const td_local_display_t *display);
++td.h: const td_buffer_t *td_display_screen(void);
++td.h: td_buffer_t *td_display_shown(void);
+ td.h: uint32_t td_millis(void);
+ td.h: uint32_t td_uptime_ms(void);
+ td.h: const td_stats_t *td_stats(void);
+@@ -224,6 +228,7 @@ td_canvas.h: uint8_t td_rgb256_dither(uint8_t r, uint8_t g, uint8_t b, int x, in
+ td_config.h: #define TD_MAX_COLS 400
+ td_config.h: #define TD_MAX_ROWS 150
+ td_config.h: #define TD_DRAG_MAX 64
++td_config.h: #define TD_SCREENS 2
+ td_config.h: #define TD_MAX_MONITORS 2
+ td_config.h: #define TD_MAX_SCREEN_COLS (2 * TD_MAX_COLS)
+ td_config.h: #define TD_MAX_SCREEN_ROWS (2 * TD_MAX_ROWS)
+diff --git a/include/tinydesk/td.h b/include/tinydesk/td.h
+index e857e99..e051e59 100644
+--- a/include/tinydesk/td.h
++++ b/include/tinydesk/td.h
+@@ -88,6 +88,30 @@ int td_screens_mode(void);
+  * it). Input and timers keep running. Used for bounded drawing batches. */
+ void td_frame_hold(uint32_t timeout_ms);
+ 
++  /* A local display: a port that draws the screen itself, from cells, in
++ * place of a terminal on the HAL -- an LCD, or the text layer of an FPGA.
++ * Set before td_init (NULL, the default, is a terminal). The screen is then
++ * cols x rows, no escape sequences are written to the HAL for the primary
++ * display and no size is asked for; the HAL's read_byte still brings input.
++ * After each composed frame frame() is called. td_display_screen() is what
++ * the screen should show, and td_display_shown() is the port's own record of
++ * what it does show, which the port keeps as it draws and TinyDesk only
++ * invalidates (td_full_redraw, a resize). lock / unlock (both optional)
++ * bracket each composition, so a port that draws from another task can hold
++ * the screen still while it reads it. Saves the escape-sequence round trip
++ * and the terminal emulator a port would otherwise run to get cells back. */
++typedef struct
++{
++    int cols, rows;
++    void (*frame)(void *ctx);
++    void (*lock)(void *ctx);
++    void (*unlock)(void *ctx);
++    void *ctx;
++} td_local_display_t;
++void td_set_local_display(const td_local_display_t *display);
++const td_buffer_t *td_display_screen(void);
++td_buffer_t *td_display_shown(void);
++
+   /* Milliseconds from the HAL. */
+ uint32_t td_millis(void);
+ 
+diff --git a/include/tinydesk/td_config.h b/include/tinydesk/td_config.h
+index 9461c95..e519514 100644
+--- a/include/tinydesk/td_config.h
++++ b/include/tinydesk/td_config.h
+@@ -22,6 +22,14 @@
+ #define TD_DRAG_MAX 64
+ #endif
+ 
++/* Terminals the desktop drives at once: the primary and an attached second
++ * (td_screen2_attach). 1 leaves the second out, and with it a terminal's
++ * link state (its renderer and input parser), for a port that never attaches
++ * one; td_screen2_attach then returns false. */
++#ifndef TD_SCREENS
++#define TD_SCREENS 2
++#endif
++
+ /* Displays the desktop can extend over (td_screens_set_layout). */
+ #ifndef TD_MAX_MONITORS
+ #define TD_MAX_MONITORS 2
+diff --git a/src/td.c b/src/td.c
+index 0bab384..496316a 100644
+--- a/src/td.c
++++ b/src/td.c
+@@ -55,7 +55,15 @@ typedef struct
+ 
+ static const td_hal_t *s_hal;
+ static td_buffer_t s_front, s_back;
+-static term_t s_term[2];          /* [0] the primary, [1] an attached second terminal */
++static term_t s_term[TD_SCREENS]; /* [0] the primary, [1] an attached second terminal */
++#if TD_SCREENS > 1
++#define SECOND (&s_term[1])
++#else
++  /* The second terminal is compiled out. A constant (flash, not RAM) stands
++ * in for it: it is never used, so nothing ever writes it. */
++static const term_t s_no_second;
++#define SECOND ((term_t *)&s_no_second)
++#endif
+ static td_screens_layout_t s_layout = {.mode = TD_SCREENS_DUPLICATE, .place = TD_PLACE_RIGHT};
+ static td_stats_t s_stats;
+ 
+@@ -66,6 +74,9 @@ static uint32_t s_last_clock_s;
+ static uint32_t s_start_ms;
+ static uint32_t s_hold_start, s_hold_ms;
+ 
++static td_local_display_t s_local;   /* the primary display draws itself */
++static bool s_local_on;
++
+ static const td_sysinfo_t s_no_sysinfo;
+ static const td_sysinfo_t *s_sysinfo = &s_no_sysinfo;
+ 
+@@ -94,11 +105,54 @@ void td_quit(void)
+ {
+     s_running = false;
+ }
++static bool local_primary(const term_t *t)
++{
++    return s_local_on && t == &s_term[0];
++}
++
++  /* The port's record of what it shows is invalid: it draws every cell
++ * again. Under its lock, since it may be drawing from another task. */
++static void local_invalidate(void)
++{
++    if (s_local.lock)
++        s_local.lock(s_local.ctx);
++    td_buffer_invalidate(&s_front);
++    if (s_local.unlock)
++        s_local.unlock(s_local.ctx);
++}
++
+ void td_full_redraw(void)
+ {
+-    for (int i = 0; i < 2; i++)
++    for (int i = 0; i < TD_SCREENS; i++)
+         if (s_term[i].used)
+-            s_term[i].resync_pending = true;
++        {
++            if (local_primary(&s_term[i]))
++            {
++                local_invalidate();   /* the port draws every cell again */
++                s_term[i].behind = true;
++            }
++            else
++                s_term[i].resync_pending = true;
++        }
++}
++
++void td_set_local_display(const td_local_display_t *display)
++{
++    s_local_on = display != NULL && display->frame != NULL;
++    if (s_local_on)
++        s_local = *display;
++    else
++        memset(&s_local, 0, sizeof(s_local));
++}
++
++const td_buffer_t *td_display_screen(void)
++{
++    return &s_back;
++}
++
++td_buffer_t *td_display_shown(void)
++{
++    return &s_front;
+ }
+ 
+ void td_frame_hold(uint32_t timeout_ms)
+@@ -126,7 +180,7 @@ static int want(int term, int chosen, int min)
+  * the part of it each terminal shows. */
+ static void layout(void)
+ {
+-    term_t *p = &s_term[0], *s = &s_term[1];
++    term_t *p = &s_term[0], *s = SECOND;
+     const td_screens_layout_t *L = &s_layout;
+     bool second = s->used && s->sized;
+     int pc = want(p->cols, L->cols[0], TD_MIN_COLS), pr = want(p->rows, L->rows[0], TD_MIN_ROWS);
+@@ -206,7 +260,7 @@ static void layout(void)
+         s_stats.cols = cols;
+         s_stats.rows = rows;
+         td_buffer_init(&s_back, cols, rows);
+-        for (int i = 0; i < 2; i++)
++        for (int i = 0; i < TD_SCREENS; i++)
+             if (s_term[i].used)
+             {
+                 td_buffer_init(s_term[i].front, cols, rows);
+@@ -328,6 +382,22 @@ int td_init(const td_hal_t *hal)
+     td_buffer_init(&s_front, s_stats.cols, s_stats.rows);
+     td_wm_init(s_stats.cols, s_stats.rows);
+ 
++    if (s_local_on)
++    {
++         /* The display's size is known and nothing is asked of it. */
++        apply_size(t, s_local.cols, s_local.rows);
++        t->repaint_pending = false;
++        t->link_up = s_stats.link_up = true;
++        t->pacing_off = true;
++        t->have_input = true;
++        t->last_input_ms = td_millis();
++        td_buffer_invalidate(t->front);
++        t->behind = true;
++        s_rate_start_ms = td_millis();
++        s_running = true;
++        return 0;
++    }
++
+     resync(t);
+     t->link_up = s_stats.link_up = !t->renderer.write_failed;
+ 
+@@ -404,7 +474,7 @@ void td_screens_layout(td_screens_layout_t *out)
+ bool td_screens_display(int index, td_display_info_t *out)
+ {
+     memset(out, 0, sizeof(*out));
+-    if (index < 0 || index > 1 || !s_term[index].used)
++    if (index < 0 || index >= TD_SCREENS || !s_term[index].used)
+         return false;
+     const term_t *t = &s_term[index];
+     out->term_cols = t->term_cols;
+@@ -415,9 +485,9 @@ bool td_screens_display(int index, td_display_info_t *out)
+ 
+ bool td_screen2_attach(int (*read_byte)(void *ctx), int (*write)(void *ctx, const uint8_t *buf, int len), void *ctx)
+ {
+-    if (!s_hal || !read_byte || !write)
++    if (TD_SCREENS < 2 || !s_hal || !read_byte || !write)
+         return false;
+-    term_t *t = &s_term[1];
++    term_t *t = SECOND;
+     if (t->used)
+         td_screen2_detach();
+     td_buffer_t *front = malloc(sizeof(*front));
+@@ -441,7 +511,7 @@ bool td_screen2_attach(int (*read_byte)(void *ctx), int (*write)(void *ctx, cons
+ 
+ void td_screen2_detach(void)
+ {
+-    term_t *t = &s_term[1];
++    term_t *t = SECOND;
+     if (!t->used)
+         return;
+     free(t->front);
+@@ -452,7 +522,7 @@ void td_screen2_detach(void)
+ 
+ bool td_screen2_attached(void)
+ {
+-    return s_term[1].used;
++    return SECOND->used;
+ }
+ 
+   /* --------------------------------------------------------------- input */
+@@ -465,7 +535,7 @@ static void dispatch_events(void)
+         td_wm_dispatch(&ev);
+         if (ev.type == TD_EV_PASTE)
+         {
+-            for (int i = 0; i < 2; i++)
++            for (int i = 0; i < TD_SCREENS; i++)
+                 if (s_term[i].used)
+                     td_input_paste_done(&s_term[i].input);
+         }
+@@ -595,6 +665,11 @@ static void picture_write(void *user, const char *s, int n)
+   /* Send terminal t its part of the composed screen. */
+ static void send_frame(term_t *t)
+ {
++    if (local_primary(t))
++    {
++        s_local.frame(s_local.ctx);   /* the port draws from td_display_screen() */
++        return;
++    }
+     uint32_t sent_before = t->renderer.bytes_sent;
+     bool primary = t == &s_term[0];
+     if (primary)
+@@ -675,6 +750,8 @@ static bool waiting_for_terminal(term_t *t, uint32_t now)
+   /* The link watch and the size poll of one terminal. */
+ static void watch(term_t *t, uint32_t now)
+ {
++    if (local_primary(t))
++        return;   /* no link to watch and no size to ask */
+     if (!t->link_up)
+     {
+         if (now - t->last_retry_ms >= TD_LINK_RETRY_MS)
+@@ -701,6 +778,20 @@ static void watch(term_t *t, uint32_t now)
+  * / redraw. */
+ static bool due(term_t *t, uint32_t now)
+ {
++    if (local_primary(t))
++    {
++         /* A resize redraws every cell; a resync (input after a silence,
++         * meant for a terminal that may have been replaced) has nothing to
++         * do here. There is no answer to wait for. */
++        if (t->repaint_pending || t->redraw_pending)
++        {
++            local_invalidate();
++            td_wm_invalidate();
++        }
++        bool take = t->repaint_pending || t->redraw_pending || t->behind;
++        t->resync_pending = t->repaint_pending = t->redraw_pending = false;
++        return take;
++    }
+     if (t->resync_pending)
+     {
+         resync(t);
+@@ -725,7 +816,7 @@ bool td_step(void)
+ 
+       /* Each terminal's events are dispatched before the next one is read,
+      * so its mouse positions and answers stay its own. */
+-    for (int i = 0; i < 2; i++)
++    for (int i = 0; i < TD_SCREENS; i++)
+         if (s_term[i].used)
+         {
+             read_input(&s_term[i], now);
+@@ -741,7 +832,7 @@ bool td_step(void)
+         td_wm_invalidate();
+     }
+ 
+-    for (int i = 0; i < 2; i++)
++    for (int i = 0; i < TD_SCREENS; i++)
+         if (s_term[i].used)
+             watch(&s_term[i], now);
+ 
+@@ -757,7 +848,7 @@ bool td_step(void)
+ 
+     bool changed = td_wm_needs_redraw();
+     bool take[2] = {false, false};
+-    for (int i = 0; i < 2; i++)
++    for (int i = 0; i < TD_SCREENS; i++)
+         if (s_term[i].used)
+         {
+             s_term[i].behind |= changed;
+@@ -769,8 +860,12 @@ bool td_step(void)
+          * that waits catches up from its own front buffer next time. */
+         uint32_t t0 = td_millis();
+         td_pictures_begin();
++        if (s_local_on && s_local.lock)
++            s_local.lock(s_local.ctx);
+         td_wm_compose(&s_back);
+-        for (int i = 0; i < 2; i++)
++        if (s_local_on && s_local.unlock)
++            s_local.unlock(s_local.ctx);
++        for (int i = 0; i < TD_SCREENS; i++)
+             if (take[i])
+             {
+                 send_frame(&s_term[i]);
+@@ -795,8 +890,8 @@ void td_shutdown(void)
+ {
+     if (!s_hal)
+         return;
+-    for (int i = 1; i >= 0; i--)
+-        if (s_term[i].used)
++    for (int i = TD_SCREENS - 1; i >= 0; i--)
++        if (s_term[i].used && !local_primary(&s_term[i]))
+         {
+             s_term[i].renderer.write_failed = false;
+             td_render_restore_terminal(&s_term[i].renderer);
+diff --git a/tests/test_local_display.c b/tests/test_local_display.c
+new file mode 100644
+index 0000000..4610e92
+--- /dev/null
++++ b/tests/test_local_display.c
+@@ -0,0 +1,168 @@
++/*
++ * test_local_display.c - a port that draws the screen itself (td_set_local_display):
++ * the size is the display's, nothing is written to the HAL, every change
++ * is a frame the port is told of, the screen holds what was composed, the
++ * port's record of what it shows is invalidated only by a full redraw, the
++ * composition is bracketed by the port's lock, and input after a long
++ * silence (which resyncs a terminal) does not redraw a local display.
++ */
++#include "td_test.h"
++#include "tinydesk/td.h"
++
++static uint32_t s_now = 1000;
++static int s_written;
++static const char *s_in = "";
++
++static int fake_read(void *ctx)
++{
++    (void)ctx;
++    return *s_in ? (unsigned char)*s_in++ : -1;
++}
++static int fake_write(void *ctx, const uint8_t *buf, int len)
++{
++    (void)ctx;
++    (void)buf;
++    s_written += len;
++    return len;
++}
++static uint32_t fake_millis(void *ctx)
++{
++    (void)ctx;
++    return s_now;
++}
++static void fake_sleep(void *ctx, uint32_t ms)
++{
++    (void)ctx;
++    s_now += ms;
++}
++static const td_hal_t s_hal = {fake_read, fake_write, fake_millis, fake_sleep, NULL};
++
++static int s_frames, s_locks, s_unlocks;
++static bool s_locked, s_framed_while_locked;
++static bool s_shown_was_invalid;
++
++static void on_lock(void *ctx)
++{
++    (void)ctx;
++    s_locks++;
++    s_locked = true;
++}
++static void on_unlock(void *ctx)
++{
++    (void)ctx;
++    s_unlocks++;
++    s_locked = false;
++}
++/* The port: note whether its record was invalidated, then show the screen. */
++static void on_frame(void *ctx)
++{
++    (void)ctx;
++    s_frames++;
++    if (s_locked)
++        s_framed_while_locked = true;
++    td_buffer_t *shown = td_display_shown();
++    const td_buffer_t *screen = td_display_screen();
++    s_shown_was_invalid = shown->cells[0].ch == TD_CH_INVALID;
++    for (int i = 0; i < screen->cols * screen->rows; i++)
++        shown->cells[i] = screen->cells[i];
++}
++
++static td_window_t *s_win;
++static char s_text[16] = "hello";
++static void on_draw(td_window_t *win, int cw, int ch)
++{
++    (void)win;
++    (void)ch;
++    td_textn(0, 0, s_text, cw, 7, 0, 0);
++}
++
++static void step(uint32_t ms)
++{
++    s_now += ms;
++    td_step();
++}
++
++/* Whether the screen holds text at some row, anywhere along it. */
++static bool screen_has(const char *text)
++{
++    const td_buffer_t *b = td_display_screen();
++    int n = (int)strlen(text);
++    for (int y = 0; y < b->rows; y++)
++        for (int x = 0; x + n <= b->cols; x++)
++        {
++            int k = 0;
++            while (k < n && b->cells[y * b->cols + x + k].ch == (uint32_t)(unsigned char)text[k])
++                k++;
++            if (k == n)
++                return true;
++        }
++    return false;
++}
++
++int main(void)
++{
++    const td_local_display_t display = {
++        .cols = 80, .rows = 45, .frame = on_frame, .lock = on_lock, .unlock = on_unlock, .ctx = NULL};
++    td_set_local_display(&display);
++    CHECK_EQ(td_init(&s_hal), 0);
++
++    /* The display's size, asked of nobody, and nothing written. */
++    CHECK_EQ(td_stats()->cols, 80);
++    CHECK_EQ(td_stats()->rows, 45);
++    CHECK_EQ(td_display_screen()->cols, 80);
++    CHECK_EQ(td_display_screen()->rows, 45);
++    CHECK_EQ(s_written, 0);
++
++    td_window_desc_t d = {.title = "Local", .rect = td_rect(2, 2, 30, 6), .on_draw = on_draw};
++    s_win = td_win_create(&d);
++    CHECK(s_win != NULL);
++
++    /* The first frame: the port is told, its record starts invalid so it
++     * draws everything, and the window is on the screen. */
++    step(10);
++    CHECK_EQ(s_frames, 1);
++    CHECK(s_shown_was_invalid);
++    CHECK(screen_has("hello"));
++    CHECK_EQ(s_written, 0);
++    /* The composition was locked, and the port was not called inside it. */
++    CHECK(s_locks >= 1);
++    CHECK_EQ(s_locks, s_unlocks);
++    CHECK(!s_framed_while_locked);
++
++    /* Nothing changed: no frame. */
++    int before = s_frames;
++    step(10);
++    step(10);
++    CHECK_EQ(s_frames, before);
++
++    /* A change: one frame, and the port's record was kept, not invalidated. */
++    snprintf(s_text, sizeof s_text, "world");
++    td_win_invalidate(s_win);
++    step(10);
++    CHECK_EQ(s_frames, before + 1);
++    CHECK(!s_shown_was_invalid);
++    CHECK(screen_has("world"));
++    CHECK(!screen_has("hello"));
++
++    /* A full redraw invalidates the port's record, so every cell goes again. */
++    before = s_frames;
++    td_full_redraw();
++    step(10);
++    CHECK_EQ(s_frames, before + 1);
++    CHECK(s_shown_was_invalid);
++
++    /* Input after a long silence resyncs a terminal; a local display has
++     * nothing to resync, so it draws nothing extra and writes nothing. */
++    s_now += 600000;
++    s_shown_was_invalid = false;
++    s_in = "a";
++    step(10);
++    step(10);
++    CHECK(!s_shown_was_invalid);   /* a frame for the key, perhaps, but not everything */
++    CHECK_EQ(s_written, 0);
++
++    /* No terminal to restore. */
++    td_shutdown();
++    CHECK_EQ(s_written, 0);
++    return TD_TEST_RESULT();
++}

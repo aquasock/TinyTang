@@ -1783,3 +1783,41 @@ The Classic gamepad connection test comes next: pair with the 8BitDo in Switch m
 - User Test: PASS
 
 ---
+## 53 COMMIT Unreleased 2026-11-18T09:08:03-07:00
+
+#### Coming From:
+
+Unreleased e83b1d5
+
+#### Purpose:
+
+Remove the desktop's redundant screen copies by having TinyDesk draw the HDMI layer from cells, giving the Terminal app a screen only while it is shown, and dropping TinyDesk's unused second terminal.
+
+#### Outcome:
+
+The three approved options went in and the operator passed them on the board (BL6-013). TinyDesk carries two new patches: `0005-local-display.patch` adds `td_set_local_display()`, through which TinyDesk hands its composed screen to the port with no ANSI and no terminal, and a `TD_SCREENS` count for its terminals; `0006-terminal-screen-on-demand.patch` adds `TD_TERMINAL_KEEP_SCREEN`, under which the Terminal app's emulator exists only while a window shows it and the shell's output while it is closed is dropped. The port builds `TD_SCREENS=1` and `TD_TERMINAL_KEEP_SCREEN=0`. `tang_osd_desk.c` diffs TinyDesk's screen against TinyDesk's front buffer while the desktop runs, takes the frame lock and the link lock one at a time so the two cannot deadlock, and keeps the console's emulator and shadow on the heap only while the console is on the layer; the declarations are in the new `tang_osd_desk_local.h`, so tests that include `tang_osd_desk.h` need no TinyDesk path. The desk layer's host test gained local-mode checks, 130 in all, which fail under four mutations, with host stubs for the FreeRTOS mutex and task notification; TinyDesk's suite passed 34 of 34 at its defaults and with `TD_TERMINAL_KEEP_SCREEN=0`, and 33 of 34 with `TD_SCREENS=1` added, the one failure being `test_screens`, which attaches the second screen a one-terminal build refuses by design; host tests are 52 of 52. BUILDING.md's list of carried TinyDesk patches had gone stale at the move to v0.5.2, naming 0001 and 0004 and an old 0003 digest; it now lists the four patches the directory holds, with their digests. Static RAM fell by 50,005 bytes on both builds, measured with `tools/ram_report.py`. The Classic firmware `e83b1d5-dirty.0f7e1dc`, 1,042,016 bytes, was installed with `tools/tinytang_flash.py`, which saw the commit end after 5 s, and started after the two-wire relay sequence; `ble status` then read 201,112 bytes of heap and 114,448 free with the radio up and the K06 connected, against 95,468 before. The operator ran the desktop, closed and reopened Terminal, hid and showed the desktop, quit to the console, reported all passing, and read 125 KB free and a 95 KB peak on System Monitor. The ordinary build was rebuilt at 807,808 bytes and not installed. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, the new BL6-013 with its index rows and summary line, and a dated revision to BL6-012's consequence, and this entry was validated as number 53 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 187 records.
+
+#### Next Steps:
+
+The Classic gamepad connection test comes next: pair with the 8BitDo in Switch mode, open its HID control and interrupt channels over the SDK's Classic L2CAP, and print raw input reports, before any HID host is written. TinyDesk's two remaining screen buffers, about 58 KB, are the largest static users left if memory runs short again. A game-core load and a TinyNES run on the Classic firmware should still be confirmed. Entry 50's zoom mode still awaits its book upload and the operator's test, and the updater's silent failure of a sector that differs after three attempts is still unfixed.
+
+#### Files Modified:
+
+- BUILDING.md
+- CMakeLists.txt
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_osd_desk_local.h
+- ports/bl616/td_desktop_bl616.c
+- third_party/patches/tinydesk/0005-local-display.patch
+- third_party/patches/tinydesk/0006-terminal-screen-on-demand.patch
+- tools/tests/stubs/FreeRTOS.h
+- tools/tests/stubs/semphr.h
+- tools/tests/tb_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -229,6 +229,122 @@ static size_t feed(const char *s)
     return strlen(s);
 }
 
+/* ---- TinyDesk drawing the layer itself (local display) ----------------- */
+
+static uint32_t g_td_now = 1000;
+static int td_hal_read(void *ctx) { (void)ctx; return -1; }
+static int td_hal_write(void *ctx, const uint8_t *b, int n) { (void)ctx; (void)b; return n; }
+static uint32_t td_hal_millis(void *ctx) { (void)ctx; return g_td_now; }
+static void td_hal_sleep(void *ctx, uint32_t ms) { (void)ctx; g_td_now += ms; }
+static const td_hal_t g_td_hal = { td_hal_read, td_hal_write, td_hal_millis, td_hal_sleep, NULL };
+
+static char g_local_text[16] = "Hello";
+static void local_draw(td_window_t *win, int w, int h)
+{
+    (void)win;
+    (void)h;
+    td_fill(td_rect(0, 0, w, 1), ' ', 15, 1);
+    td_textn(0, 0, g_local_text, w, 15, 1, 0);
+}
+
+/* Whether any cell run sent since the last clear holds text. */
+static bool frames_have(const char *text)
+{
+    const size_t n = strlen(text);
+    for (int f = 0; f < g_frames; f++) {
+        if (g_type[f] != 0x14) {
+            continue;
+        }
+        for (size_t c = 0; (c + n) * 5 <= g_len[f]; c++) {
+            size_t k = 0;
+            while (k < n && g_payload[f][(c + k) * 5] == (uint8_t)text[k]) {
+                k++;
+            }
+            if (k == n) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void local_display_checks(void)
+{
+    (void)tang_osd_desk_set(false);
+    check(s_con == NULL, "the console's emulator outlived the layer");
+    check(tang_osd_desk_set(true) == 0, "set(true) before the desktop failed");
+    check(s_con != NULL, "the layer has no console emulator");
+
+    const td_local_display_t *d = tang_osd_desk_local_begin();
+    check(d != NULL, "local_begin refused with the layer on");
+    if (d == NULL) {
+        return;
+    }
+    check(d->cols == TANG_DESK_COLS && d->rows == TANG_DESK_ROWS, "the display is not the layer's size");
+    check(s_con == NULL, "the console's emulator was kept while TinyDesk draws");
+    tang_osd_desk_feed("console text", 12);    /* nowhere to go, and no fault */
+
+    td_set_local_display(d);
+    check(td_init(&g_td_hal) == 0, "td_init on the local display failed");
+    td_window_desc_t wd = { .title = "Local", .rect = td_rect(10, 5, 30, 6), .on_draw = local_draw };
+    td_window_t *win = td_win_create(&wd);
+    check(win != NULL, "no window");
+    g_td_now += 20;
+    td_step();
+
+    /* The first flush paints every row: TinyDesk's record starts invalid. */
+    frames_clear();
+    flush();
+    check(g_frames == TANG_DESK_ROWS * 2, "the first local paint is not every row");
+    check(frames_have("Hello"), "the window's text did not reach the core");
+    check(!frames_have("console text"), "console text reached the layer under the desktop");
+
+    frames_clear();
+    flush();
+    check(g_frames == 0, "an unchanged desktop sent frames");
+
+    /* A change is a short span, not the screen. */
+    snprintf(g_local_text, sizeof g_local_text, "World");
+    td_win_invalidate(win);
+    g_td_now += 20;
+    td_step();
+    frames_clear();
+    flush();
+    check(g_frames == 2, "one changed row is not one cursor and one run");
+    check(frames_have("World"), "the change did not reach the core");
+
+    /* A link that is not free sends nothing and loses nothing. */
+    snprintf(g_local_text, sizeof g_local_text, "Again");
+    td_win_invalidate(win);
+    g_td_now += 20;
+    td_step();
+    g_lock_available = false;
+    frames_clear();
+    flush();
+    check(g_frames == 0, "frames went out without the link lock");
+    g_lock_available = true;
+    flush();
+    check(frames_have("Again"), "a change made while the link was busy was lost");
+
+    /* The console emulator's colours: bold brightens, reverse swaps, and a
+     * code point past 16 bits is '?'. */
+    const td_cell_t bold_rev = { 'x', 1, 4, TD_BOLD | TD_REVERSE, 0 };
+    const td_vcell_t v = local_cell(bold_rev);
+    check(v.ch == 'x' && v.fg == 4 && v.bg == 9, "bold+reverse does not match the emulator");
+    const td_cell_t wide = { 0x1F600u, 7, 0, 0, 0 };
+    check(local_cell(wide).ch == '?', "a code point past 16 bits is not '?'");
+
+    /* The desktop quits: the layer goes back to the console, on a blank grid. */
+    td_shutdown();
+    tang_osd_desk_local_end();
+    td_set_local_display(NULL);
+    check(!s_local && s_con != NULL, "the console did not come back after the desktop");
+    frames_clear();
+    flush();
+    check(g_frames == TANG_DESK_ROWS * 2, "the console did not repaint the whole grid");
+    check(!frames_have("Again"), "the desktop's last frame stayed on the console");
+}
+
 int main(void)
 {
     printf("osd desk: %dx%d grid\n", TANG_DESK_COLS, TANG_DESK_ROWS);
@@ -877,6 +993,8 @@ int main(void)
         g_joy = 0;
         desk_watch_toggle();
     }
+
+    local_display_checks();
 
     printf("osd desk: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;

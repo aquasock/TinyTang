@@ -17,6 +17,19 @@ typedef long     BaseType_t;
 #define configTICK_RATE_HZ 1000
 
 
+#define pdTRUE  1
+#define pdFALSE 0
+#define portMAX_DELAY ((TickType_t)0xFFFFFFFFu)
+typedef void *TaskHandle_t;
+static inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { return (TaskHandle_t)0; }
+static inline void xTaskNotifyGive(TaskHandle_t t) { (void)t; }
+static inline uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t wait)
+{
+    (void)clear;
+    (void)wait;
+    return 0;
+}
+
 #define taskENTER_CRITICAL() do { } while (0)
 #define taskEXIT_CRITICAL()  do { } while (0)
 

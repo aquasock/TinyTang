@@ -53,6 +53,7 @@
 #include "tdsh.h"
 #include "tdsh_bl616.h"
 #include "tang_osd_desk.h"
+#include "tang_osd_desk_local.h"
 #include "tang_clock.h"
 
 int tdsh_printf(const char *fmt, ...);
@@ -366,6 +367,9 @@ static int desktop_run(void)
     s_info.extra = "desktop:   yosys+nextpnr+apicula (open)";
     td_set_sysinfo(&s_info);
 
+    /* With the desk layer up, TinyDesk draws it directly from cells; with it
+     * off, the desktop is a computer terminal's and draws to the console. */
+    td_set_local_display(tang_osd_desk_local_begin());
     td_init(&s_hal);
     td_logf('I', "TinyDesk %s on %s", TD_VERSION, TD_PLATFORM_NAME);
     td_logf('I', "terminal size %dx%d", td_stats()->cols, td_stats()->rows);
@@ -375,6 +379,8 @@ static int desktop_run(void)
      * A failed task allocation must return to a usable console. */
     if (tang_td_terminal_start() != 0) {
         td_shutdown();
+        tang_osd_desk_local_end();
+        td_set_local_display(NULL);
         tdsh_printf("desktop: could not start the Terminal shell\r\n");
         return 1;
     }
@@ -385,6 +391,8 @@ static int desktop_run(void)
 
     td_run();               /* returns after td_quit() */
     td_shutdown();
+    tang_osd_desk_local_end();
+    td_set_local_display(NULL);
 
     /* The window is gone but the shell task behind it is not: end it before
      * the redirect is cleared, or it would read the console alongside the

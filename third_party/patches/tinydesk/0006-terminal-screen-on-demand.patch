@@ -1,0 +1,191 @@
+diff --git a/apps/terminal.c b/apps/terminal.c
+index 10e605b..91274ff 100644
+--- a/apps/terminal.c
++++ b/apps/terminal.c
+@@ -4,22 +4,37 @@
+  *
+  * Program output is fed through the td_vterm emulator; key events are turned
+  * back into the byte sequences a VT100 terminal would send. The session
+- * keeps running when the window is closed and reappears when it is opened
+- * again.
++ * keeps running when the window is closed. With TD_TERMINAL_KEEP_SCREEN 0
++ * the emulator (a screen's worth of cells and the scrollback) exists only
++ * while the Terminal window or another window's view of it is open: closed,
++ * the program's output is drained and dropped, and the window reopens on an
++ * empty screen. The default, 1, keeps it for the program's life.
+  *
+  * Keys handled here instead of being passed on:
+  *   Shift+PgUp / Shift+PgDn, mouse wheel   scroll back through history
+  *   F11                                    full screen (handled by the WM)
+  */
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include "td_apps.h"
+ #include "tinydesk/td_vterm.h"
+ 
++#ifndef TD_TERMINAL_KEEP_SCREEN
++#define TD_TERMINAL_KEEP_SCREEN 1
++#endif
++
+ static const td_term_backend_t *s_backend;
+ static td_window_t *s_win;
+-static td_vterm_t s_vt;
++#if TD_TERMINAL_KEEP_SCREEN
++static td_vterm_t s_vt_store;
++static td_vterm_t *const s_vtp = &s_vt_store;
++#else
++static td_vterm_t *s_vtp;     /* from the heap while a window shows it */
++static bool s_vt_dropped;     /* it was freed: what the program printed meanwhile is gone */
++#endif
++#define s_vt (*s_vtp)
+ static bool s_vt_ready;
+ static bool s_started;
+ static int s_scroll;          /* lines scrolled back */
+@@ -178,26 +193,68 @@ static int encode_key(const td_event_t *ev, char *out)
+     return 0;
+ }
+ 
++/* Start the program once, at the size it will first be shown at. */
++static void start_backend(int cols, int rows)
++{
++    if (!s_started && s_backend && s_backend->start)
++    {
++        s_started = s_backend->start(s_backend->ctx, cols, rows) == 0;
++    }
++}
++
+ static void ensure_vt(int cols, int rows)
+ {
+     if (!s_vt_ready)
+     {
++#if !TD_TERMINAL_KEEP_SCREEN
++        s_vtp = calloc(1, sizeof(td_vterm_t));
++        if (!s_vtp)
++            return;   /* no memory: the window says so, and output is dropped */
++#endif
+         s_vt.reply = vt_reply;
+         td_vterm_init(&s_vt, cols, rows);
+         s_vt_ready = true;
++#if !TD_TERMINAL_KEEP_SCREEN
++        if (s_vt_dropped)
++        {
++            static const char note[] = "\x1b[2m(output from while this window was closed is not kept)\x1b[0m\r\n";
++            td_vterm_write(&s_vt, (const uint8_t *)note, (int)sizeof(note) - 1);
++            s_vt_dropped = false;
++        }
++#endif
+     }
+-    if (!s_started && s_backend && s_backend->start)
+-    {
+-        s_started = s_backend->start(s_backend->ctx, cols, rows) == 0;
+-    }
++    start_backend(cols, rows);
++}
++
++/* No window shows the session any more: give its screen back. */
++static void release_vt(void)
++{
++#if !TD_TERMINAL_KEEP_SCREEN
++    if (!s_vt_ready || td_win_is_open(s_win) || td_win_is_open(s_viewer))
++        return;
++    free(s_vtp);
++    s_vtp = NULL;
++    s_vt_ready = false;
++    s_vt_dropped = true;
++    s_scroll = 0;
++#endif
+ }
+ 
+ /* Pull pending program output into the emulator. */
+ static void pump(void)
+ {
+-    if (!s_backend || !s_backend->read || !s_vt_ready)
++    if (!s_backend || !s_backend->read)
+         return;
+     uint8_t buf[512];
++    if (!s_vt_ready)
++    {
++         /* Nothing shows it: drain it, so the program never waits on a
++         * full pipe, and let it go. */
++        for (int budget = 0; budget < 16; budget++)
++            if (s_backend->read(s_backend->ctx, buf, sizeof(buf)) <= 0)
++                break;
++        return;
++    }
+     for (int budget = 0; budget < 16; budget++)
+     {   /* at most 8 KB per tick */
+         int n = s_backend->read(s_backend->ctx, buf, sizeof(buf));
+@@ -265,7 +322,11 @@ void td_terminal_set_backend(const td_term_backend_t *backend)
+     if (!backend)
+         return;
+     td_rect_t r = default_rect();
++#if TD_TERMINAL_KEEP_SCREEN
+     ensure_vt(r.w - 2, r.h - 2);
++#else
++    start_backend(r.w - 2, r.h - 2);   /* the screen waits for a window */
++#endif
+     if (s_bg_timer < 0)
+         s_bg_timer = td_timer_start(100, true, background_pump, NULL, td_millis());
+     td_session_init();    /* the desktop belongs to the shell's user */
+@@ -282,6 +343,14 @@ static void on_draw(td_window_t *win, int w, int h)
+         td_text(1, 2, "The port supplies one with td_terminal_set_backend().", 8, 0, 0);
+         return;
+     }
++    if (!s_vt_ready)
++        ensure_vt(w, h);
++    if (!s_vt_ready)
++    {
++        td_fill(td_rect(0, 0, w, h), ' ', 7, 0);
++        td_text(1, 1, "Not enough memory for the terminal screen.", 7, 0, 0);
++        return;
++    }
+     if (s_vt.cols != w || s_vt.rows != h)
+     {
+         td_vterm_resize(&s_vt, w, h);
+@@ -300,6 +369,8 @@ static void on_draw(td_window_t *win, int w, int h)
+ 
+ static void scroll_by(int delta)
+ {
++    if (!s_vt_ready)
++        return;
+     int max = td_vterm_scrollback_lines(&s_vt);
+     s_scroll += delta;
+     if (s_scroll < 0)
+@@ -320,7 +391,8 @@ static void menu_chosen(int item, void *user)
+         td_win_set_fullscreen(s_win, !(s_win->flags & TD_WIN_FULLSCREEN));
+         break;
+     case 1:
+-        s_vt.sb_count = 0;      /* forget the scrollback */
++        if (s_vt_ready)
++            s_vt.sb_count = 0;  /* forget the scrollback */
+         s_scroll = 0;
+         td_wm_invalidate();
+         break;
+@@ -412,6 +484,7 @@ static void on_close(td_window_t *win)
+ {
+     (void)win;
+     s_win = NULL;
++    release_vt();
+ }
+ 
+ static void launch(void)
+@@ -484,6 +557,8 @@ int td_terminal_draw_view(td_window_t *win, int x, int y, int w, int h, int scro
+         return 0;
+     if (!s_vt_ready)
+         ensure_vt(w, h);
++    if (!s_vt_ready)
++        return 0;
+     if (!td_win_is_open(s_win) && (s_vt.cols != w || s_vt.rows != h))
+     {
+         td_vterm_resize(&s_vt, w, h);
+@@ -529,6 +604,8 @@ void td_terminal_set_viewer(td_window_t *win, void (*tap)(const uint8_t *data, i
+ {
+     s_viewer = win;
+     s_tap = win ? tap : NULL;
++    if (!win)
++        release_vt();
+ }
+ 
+ bool td_is_script(const char *name)
