@@ -8,9 +8,13 @@
 #   tools/tests/run_all.sh            run everything
 #   tools/tests/run_all.sh desktop    run the scripts whose names contain "desktop"
 #   tools/tests/run_all.sh --list     list the tests without running them
+#   tools/tests/run_all.sh --quick    skip the slow tests whose sources did
+#                                     not change (see SLOW below)
 #
 # Exit status is 0 only when every test passed, so this is usable as a release
-# gate as well as a convenience.
+# gate as well as a convenience.  A --quick run is not a release gate: it says
+# what it skipped, and the full run is what a commit that touches fpga/ or the
+# pinned upstream trees, or a release, is checked with.
 #
 # This runs on the host and needs no board.  It is deliberately serial: several
 # of these tests build Verilator models or FatFS images at -j4 and run them
@@ -23,13 +27,51 @@ cd "$root"
 
 filter=""
 list_only=0
+quick=0
 for arg in "$@"; do
     case "$arg" in
         --list) list_only=1 ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        --quick) quick=1 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) filter="$arg" ;;
     esac
 done
+
+# The slow tests -- about 440 of the full run's 460 seconds -- and the paths
+# each depends on besides its own script.  --quick runs one only when a path
+# differs from the upstream branch, counting unpushed commits, uncommitted
+# edits and new files.  A dirty submodule is ignored: third_party/tinydesk is
+# always dirty, because the build applies the carried patches to it, so only
+# a change of its pinned commit counts.
+declare -A SLOW=(
+    [test_desktop_plane]="fpga/ tools/tests/sim/"
+    [test_desktop_core]="fpga/ tools/tests/sim/"
+    [test_composite]="fpga/ tools/tests/sim/"
+    [test_desktop_video]="fpga/ tools/tests/sim/"
+    [test_desktop_oled]="fpga/ tools/tests/sim/"
+    [test_desktop_link]="fpga/ tools/tests/sim/"
+    [test_link_uart]="fpga/ tools/tests/sim/"
+    [test_script_limits]="third_party/tinydesk-shell third_party/tinydesk third_party/patches/ scripts/apply-tdsh-patches.sh scripts/apply-tinydesk-patches.sh"
+    [test_tinydesk_patches]="third_party/tinydesk-shell third_party/tinydesk third_party/patches/ scripts/apply-tdsh-patches.sh scripts/apply-tinydesk-patches.sh"
+)
+changed=""
+if ((quick)); then
+    base="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo HEAD)"
+    changed="$( { git diff --name-only --ignore-submodules=dirty "$base"
+                  git ls-files --others --exclude-standard; } 2>/dev/null )"
+fi
+
+# Whether a slow test has to run in a quick pass: a changed path under one of
+# its dependencies, or a change to its own script.
+quick_needs() {
+    local name="$1" dep path
+    for dep in ${SLOW[$name]} "tools/tests/$name.sh"; do
+        while IFS= read -r path; do
+            [[ -n $path && $path == "$dep"* ]] && return 0
+        done <<<"$changed"
+    done
+    return 1
+}
 
 shopt -s nullglob
 tests=(tools/tests/test_*.sh)
@@ -58,11 +100,17 @@ if ((${#selected[@]} == 0)); then
 fi
 
 pass=0
+skipped=0
 failed=()
 failed_names=()
 
 for t in "${selected[@]}"; do
     name="$(basename "$t" .sh)"
+    if ((quick)) && [[ -n ${SLOW[$name]:-} ]] && ! quick_needs "$name"; then
+        printf 'SKIP  %-34s       (quick: nothing it depends on changed)\n' "$name"
+        skipped=$((skipped + 1))
+        continue
+    fi
     start=$SECONDS
     # Each test gets its own log: a failure has to be readable afterwards
     # without a second run, and the matrix line stays one line.
@@ -99,7 +147,11 @@ rm -f /tmp/check_help_width.$$
 
 total=$((pass + ${#failed_names[@]}))
 echo
-echo "run_all: $pass of $total passed"
+if ((skipped)); then
+    echo "run_all: $pass of $total passed, $skipped slow test(s) skipped (--quick)"
+else
+    echo "run_all: $pass of $total passed"
+fi
 
 if ((${#failed_names[@]})); then
     echo "failures:"

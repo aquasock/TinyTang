@@ -1959,3 +1959,42 @@ The approved test work comes next: a host test of `tang_btpad.c` against a fake 
 - User Test: PASS
 
 ---
+## 58 COMMIT Unreleased 2026-11-18T12:12:49-07:00
+
+#### Coming From:
+
+Unreleased 9f81a68
+
+#### Purpose:
+
+Act on the test-suite review the operator approved: a host test of the Classic gamepad host, a build of both firmware variants, and a quick mode for the host test run.
+
+#### Outcome:
+
+The three pieces are in place and checked (TOOL-027). `tools/tests/test_btpad_host.sh` runs the real `tang_btpad.c` against a fake Bluetooth stack that counts connection references as the SDK does and replays the event orders seen on the board; its 43 checks pass, and each of the two faults found on the board in entries 54 and 57, and three more of the same kind, fails it under mutation. Its first run printed nothing, because `tang_btpad.c` pulls in the real console header that maps `printf` to the console; the test undefines it. `tools/build_both.sh` builds the default Classic firmware and the LE-only variant in parallel and fails on a build error, a misplaced Classic host or a warning in the project's sources; it first read the bootloader's size instead of the firmware's, now fixed, and it caught a warning planted in the LE-only branch. `run_all.sh --quick` skips nine slow tests unless what they depend on differs from the upstream branch; it ran in 23 s against the full suite's 462 s, and a new file under `fpga/` brought a simulation back into the run. The review that led here found the Bluetooth glue, the emulator apps and the firmware update path without host tests; the first is now covered and the other two remain separate proposals. Host tests are 46 of 46 in quick mode with nine skipped, and the suite now holds 55 tests. No firmware source changed, so nothing was installed; the board stays on `3b72d27-dirty.3eec454`. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the new TOOL-027 with its index row and summary line, and this entry was validated as number 58 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 191 records.
+
+#### Next Steps:
+
+Phase 2 of the Bluetooth input plan is next: the Wii family handler with its legacy PIN reply (BLE-022), extended into the new host test before it reaches the board, and checked with `tools/build_both.sh`. Host tests for the emulator apps' pure logic and for the firmware update path remain proposals from the review. Entry 57's other items stand.
+
+#### Files Modified:
+
+- tools/build_both.sh
+- tools/tests/run_all.sh
+- tools/tests/stubs/btpad/bflb_mtimer.h
+- tools/tests/stubs/btpad/bluetooth.h
+- tools/tests/stubs/btpad/conn.h
+- tools/tests/stubs/btpad/ff.h
+- tools/tests/stubs/btpad/keys.h
+- tools/tests/stubs/btpad/l2cap.h
+- tools/tests/stubs/btpad/tdsh.h
+- tools/tests/tb_btpad_host.c
+- tools/tests/test_btpad_host.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: N/A
+- User Test: N/A
+
+---
