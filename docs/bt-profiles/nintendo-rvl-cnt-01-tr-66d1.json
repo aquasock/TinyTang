@@ -1,0 +1,586 @@
+{
+ "address": "CC:FB:65:2E:66:D1",
+ "when": "2026-11-18T10:24:38-0700",
+ "bluez": {
+  "Name": "Nintendo RVL-CNT-01-TR",
+  "Alias": "Nintendo RVL-CNT-01-TR",
+  "Class": "0x00000508 (1288)",
+  "Icon": "input-gaming",
+  "Paired": "yes",
+  "Bonded": "yes",
+  "Trusted": "yes",
+  "Blocked": "no",
+  "Connected": "yes",
+  "WakeAllowed": "yes",
+  "LegacyPairing": "no",
+  "CablePairing": "no",
+  "UUID": [
+   "Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)",
+   "PnP Information           (00001200-0000-1000-8000-00805f9b34fb)"
+  ],
+  "Modalias": "usb:v057Ep0330d0001"
+ },
+ "hid": [
+  {
+   "sysfs": "0005:057E:0330.0013",
+   "name": "Nintendo RVL-CNT-01-TR",
+   "driver": "wiimote",
+   "descriptor_hex": "05010905a1018510150026ff00750895010600ff09019100851195010901910085129502090191008513950109019100851495010901910085159501090191008516951509019100851795060901910085189515090191008519950109019100851a950109019100852095060901810085219515090181008522950409018100853095020901810085319505090181008532950a0901810085339511090181008534951509018100853595150901810085369515090181008537951509018100853d951509018100853e951509018100853f951509018100c000",
+   "descriptor_len": 218,
+   "events": [
+    "event30",
+    "event28",
+    "event29"
+   ],
+   "motion_events": [
+    "event31"
+   ],
+   "parsed": {
+    "applications": [
+     "Generic Desktop / Gamepad"
+    ],
+    "reports": {
+     "0x10": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x11": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x12": {
+      "input_bytes": 0,
+      "output_bytes": 2,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [2 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x13": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x14": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x15": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x16": {
+      "input_bytes": 0,
+      "output_bytes": 21,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x17": {
+      "input_bytes": 0,
+      "output_bytes": 6,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [6 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x18": {
+      "input_bytes": 0,
+      "output_bytes": 21,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x19": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x1a": {
+      "input_bytes": 0,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "output 0xff00: vendor 0x01 [1 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x20": {
+      "input_bytes": 6,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [6 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x21": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x22": {
+      "input_bytes": 4,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [4 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x30": {
+      "input_bytes": 2,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [2 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x31": {
+      "input_bytes": 5,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [5 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x32": {
+      "input_bytes": 10,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [10 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x33": {
+      "input_bytes": 17,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [17 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x34": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x35": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x36": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x37": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x3d": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x3e": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x3f": {
+      "input_bytes": 21,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff00: vendor 0x01 [21 x 8 bits, array, 0..255]"
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "events_seen": [
+  "event28 ABS_RX -32",
+  "event28 ABS_RY 9",
+  "event28 ABS_RZ 88",
+  "event30 BTN_GAMEPAD 1",
+  "event30 BTN_GAMEPAD 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY -1",
+  "event30 BTN_GAMEPAD 1",
+  "event30 BTN_GAMEPAD 0",
+  "event30 KEY_NEXT 1",
+  "event30 KEY_PREVIOUS 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_PREVIOUS 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_NEXT 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event30 BTN_MODE 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event30 BTN_MODE 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RZ 0",
+  "event30 BTN_EAST 1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ 1",
+  "event30 BTN_EAST 0",
+  "event30 BTN_EAST 1",
+  "event30 BTN_EAST 0",
+  "event28 ABS_RZ 162",
+  "event28 ABS_RX -114",
+  "event28 ABS_RX -180",
+  "event28 ABS_RX -107",
+  "event28 ABS_RX -42",
+  "event28 ABS_RX -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RZ 1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RZ 1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ 1",
+  "event28 ABS_RZ 0",
+  "event28 ABS_RZ -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event30 BTN_1 1",
+  "event30 BTN_2 1",
+  "event30 BTN_1 0",
+  "event30 BTN_2 0",
+  "event30 BTN_1 1",
+  "event30 BTN_2 1",
+  "event30 BTN_1 0",
+  "event30 BTN_2 0",
+  "event30 KEY_NEXT 1",
+  "event30 KEY_NEXT 0",
+  "event30 BTN_MODE 1",
+  "event30 BTN_MODE 0",
+  "event30 KEY_PREVIOUS 1",
+  "event30 KEY_PREVIOUS 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 BTN_GAMEPAD 1",
+  "event28 ABS_RY 1",
+  "event30 BTN_GAMEPAD 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 1",
+  "event30 KEY_DOWN 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_DOWN 0",
+  "event28 ABS_RY 0",
+  "event30 KEY_LEFT 1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event30 KEY_LEFT 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_UP 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event30 KEY_UP 0",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event30 KEY_DOWN 1",
+  "event30 KEY_DOWN 0",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 1",
+  "event28 ABS_RY 0",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event30 KEY_UP 1",
+  "event30 KEY_UP 0",
+  "event30 KEY_LEFT 1",
+  "event30 KEY_LEFT 0",
+  "event30 KEY_DOWN 1",
+  "event30 KEY_DOWN 0",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event30 KEY_UP 1",
+  "event30 KEY_UP 0",
+  "event30 KEY_LEFT 1",
+  "event30 KEY_LEFT 0",
+  "event30 KEY_DOWN 1",
+  "event28 ABS_RY 1",
+  "event30 KEY_DOWN 0",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event30 KEY_UP 1",
+  "event30 KEY_UP 0",
+  "event30 KEY_LEFT 1",
+  "event30 KEY_LEFT 0",
+  "event30 KEY_DOWN 1",
+  "event30 KEY_DOWN 0",
+  "event30 KEY_RIGHT 1",
+  "event30 KEY_RIGHT 0",
+  "event30 BTN_GAMEPAD 1",
+  "event30 BTN_2 1",
+  "event30 BTN_GAMEPAD 0",
+  "event30 BTN_1 1",
+  "event30 BTN_1 0",
+  "event30 BTN_2 0",
+  "event30 BTN_GAMEPAD 1",
+  "event30 BTN_2 1",
+  "event30 BTN_1 1",
+  "event30 BTN_GAMEPAD 0",
+  "event28 ABS_RY 0",
+  "event30 BTN_1 0",
+  "event30 BTN_2 0",
+  "event30 KEY_NEXT 1",
+  "event30 KEY_NEXT 0",
+  "event30 BTN_MODE 1",
+  "event30 BTN_MODE 0",
+  "event30 KEY_PREVIOUS 1",
+  "event30 KEY_PREVIOUS 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY -1",
+  "event28 ABS_RY 0",
+  "event28 ABS_RY 1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX 0",
+  "event28 ABS_RX -1",
+  "event28 ABS_RX -1"
+ ]
+}

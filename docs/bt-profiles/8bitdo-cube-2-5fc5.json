@@ -1,0 +1,27 @@
+{
+ "address": "E4:17:D8:20:5F:C5",
+ "when": "2026-11-18T10:36:55-0700",
+ "bluez": {
+  "Name": "8BitDo Cube 2",
+  "Alias": "8BitDo Cube 2",
+  "Class": "0x00240414 (2360340)",
+  "Icon": "audio-card",
+  "Paired": "yes",
+  "Bonded": "yes",
+  "Trusted": "yes",
+  "Blocked": "no",
+  "Connected": "yes",
+  "LegacyPairing": "no",
+  "CablePairing": "no",
+  "UUID": [
+   "Audio Sink                (0000110b-0000-1000-8000-00805f9b34fb)",
+   "A/V Remote Control Target (0000110c-0000-1000-8000-00805f9b34fb)",
+   "Advanced Audio Distribu.. (0000110d-0000-1000-8000-00805f9b34fb)",
+   "A/V Remote Control        (0000110e-0000-1000-8000-00805f9b34fb)",
+   "Handsfree                 (0000111e-0000-1000-8000-00805f9b34fb)",
+   "Unknown                   (0000e003-0000-1000-8000-00805f9b34fb)",
+   "Unknown                   (0000e004-0000-1000-8000-00805f9b34fb)"
+  ]
+ },
+ "hid": []
+}

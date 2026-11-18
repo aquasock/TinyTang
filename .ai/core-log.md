@@ -1850,3 +1850,44 @@ The Classic HID host proper comes next, as a proposal: keep the link key on the 
 - User Test: PASS
 
 ---
+## 55 COMMIT Unreleased 2026-11-18T10:48:13-07:00
+
+#### Coming From:
+
+Unreleased f59a2b3
+
+#### Purpose:
+
+Profile the operator's Bluetooth pads, keyboards, mice and speaker on a PC before the Classic HID host is designed, so its scope follows what the devices actually do.
+
+#### Outcome:
+
+Nine devices and two Wiimote extension setups were profiled (BLE-022) with the new `tools/bt_profile.py`, which pairs a device with BlueZ using a NoInputNoOutput agent, the Tang's IO capability, then records BlueZ's properties, the kernel HID device with its driver and report descriptor decoded into report sizes and fields, and the input events while each control is pressed; the profiles and a summary table are in `docs/bt-profiles/`. Every device paired without a passkey. On Classic, the 8BitDo's descriptor confirms the 11-byte `0x3F` report the Tang received, while the Wii U Pro Controller and a Wiimote with Motion Plus, nunchuck or Classic Controller all speak the Wii Remote protocol under the same IDs and need a report mode and extension setup before they report. On LE, the Xbox pad's report is plain 16-byte HID, the Logitech M750 L and K950 use report layouts that are not the boot layouts the Tang's LE code expects, and the Rii K06's are boot-compatible, which is why it works. The 8BitDo Cube 2 speaker offers only SBC for A2DP. Whether the Wii devices use a legacy PIN is not established, because BlueZ answers it internally and its `LegacyPairing` property was inconsistent. Three faults in the new tool were found and fixed while running it: one-shot `bluetoothctl` lookups waited out a scan timeout, the HID address match compared lowercased text against an uppercase key, and drivers that register their HID device late were missed. `tools/tests/test_bt_profile.sh` checks the descriptor decoder against five recorded devices and fails when field sizes are mis-summed; host tests are 53 of 53. The Tang was powered off throughout and nothing was built or deployed. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the new BLE-022 with its index row and summary line, and this entry was validated as number 55 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 189 records.
+
+#### Next Steps:
+
+Propose the Bluetooth input work from these profiles: a Classic HID host that keeps link keys on the card and accepts a reconnecting pad's channels, with a Switch Pro handler and a Wii Remote handler; boot-protocol selection or a descriptor decoder for LE mice and keyboards such as the Logitech pair; and one retry of the Xbox pad on the Classic build's controller library. A `btmon` capture while pairing a Wii device would settle the PIN question. The Cube 2 speaker is the first target for the A2DP source. Entry 54's other items stand.
+
+#### Files Modified:
+
+- docs/bt-profiles/8bitdo-cube-2-5fc5.json
+- docs/bt-profiles/README.md
+- docs/bt-profiles/k06-ble-keyboard-3aff.json
+- docs/bt-profiles/logi-k950-da4e.json
+- docs/bt-profiles/logi-m750-l-2b6e.json
+- docs/bt-profiles/nintendo-rvl-cnt-01-tr-66d1-classic.json
+- docs/bt-profiles/nintendo-rvl-cnt-01-tr-66d1-nunchuk.json
+- docs/bt-profiles/nintendo-rvl-cnt-01-tr-66d1.json
+- docs/bt-profiles/nintendo-rvl-cnt-01-uc-5c91.json
+- docs/bt-profiles/pro-controller-4d7f.json
+- docs/bt-profiles/xbox-wireless-controller-4579.json
+- tools/bt_profile.py
+- tools/tests/test_bt_profile.sh
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

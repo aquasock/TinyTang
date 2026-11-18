@@ -1,0 +1,150 @@
+{
+ "address": "DB:88:A7:81:DA:4E",
+ "when": "2026-11-18T10:33:09-0700",
+ "bluez": {
+  "Name": "Logi K950",
+  "Alias": "Logi K950",
+  "Appearance": "0x03c1 (961)",
+  "Icon": "input-keyboard",
+  "Paired": "yes",
+  "Bonded": "yes",
+  "Trusted": "yes",
+  "Blocked": "no",
+  "Connected": "yes",
+  "WakeAllowed": "yes",
+  "LegacyPairing": "no",
+  "CablePairing": "no",
+  "UUID": [
+   "Generic Access Profile    (00001800-0000-1000-8000-00805f9b34fb)",
+   "Generic Attribute Profile (00001801-0000-1000-8000-00805f9b34fb)",
+   "Device Information        (0000180a-0000-1000-8000-00805f9b34fb)",
+   "Battery Service           (0000180f-0000-1000-8000-00805f9b34fb)",
+   "Human Interface Device    (00001812-0000-1000-8000-00805f9b34fb)",
+   "Logitech International SA (0000fd72-0000-1000-8000-00805f9b34fb)",
+   "Vendor specific           (00010000-0000-1000-8000-011f2000046d)"
+  ],
+  "Modalias": "usb:v046DpB386d0008",
+  "AdvertisingFlags": ""
+ },
+ "hid": [
+  {
+   "sysfs": "0005:046D:B386.0017",
+   "name": "Logi K950",
+   "driver": "hid-vivaldi",
+   "descriptor_hex": "05010906a10185019508750115002501050719e029e7810295057501150025010508190129059102950391039506750826ff000507190029ff810006d1ff0901a1028509950c7520170000008027ffffff7f050a1901290cb103c0c0060cff0901a101850395027510150126ff0219012aff028100c005010980a1018504950175021501250309820981098381009502750115002501099b09a98106950175048103c0050c0901a101850595137501150025010a70000a6f000a9f020aa2020aa0020a40000ad8000ad9000ad5000ab6000acd000ab5000ae2000aea000ae9000a92010a21020a30000a9d02810295058103c005010913a101850b950175011500250109e18106750f8103c00643ff0a0202a101851195137508150026ff000902810009029100c0",
+   "descriptor_len": 296,
+   "events": [
+    "event28"
+   ],
+   "motion_events": [],
+   "parsed": {
+    "applications": [
+     "Generic Desktop / Keyboard",
+     "0xff0c / vendor 0x01",
+     "Generic Desktop / System Control",
+     "Consumer / 0x01",
+     "Generic Desktop / 0x13",
+     "0xff43 / vendor 0x202"
+    ],
+    "reports": {
+     "0x01": {
+      "input_bytes": 7,
+      "output_bytes": 1,
+      "feature_bytes": 0,
+      "fields": [
+       "input Keyboard: 0xe0..0xe7 [8 x 1 bits, var, 0..1]",
+       "output LED: 0x01..0x05 [5 x 1 bits, var, 0..1]",
+       "output LED: - [3 x 1 bits, const, 0..1]",
+       "input Keyboard: 0x00..0xff [6 x 8 bits, array, 0..255]"
+      ]
+     },
+     "0x03": {
+      "input_bytes": 4,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff0c: vendor 0x01..vendor 0x2ff [2 x 16 bits, array, 1..767]"
+      ]
+     },
+     "0x04": {
+      "input_bytes": 1,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input Generic Desktop: 0x82, 0x81, 0x83 [1 x 2 bits, array, 1..3]",
+       "input Generic Desktop: 0x9b, 0xa9 [2 x 1 bits, var,rel, 0..1]",
+       "input Generic Desktop: - [1 x 4 bits, const, 0..1]"
+      ]
+     },
+     "0x05": {
+      "input_bytes": 3,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input Consumer: 0x70, 0x6f, 0x29f, 0x2a2, 0x2a0, 0x40, 0xd8, 0xd9, +11 [19 x 1 bits, var, 0..1]",
+       "input Consumer: - [5 x 1 bits, const, 0..1]"
+      ]
+     },
+     "0x09": {
+      "input_bytes": 0,
+      "output_bytes": 0,
+      "feature_bytes": 48,
+      "fields": [
+       "feature 0xa: 0x01..0x0c [12 x 32 bits, const, -2147483648..2147483647]"
+      ]
+     },
+     "0x0b": {
+      "input_bytes": 2,
+      "output_bytes": 0,
+      "feature_bytes": 0,
+      "fields": [
+       "input Generic Desktop: 0xe1 [1 x 1 bits, var,rel, 0..1]",
+       "input Generic Desktop: - [1 x 15 bits, const, 0..1]"
+      ]
+     },
+     "0x11": {
+      "input_bytes": 19,
+      "output_bytes": 19,
+      "feature_bytes": 0,
+      "fields": [
+       "input 0xff43: vendor 0x02 [19 x 8 bits, array, 0..255]",
+       "output 0xff43: vendor 0x02 [19 x 8 bits, array, 0..255]"
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "events_seen": [
+  "event28 KEY_D 1",
+  "event28 KEY_F 1",
+  "event28 KEY_G 1",
+  "event28 KEY_D 0",
+  "event28 KEY_F 0",
+  "event28 KEY_G 0",
+  "event28 KEY_D 1",
+  "event28 KEY_S 1",
+  "event28 KEY_F 1",
+  "event28 KEY_G 1",
+  "event28 KEY_S 0",
+  "event28 KEY_D 0",
+  "event28 KEY_F 0",
+  "event28 KEY_G 0",
+  "event28 KEY_E 1",
+  "event28 KEY_R 1",
+  "event28 KEY_T 1",
+  "event28 KEY_E 0",
+  "event28 KEY_R 0",
+  "event28 KEY_T 0",
+  "event28 KEY_LEFT 1",
+  "event28 KEY_UP 1",
+  "event28 KEY_RIGHT 1",
+  "event28 KEY_UP 0",
+  "event28 KEY_LEFT 0",
+  "event28 KEY_RIGHT 0",
+  "event28 KEY_KP4 1",
+  "event28 KEY_KP5 1",
+  "event28 KEY_KP4 0",
+  "event28 KEY_KP5 0"
+ ]
+}
