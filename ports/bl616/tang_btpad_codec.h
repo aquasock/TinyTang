@@ -51,6 +51,10 @@
 /* How a pad reports.  Only the Switch layout exists so far; the Wii family
  * (BLE-022) is the next. */
 #define TANG_BTPAD_KIND_SWITCH 1
+/* The Wii family (BLE-022): the Wii U Pro Controller and the Wiimote.  They
+ * pair with a legacy PIN and speak the Wii Remote protocol; their reports are
+ * not decoded yet, `btpad watch` shows them raw. */
+#define TANG_BTPAD_KIND_WII    2
 
 typedef struct {
     bool    valid;

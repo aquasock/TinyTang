@@ -1723,7 +1723,22 @@ static struct bt_conn_cb s_conn_cb = {
 
 /* Only completion callbacks, no passkey ones, so the stack reports
  * NoInputNoOutput and pairs with Just Works. */
+#if defined(CONFIG_BT_BREDR)
+/* Legacy PIN pairing exists only on Classic links: tang_btpad.c answers it.
+ * It does not change the IO capability the stack reports (that follows the
+ * passkey callbacks alone), so Secure Simple Pairing stays Just Works. */
+static void hid_pincode_entry(struct bt_conn *conn, bool highsec)
+{
+    if (tang_btpad_is_br(conn)) {
+        tang_btpad_pincode(conn, highsec);
+    }
+}
+#endif
+
 static struct bt_conn_auth_cb s_auth_cb = {
+#if defined(CONFIG_BT_BREDR)
+    .pincode_entry = hid_pincode_entry,
+#endif
     .pairing_complete = hid_pairing_complete,
     .pairing_failed = hid_pairing_failed,
 };
@@ -2825,7 +2840,7 @@ static const tdsh_command_t s_ble_commands[] = {
 #if defined(CONFIG_BT_BREDR)
     { "btscan", "btscan [seconds]", "Classic Bluetooth inquiry: list devices in range",
       tang_btscan_cmd, 0 },
-    { "btpad", "btpad [status] | pair [secs] | <addr> | watch [secs] | forget 1|2|all",
+    { "btpad", "btpad [status] | pair [s] | <addr> | watch [s] | send N <hex> | forget N",
       "Classic Bluetooth gamepads: pair, reconnect, watch",
       tang_btpad_cmd, 0 },
 #endif

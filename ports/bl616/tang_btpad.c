@@ -63,6 +63,7 @@ void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
 #include "bluetooth.h"
 #include "conn.h"
 #include "ff.h"
+#include "hci_host.h"
 #include "keys.h"
 #include "l2cap.h"
 
@@ -74,6 +75,13 @@ void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
 /* From the stack's internal headers, which are not on the include path.
  * conn_internal.h: the Classic link to an address, with a reference, or NULL. */
 struct bt_conn *bt_conn_lookup_addr_br(const bt_addr_t *peer);
+/* hci_core.h: this controller's public address, the Classic BD_ADDR too. */
+int bt_get_local_public_address(bt_addr_le_t *adv_addr);
+/* l2cap_internal.h: a PDU from the ACL pool (pool NULL). */
+struct net_buf *bt_l2cap_create_pdu_timeout(struct net_buf_pool *pool,
+                                            size_t reserve, s32_t timeout);
+
+#define BTPAD_HCI_PIN_CODE_REPLY 0x040Du   /* Link Control, OCF 0x0D */
 
 #define BTPAD_DIR           "/sd/root/ble"
 #define BTPAD_PATH          "/sd/root/ble/br_keys.bin"
@@ -92,6 +100,8 @@ typedef struct {
     bool outbound;                     /* this host made it */
     bool pairing;                      /* made by a pairing: save the key it gets */
     volatile bool key_due;             /* paired and bonded; the key comes after */
+    volatile bool pin_due;             /* the pad asked for a legacy PIN */
+    bool used_pin;                     /* this link paired by PIN: the Wii family */
     uint8_t want_addr[6];              /* the pad a pairing is for */
     char want_name[TANG_BTPAD_NAME_LEN];
     struct bt_l2cap_br_chan ctrl, intr;
@@ -427,6 +437,7 @@ void tang_btpad_disconnected(struct bt_conn *conn, u8_t reason)
     p->conn = NULL;
     p->pairing = false;
     p->key_due = false;
+    p->pin_due = false;
     if (!p->outbound) {
         bt_conn_unref(conn);          /* ours; an outbound one is the stack's */
     }
@@ -454,7 +465,12 @@ static void key_capture(btpad_t *p)
         return;                       /* not yet; a later event tries again */
     }
     p->key_due = false;
-    tang_btpad_key_t s = { .valid = true, .kind = TANG_BTPAD_KIND_SWITCH, .flags = k->flags };
+    /* A pad that paired by PIN is of the Wii family; a Switch-mode pad uses
+     * Secure Simple Pairing.  Its name is not a test: a Wii pad may send none
+     * in an inquiry. */
+    tang_btpad_key_t s = { .valid = true,
+                           .kind = p->used_pin ? TANG_BTPAD_KIND_WII : TANG_BTPAD_KIND_SWITCH,
+                           .flags = k->flags };
     memcpy(s.addr, a, 6);
     memcpy(s.key, k->val, 16);
     if (p->pairing && p->want_name[0]) {
@@ -596,7 +612,57 @@ void tang_btpad_radio_up(void)
 static bool waiting(const btpad_t *p)
 {
     return p->linked && p->conn != NULL &&
-           ((!p->ctrl_up && !p->ctrl_asked) || (p->ctrl_up && !p->intr_up && !p->intr_asked));
+           (p->pin_due ||
+            (!p->ctrl_up && !p->ctrl_asked) || (p->ctrl_up && !p->intr_up && !p->intr_asked));
+}
+
+void tang_btpad_pincode(struct bt_conn *conn, bool highsec)
+{
+    (void)highsec;
+    btpad_t *p = by_conn(conn);
+    if (p == NULL) {
+        return;                       /* not ours: the request times out */
+    }
+    note("pad %d: asked for a PIN (legacy pairing)", slot_no(p));
+    p->pin_due = true;
+    p->used_pin = true;
+    tang_ble_btpad_signal();
+}
+
+/* The Wii PIN for pairing from the pad's sync button: this host's own
+ * address, lowest byte first, as six binary bytes (BLE-022, the btmon
+ * capture of BlueZ answering it).  The SDK's bt_conn_auth_pincode_entry()
+ * measures the PIN with strlen, so it is used only when no byte is 0x00;
+ * otherwise the HCI PIN Code Request Reply is sent here with its length. */
+static void pin_reply(btpad_t *p)
+{
+    bt_addr_le_t own;
+    uint8_t a[6];
+    if (bt_get_local_public_address(&own) != 0 || !conn_addr(p->conn, a)) {
+        note("pad %d: no address to answer the PIN with", slot_no(p));
+        return;
+    }
+    const uint8_t *pin = own.a.val;
+    int rc;
+    if (memchr(pin, 0, 6) == NULL) {
+        char text[7];
+        memcpy(text, pin, 6);
+        text[6] = '\0';
+        rc = bt_conn_auth_pincode_entry(p->conn, text);
+    } else {
+        struct net_buf *buf = bt_hci_cmd_create(BTPAD_HCI_PIN_CODE_REPLY, 23);
+        if (buf == NULL) {
+            note("pad %d: no buffer for the PIN reply", slot_no(p));
+            return;
+        }
+        uint8_t cp[23] = { 0 };
+        memcpy(cp, a, 6);             /* the pad's address */
+        cp[6] = 6;                    /* PIN length */
+        memcpy(cp + 7, pin, 6);
+        net_buf_add_mem(buf, cp, sizeof cp);
+        rc = bt_hci_cmd_send_sync(BTPAD_HCI_PIN_CODE_REPLY, buf, NULL);
+    }
+    note("pad %d: answered the PIN with this board's address (%d)", slot_no(p), rc);
 }
 
 bool tang_btpad_busy(void)
@@ -619,6 +685,11 @@ void tang_btpad_work(void)
     for (int i = 0; i < TANG_BTPAD_SLOTS; i++) {
         btpad_t *p = &s_pad[i];
         if (!waiting(p)) {
+            continue;
+        }
+        if (p->pin_due) {
+            p->pin_due = false;
+            pin_reply(p);
             continue;
         }
         /* On a link the pad made, it opens the channels; step in only if it
@@ -832,6 +903,8 @@ static int link_to(btpad_t *p, const uint8_t a[6], const char *name, bool fresh)
     }
     p->pairing = pairing;
     p->key_due = false;
+    p->pin_due = false;
+    p->used_pin = false;
     p->reports = 0;
     p->linked = false;
     p->outbound = true;
@@ -1041,6 +1114,44 @@ int tang_btpad_cmd(tdsh_session_t *session, int argc, char **argv)
         }
         return cmd_pair(secs, NULL);
     }
+    if (strcmp(op, "send") == 0) {
+        /* Bytes as given, on pad n's interrupt channel: a HID output report
+         * starts with 0xa2 (a Wii Remote's 0x12 sets the report mode, 0x16
+         * writes its memory).  For working a pad's protocol out by hand. */
+        if (argc < 4) {
+            tdsh_printf("usage: btpad send 1|2 <hex bytes>\r\n");
+            return 1;
+        }
+        const int n = atoi(argv[2]);
+        if (n < 1 || n > TANG_BTPAD_SLOTS || !s_pad[n - 1].intr_up) {
+            tdsh_printf("btpad: pad %s has no open interrupt channel\r\n", argv[2]);
+            return 1;
+        }
+        uint8_t data[32];
+        int len = 0;
+        for (int i = 3; i < argc && len < (int)sizeof data; i++) {
+            char *end;
+            const unsigned long v = strtoul(argv[i], &end, 16);
+            if (*end != '\0' || v > 0xFF) {
+                tdsh_printf("btpad: '%s' is not a hex byte\r\n", argv[i]);
+                return 1;
+            }
+            data[len++] = (uint8_t)v;
+        }
+        struct net_buf *buf = bt_l2cap_create_pdu_timeout(NULL, 0, K_SECONDS(1));
+        if (buf == NULL) {
+            tdsh_printf("btpad: no buffer to send with\r\n");
+            return 1;
+        }
+        net_buf_add_mem(buf, data, (size_t)len);
+        const int rc = bt_l2cap_chan_send(&s_pad[n - 1].intr.chan, buf);
+        if (rc < 0) {
+            net_buf_unref(buf);
+        }
+        tdsh_printf("btpad: sent %d byte(s) to pad %d (%d)\r\n", len, n, rc);
+        cmd_watch(2);
+        return 0;
+    }
     if (strcmp(op, "forget") == 0) {
         if (argc < 3) {
             tdsh_printf("usage: btpad forget 1 | 2 | all\r\n");
@@ -1089,7 +1200,8 @@ int tang_btpad_cmd(tdsh_session_t *session, int argc, char **argv)
         }
         return cmd_pair(0, a);
     }
-    tdsh_printf("usage: btpad [status] | pair [secs] | <addr> | watch [secs] | forget 1|2|all\r\n");
+    tdsh_printf("usage: btpad [status] | pair [secs] | <addr> | watch [secs] | send 1|2 <hex>"
+                " | forget 1|2|all\r\n");
     return 1;
 }
 

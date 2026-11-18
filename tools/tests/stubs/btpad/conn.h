@@ -32,4 +32,5 @@ struct bt_conn *bt_conn_ref(struct bt_conn *conn);
 void bt_conn_unref(struct bt_conn *conn);
 int bt_conn_disconnect(struct bt_conn *conn, u8_t reason);
 struct bt_conn *bt_conn_create_br(const bt_addr_t *peer, const struct bt_br_conn_param *param);
+int bt_conn_auth_pincode_entry(struct bt_conn *conn, const char *pin);
 #endif

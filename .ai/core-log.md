@@ -1998,3 +1998,40 @@ Phase 2 of the Bluetooth input plan is next: the Wii family handler with its leg
 - User Test: N/A
 
 ---
+## 59 COMMIT Unreleased 2026-11-18T12:40:09-07:00
+
+#### Coming From:
+
+Unreleased 964a437
+
+#### Purpose:
+
+Record the parked retry of the Xbox Wireless Controller on the Classic build's controller library and build the first step of the Wii U Pro Controller's support, a legacy PIN reply and a way to send it output reports, for an agent handoff.
+
+#### Outcome:
+
+The Xbox pad now gets further than in any earlier attempt but still sends no input, and the operator parked it (BLE-017, revised). On firmware `3b72d27-dirty.3eec454` `blekbd pair Xbox` paired it with LE Secure Connections, encryption came up and every GATT setup step succeeded through Exit Suspend, which BLE-017's second failure form never reached; but no notification arrived, the pad kept blinking as in pairing mode, and it later ended the link. Board HCI traces recorded with `bletrace` and decoded with `tools/ble_trace_to_btsnoop.py` and btmon match the BlueZ capture of the same pad in the pairing exchange and the keys, yet under BlueZ the pad notifies 45 ms after its keys with nothing asked while on the board nothing reaches HCI. Stopping the Rii K06's background reconnect, which had started a second LE initiator during the first traced pairing, made the pairing as fast as BlueZ's and changed nothing else. Two host-side faults were found: after a forget or a failed LE link `blekbd pair` cannot start a connection until a reboot, and this library allows only two LE connections, one held by a waiting reconnect. The operator then chose the Wii U Pro Controller over the bare Wiimote for Phase 2, and step 1 was built (BLE-023, revised): `tang_ble.c` gains a `pincode_entry` callback for Classic links, `tang_btpad.c` answers a PIN request from its background task with this board's address lowest byte first, through the SDK when no byte is zero and as a raw HCI reply otherwise, keeps a PIN-paired pad as the Wii family, and adds `btpad send N <hex>` for output reports. The host test grew to 50 checks with a Wii pad scenario on a fake stack, both PIN paths failing under mutation; its first run of that scenario failed because the fake stored the link key under the wrong address. Host tests are 46 of 46 in quick mode with nine skipped, `tools/build_both.sh` passes with images of 1,054,592 and 807,808 bytes, and firmware `964a437-dirty.e446a4c` was installed with `tools/tinytang_flash.py` and started with the relay sequence, the 8BitDo still saved as pad 1. The Wii U Pro was not tried: the operator asked for this handoff first. The Xbox bond was deleted and the K06 combo slot was switched off for the Xbox test, keeping its pairing. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and dated revisions to the verifications of BLE-017 and BLE-023, and this entry was validated as number 59 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 191 records.
+
+#### Next Steps:
+
+Test step 1 on the board: with the Wii U Pro's red sync button pressed, run `btpad pair`, which should note a PIN request and its answer and open both channels as pad 2, then set it up by hand with Wii Remote output reports on its interrupt channel: `btpad send 2 a2 11 10` for player LED 1; the extension initialisation as two memory writes, `btpad send 2 a2 16 04 a4 00 f0 01 55` and `btpad send 2 a2 16 04 a4 00 fb 01 00`, each followed by fifteen `00` bytes to fill the 16-byte data field; `btpad send 2 a2 17 04 a4 00 fa 00 06` to read the extension identity, which a Wii U Pro answers in report 0x21 as `00 00 a4 20 01 20`; and `btpad send 2 a2 12 00 34` for report mode 0x34. Then `btpad watch` while the operator presses each control maps the 0x34 report, whose extension bytes for a Wii U Pro hold four 12-bit sticks and active-low buttons. Step 2 is the handler that does this on every connection and feeds the Wii Classic key map, extended into `test_btpad_host.sh` first. Also to do: the `blekbd pair` failure after a forget or a failed LE link, and the K06 combo slot, left switched off by the Xbox test, needs `blecombo on`. Entry 57's other items stand.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_btpad.c
+- ports/bl616/tang_btpad_codec.h
+- ports/bl616/tang_btpad_hooks.h
+- tools/tests/stubs/btpad/bluetooth.h
+- tools/tests/stubs/btpad/conn.h
+- tools/tests/stubs/btpad/hci_host.h
+- tools/tests/stubs/btpad/l2cap.h
+- tools/tests/tb_btpad_host.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

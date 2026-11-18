@@ -28,6 +28,11 @@ void tang_btpad_disconnected(struct bt_conn *conn, u8_t reason);
 void tang_btpad_security(struct bt_conn *conn, bt_security_t level, enum bt_security_err err);
 void tang_btpad_paired(struct bt_conn *conn, bool bonded, int failed);
 
+/* A legacy PIN request on a Classic link (the Wii family pairs this way):
+ * the auth callbacks' pincode_entry.  The reply is sent later, from the
+ * background task. */
+void tang_btpad_pincode(struct bt_conn *conn, bool highsec);
+
 /* At boot, before the radio: read the pairings from the card.  True when a
  * pad is saved, so the radio should start for it to reconnect. */
 bool tang_btpad_load(void);

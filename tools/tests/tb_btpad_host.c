@@ -402,10 +402,73 @@ void tang_wii_apply(tang_wiipad_t *n, const tang_wii_sample_t *s, tang_mouse_t *
     g_wii_last = *s;
 }
 
+/* ------------------------------------------- PINs, HCI and output reports */
+
+static bt_addr_le_t g_own = { 0, { { 0x87, 0xb7, 0xc9, 0x4e, 0x47, 0xc4 } } };
+int bt_get_local_public_address(bt_addr_le_t *a)
+{
+    *a = g_own;
+    return 0;
+}
+
+static char g_pin_text[17];
+static int g_pin_entries;
+int bt_conn_auth_pincode_entry(struct bt_conn *conn, const char *pin)
+{
+    (void)conn;
+    strncpy(g_pin_text, pin, sizeof g_pin_text - 1);
+    g_pin_entries++;
+    return 0;
+}
+
+static struct net_buf g_buf;
+void *net_buf_add_mem(struct net_buf *buf, const void *mem, size_t len)
+{
+    memcpy(buf->store + buf->len, mem, len);
+    buf->len = (u16_t)(buf->len + len);
+    return buf->store;
+}
+void net_buf_unref(struct net_buf *buf) { (void)buf; }
+
+static u16_t g_hci_op;
+static uint8_t g_hci[32];
+static int g_hci_len;
+struct net_buf *bt_hci_cmd_create(u16_t opcode, u8_t param_len)
+{
+    (void)param_len;
+    memset(&g_buf, 0, sizeof g_buf);
+    g_hci_op = opcode;
+    return &g_buf;
+}
+int bt_hci_cmd_send_sync(u16_t opcode, struct net_buf *buf, struct net_buf **rsp)
+{
+    (void)rsp;
+    g_hci_op = opcode;
+    memcpy(g_hci, buf->store, buf->len);
+    g_hci_len = buf->len;
+    return 0;
+}
+
+struct net_buf *bt_l2cap_create_pdu_timeout(struct net_buf_pool *pool, size_t reserve, s32_t timeout)
+{
+    (void)pool; (void)reserve; (void)timeout;
+    memset(&g_buf, 0, sizeof g_buf);
+    return &g_buf;
+}
+static uint8_t g_sent[32];
+static int g_sent_len;
+int bt_l2cap_chan_send(struct bt_l2cap_chan *chan, struct net_buf *buf)
+{
+    (void)chan;
+    memcpy(g_sent, buf->store, buf->len);
+    g_sent_len = buf->len;
+    return buf->len;
+}
+
 /* ------------------------------------------------------------ the pad */
 
 /* What the fake pad does while a command waits, the orders the board saw. */
-enum { PAD_IDLE, PAD_PAIRS, PAD_FAILS };
+enum { PAD_IDLE, PAD_PAIRS, PAD_FAILS, PAD_PIN };
 static int g_pad_mode;
 static bool g_pad_secured;
 static bt_addr_t g_pad_addr = { { 0x7f, 0x4d, 0x17, 0xd8, 0x17, 0xe4 } };
@@ -418,7 +481,7 @@ static void pad_tick(void)
         sdk_connect_fail(c, 0x04);
         return;
     }
-    if (g_pad_mode != PAD_PAIRS) {
+    if (g_pad_mode != PAD_PAIRS && g_pad_mode != PAD_PIN) {
         return;
     }
     if (g_created != NULL) {
@@ -430,11 +493,24 @@ static void pad_tick(void)
     if (g_req[0] != NULL) {
         struct bt_l2cap_chan *ch = g_req[0];
         g_req[0] = NULL;
+        if (g_pad_mode == PAD_PIN && !g_pad_secured) {
+            /* A Wii pad: a PIN request first; the pad waits for the answer,
+             * which the background task sends on a later tick. */
+            if (g_pin_entries == 0 && g_hci_len == 0) {
+                g_req[0] = ch;
+                static bool asked;
+                if (!asked) {
+                    asked = true;
+                    tang_btpad_pincode(ch->conn, false);
+                }
+                return;
+            }
+        }
         if (!g_pad_secured) {
             /* The control channel needs security: the pairing completes,
              * then the key arrives, then encryption is up (BLE-023). */
             tang_btpad_paired(ch->conn, true, 0);
-            sdk_link_key(&g_pad_addr);
+            sdk_link_key(&ch->conn->dst);     /* the key for this link's pad */
             tang_btpad_security(ch->conn, BT_SECURITY_L2, 0);
             g_pad_secured = true;
         }
@@ -483,7 +559,7 @@ static int cmd(const char *a1, const char *a2)
 static void report(uint8_t b1, uint8_t b2, uint8_t hat)
 {
     uint8_t r[13] = { 0xa1, 0x3f, b1, b2, hat, 0xf0, 0x7f, 0x00, 0x80, 0x00, 0x80, 0xf0, 0x7f };
-    struct net_buf nb = { r, sizeof r };
+    struct net_buf nb = { .data = r, .len = sizeof r };
     s_pad[0].intr.chan.ops->recv(&s_pad[0].intr.chan, &nb);
 }
 
@@ -607,6 +683,53 @@ int main(void)
     }
     cmd("status", NULL);
     check(out_has("pad 1: empty"), "status does not show the forgotten slot as empty");
+
+    /* ---- 9. a Wii pad: legacy PIN, the board's address lowest byte first */
+    g_pad_mode = PAD_PIN;
+    g_pad_secured = false;
+    g_pin_entries = 0;
+    g_hci_len = 0;
+    reset_requests();
+    rc = cmd("18:2A:7B:45:5C:91", NULL);
+    check(rc == 0, "a pad that pairs by PIN did not finish pairing");
+    check(g_pin_entries == 1 && memcmp(g_pin_text, g_own.a.val, 6) == 0 && strlen(g_pin_text) == 6,
+          "the PIN is not this board's address, lowest byte first");
+    check(s_pad[0].saved.valid && s_pad[0].saved.kind == TANG_BTPAD_KIND_WII,
+          "a PIN-paired pad was not kept as the Wii family");
+    /* btpad send: the bytes go out on the interrupt channel as given. */
+    {
+        char *argv[6] = { "btpad", "send", "1", "a2", "12", "34" };
+        out_clear();
+        rc = tang_btpad_cmd(NULL, 6, argv);
+        check(rc == 0 && g_sent_len == 3 && g_sent[0] == 0xa2 && g_sent[1] == 0x12 &&
+              g_sent[2] == 0x34, "btpad send did not send the bytes given");
+    }
+    g_pad_mode = PAD_IDLE;
+    sdk_disconnect(s_pad[0].conn, 0x13);
+    check(g_underflows == 0, "the PIN-paired link's references do not balance");
+
+    /* With a 0x00 in the address the SDK's strlen would cut the PIN short:
+     * the raw HCI reply carries the pad's address, length 6 and the PIN. */
+    cmd("forget", "1");
+    run_ms(100);
+    g_own.a.val[2] = 0x00;
+    g_pad_mode = PAD_PIN;
+    g_pad_secured = false;
+    g_pin_entries = 0;
+    g_hci_len = 0;
+    reset_requests();
+    /* The fake pad's PIN request is one-shot and spent: this run pairs on a
+     * key, and the PIN request is made by hand once the link is up. */
+    const uint8_t wiiu[6] = { 0x91, 0x5c, 0x45, 0x7b, 0x2a, 0x18 };
+    g_pad_secured = true;             /* the pairing itself is not the point */
+    g_pad_mode = PAD_PAIRS;
+    rc = cmd("18:2A:7B:45:5C:91", NULL);
+    tang_btpad_pincode(s_pad[0].conn, false);
+    run_ms(100);
+    check(g_pin_entries == 0 && g_hci_op == 0x040D && g_hci_len == 23,
+          "a PIN with a zero byte did not go as a raw HCI reply");
+    check(memcmp(g_hci, wiiu, 6) == 0 && g_hci[6] == 6 && memcmp(g_hci + 7, g_own.a.val, 6) == 0,
+          "the raw PIN reply is not the pad's address, length 6 and the board's address");
 
     printf("btpad host: %s (%d checks)\n", fails ? "FAIL" : "PASS", checks);
     return fails ? 1 : 0;

@@ -14,6 +14,7 @@ typedef uint16_t u16_t;
 typedef int32_t  s32_t;
 
 typedef struct { uint8_t val[6]; } bt_addr_t;
+typedef struct { uint8_t type; bt_addr_t a; } bt_addr_le_t;
 
 struct bt_br_discovery_result {
     bt_addr_t addr;
