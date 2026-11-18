@@ -35,6 +35,10 @@ extern "C" {
 #include "tinydesk/td.h"
 #include "tinydesk/td_sysinfo.h"
 #include "tang_plane.h"
+#include "tang_fpga_link.h"
+#include "td_fs_stdio.h"
+#include "tdsh.h"
+#include "bflb_mtimer.h"
 
 int tdsh_printf(const char *fmt, ...);
 }
@@ -99,6 +103,11 @@ int32_t s_pw = 640, s_ph = 360;         // the plane, from tang_plane_size at op
  * must cover so nothing of the last picture is left.  Unknown, so all of it,
  * whenever the plane is newly shown. */
 int32_t s_lit_l = 0, s_lit_r = TANG_PLANE_MAX_WIDTH;
+
+/* Where the last finished render's time went, in microseconds: opening and
+ * reading the file's rows (card and decode), sending rows to the plane (the
+ * link), and the whole; the rest is the filter.  `readerdraw` reports them. */
+uint32_t s_t_card, s_t_link, s_t_total;
 
 /* ------------------------------------------------------------ the list */
 
@@ -231,14 +240,17 @@ inline uint16_t rgb565(uint32_t r, uint32_t g, uint32_t b)
 
 /* Draw the requested view.  The picture is fitted to the plane at 1x and
  * scaled by the zoom; s is the plane pixels per picture pixel in 16.16. */
-void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
+void render(const td_fs_ops_t *fs, const char *path, int zoom, int32_t cx, int32_t cy,
+            uint32_t gen)
 {
     static uint16_t out[TANG_PLANE_MAX_WIDTH];
     static uint8_t sent[(TANG_PLANE_MAX_HEIGHT + 7) / 8];
     const int32_t PW = s_pw, PH = s_ph;
     td_image_t img;
     char err[64];
-    if (!td_image_load(&img, td_sysinfo()->fs, path, err, (int)sizeof err)) {
+    const uint64_t t_start = bflb_mtimer_get_time_us();
+    uint64_t t_card = 0, t_link = 0;
+    if (!td_image_load(&img, fs, path, err, (int)sizeof err)) {
         snprintf(s_render_say, sizeof s_render_say, "%s", err);
         s_render_said = true;
         return;
@@ -296,7 +308,9 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
         const int32_t py = oy + ty;
         for (int32_t x = L; x < R; x++) out[x] = 0;
         memcpy(out + ox, px, (size_t)dw * 2);
+        const uint64_t t0 = bflb_mtimer_get_time_us();
         (void)tang_plane_write(L, py, out + L, R - L);
+        t_link += bflb_mtimer_get_time_us() - t0;
         sent[py >> 3] |= (uint8_t)(1u << (py & 7));
     };
     static uint16_t line[TANG_PLANE_MAX_WIDTH];
@@ -312,8 +326,13 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
         cur = -1;
     };
 
+    t_card = bflb_mtimer_get_time_us() - t_start;
     int y = 0;
-    while (td_image_row(&img, &y, row)) {
+    for (;;) {
+        const uint64_t t0 = bflb_mtimer_get_time_us();
+        const bool more = td_image_row(&img, &y, row);
+        t_card += bflb_mtimer_get_time_us() - t0;
+        if (!more) break;
         if (s_gen != gen) break;
         if (y < sy0 || y >= sy0 + vh) continue;
         const int32_t r = y - sy0;
@@ -355,7 +374,9 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
         for (int32_t x = L; x < R; x++) out[x] = 0;
         for (int32_t py = 0; py < PH && s_gen == gen; py++) {
             if (!(sent[py >> 3] & (1u << (py & 7)))) {
+                const uint64_t t0 = bflb_mtimer_get_time_us();
                 (void)tang_plane_write(L, py, out + L, R - L);
+                t_link += bflb_mtimer_get_time_us() - t0;
             }
         }
     }
@@ -364,6 +385,9 @@ void render(const char *path, int zoom, int32_t cx, int32_t cy, uint32_t gen)
     if (s_gen == gen) {
         s_lit_l = ox;
         s_lit_r = ox + dw;
+        s_t_card = (uint32_t)t_card;
+        s_t_link = (uint32_t)t_link;
+        s_t_total = (uint32_t)(bflb_mtimer_get_time_us() - t_start);
     } else {
         s_lit_l = L;
         s_lit_r = R;
@@ -381,7 +405,7 @@ void render_task(void *)
         const int zoom = s_zoom;
         const int32_t cx = s_cx, cy = s_cy;
         if (!s_viewing) break;
-        render(path, zoom, cx, cy, gen);
+        render(td_sysinfo()->fs, path, zoom, cx, cy, gen);
         if (s_gen == gen) break;
     }
     s_render_busy = false;
@@ -604,9 +628,68 @@ void launch(void)
 
 const td_app_t s_app = { "Reader", launch, "RD" };
 
+/* `readerdraw <path> [zoom]`: the Reader's own render, from the shell, timed.
+ * It draws a picture onto the plane exactly as the app would and says where
+ * the time went -- reading and decoding the file, sending rows over the link,
+ * and the filter between -- so the link's share of a page can be measured
+ * at each rate.  The path is the shell's, from the card's root. */
+int cmd_readerdraw(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    if (argc < 2 || argv[1][0] != '/') {
+        tdsh_printf("usage: readerdraw </path/to/picture> [zoom 1-%d]\r\n", MAX_ZOOM);
+        return 1;
+    }
+    const int zoom = argc >= 3 ? atoi(argv[2]) : 1;
+    if (zoom < 1 || zoom > MAX_ZOOM) {
+        tdsh_printf("readerdraw: zoom is 1 to %d\r\n", MAX_ZOOM);
+        return 1;
+    }
+    if (s_viewing || s_render_busy) {
+        tdsh_printf("readerdraw: the Reader is showing a picture\r\n");
+        return 1;
+    }
+    int w = 0, h = 0;
+    if (!tang_plane_size(&w, &h)) {
+        tdsh_printf("readerdraw: the loaded core has no pixel plane\r\n");
+        return 1;
+    }
+    static char real[TD_PATH_MAX + 4];
+    snprintf(real, sizeof real, "/sd%s", argv[1]);
+    s_pw = w;
+    s_ph = h;
+    s_lit_l = 0;
+    s_lit_r = w;
+    s_t_total = 0;
+    s_render_said = false;
+    (void)tang_plane_show(true);
+    render(td_fs_stdio("/sd"), real, zoom, -1, -1, s_gen);
+    if (s_render_said) {
+        tdsh_printf("readerdraw: %s\r\n", s_render_say);
+        s_render_said = false;
+        return 1;
+    }
+    const uint32_t ms = s_t_total / 1000u, card = s_t_card / 1000u, link = s_t_link / 1000u;
+    tdsh_printf("readerdraw: %ldx%ld picture, %ldx%ld on the plane at %dx: %u ms"
+                " (card and decode %u, link %u, filter %u) at %u baud\r\n",
+                (long)s_iw, (long)s_ih, (long)s_dw, (long)s_dh, zoom, (unsigned)ms,
+                (unsigned)card, (unsigned)link, (unsigned)(ms - card - link),
+                (unsigned)tang_fpga_baud());
+    return 0;
+}
+
 } // namespace
 
 extern "C" void td_reader_register(void)
 {
     (void)td_app_register(&s_app);
+}
+
+extern "C" int tang_reader_register(void)
+{
+    static const tdsh_command_t commands[] = {
+        {"readerdraw", "readerdraw <path> [zoom]",
+         "Draw a picture on the pixel plane as the Reader does, and time it", cmd_readerdraw, 0},
+    };
+    return tdsh_register_commands(commands, sizeof(commands) / sizeof(commands[0]));
 }

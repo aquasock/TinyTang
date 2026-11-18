@@ -11,7 +11,7 @@ verilator --binary --timing -j 4 -Wno-fatal -Wno-DECLFILENAME \
     --top-module tb_desktop_uart \
     --Mdir "$work/uart" -o tb \
     "$root/tools/tests/sim/tb_desktop_uart.sv" \
-    "$desktop/desktop_link.v" "$desktop/uart_fixed.v" \
+    "$desktop/desktop_link.v" "$desktop/link_uart.sv" \
     "$desktop/desktop_regs.sv" "$desktop/clock_monitor.sv" \
     "$desktop/pmod_uart.sv" > "$work/uart.log" 2>&1 || \
     { cat "$work/uart.log"; exit 1; }
@@ -27,7 +27,7 @@ replies=Path(sys.argv[1]).read_text().splitlines()
 # The count is pinned so a lost or duplicated reply fails here rather than
 # passing silently. Adding transactions to tb_desktop_uart.sv means updating
 # this number in the same change.
-assert len(replies)==148   # 147 + the plane-geometry read (register 0x0c, ABI 1.8 on)
+assert len(replies)==169   # 147 + the plane-geometry read (register 0x0c, ABI 1.8 on) + 21 link-rate and opcode transactions (ABI 1.10)
 for line in replies:
     p=bytes.fromhex(line)
     assert len(p)==15

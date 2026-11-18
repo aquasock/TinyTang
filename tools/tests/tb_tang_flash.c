@@ -212,6 +212,13 @@ bool tang_fpga_desktop_abi(uint32_t *abi)
     return true;
 }
 void tang_osd_desk_set_block_glyphs(bool on) { hook(on ? "glyphs-on" : "glyphs-off"); }
+/* The link's rate (desktop ABI 1.10): a load from a faster link puts both ends
+ * back at 2 Mbaud before the programmer runs, and a desktop that can negotiate
+ * is asked to after its ABI is read. */
+static uint32_t g_baud = 2000000u;
+uint32_t tang_fpga_baud(void) { return g_baud; }
+void tang_fpga_link_slow(void) { hook("link-slow"); g_baud = 2000000u; }
+uint32_t tang_fpga_link_fast(void) { hook("link-fast"); g_baud = 10000000u; return g_baud; }
 void tang_ini_core_loaded(void) { g_i2c_bus = true; hook("ini-loaded"); }
 
 static void clear(void)
@@ -359,6 +366,33 @@ int main(void)
     CHECK(tangload() == 0);
     CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program "
                           "abi-query glyphs-on osd-reloaded ini-loaded ") == 0);
+
+    /* Desktop ABI 1.10 negotiates the link up once its ABI is known; the next
+     * load starts by bringing it back to 2 Mbaud, ahead of the programmer, so
+     * the new core and the BL616 meet there; and the shell says the rate. */
+    g_abi = 0x0001000Au;
+    clear();
+    CHECK(tangload() == 0);
+    CHECK(strcmp(g_hooks, "mux-select phos-replacing ini-replacing program "
+                          "abi-query link-fast glyphs-on osd-reloaded ini-loaded ") == 0);
+    CHECK(strstr(g_out, "tangload: link at 10000000 baud\r\n") != NULL);
+    clear();
+    CHECK(tangload() == 0);
+    CHECK(strstr(g_hooks, "ini-replacing link-slow program abi-query link-fast") != NULL);
+    {
+        char *game[] = {"tangload", "/root/cores/console138k/tinygba.bin"};
+        clear();
+        CHECK(cmd_tangload(NULL, 2, game) == 0);
+        CHECK(strstr(g_hooks, "link-slow program") != NULL);
+        CHECK(strstr(g_hooks, "link-fast") == NULL);
+        CHECK(strstr(g_out, "link at") == NULL);
+    }
+    /* ABI 1.9 cannot negotiate: never asked. */
+    g_abi = 0x00010009u;
+    clear();
+    CHECK(tangload() == 0);
+    CHECK(strstr(g_hooks, "link-fast") == NULL && strstr(g_hooks, "link-slow") == NULL);
+    g_abi = 0x00010007u;
 
     /* An older desktop core (ABI 1.6) has no block glyphs in its font. */
     g_abi = 0x00010006u;

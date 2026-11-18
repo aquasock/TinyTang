@@ -278,6 +278,12 @@ tang_load_result_t tang_core_load(const char *real)
     tang_phosphor_core_replacing();
     tang_ini_core_replacing();
 
+    /* Every core starts at 2 Mbaud.  If the link was faster, this end goes
+     * back and the zeros it sends take the old core back too, so a load that
+     * fails leaves a core and a BL616 that still hear each other. */
+    if (tang_fpga_baud() != 2000000u) {
+        tang_fpga_link_slow();
+    }
     const bool ok = fpga_program(real);
     if (ok) {
         /* Which font the desk layer now has.  Only the desktop core is asked,
@@ -293,6 +299,10 @@ tang_load_result_t tang_core_load(const char *real)
             abi = 0;
         }
         s_desktop_abi = abi;
+        /* Desktop ABI 1.10 negotiates a faster link: 10 Mbaud, or 5. */
+        if (abi >= 0x0001000Au) {
+            (void)tang_fpga_link_fast();
+        }
         tang_osd_desk_set_block_glyphs(abi >= 0x00010007u);
         /* Reconfiguring the FPGA wipes anything the core was holding, the
          * desktop layer included.  Tell it, or the layer stays gone with no
@@ -328,6 +338,9 @@ static int cmd_tangload(tdsh_session_t *session, int argc, char **argv)
     switch (tang_core_load(real)) {
     case TANG_LOAD_OK:
         tdsh_printf("tangload: core loaded\r\n");
+        if (tang_fpga_baud() != 2000000u) {
+            tdsh_printf("tangload: link at %u baud\r\n", (unsigned)tang_fpga_baud());
+        }
         return 0;
     case TANG_LOAD_BUSY:
         tdsh_printf("tangload: another tangload is running\r\n");

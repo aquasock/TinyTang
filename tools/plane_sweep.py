@@ -20,6 +20,15 @@ the one to build in.
     tools/plane_sweep.py --no-draw       # sweep what the plane already holds
     tools/plane_sweep.py --off           # just hide the plane again
     tools/plane_sweep.py --no-draw --soak 60   # check every frame for a minute
+    tools/plane_sweep.py --baud 10000000 --fill --soak 60
+                                         # negotiate 10 Mbaud (ABI 1.10), let the
+                                         # BL616 draw the picture (`planefill`,
+                                         # timed), then check every frame
+
+With --baud the link's rate is negotiated through the shell (`fpgabaud`) before
+the pipe opens, so everything after runs at it: the frames the PC draws, and
+the CRC-checked register reads that carry the checksums back.  A clean soak
+therefore proves both directions at that rate.
 
 The board is found by its USB identity (ffff:5454), never by a fixed ttyACM
 name, and the console must be at a shell prompt (tinytang_console): nothing is
@@ -45,6 +54,7 @@ from tinytang_console import ConsoleNotReady, require_shell  # noqa: E402
 USB_VID, USB_PID = 0xFFFF, 0x5454
 W, H = 1280, 720
 ABI_19 = 0x00010009
+ABI_110 = 0x0001000A
 
 
 def find_port():
@@ -53,6 +63,16 @@ def find_port():
     if len(ports) != 1:
         sys.exit(f"expected one TinyTang console (ffff:5454), found {ports or 'none'}")
     return ports[0]
+
+
+def shell(ser, line, until, timeout=60.0):
+    """One shell command; the text up to `until` (or the timeout)."""
+    ser.reset_input_buffer()
+    ser.write(line.encode() + b"\r")
+    seen, deadline = b"", time.time() + timeout
+    while until.encode() not in seen and time.time() < deadline:
+        seen += ser.read(256)
+    return seen.decode(errors="replace")
 
 
 def crc16(data, crc=0xFFFF):
@@ -141,6 +161,12 @@ def draw(link, rows):
     link.ser.flush()
 
 
+def link_text(link):
+    counts = link.read32(0x20)
+    return (f"link at {link.read32(0x1C)} baud; {counts >> 16} fallbacks, "
+            f"{counts & 0xFFFF} framing errors since configuration")
+
+
 def status_text(st):
     return (f"ready {st >> 31 & 1} underrun {st >> 30 & 1} dropped {st >> 29 & 1} "
             f"cfg {st >> 24 & 15:#x} fetch {st & 0x7FF}")
@@ -155,6 +181,10 @@ def main():
     ap.add_argument("--set", type=lambda v: int(v, 0), help="set this alignment and stop")
     ap.add_argument("--soak", type=float, metavar="SECONDS",
                     help="check every frame at the current alignment for this long, then stop")
+    ap.add_argument("--baud", type=int, metavar="RATE",
+                    help="negotiate the link to 2000000, 5000000 or 10000000 first (ABI 1.10)")
+    ap.add_argument("--fill", action="store_true",
+                    help="have the BL616 draw the picture (shell `planefill`, timed); implies --no-draw")
     ap.add_argument("--frames", type=int, default=3,
                     help="frames that must match at each setting (default 3)")
     args = ap.parse_args()
@@ -165,6 +195,22 @@ def main():
         require_shell(ser)
     except ConsoleNotReady as e:
         sys.exit(f"{port}: {e}")
+    if args.baud:
+        out = shell(ser, f"fpgabaud {args.baud}", "fpgabaud: ", 10)
+        time.sleep(0.3)
+        out += ser.read(4096).decode(errors="replace")
+        print(" ".join(l.strip() for l in out.splitlines() if l.startswith("fpgabaud")))
+        if "both ends at" not in out:
+            sys.exit("the rate was not negotiated")
+    if args.fill:
+        out = shell(ser, "planefill", "planefill: ", 120)
+        time.sleep(0.3)
+        out += ser.read(4096).decode(errors="replace")
+        line = [l.strip() for l in out.splitlines() if l.startswith("planefill:")]
+        print(line[-1] if line else out[-300:])
+        if not line or "bytes in" not in line[-1]:
+            sys.exit("planefill did not draw")
+        args.no_draw = True
     ser.write(b"fpgapipe\r")
     seen, deadline = b"", time.time() + 3
     while b"fpgapipe: open" not in seen and time.time() < deadline:
@@ -181,6 +227,8 @@ def main():
           f"status {status_text(link.read32(0x10))}")
     if abi < ABI_19:
         sys.exit("the loaded core has no SDRAM plane (desktop ABI 1.9 or later)")
+    if abi >= ABI_110:
+        print(link_text(link))
 
     if args.off:
         link.frame(0x1A, b"\x00")
@@ -199,7 +247,10 @@ def main():
     print(f"expected checksum {want[0]:08x} {want[1]:08x}")
     if not args.no_draw:
         print("drawing 1280x720 through the link")
+        t0 = time.time()
         draw(link, rows)
+        dt = time.time() - t0
+        print(f"drawn in {dt:.1f} s, {W * H * 2 / dt / 1024:.0f} KB/s through the pipe")
     link.frame(0x1A, b"\x01")
 
     if args.soak:
@@ -227,6 +278,8 @@ def main():
         st = link.read32(0x10)
         print(f"soak at alignment {st >> 24 & 15:#x}: {frames} frames checked, {bad} bad, "
               f"{missed} not read; status {status_text(st)}")
+        if abi >= ABI_110:
+            print(link_text(link))
         sys.exit(1 if bad or st >> 29 & 3 else 0)
 
     results = []

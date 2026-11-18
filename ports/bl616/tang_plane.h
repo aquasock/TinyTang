@@ -10,8 +10,8 @@
  * Frames (desktop_link.v): 0x18 x y moves the write cursor, 0x19 streams
  * RGB565 pixels from it, high byte first, the cursor running on across rows;
  * 0x1A shows or hides the plane.  One frame holds at most 1021 pixels, so a
- * 1280-pixel row is sent as two.  At UART1's 2 Mbaud a whole 1280x720 screen
- * is about 9.4 s, and a 640x360 one about 2.3 s.
+ * 1280-pixel row is sent as two.  A whole 1280x720 screen is about 1.9 s at
+ * the 10 Mbaud desktop ABI 1.10 negotiates, and 9.2 s at 2 Mbaud.
  *
  * SPDX-License-Identifier: MIT
  */

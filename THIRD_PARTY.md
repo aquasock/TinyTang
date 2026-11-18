@@ -164,8 +164,9 @@ documented UART protocol. Provenance by file:
 - `hdmi/` is Sameer Puri's HDMI library
   (https://github.com/hdl-util/hdmi, `MIT OR Apache-2.0`) as nestang carried it,
   with the open toolchain's portability edits folded in.
-- `uart_fixed.v` is fpga4fun.com / KNJN LLC's RS-232 module as nestang carried
-  it; its header carries the original notice.
+- `link_uart.sv`, the BL616 wire's UART, is this project's own (desktop ABI
+  1.10). It replaced `uart_fixed.v`, fpga4fun.com / KNJN LLC's RS-232 module
+  as nestang carried it, which is no longer in this tree.
 - `font.vh` is the 8x8 font nestang ships in `src/assets/`.
   `oled_font_standard.vh`, the OLED's Standard set, is generated from it by
   `tools/make_oled_font.py` (rows mirrored, DEL drawn as a box), so it carries

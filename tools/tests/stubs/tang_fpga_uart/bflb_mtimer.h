@@ -3,4 +3,6 @@
 #define STUB_FU_MTIMER_H
 #include <stdint.h>
 uint32_t bflb_mtimer_get_time_ms(void);
+uint64_t bflb_mtimer_get_time_us(void);
+void bflb_mtimer_delay_us(uint32_t us);
 #endif

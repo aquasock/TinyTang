@@ -85,11 +85,37 @@ not.
 
 - **desktop core**, `tools/build_desktop_core_open.sh` at its default seed 3,
   written to the build directory it is given (the section below records the
-  ABI 1.9 core that is on the card, which is what a card should carry, and its
-  seed, 4, which `NEXTPNR_SEED=4` selects; the ABI 1.8, 1.7, 1.6 and 1.3
+  ABI 1.10 core that is on the card, which is what a card should carry, and its
+  seed, 2, which `NEXTPNR_SEED=2` selects; the ABI 1.9, 1.8, 1.7, 1.6 and 1.3
   entries that follow are kept as the older records)
 
-- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.9**,
+- **desktop core, the card's one file: `tinytang.bin`, desktop ABI 1.10**,
+  built 2026-11-17 at seed 2 into `build/desk110-s2/out/` with
+  `DESKTOP_BUILD_DIR=build/desk110-s2 NEXTPNR_SEED=2`.  ABI 1.10 replaces the
+  BL616 link's UART with `fpga/desktop/link_uart.sv`, timed on the 50 MHz
+  crystal: it comes up at 2 Mbaud and moves to 5 or 10 Mbaud when register
+  opcode 0x03 asks (capability bit 3, caps 0x1b), answering at the old rate
+  first; a line held low for 3 us at a faster rate drops it back to 2 Mbaud.
+  Register 0x1c reads the rate in bits per second and 0x20 the fallbacks and
+  framing errors.  `uart_fixed.v` is gone.  On the board the firmware
+  negotiated 10 Mbaud at load, a 1280x720 screen went in 1.86 s (992 KB/s),
+  and 3,600 frames then matched their checksum.
+  - `desktop.bin` sha256
+    `537265ba89eeec74da349230760f272e80160fd7fc18dcf46721624ba5f41da6`,
+    4,524,012 bytes; the card's `tinytang.bin`
+  - `desktop.fs` sha256
+    `d1bf50bfb8c2f8735bb7a1bbb2f00c86d5d7f2127faba23f652fd3d56700c94f`,
+    36,217,061 bytes; `tinytang.fs.gz` is `gzip -9 -n` of it, 441,100 bytes
+  - Gates passed with nothing overridden: routed pixel clock 75.90 MHz against
+    74.25, `sys_clk` 149.03 against 50, `clk` 83.39 against 21.49, setup and
+    hold met, no clock-topology regression, `clk` not through SPINE17.  Seed 2
+    is the only one of eight whose routed pixel clock met 74.25; the others
+    reached 65.39 to 74.05 MHz, failing on the HDMI encoder's TMDS adder chain
+    as before.  LUT4 9,273 and DFF 4,150, against 8,958 and 4,062 for ABI 1.9.
+  - Provenance: `source_sha256`
+    `7f9a97942294bf4cba9c5ec66e22e1cbd4867705c896840c881f3d2d12009eb9`.
+
+- **desktop core, desktop ABI 1.9** (the card's file until the ABI 1.10 core),
   built 2026-11-17 at seed 4 into `build/desk19-s4/out/` with
   `DESKTOP_BUILD_DIR=build/desk19-s4 NEXTPNR_SEED=4`.  ABI 1.9 moves the pixel
   plane into the dock's SDRAM at 1280x720, shown 1:1 (`fpga/desktop/fb_sdram.sv`,

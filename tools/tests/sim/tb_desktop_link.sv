@@ -20,6 +20,8 @@ module tb_desktop_link;
     reg clk = 0, hclk = 0;
     always #23.26 clk = ~clk;        // ~21.49 MHz, the rate desktop_top uses
     always #6.73  hclk = ~hclk;      // ~74.25 MHz pixel clock
+    reg sys_clk = 0;
+    always #10 sys_clk = ~sys_clk;       // the 50 MHz crystal: the UART's bit timing
 
     reg resetn = 0;
 
@@ -63,7 +65,7 @@ module tb_desktop_link;
         .mgmt_writedata(mgmt_writedata), .fdd_request(fdd_request),
         .kbd_data(kbd_data), .kbd_data_valid(kbd_data_valid),
         .core_config(core_config),
-        .uart_rx(uart_rx), .uart_tx(uart_tx)
+        .sys_clk(sys_clk), .uart_rx(uart_rx), .uart_tx(uart_tx)
     );
 
     /* ------------------------------------------------- what was written */

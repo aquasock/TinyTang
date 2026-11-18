@@ -106,10 +106,15 @@ module tb_desktop_uart;
             crc_byte=c;
         end
     endfunction
+    // The wire's bit times.  bit_ns is the core's rate, the one its replies
+    // are read at; tx_bit_ns is the BL616's, which a test can skew from it to
+    // stand for a crystal error, or set to 2 Mbaud while the core is faster to
+    // stand for a BL616 that has reset or given up on a switch.
+    realtime bit_ns=500, tx_bit_ns=500;
     task automatic send_byte(input [7:0] b);
-        uart_rx=0; #500;
-        for (integer bitno=0;bitno<8;bitno=bitno+1) begin uart_rx=b[bitno]; #500; end
-        uart_rx=1; #1000;
+        uart_rx=0; #(tx_bit_ns);
+        for (integer bitno=0;bitno<8;bitno=bitno+1) begin uart_rx=b[bitno]; #(tx_bit_ns); end
+        uart_rx=1; #(2*tx_bit_ns);
     endtask
     integer reply_count=0, core_count=0, unprompted_count=0;
     logic [119:0] reply;
@@ -121,12 +126,12 @@ module tb_desktop_uart;
     initial begin
         trace=$fopen("desktop-replies.hex","w");
         forever begin
-            @(negedge uart_tx); #750;
+            @(negedge uart_tx); #(1.5*bit_ns);
             for (integer bitno=0;bitno<8;bitno=bitno+1) begin
                 captured[bitno]=uart_tx;
-                if (bitno<7) #500;
+                if (bitno<7) #(bit_ns);
             end
-            #500;
+            #(bit_ns);
             if (uart_tx !== 1) $fatal(1,"bad UART stop bit");
             case (parse_phase)
                 0: if (captured==8'haa) parse_phase=1;
@@ -176,7 +181,7 @@ module tb_desktop_uart;
             if (reply[119:112]!=1 || reply[111:104]!=(op|8'h80) ||
                 reply[103:96]!=status || reply[95:80]!=16'(transaction_sequence) ||
                 reply[79:48]!=addr || reply[47:16]!=expected)
-                $fatal(1,"response mismatch: %030h, transaction_sequence %d",reply,transaction_sequence);
+                $fatal(1,"response mismatch: %030h, transaction_sequence %d (op %0d data %0d status %0d)",reply,transaction_sequence,op,data,status);
             if (socket_request!=socket_ack) $fatal(1,"reply preceded socket acknowledgement");
             #1000;
         end
@@ -285,10 +290,12 @@ module tb_desktop_uart;
         #3000; resetn=1; #3000;
         send_byte(8'haa); send_byte(0); send_byte(1); send_byte(1);
         wait(core_count==1);
-        request(0,0,0,0,0,19);
-        // ABI 1.9: the plane is 1280x720 in the SDRAM (1.8: 640x360 in block
-        // RAM; 1.7: block glyphs in font slots 0x01-0x17).
-        request(1,4,0,0,0,32'h00010009);
+        // read32, write32, negotiated baud (bit 3, ABI 1.10), validated block write
+        request(0,0,0,0,0,32'h1b);
+        // ABI 1.10: the link negotiates 5 or 10 Mbaud (1.9: the plane is
+        // 1280x720 in the SDRAM; 1.8: 640x360 in block RAM; 1.7: block glyphs
+        // in font slots 0x01-0x17).
+        request(1,4,0,0,0,32'h0001000a);
         // The plane's geometry, reported since 1.8: 1280 x 720.
         request(1,32'h0c,0,0,0,{16'd1280,16'd720});
         // ABI 1.6 adds personality 8, the PMOD UART, to the bitmap.
@@ -440,7 +447,9 @@ module tb_desktop_uart;
         request(2,32'hc0,32'h0320,4,5,0);
         request(2,32'hc0,32'h2410,0,6,0);
         request(1,32'hc1,0,0,4,0);
-        request(3,0,0,0,2,0);
+        // Opcode 3 is the negotiated baud since ABI 1.10; a rate of 0 is refused.
+        request(3,0,0,0,6,0);
+        request(5,0,0,0,2,0);
         request(1,32'hc0,0,0,0,32'h0230);
         request(2,32'hc0,32'h3320,0,0,32'h3320);
         request(2,32'hc0,0,0,0,0);
@@ -529,6 +538,51 @@ module tb_desktop_uart;
             $display("clock monitor: clk=%0d/ref=%0d pix=%0d/ref=%0d probes agree PASS",
                      dclk,dref,dpix,dref);
         end
+        // ------------------------------------------------ the link's rate
+        // Out of configuration it is 2 Mbaud, with nothing counted.
+        request(1,32'h1c,0,0,0,32'd2_000_000);
+        request(1,32'h20,0,0,0,32'h0);
+        // A rate neither end can make exactly is refused, and nothing changes.
+        request(3,0,32'd12_000_000,0,6,0);
+        request(3,0,32'd6_666_666,0,6,0);
+        request(1,32'h1c,0,0,0,32'd2_000_000);
+        // 10 Mbaud: the reply comes at 2 Mbaud, then both ends are at 10.
+        request(3,0,32'd10_000_000,0,0,32'd10_000_000);
+        bit_ns=100; tx_bit_ns=100;
+        request(1,32'h1c,0,0,0,32'd10_000_000);
+        request(1,4,0,0,0,32'h0001000a);
+        block_write(32'h200,16,0,0);
+        // A BL616 crystal 2% fast or slow still reads and is read at 10 Mbaud.
+        tx_bit_ns=98;  request(1,0,0,0,0,32'h00544453);
+        tx_bit_ns=102; request(1,0,0,0,0,32'h00544453);
+        tx_bit_ns=100;
+        request(1,32'h20,0,0,0,32'h0);
+        // The BL616 gives up mid-frame and talks at 2 Mbaud: its zeros hold the
+        // line low for 4.5 us, the core drops to 2 Mbaud, and the half-read
+        // frame is abandoned rather than eating the next request.
+        send_byte(8'haa); send_byte(0); send_byte(15); send_byte(16); send_byte(1);
+        tx_bit_ns=500;
+        send_byte(0); send_byte(0);
+        bit_ns=500;
+        #5000;
+        request(1,32'h1c,0,0,0,32'd2_000_000);
+        read32(32'h20);
+        if (rd_status!=0 || rd_value[31:16]!=16'd1 || rd_value[15:0]==16'd0)
+            $fatal(1,"link counts after one fallback: %08h",rd_value);
+        // 5 Mbaud, and back to 2 by asking.
+        request(3,0,32'd5_000_000,0,0,32'd5_000_000);
+        bit_ns=200; tx_bit_ns=200;
+        request(1,32'h1c,0,0,0,32'd5_000_000);
+        request(1,32'h0c,0,0,0,{16'd1280,16'd720});
+        request(3,0,32'd2_000_000,0,0,32'd2_000_000);
+        bit_ns=500; tx_bit_ns=500;
+        request(1,32'h1c,0,0,0,32'd2_000_000);
+        // At 2 Mbaud a long low is a character, not a fallback: zeros are
+        // read as zeros and nothing is counted.
+        send_byte(0); send_byte(0);
+        read32(32'h20);
+        if (rd_value[31:16]!=16'd1) $fatal(1,"a fallback was counted at 2 Mbaud: %08h",rd_value);
+        $display("desktop UART: negotiated 5 and 10 Mbaud, 2%% skew, refusal and fallback PASS");
         // The original desktop commands still work alongside register replies.
         send_byte(8'haa); send_byte(0); send_byte(2); send_byte(8'h15); send_byte(1);
         #1000;

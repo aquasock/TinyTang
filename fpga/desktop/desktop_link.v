@@ -18,7 +18,8 @@ module desktop_link #(
     input clk,                      // main logic clock
     // input clk50,                    // 50mhz clock for UART
     input hclk,                     // hdmi clock
-    // The 50 MHz crystal, so the clock monitor can measure rates.
+    // The 50 MHz crystal: the UART's bit timing (link_uart.sv), and the clock
+    // monitor's reference.
     input sys_clk,
     input resetn,
 
@@ -104,53 +105,34 @@ module desktop_link #(
 localparam integer STR_LEN = 21;
 localparam [8*STR_LEN-1:0] CONF_STR = "TinyTang Desktop;-;-;";
 
-// Remove SPI parameters and add UART parameters
-localparam CLK_FREQ = FREQ;
-localparam BAUD_RATE = 2_000_000;
-
 reg overlay_reg = 1;
 assign overlay = overlay_reg;
 
 reg [7:0] rom_loading_reg = LOADING_STATE;
 assign rom_loading = rom_loading_reg;
 
-// UART receiver signals
+// The wire to the BL616 (link_uart.sv): 2 Mbaud from configuration, 5 or 10
+// once the BL616 negotiates it with register opcode 0x03 (desktop ABI 1.10).
+// The bit timing runs on the 50 MHz crystal; bytes cross to `clk` here.
 wire [7:0] rx_data;
 wire rx_valid;
-
-// UART transmitter signals
 wire tx_busy;
 reg [7:0] tx_data;
 reg tx_valid;
 wire tx_ready;
+reg [1:0] link_rate;            // 0: 2 Mbaud, 1: 5, 2: 10
+wire link_fallback;             // the BL616 sent at 2 Mbaud: drop to it
+wire link_framing_error;
+reg [15:0] link_fallbacks;      // counts, for register 0x20
+reg [15:0] link_framing_errors;
 
-// synchronize uart_rx to clk
-reg uart_rx_r = 1, uart_rx_rr = 1;
-always @(posedge clk) begin
-    uart_rx_r <= uart_rx;
-    uart_rx_rr <= uart_rx_r;
-end
-
-// Instantiate UART modules
-async_receiver #(
-    .ClkFrequency(CLK_FREQ),
-    .Baud(BAUD_RATE)
-) uart_receiver (
-    .clk(clk),
-    .RxD(uart_rx_rr),
-    .RxD_data(rx_data),
-    .RxD_data_ready(rx_valid)
-);
-
-async_transmitter #(
-    .ClkFrequency(CLK_FREQ),
-    .Baud(BAUD_RATE)
-) uart_transmitter (
-    .clk(clk),
-    .TxD(uart_tx),
-    .TxD_data(tx_data),
-    .TxD_start(tx_valid),
-    .TxD_busy(tx_busy)
+link_uart uart_link (
+    .sys_clk(sys_clk), .clk(clk),
+    .rate(link_rate),
+    .rx_data(rx_data), .rx_valid(rx_valid),
+    .tx_data(tx_data), .tx_start(tx_valid), .tx_busy(tx_busy),
+    .fallback(link_fallback), .framing_error(link_framing_error),
+    .rxd(uart_rx), .txd(uart_tx)
 );
 assign tx_ready = ~tx_busy;
 
@@ -245,6 +227,11 @@ reg fdd_read_start, fdd_read_finish, fdd_write_finish;
 // 0x05 lba[15:0]             read a sector from disk (followed by command 0x0a)
 
 wire desktop_response_ready;
+// A negotiated rate (register opcode 0x03): the endpoint has accepted it and
+// is sealing the reply, which goes out at the old rate; the switch is made
+// once its stop bit has left (SEND_BAUD_WAIT).
+wire link_baud_set;
+wire [1:0] link_baud_code;
 wire [119:0] desktop_response;
 wire desktop_response_taken = send_state == 16 && tx_ready && !tx_valid && send_idx == 14;
 desktop_regs desktop_endpoint (
@@ -271,7 +258,9 @@ desktop_regs desktop_endpoint (
     .uart_nrst_low(desktop_uart_nrst_low),
     .uart_loopback(desktop_uart_loopback), .uart_rx_pop(desktop_uart_rx_pop),
     .uart_rx_data(desktop_uart_rx_data), .uart_status(desktop_uart_status),
-    .plane_status(plane_status), .plane_sum1(plane_sum1), .plane_sum2(plane_sum2)
+    .plane_status(plane_status), .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
+    .link_rate(link_rate), .link_counts({link_fallbacks, link_framing_errors}),
+    .link_baud_set(link_baud_set), .link_baud_code(link_baud_code)
 );
 
 // UART RX: command processing
@@ -534,6 +523,11 @@ always @(posedge clk) begin
                     recv_state <= RECV_IDLE;
                 end
         endcase
+
+        // Back at 2 Mbaud (link_uart.sv): whatever frame was being read was
+        // read at the wrong rate.  A reply in flight is left to finish.
+        if (link_fallback && recv_state != RECV_RESPONSE_ACK)
+            recv_state <= RECV_IDLE;
         
     end
 end
@@ -547,11 +541,14 @@ localparam SEND_FDD_READ = 5;
 
 localparam SEND_HEADER = 6;
 localparam SEND_DONE = 7;
+localparam SEND_BAUD_WAIT = 8;      // a rate change waits for the reply's stop bit
 
 localparam SEND_DESKTOP_REGS = 16;
 reg [4:0] send_state, send_state_next;
 reg [$clog2(STR_LEN+1)-1:0] send_idx;
 reg [15:0] resp_frame_len;
+reg baud_pending;
+reg [1:0] baud_next;
 
 // UART TX: command responses and FDD requests
 always @(posedge clk) begin
@@ -561,6 +558,11 @@ always @(posedge clk) begin
         send_idx <= 0;
         response_ack <= 0;
         tx_valid <= 0;
+        link_rate <= 2'd0;
+        baud_pending <= 0;
+        baud_next <= 2'd0;
+        link_fallbacks <= 0;
+        link_framing_errors <= 0;
     end else begin
         tx_valid <= 0;
         mgmt_read <= 0;
@@ -633,9 +635,19 @@ always @(posedge clk) begin
                     tx_data <= desktop_response[119-send_idx*8 -: 8];
                     tx_valid <= 1;
                     if (send_idx == 14) begin
-                        send_state <= SEND_IDLE;
+                        send_state <= baud_pending ? SEND_BAUD_WAIT : SEND_IDLE;
                         response_ack <= response_req;
                     end else send_idx <= send_idx + 1;
+                end
+            end
+
+            // The reply to a rate change has gone out at the old rate; once
+            // its last byte has left the wire, both ends are at the new one.
+            SEND_BAUD_WAIT: begin
+                if (tx_ready && !tx_valid) begin
+                    link_rate <= baud_next;
+                    baud_pending <= 0;
+                    send_state <= SEND_IDLE;
                 end
             end
 
@@ -695,6 +707,19 @@ always @(posedge clk) begin
 
             SEND_DONE: send_state <= SEND_IDLE;     // extra state for fdd_state to transition
         endcase
+
+        if (link_baud_set) begin
+            baud_pending <= 1;
+            baud_next <= link_baud_code;
+        end
+        // The BL616 is talking at 2 Mbaud (link_uart.sv); this wins over a
+        // switch in the same clock.
+        if (link_fallback) begin
+            link_rate <= 2'd0;
+            baud_pending <= 0;
+        end
+        if (link_fallback) link_fallbacks <= link_fallbacks + 16'd1;
+        if (link_framing_error) link_framing_errors <= link_framing_errors + 16'd1;
     end
 end
 

@@ -22,6 +22,8 @@ module tb_desktop_plane;
     reg clk = 0, clk_pixel = 0, clk_5x_pixel = 0;
     always #23.26 clk = ~clk;              // ~21.49 MHz, the link's clock
     always #6.73  clk_pixel = ~clk_pixel;  // ~74.25 MHz pixel clock
+    reg sys_clk = 0;
+    always #10 sys_clk = ~sys_clk;       // the 50 MHz crystal: the UART's bit timing
     always #1.346 clk_5x_pixel = ~clk_5x_pixel;
 
     reg resetn = 0;
@@ -51,7 +53,7 @@ module tb_desktop_plane;
         .plane_rd_cfg(plane_rd_cfg), .plane_status(plane_status),
         .plane_sum1(plane_sum1), .plane_sum2(plane_sum2),
         .hid1(), .hid2(),
-        .uart_rx(uart_rx), .uart_tx(uart_tx)
+        .sys_clk(sys_clk), .uart_rx(uart_rx), .uart_tx(uart_tx)
     );
 
     wire [10:0] cx;
@@ -87,14 +89,45 @@ module tb_desktop_plane;
         .nCAS(sd_cas_n), .nWE(sd_we_n), .DQM(sd_dqm), .DQ(sd_dq)
     );
 
-    /* ------------------------------------------------------ the wire, 2 Mbaud */
+    /* ---------------------------------------------- the wire, 2 or 10 Mbaud */
+
+    // FAST=1 negotiates 10 Mbaud first (desktop ABI 1.10, register opcode
+    // 0x03) and draws everything there, back to back with one stop bit, as
+    // the BL616 sends: the rate the plane's write FIFO has to keep up with.
+    parameter integer FAST = 0;
+    realtime bt = 500;
 
     task send_byte(input [7:0] b);
         integer i;
         begin
-            uart_rx = 0; #500;
-            for (i = 0; i < 8; i = i + 1) begin uart_rx = b[i]; #500; end
-            uart_rx = 1; #500;
+            uart_rx = 0; #(bt);
+            for (i = 0; i < 8; i = i + 1) begin uart_rx = b[i]; #(bt); end
+            uart_rx = 1; #(bt);
+        end
+    endtask
+
+    function automatic [15:0] crc_byte(input [15:0] old, input [7:0] b);
+        reg [15:0] c;
+        begin
+            c = old ^ {b, 8'b0};
+            for (integer k = 0; k < 8; k = k + 1) c = c[15] ? (c << 1) ^ 16'h1021 : c << 1;
+            crc_byte = c;
+        end
+    endfunction
+
+    // Register opcode 0x03 at the current rate; the reply (16 bytes) goes out
+    // at it too, and then both ends move.
+    task set_rate(input [31:0] baud);
+        reg [111:0] p;
+        reg [15:0] c;
+        begin
+            p = {8'h01, 8'h03, 16'h0001, 32'h0, baud, 16'h0};
+            c = crc_byte(16'hffff, 8'h10);
+            for (integer k = 0; k < 12; k = k + 1) c = crc_byte(c, p[111 - k * 8 -: 8]);
+            p[15:0] = c;
+            send_byte(8'hAA); send_byte(8'h00); send_byte(8'd15); send_byte(8'h10);
+            for (integer k = 0; k < 14; k = k + 1) send_byte(p[111 - k * 8 -: 8]);
+            #(20 * 11 * bt);
         end
     endtask
 
@@ -225,6 +258,9 @@ module tb_desktop_plane;
      * last frame and carried into the link's clock: wait past a frame end. */
     task settle_sums;
         begin
+            // From outside line 721, so two calls are two frame ends even
+            // when the first is made during that line.
+            wait (cy != 10'd721);
             wait (cy == 10'd721);
             repeat (20) @(posedge clk);
         end
@@ -245,6 +281,12 @@ module tb_desktop_plane;
         expect_true("the link's read alignment comes up as 3, rising edge",
                     plane_rd_cfg == 4'd3);
         read_cfg(8'h02);
+
+        if (FAST) begin
+            set_rate(32'd10_000_000);
+            bt = 100;
+            expect_true("the link is at 10 Mbaud", link.link_rate == 2'd2);
+        end
 
         // Pixel (0,0): a line's first pixel, which a wrong look-ahead loses.
         cursor(0, 0);    frame(8'h19, 16'd3);  pixel(RED);
@@ -268,6 +310,15 @@ module tb_desktop_plane;
         cursor(0, 800);    frame(8'h19, 16'd3); pixel(MAGENTA);
         cursor(3000, 0);   frame(8'h19, 16'd3); pixel(MAGENTA);
         cursor(1300, 359); frame(8'h19, 16'd3); pixel(MAGENTA);   // x off: dropped
+        // At 10 Mbaud, sixteen whole rows back to back: 41 KB, a pixel every
+        // 2 us into a FIFO that drains only between line fetches.
+        if (FAST) begin
+            cursor(0, 400);
+            for (i = 0; i < 32; i = i + 1) begin
+                frame(8'h19, 16'd1281);
+                for (integer j = 0; j < 640; j = j + 1) pixel(16'(i * 7919 + j * 31 + 5));
+            end
+        end
         // Show it.
         frame(8'h1A, 16'd2); send_byte(8'h01);
 

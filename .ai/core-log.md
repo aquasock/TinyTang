@@ -1564,3 +1564,58 @@ The Reader's lag is the next thing worth removing, by a faster link between the 
 - User Test: PASS
 
 ---
+## 48 COMMIT Unreleased 2026-11-17T22:25:15-07:00
+
+#### Coming From:
+
+Unreleased 92c7318
+
+#### Purpose:
+
+Raise the BL616-to-core link from 2 Mbaud to the fastest rate both ends make exactly, negotiated by the register channel, so the Reader's repaints stop being bound by the wire.
+
+#### Outcome:
+
+Desktop ABI 1.10 runs the link at 10 Mbaud and the operator passed the Reader on it (TDESK-023). `fpga/desktop/link_uart.sv` replaces `uart_fixed.v`, timing bits on the 50 MHz crystal at 25, 10 or 5 clocks for 2, 5 or 10 Mbaud, the rates the BL616's whole-number divider of 40 MHz shares with it (BL6-011, which also shows the old `fpgabaud` 12 and 16 Mbaud were really 13.3); register opcode 0x03 switches after its reply, capabilities read 0x1b, registers 0x1c and 0x20 give the rate and the fallback and framing-error counts, and a line held low for 3 us above 2 Mbaud drops the core back to 2 Mbaud. The firmware returns both ends to 2 Mbaud before every core load, negotiates 10 Mbaud and then 5 after a desktop of ABI 1.10 loads, confirms the rate with a CRC-checked read before using it, and gains `fpgabaud` with negotiation and `-raw`, `planefill` and `readerdraw`; `tools/plane_sweep.py` gains `--baud` and `--fill`. The new UART bench passes 69 checks with nine mutations caught, the plane bench passes again at 10 Mbaud with sixteen whole rows back to back and no dropped write after a frame-end wait in it was fixed, the host harnesses cover negotiation, refusal, a bad CRC, a failed confirm and the load order with five mutations caught, and host tests are 50 of 50. Of eight seeds only seed 2 met the pixel clock, at 75.90 MHz, with `sys_clk` at 149.03 MHz; its `desktop.537265ba89ee.bin` and `tinytang.fs.gz` were put on the card and firmware `92c7318-dirty.003322f` installed by the relay sequence, after which only a comment in `tang_plane.h` changed. The boot load negotiated 10 Mbaud by itself; a 1280x720 screen took 1,858 ms at 10 Mbaud, 3,689 at 5 and 9,190 at 2, each at its wire rate; 3,600 BL616-drawn frames and 1,800 PC-drawn frames matched their checksums with every reply CRC-checked at 10 Mbaud; and a deliberately desynchronised link was recovered by `fpgabaud 2000000`. A 1280x1726 Reader page went from 17.6 s at 2 Mbaud to 10.2 s at 10, of which reading the BMP off the card is about 7.7 s at every rate. The ESP32 another agent drives was not touched. BUILDING.md records the new core, README the Reader's speed and the link rates, and THIRD_PARTY.md the UART's replacement. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, TDESK-023 and BL6-011 with its index row and summary line only, and this entry was validated as number 48 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 180 records.
+
+#### Next Steps:
+
+The Reader is now bound by the card, about 860 KB/s reading a 6.6 MB BMP row by row, so the next speed-up is larger reads through FatFS or a page format closer to the plane, such as RGB565 at the plane's width, measured with `readerdraw`. The TMDS encoder's adder chain still decides whether a seed meets the pixel clock and is worth pipelining before the next change to the core. The card's `bl616-firmware.bin` is older than the running firmware and should be refilled before a release. Earlier items stand: the shell `gbaload` stall, game-core desk fonts without the block glyphs, `pad` and ctrl-c, and feedback during the exit save.
+
+#### Files Modified:
+
+- BUILDING.md
+- README.md
+- THIRD_PARTY.md
+- fpga/desktop/build.tcl
+- fpga/desktop/desktop_link.v
+- fpga/desktop/desktop_regs.sv
+- fpga/desktop/link_uart.sv
+- fpga/desktop/uart_fixed.v
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_plane.h
+- ports/bl616/tdsh_platform_bl616.c
+- ports/bl616/tdsh_tang_flash.c
+- ports/bl616/tinyreader_app.cpp
+- tools/desktop_open/synth.ys
+- tools/plane_sweep.py
+- tools/tests/sim/tb_desktop_link.sv
+- tools/tests/sim/tb_desktop_plane.sv
+- tools/tests/sim/tb_desktop_uart.sv
+- tools/tests/sim/tb_link_uart.sv
+- tools/tests/stubs/tang_fpga_uart/bflb_mtimer.h
+- tools/tests/tb_tang_flash.c
+- tools/tests/tb_tang_fpga_uart.c
+- tools/tests/test_desktop_core.sh
+- tools/tests/test_desktop_link.sh
+- tools/tests/test_desktop_plane.sh
+- tools/tests/test_link_uart.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

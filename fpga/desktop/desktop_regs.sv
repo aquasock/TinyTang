@@ -48,7 +48,14 @@ module desktop_regs (
     input  logic [31:0] uart_status,
     // The SDRAM plane's status and last frame checksum (fb_sdram.sv), already
     // in this clock's domain.
-    input  logic [31:0] plane_status, plane_sum1, plane_sum2
+    input  logic [31:0] plane_status, plane_sum1, plane_sum2,
+    // The BL616 link (desktop_link, link_uart.sv): its rate (0: 2 Mbaud, 1: 5,
+    // 2: 10) and its fallback and framing-error counts; and a rate change
+    // accepted by opcode 0x03, which the link makes after this reply.
+    input  logic [1:0]  link_rate,
+    input  logic [31:0] link_counts,
+    output logic        link_baud_set,
+    output logic [1:0]  link_baud_code
 );
     logic uart_nrst_r, uart_loopback_r, uart_hold_r;
     assign uart_nrst_low = uart_nrst_r;
@@ -95,6 +102,15 @@ module desktop_regs (
     logic [7:0] status;
     logic [31:0] read_data;
 
+    // The rates the link offers: whole numbers of clocks at both ends (50 MHz
+    // here, 40 MHz in the BL616).  Anything else is refused with status 6.
+    wire [1:0] baud_code = write_data==32'd10_000_000 ? 2'd2 :
+                           write_data==32'd5_000_000  ? 2'd1 : 2'd0;
+    wire baud_ok = write_data==32'd2_000_000 || write_data==32'd5_000_000 ||
+                   write_data==32'd10_000_000;
+    wire [31:0] link_bps = link_rate==2'd2 ? 32'd10_000_000 :
+                           link_rate==2'd1 ? 32'd5_000_000 : 32'd2_000_000;
+
     // I2C data windows.  The write window is written four bytes at a time by
     // 0x160/0x164; the read window is filled eight bytes at a time from the
     // engine's result.  Both are distributed RAM, so the 21.49 MHz domain
@@ -129,11 +145,16 @@ module desktop_regs (
             else if(!cell_address || last_address<address || last_address>=32'h800)status=4;
             else if(invalid_word)status=6;
             else read_data={24'b0,block_count};
-        end else if(opcode==0)read_data=32'h13; // read32, write32, validated block write
+        end else if(opcode==0)read_data=32'h1b; // read32, write32, negotiated baud, validated block write
+        else if(opcode==3) begin
+            // Negotiated baud (EXTCTL-001): the reply goes at the old rate,
+            // then both ends switch.  2, 5 and 10 Mbaud.
+            if(!baud_ok)status=6;else read_data=write_data;
+        end
         else if(opcode==1) begin
             case(address)
                 32'h00:read_data=32'h00544453;
-                32'h04:read_data=32'h00010009; // desktop ABI 1.9: the plane is 1280x720 in SDRAM, frames 0x18-0x1B (1.8: 640x360 plane; 1.7: block glyphs; 1.6: PMOD UART)
+                32'h04:read_data=32'h0001000a; // desktop ABI 1.10: the link negotiates 5 or 10 Mbaud, registers 0x1C/0x20 (1.9: the plane is 1280x720 in SDRAM, frames 0x18-0x1B; 1.8: 640x360 plane; 1.7: block glyphs; 1.6: PMOD UART)
                 32'h0c:read_data={16'd1280,16'd720}; // the pixel plane's width and height (ABI 1.8 on)
                 // The SDRAM plane: ready[31] underrun[30] dropped[29]
                 // rd_cfg[27:24] checksums seen[23:16] fetch_max[10:0]; then
@@ -141,6 +162,10 @@ module desktop_regs (
                 32'h10:read_data=plane_status;
                 32'h14:read_data=plane_sum1;
                 32'h18:read_data=plane_sum2;
+                // The link: its rate in bits per second, then fallbacks to
+                // 2 Mbaud[31:16] and framing errors[15:0] since configuration.
+                32'h1c:read_data=link_bps;
+                32'h20:read_data=link_counts;
                 32'h08:read_data=32'h0000010f; // none, OLED, VGA J1/J2, UART (8)
                 32'hc0:read_data={16'b0,socket_word};
                 // The active font's grid: Graphics 24x16, Standard 12x8,
@@ -208,6 +233,7 @@ module desktop_regs (
             state<=IDLE;packet<=0;received<=0;length_q<=0;
             request_crc<=16'hffff;crc_tail<=0;reply_crc<=16'hffff;
             seal_index<=0;response<=0;response_ready<=0;
+            link_baud_set<=0;link_baud_code<=0;
             socket_word<=0;socket_request<=0;is_block<=0;invalid_word<=0;
             assembly<=0;apply_index<=0;oled_cell_we<=0;
             oled_cell_index<=0;oled_cell_word<=0;oled_cursor<=0;oled_font<=0;
@@ -218,7 +244,7 @@ module desktop_regs (
             uart_nrst_r<=0;uart_loopback_r<=0;uart_hold_r<=0;
             for(int i=0;i<8;i=i+1) begin i2c_wram[i]<=0;i2c_rram[i]<=0;end
         end else begin
-            oled_cell_we<=0;
+            oled_cell_we<=0;link_baud_set<=0;
             uart_tx_push<=0;uart_flush<=0;uart_rx_pop<=0;
             // Four bytes of the write window per 32-bit register write.
             if(i2c_wbusy) begin
@@ -272,6 +298,9 @@ module desktop_regs (
                     if(status==0 && !is_block && opcode==1 && address==32'h174)uart_rx_pop<=1;
                     response[119:16]<={8'h01,(opcode|8'h80),status,packet[95:80],address,read_data};
                     response_ready<=0;reply_crc<=crc_byte(16'hffff,8'h10);seal_index<=0;
+                    if(status==0 && !is_block && opcode==3) begin
+                        link_baud_set<=1;link_baud_code<=baud_code;
+                    end
                     if(status==0 && is_block) begin apply_index<=0;state<=APPLY;end
                     else if(status==0 && opcode==2) begin
                         if(address==32'hc0 || address==32'h114 || address==32'h118) begin

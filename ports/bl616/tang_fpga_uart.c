@@ -104,6 +104,7 @@
 #include "tang_pipe_sniff.h"
 #include "tang_snes_load.h"
 #include "tang_clock.h"
+#include "tang_plane.h"
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -597,6 +598,145 @@ bool tang_fpga_write32(uint32_t address, uint32_t value)
     uint8_t status = 0xff;
     if (!fpga_ext_write32(address, value, &status)) return false;
     return status == 0;
+}
+
+/* ------------------------------------------------------------ the link's rate
+ *
+ * Every core comes out of configuration at 2 Mbaud.  The desktop core from ABI
+ * 1.10 (fpga/desktop/link_uart.sv) also runs at 5 or 10 Mbaud when asked with
+ * register opcode 0x03 (EXTCTL-001): it answers at the old rate and moves once
+ * the answer's stop bit has left, and this end moves when the answer arrives.
+ * Those are the only rates both ends make exactly: the core times bits on its
+ * 50 MHz crystal, this UART on 40 MHz with a whole-number divider (25 and 20
+ * clocks at 2 Mbaud, 10 and 8 at 5, 5 and 4 at 10).
+ *
+ * The way back needs no answer.  At 5 or 10 Mbaud the core takes a line held
+ * low for 3 us as the BL616 talking at 2 Mbaud and drops to it; a 0x00 at
+ * 2 Mbaud is 4.5 us low.  So zeros at 2 Mbaud bring both ends back from any
+ * state, and every core's frame parser ignores them between frames. */
+#define FPGA_LINK_FAST_BAUD   10000000u
+#define FPGA_LINK_SAFE_BAUD    5000000u
+#define FPGA_REG_LINK_RATE    0x1Cu       /* the core's rate, bits per second */
+
+static void link_zeros(void)
+{
+    static const uint8_t zeros[4] = { 0, 0, 0, 0 };
+    (void)uart_write(zeros, sizeof zeros);
+    while (bflb_uart_txempty(s_uart) == 0) {
+    }
+    /* The core's fallback crosses two clock domains: well under a
+     * microsecond.  The zeros it then reads at 2 Mbaud are ignored. */
+    bflb_mtimer_delay_us(20);
+    tang_fpga_drain();
+}
+
+void tang_fpga_link_slow(void)
+{
+    if (tang_fpga_link_open() != 0) {
+        return;
+    }
+    tang_fpga_lock();
+    if (s_baud != FPGA_UART_BAUD) {
+        (void)tang_fpga_set_baud(FPGA_UART_BAUD);
+    }
+    link_zeros();
+    tang_fpga_unlock();
+}
+
+/* One opcode-0x03 request, read back at the new rate.  The core's answer
+ * names the rate it accepted; after both ends move, register 0x1C must say the
+ * same thing, CRC-checked, at the new rate.  Anything less and both ends go
+ * back to 2 Mbaud. */
+static bool link_negotiate(uint32_t baud)
+{
+    uint8_t req[14];
+    memset(req, 0, sizeof(req));
+    req[0] = 1;                                   /* extended-request version */
+    req[1] = 3;                                   /* opcode: negotiated baud  */
+    req[8] = (uint8_t)(baud >> 24);
+    req[9] = (uint8_t)(baud >> 16);
+    req[10] = (uint8_t)(baud >> 8);
+    req[11] = (uint8_t)baud;
+    uint16_t crc = fpga_crc16(0xffffu, 0x10u);
+    for (int i = 0; i < 12; i++) crc = fpga_crc16(crc, req[i]);
+    req[12] = (uint8_t)(crc >> 8);
+    req[13] = (uint8_t)crc;
+
+    tang_fpga_drain();
+    if (tang_fpga_frame(0x10, req, sizeof(req)) != 0) {
+        return false;
+    }
+    uint8_t rep[16];
+    const int got = tang_fpga_wait(0x10, rep, sizeof(rep), FPGA_REG_REPLY_MS);
+    if (got != 15 || rep[1] != 0x83u || rep[2] != 0) {
+        /* Refused, or an answer lost: the core may or may not have moved,
+         * and the zeros are harmless either way. */
+        link_zeros();
+        return false;
+    }
+    uint16_t rcrc = fpga_crc16(0xffffu, 0x10u);
+    for (int i = 0; i < 13; i++) rcrc = fpga_crc16(rcrc, rep[i]);
+    const uint32_t agreed = ((uint32_t)rep[9] << 24) | ((uint32_t)rep[10] << 16) |
+                            ((uint32_t)rep[11] << 8) | (uint32_t)rep[12];
+    if (rcrc != (uint16_t)((rep[13] << 8) | rep[14]) || agreed != baud) {
+        link_zeros();                             /* it may have moved: undo */
+        return false;
+    }
+    /* The answer's last byte is in; the core moves a few of its clocks after
+     * that stop bit. */
+    bflb_mtimer_delay_us(20);
+    (void)tang_fpga_set_baud(baud);
+    for (int attempt = 0; attempt < 2; attempt++) {
+        uint32_t v = 0;
+        if (tang_fpga_read32(FPGA_REG_LINK_RATE, &v) && v == baud) {
+            return true;
+        }
+    }
+    (void)tang_fpga_set_baud(FPGA_UART_BAUD);
+    link_zeros();
+    return false;
+}
+
+uint32_t tang_fpga_link_fast(void)
+{
+    if (tang_fpga_link_open() != 0) {
+        return s_baud;
+    }
+    tang_fpga_lock();
+    if (s_baud == FPGA_UART_BAUD) {
+        if (!link_negotiate(FPGA_LINK_FAST_BAUD)) {
+            (void)link_negotiate(FPGA_LINK_SAFE_BAUD);
+        }
+    }
+    const uint32_t now = s_baud;
+    tang_fpga_unlock();
+    return now;
+}
+
+int tang_fpga_link_rate(uint32_t baud)
+{
+    if (baud != FPGA_UART_BAUD && baud != FPGA_LINK_SAFE_BAUD && baud != FPGA_LINK_FAST_BAUD) {
+        return -1;
+    }
+    if (tang_fpga_link_open() != 0) {
+        return -1;
+    }
+    tang_fpga_lock();
+    int rc = 0;
+    /* Already there, at a rate that was negotiated and confirmed: nothing to
+     * do.  2 Mbaud is never taken on trust, since a BL616 that was reset or
+     * retuned with -raw believes it while the core may not: asking for it
+     * always sends the zeros that bring the core back. */
+    if (baud != s_baud || baud == FPGA_UART_BAUD) {
+        /* From 2 Mbaud, always: the request then goes at the rate every core
+         * reads, and a failure leaves both ends there. */
+        tang_fpga_link_slow();
+        if (baud != FPGA_UART_BAUD && !link_negotiate(baud)) {
+            rc = -1;
+        }
+    }
+    tang_fpga_unlock();
+    return rc;
 }
 
 /* The clock monitor's registers, contiguous from 0x120: `clk` and `pix` each
@@ -3140,46 +3280,112 @@ static int cmd_ae350run(tdsh_session_t *session, int argc, char **argv)
     return tang_ae350_run(player, NULL);
 }
 
-/* Set UART1's rate without asking the core.
+/* `fpgabaud` shows or changes the link's rate.  With the desktop core from
+ * ABI 1.10 a change is negotiated (register opcode 0x03), so both ends move
+ * together and a rate that does not hold falls back to 2 Mbaud by itself.  Any
+ * other core cannot be asked, so `fpgabaud -raw <rate>` only retunes UART1 to
+ * a rate the core was built for -- the old behaviour, kept for that.
  *
- * The link rate is a property of the core as much as of this end, and nothing
- * negotiates it: a core built for a faster link has to be told nothing, and this
- * end has to match it or the pair is silent.  That is why this is a command and
- * not an automatic: changing the rate under a core that did not expect it leaves
- * the link dead until the core is loaded again, which is a power cycle or a
- * tangload away and not a fault.
- *
- * The rates offered are the ones a core can be built for today.  The BL616's
- * UART divides a 50 MHz clock with a fractional divider, so these are exact at
- * this end; the FPGA's side is what has to be checked per core. */
+ * Rates are the ones both ends make exactly: this UART divides 40 MHz by a
+ * whole number (2, 5 and 10 Mbaud; 12 and 16 would really be 13.3). */
 static int cmd_fpgabaud(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
-
-    if (argc < 2) {
-        tdsh_printf("fpgabaud: usage: fpgabaud <rate>"
-                    " (2000000 5000000 12000000 16000000)\r\n");
-        return 1;
-    }
-
-    const unsigned long baud = strtoul(argv[1], NULL, 0);
-    if (baud != 2000000ul && baud != 5000000ul &&
-        baud != 12000000ul && baud != 16000000ul) {
-        tdsh_printf("fpgabaud: %lu is not a rate this build offers\r\n", baud);
-        return 1;
-    }
 
     if (tang_fpga_link_open() != 0) {
         tdsh_printf("fpgabaud: cannot bring up UART1\r\n");
         return 1;
     }
-    if (tang_fpga_set_baud((uint32_t)baud) != 0) {
-        tdsh_printf("fpgabaud: could not change the rate\r\n");
-        return 1;
+    const bool raw = argc >= 3 && strcmp(argv[1], "-raw") == 0;
+    if (argc < 2 || (argc >= 3 && !raw)) {
+        uint32_t core = 0, counts = 0;
+        tdsh_printf("fpgabaud: UART1 at %u baud", (unsigned)s_baud);
+        if (tang_fpga_read32(FPGA_REG_LINK_RATE, &core) &&
+            tang_fpga_read32(0x20u, &counts)) {
+            tdsh_printf("; the desktop core at %u, %u fallbacks, %u framing errors",
+                        (unsigned)core, (unsigned)(counts >> 16), (unsigned)(counts & 0xFFFFu));
+        }
+        tdsh_printf("\r\nusage: fpgabaud <2000000|5000000|10000000>"
+                    " | fpgabaud -raw <rate>\r\n");
+        return argc < 2 ? 0 : 1;
     }
 
-    tdsh_printf("fpgabaud: UART1 now at %lu baud; the core must be at the same"
-                " rate\r\n", baud);
+    const unsigned long baud = strtoul(argv[raw ? 2 : 1], NULL, 0);
+    if (baud != 2000000ul && baud != 5000000ul && baud != 10000000ul) {
+        tdsh_printf("fpgabaud: %lu is not a rate both ends make exactly"
+                    " (2000000 5000000 10000000)\r\n", baud);
+        return 1;
+    }
+    if (raw) {
+        tang_fpga_lock();
+        const int rc = tang_fpga_set_baud((uint32_t)baud);
+        tang_fpga_unlock();
+        if (rc != 0) {
+            tdsh_printf("fpgabaud: could not change the rate\r\n");
+            return 1;
+        }
+        tdsh_printf("fpgabaud: UART1 now at %lu baud; the core must be at the same"
+                    " rate\r\n", baud);
+        return 0;
+    }
+    if (tang_fpga_link_rate((uint32_t)baud) != 0) {
+        tdsh_printf("fpgabaud: the core did not move to %lu; both ends at %u\r\n",
+                    baud, (unsigned)s_baud);
+        return 1;
+    }
+    tdsh_printf("fpgabaud: both ends at %lu baud\r\n", baud);
+    return 0;
+}
+
+/* `planefill` draws a test picture into the desktop core's pixel plane from
+ * this end and times the link alone: no card, no decoder, no host.  The
+ * picture is tools/plane_sweep.py's, pixel for pixel, so `plane_sweep.py
+ * --no-draw --soak` can then check every frame the core shows against it by
+ * the core's own checksum.  A gradient, a white grid every 64 pixels and a
+ * one-pixel checkerboard in the middle. */
+static uint16_t planefill_pixel(int x, int y, int w, int h)
+{
+    if (x % 64 == 0 || y % 64 == 0) {
+        return 0xFFFFu;
+    }
+    if (x >= w / 2 - 64 && x < w / 2 + 64 && y >= h / 2 - 64 && y < h / 2 + 64) {
+        return ((x ^ y) & 1) ? 0xFFFFu : 0x0000u;
+    }
+    const unsigned r = (unsigned)(x * 31 / (w - 1));
+    const unsigned g = (unsigned)(y * 63 / (h - 1));
+    const unsigned b = (unsigned)((x ^ y) & 31);
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static int cmd_planefill(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    (void)argc;
+    (void)argv;
+    static uint16_t row[TANG_PLANE_MAX_WIDTH];
+    int w = 0, h = 0;
+    if (!tang_plane_size(&w, &h)) {
+        tdsh_printf("planefill: the loaded core has no pixel plane\r\n");
+        return 1;
+    }
+    uint64_t busy_us = 0;
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            row[x] = planefill_pixel(x, y, w, h);
+        }
+        const uint64_t t0 = bflb_mtimer_get_time_us();
+        if (tang_plane_write(0, y, row, w) != 0) {
+            tdsh_printf("planefill: row %d did not go\r\n", y);
+            return 1;
+        }
+        busy_us += bflb_mtimer_get_time_us() - t0;
+    }
+    (void)tang_plane_show(true);
+    const uint32_t bytes = (uint32_t)w * (uint32_t)h * 2u;
+    const uint32_t ms = (uint32_t)(busy_us / 1000u);
+    tdsh_printf("planefill: %dx%d, %u bytes in %u ms (%u KB/s) at %u baud\r\n",
+                w, h, (unsigned)bytes, (unsigned)ms,
+                (unsigned)(ms ? bytes / ms : 0), (unsigned)s_baud);
     return 0;
 }
 
@@ -3200,8 +3406,10 @@ static const tdsh_command_t s_fpga_commands[] = {
       cmd_fpga, 0 },
     { "fmon", "fmon [hold-ms]", "Read the core's clock-monitor counters over UART1",
       cmd_fmon, 0 },
-    { "fpgabaud", "fpgabaud <rate>", "Set UART1's rate to match the core, without asking it",
+    { "fpgabaud", "fpgabaud [<rate> | -raw <rate>]", "Show or negotiate the link's rate (2, 5 or 10 Mbaud)",
       cmd_fpgabaud, 0 },
+    { "planefill", "planefill", "Draw a test picture into the pixel plane and time the link",
+      cmd_planefill, 0 },
     { "fpgar", "fpgar <hex-addr>", "Read one desktop register over UART1",
       cmd_fpgar, 0 },
     { "fpgapipe", "fpgapipe", "Pass console bytes to and from UART1 until the port closes",

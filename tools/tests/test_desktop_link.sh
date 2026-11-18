@@ -35,7 +35,7 @@ verilator --binary --timing -j 0 \
     -o tb \
     "$root/tools/tests/sim/tb_desktop_link.sv" \
     "$desktop/desktop_link.v" \
-    "$desktop/uart_fixed.v" \
+    "$desktop/link_uart.sv" \
     "$desktop/desktop_regs.sv" \
     "$desktop/clock_monitor.sv"
 

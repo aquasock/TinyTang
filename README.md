@@ -632,8 +632,11 @@ and draws it row by row as the file streams in.  `+` and `-`, or A and B on the
 pad, zoom (A on the point under the pointer), the arrows and the wheel pan,
 PgUp and PgDn turn pages, `0` shows the whole picture, Esc goes back.  A
 scanned magazine page converted to a 1280-wide BMP reads comfortably at 2x
-(TDESK-022).  A whole screen takes about 9 s over the 2 Mbaud link, so each
-zoom or pan repaints visibly; only the columns a picture covers are resent.
+(TDESK-022).  With desktop ABI 1.10 the link runs at 10 Mbaud, so a whole
+screen crosses it in about 1.9 s (9.2 s at 2 Mbaud); a 1280x1726 page now takes
+about 10 s, most of it reading the file off the card (TDESK-023).  Only the
+columns a picture covers are resent.  `readerdraw <path> [zoom]` at the shell
+draws a picture the same way and says where the time went.
 The Saves page shows the selected cartridge's `.sav` beside it, its save type and
 the size that type holds (found by scanning the image for its save marker, in a
 task of its own, since a GBA cartridge has no header field for it), and when the
@@ -813,6 +816,10 @@ session. `.ai/core-reference.md` holds the full records and their sources.
    instead; that is not explained, so power-cycle after every install and
    confirm the build identity `platform` reports.
 7. **The core's UART is the BL616's UART1: TX GPIO 28, RX GPIO 27, 2 Mbaud.**
+   Every core starts at 2 Mbaud; the desktop core from ABI 1.10 is moved to
+   10 Mbaud (or 5) after it loads, by register opcode 0x03, and `fpgabaud`
+   shows or changes the rate. Only 2, 5 and 10 Mbaud are whole-number
+   dividers at both ends (BL6-011).
    Frames in both directions are `0xAA len_hi len_lo type payload[len-1]`;
    the length is big-endian and counts the type byte, and a length high byte
    of 8 or more drops the core's receiver back to hunting for the next magic

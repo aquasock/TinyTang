@@ -169,6 +169,24 @@ bool tang_fpga_write32(uint32_t address, uint32_t value);
 int      tang_fpga_set_baud(uint32_t baud);
 uint32_t tang_fpga_baud(void);
 
+/* The desktop core's negotiated rate (desktop ABI 1.10, link_uart.sv).
+ *
+ * tang_fpga_link_fast() asks for 10 Mbaud and, if that does not hold, 5; each
+ * is confirmed by a CRC-checked read of the core's rate register at the new
+ * rate, and a failure leaves both ends at 2 Mbaud.  Returns the rate the link
+ * ends at.  Only for a core that advertises the capability.
+ *
+ * tang_fpga_link_rate() negotiates one given rate (2, 5 or 10 Mbaud) from
+ * 2 Mbaud; 0, or -1 with both ends at 2 Mbaud.
+ *
+ * tang_fpga_link_slow() puts both ends back at 2 Mbaud without asking: this
+ * end moves, then sends zeros, which a desktop core at a faster rate takes as
+ * its cue to drop to 2 Mbaud and every core ignores between frames.  Before a
+ * core is loaded, so the new one and the BL616 meet at 2 Mbaud. */
+uint32_t tang_fpga_link_fast(void);
+int      tang_fpga_link_rate(uint32_t baud);
+void     tang_fpga_link_slow(void);
+
 /* The newest joypad the core has reported.
  *
  * The core sends this unprompted whenever the pad changes and at most every

@@ -61,6 +61,17 @@ static int critical_imbalance;
 static void pump_deferred(void);
 
 uint32_t bflb_mtimer_get_time_ms(void) { pump_deferred(); return ++now_ms; }
+uint64_t bflb_mtimer_get_time_us(void) { return (uint64_t)now_ms * 1000u; }
+void bflb_mtimer_delay_us(uint32_t us) { (void)us; }
+
+/* The pixel plane, for `planefill`: not exercised here. */
+bool tang_plane_size(int *w, int *h) { (void)w; (void)h; return false; }
+int tang_plane_show(bool on) { (void)on; return -1; }
+int tang_plane_write(int x, int y, const uint16_t *px, int n)
+{
+    (void)x; (void)y; (void)px; (void)n;
+    return -1;
+}
 
 /* A reply that arrives *during* a call, the way the RX interrupt delivers one
  * on the board.  tang_fpga_core_id() drains the ring before it transmits, so a
@@ -69,6 +80,10 @@ uint32_t bflb_mtimer_get_time_ms(void) { pump_deferred(); return ++now_ms; }
 static unsigned char deferred[64];
 static size_t deferred_len, deferred_after, deferred_reads;
 static void (*deferred_feed)(const unsigned char *, size_t);
+/* Replies after that one, each arriving `after` polls past the one before:
+ * a rate change is answered twice, once at each rate. */
+static unsigned char queued[4][64];
+static size_t queued_len[4], queued_after[4], queued_n;
 
 static void pump_deferred(void)
 {
@@ -76,6 +91,16 @@ static void pump_deferred(void)
     if (++deferred_reads >= deferred_after) {
         deferred_feed(deferred, deferred_len);
         deferred_len = 0;
+        if (queued_n) {
+            memcpy(deferred, queued[0], queued_len[0]);
+            deferred_len = queued_len[0];
+            deferred_after = queued_after[0];
+            deferred_reads = 0;
+            queued_n--;
+            memmove(queued[0], queued[1], sizeof queued[0] * queued_n);
+            memmove(queued_len, queued_len + 1, sizeof queued_len[0] * queued_n);
+            memmove(queued_after, queued_after + 1, sizeof queued_after[0] * queued_n);
+        }
     }
 }
 TickType_t xTaskGetTickCount(void) { return (TickType_t)now_ms; }
@@ -388,6 +413,7 @@ static void reset_world(void)
     file_count = 0;
     deferred_len = deferred_after = deferred_reads = 0;
     deferred_feed = NULL;
+    queued_n = 0;
     /* The module's own statics. */
     s_uart_ready = false;
     s_uart = NULL;
@@ -427,6 +453,15 @@ static void arrive_later(const uint8_t *bytes, size_t n, size_t reads)
     deferred_feed = feed_thunk;
 }
 
+/* And one more after whatever is already due. */
+static void arrive_after_that(const uint8_t *bytes, size_t n, size_t reads)
+{
+    memcpy(queued[queued_n], bytes, n);
+    queued_len[queued_n] = n;
+    queued_after[queued_n] = reads;
+    queued_n++;
+}
+
 /* One complete frame, with the length counting the type byte. */
 static size_t make_frame(uint8_t *out, uint8_t type, const uint8_t *payload, size_t n)
 {
@@ -437,6 +472,31 @@ static size_t make_frame(uint8_t *out, uint8_t type, const uint8_t *payload, siz
     out[3] = type;
     if (n) memcpy(out + 4, payload, n);
     return 4 + n;
+}
+
+/* A register reply (frame 0x10): version, opcode | 0x80, status, sequence 0,
+ * address, data and a good CRC -- or a bad one, if asked. */
+static size_t make_reply(uint8_t *out, uint8_t op, uint8_t status, uint32_t addr,
+                         uint32_t data, bool bad_crc)
+{
+    uint8_t rep[15] = {
+        1, (uint8_t)(op | 0x80u), status, 0, 0,
+        (uint8_t)(addr >> 24), (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr,
+        (uint8_t)(data >> 24), (uint8_t)(data >> 16), (uint8_t)(data >> 8), (uint8_t)data,
+        0, 0,
+    };
+    uint16_t crc = fpga_crc16(0xffffu, 0x10u);
+    for (int i = 0; i < 13; i++) crc = fpga_crc16(crc, rep[i]);
+    if (bad_crc) crc ^= 1u;
+    rep[13] = (uint8_t)(crc >> 8);
+    rep[14] = (uint8_t)crc;
+    return make_frame(out, 0x10, rep, 15);
+}
+
+static bool zeros_at(size_t at)
+{
+    return wire_len >= at + 4 && wire[at] == 0 && wire[at + 1] == 0 &&
+           wire[at + 2] == 0 && wire[at + 3] == 0;
 }
 
 int main(void)
@@ -901,6 +961,121 @@ int main(void)
         host_script = NULL;
         CHECK_EQ(wire_len, sizeof foreign);
         CHECK_EQ(osd_notes, 0);
+    }
+
+    /* ------------------------------------- the link's rate (desktop ABI 1.10)
+     * Opcode 0x03 asks the core to move; it answers at the old rate, both
+     * ends move, and the core's rate register (0x1C) must confirm it at the
+     * new one.  Anything less leaves both ends at 2 Mbaud, by zeros. */
+    {
+        uint8_t a[32], b[32], c[32];
+        size_t na, nb, nc;
+
+        /* Success, from 2 Mbaud: zeros, the request, then the confirming
+         * read at 10 Mbaud. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        wire_len = 0;
+        na = make_reply(a, 3, 0, 0, 10000000u, false);
+        nb = make_reply(b, 1, 0, 0x1Cu, 10000000u, false);
+        arrive_later(a, na, 2);
+        arrive_after_that(b, nb, 3);
+        CHECK_EQ(tang_fpga_link_rate(10000000u), 0);
+        CHECK_EQ(tang_fpga_baud(), 10000000u);
+        CHECK_EQ(uart_baud_seen, 10000000u);
+        CHECK(zeros_at(0));
+        CHECK_EQ(wire[4], 0xAA);
+        CHECK_EQ(wire[6], 15);
+        CHECK_EQ(wire[7], 0x10);
+        CHECK_EQ(wire[8], 1);               /* version */
+        CHECK_EQ(wire[9], 3);               /* opcode: negotiated baud */
+        CHECK_EQ(wire[16], 0x00); CHECK_EQ(wire[17], 0x98);
+        CHECK_EQ(wire[18], 0x96); CHECK_EQ(wire[19], 0x80);   /* 10,000,000 */
+        {
+            uint16_t crc = fpga_crc16(0xffffu, 0x10u);
+            for (int i = 0; i < 12; i++) crc = fpga_crc16(crc, wire[8 + i]);
+            CHECK_EQ(wire[20], (uint8_t)(crc >> 8));
+            CHECK_EQ(wire[21], (uint8_t)crc);
+        }
+        CHECK_EQ(wire[22], 0xAA);           /* then read32 of 0x1C */
+        CHECK_EQ(wire[27], 1);
+        CHECK_EQ(wire[33], 0x1C);
+        /* Asked again at the rate it is at: nothing is sent. */
+        wire_len = 0;
+        CHECK_EQ(tang_fpga_link_rate(10000000u), 0);
+        CHECK_EQ(wire_len, 0u);
+
+        /* 2 Mbaud is never taken on trust: zeros every time. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        wire_len = 0;
+        CHECK_EQ(tang_fpga_link_rate(2000000u), 0);
+        CHECK_EQ(wire_len, 4u);
+        CHECK(zeros_at(0));
+
+        /* A rate neither end makes exactly is refused here, silently. */
+        wire_len = 0;
+        CHECK_EQ(tang_fpga_link_rate(12000000u), -1);
+        CHECK_EQ(wire_len, 0u);
+
+        /* The core refuses (status 6): zeros after, still 2 Mbaud. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        wire_len = 0;
+        na = make_reply(a, 3, 6, 0, 0, false);
+        arrive_later(a, na, 2);
+        CHECK_EQ(tang_fpga_link_rate(5000000u), -1);
+        CHECK_EQ(tang_fpga_baud(), 2000000u);
+        CHECK_EQ(wire_len, 4u + 18u + 4u);
+        CHECK(zeros_at(wire_len - 4));
+
+        /* Agreed, but the agreement's CRC is bad: this end never moves. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        wire_len = 0;
+        na = make_reply(a, 3, 0, 0, 10000000u, true);
+        arrive_later(a, na, 2);
+        {
+            const int inits = uart_inited;
+            CHECK_EQ(tang_fpga_link_rate(10000000u), -1);
+            CHECK_EQ(uart_inited, inits);   /* never retuned, not even briefly */
+        }
+        CHECK_EQ(tang_fpga_baud(), 2000000u);
+        CHECK_EQ(uart_baud_seen, 2000000u);
+        CHECK(zeros_at(wire_len - 4));
+
+        /* Agreed, but nothing confirms it at the new rate: back to 2 Mbaud,
+         * both ends. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        wire_len = 0;
+        na = make_reply(a, 3, 0, 0, 10000000u, false);
+        arrive_later(a, na, 2);
+        CHECK_EQ(tang_fpga_link_rate(10000000u), -1);
+        CHECK_EQ(tang_fpga_baud(), 2000000u);
+        CHECK_EQ(uart_baud_seen, 2000000u);
+        CHECK(zeros_at(wire_len - 4));
+
+        /* link_fast: 10 Mbaud refused, 5 Mbaud taken. */
+        reset_world();
+        CHECK_EQ(tang_fpga_link_open(), 0);
+        na = make_reply(a, 3, 6, 0, 0, false);
+        nb = make_reply(b, 3, 0, 0, 5000000u, false);
+        nc = make_reply(c, 1, 0, 0x1Cu, 5000000u, false);
+        arrive_later(a, na, 2);
+        arrive_after_that(b, nb, 3);
+        arrive_after_that(c, nc, 3);
+        CHECK_EQ(tang_fpga_link_fast(), 5000000u);
+        CHECK_EQ(tang_fpga_baud(), 5000000u);
+
+        /* link_slow from 5 Mbaud: this end back to 2, then zeros. */
+        wire_len = 0;
+        tang_fpga_link_slow();
+        CHECK_EQ(tang_fpga_baud(), 2000000u);
+        CHECK_EQ(uart_baud_seen, 2000000u);
+        CHECK_EQ(wire_len, 4u);
+        CHECK(zeros_at(0));
+        CHECK_EQ(critical_imbalance, 0);
     }
 
     /* ------------------------------------------------------- registration -- */

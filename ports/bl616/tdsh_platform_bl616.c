@@ -539,6 +539,10 @@ int tdsh_bl616_init(const char *hostname)
     rc = tang_i2c_register();
     if (rc) return rc;
 
+    extern int tang_reader_register(void);
+    rc = tang_reader_register();
+    if (rc) return rc;
+
     extern int tang_wiipad_register(void);
     rc = tang_wiipad_register();
     if (rc) return rc;
