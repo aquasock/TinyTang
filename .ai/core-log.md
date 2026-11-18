@@ -1821,3 +1821,32 @@ The Classic gamepad connection test comes next: pair with the 8BitDo in Switch m
 - User Test: PASS
 
 ---
+## 54 COMMIT Unreleased 2026-11-18T10:06:22-07:00
+
+#### Coming From:
+
+Unreleased d1230b1
+
+#### Purpose:
+
+Find out whether the 8BitDo gamepad in Switch mode gives the BL616 its input over a raw Classic L2CAP HID connection, before a Classic HID host is written.
+
+#### Outcome:
+
+It does, and the pad reconnects by itself, and the operator passed it (BLE-021). The Classic build gained the test command `bthid`, which connects a pad by address, pairs it with Secure Simple Pairing Just Works, opens HID control and interrupt channels on PSM 0x11 and 0x13, registers both PSMs as servers so a pad can open them itself, and prints input reports as raw hex, skipping repeats; `bthid send` sends bytes on the interrupt channel, and the state is taken from the heap at first use. The LE code's connection callbacks now hand Classic links to it: before, its connected callback closed any connection no LE slot owned. The pad paired and bonded with no SDP query and sent the 13-byte Switch Pro simple report `a1 3f` continuously, and pressing each control in turn mapped every button bit, the hat and the four sticks. Turning the pad off reset the first firmware, `d1230b1-dirty.cc50667`, with a Bluetooth assert, which the crash record and the disassembly traced to `bt_conn_unref`: on a link the host makes, this SDK keeps the reference `bt_conn_create_br` returns and drops it itself after the disconnected callbacks, and `bthid` had dropped it too. With that fixed, `d1230b1-dirty.55b33a2` survived the power-off, and the woken pad paged the board and connected, but `bthid` opened its own channels at the same moment and the link went down with LMP response timeout. The final firmware, `d1230b1-dirty.7c661c0`, 1,046,224 bytes, waits 3 s for the pad on a link the pad made; the pad then opened both channels itself and reports resumed, and the operator reported the reconnection working. Each firmware was installed with `tools/tinytang_flash.py`, which saw the commit end, and started with the two-wire relay sequence. The command adds 29 bytes of static RAM and about 4.4 KB of heap once used. The ordinary build was rebuilt at 807,808 bytes and does not contain it, and host tests are 52 of 52. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the new BLE-021 with its index row and summary line, and this entry was validated as number 54 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 188 records.
+
+#### Next Steps:
+
+The Classic HID host proper comes next, as a proposal: keep the link key on the card beside the LE bonds so the pad reconnects after a reboot, accept the pad's channels on reconnection, decode the `0x3F` report into the pad word and the pointer the desk layer and the cores already take, and keep the reference rule BLE-021 records. A game-core load and a TinyNES run on the Classic firmware should still be confirmed. Entry 50's zoom mode still awaits its book upload and the operator's test, and the updater's silent failure of a sector that differs after three attempts is still unfixed.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

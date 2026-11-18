@@ -586,6 +586,449 @@ static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
     s_br_results = NULL;
     return 0;
 }
+
+/* ------------------------------------------- Classic HID connection (test)
+ *
+ * `bthid`: before a Classic HID host is written, does a Classic gamepad give
+ * this board its input at all.  It opens an ACL link to the pad, which pairs
+ * with Secure Simple Pairing (Just Works: s_auth_cb has no passkey callbacks,
+ * so the stack says NoInputNoOutput and confirms by itself), then the HID
+ * control channel (PSM 0x11) and the interrupt channel (PSM 0x13), and shows
+ * what arrives on them as raw hex.  The same two PSMs are registered as
+ * servers, so a pad that opens the channels itself is seen too.
+ *
+ * The stack's callbacks run in its own task; they only note events into a
+ * ring here, and the command prints the ring and opens the channels from the
+ * shell's task.  A report identical to the one before is counted, not shown.
+ * Nothing is saved: the link key is lost at a reboot (the driver will keep
+ * it).  The state is taken from the heap at first use and kept, because the
+ * stack holds pointers to its channels. */
+
+#include "l2cap.h"
+
+/* From the stack's internal headers, which are not on the include path.
+ * l2cap_internal.h: a PDU from the ACL pool (pool NULL). */
+struct net_buf *bt_l2cap_create_pdu_timeout(struct net_buf_pool *pool,
+                                            size_t reserve, s32_t timeout);
+/* conn_internal.h: the Classic link to an address, with a reference, or NULL. */
+struct bt_conn *bt_conn_lookup_addr_br(const bt_addr_t *peer);
+
+#define BTHID_PSM_CTRL   0x0011u
+#define BTHID_PSM_INTR   0x0013u
+#define BTHID_MTU        672u        /* the BR/EDR default */
+#define BTHID_LINES      24
+#define BTHID_LINE       176
+#define BTHID_REPORT_MAX 64
+
+typedef struct {
+    struct bt_conn *conn;            /* the link; see outbound for its reference */
+    bool outbound;                   /* we made it: the stack's reference, not ours */
+    struct bt_l2cap_br_chan ctrl, intr;
+    volatile bool ctrl_up, intr_up;
+    bool ctrl_asked, intr_asked;     /* opened by us this connection */
+    volatile bool linked;            /* the ACL link is up */
+    uint64_t linked_ms;              /* when it came up */
+    uint32_t reports, shown, dropped;
+    uint8_t last[BTHID_REPORT_MAX];
+    uint16_t last_len;
+    char line[BTHID_LINES][BTHID_LINE];
+    volatile unsigned head, tail;
+} bthid_t;
+
+static bthid_t *s_bt;
+static bool s_bt_servers;
+
+static bool bthid_is_br(struct bt_conn *conn)
+{
+    struct bt_conn_info ci;
+    return bt_conn_get_info(conn, &ci) == 0 && ci.type == BT_CONN_TYPE_BR;
+}
+
+static void bthid_note(const char *fmt, ...)
+{
+    if (s_bt == NULL) {
+        return;
+    }
+    char tmp[BTHID_LINE];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(tmp, sizeof tmp, fmt, ap);
+    va_end(ap);
+    taskENTER_CRITICAL();
+    const unsigned next = (s_bt->head + 1u) % BTHID_LINES;
+    if (next == s_bt->tail) {
+        s_bt->dropped++;
+    } else {
+        memcpy(s_bt->line[s_bt->head], tmp, sizeof tmp);
+        s_bt->head = next;
+    }
+    taskEXIT_CRITICAL();
+}
+
+static void bthid_hex(char *out, size_t cap, const uint8_t *p, size_t n)
+{
+    size_t o = 0;
+    out[0] = '\0';
+    for (size_t i = 0; i < n && o + 4 < cap; i++) {
+        o += (size_t)snprintf(out + o, cap - o, "%02x ", p[i]);
+    }
+}
+
+static void bthid_chan_connected(struct bt_l2cap_chan *chan)
+{
+    const bool intr = (chan == &s_bt->intr.chan);
+    if (intr) {
+        s_bt->intr_up = true;
+    } else {
+        s_bt->ctrl_up = true;
+    }
+    const struct bt_l2cap_br_chan *c = intr ? &s_bt->intr : &s_bt->ctrl;
+    bthid_note("%s channel open (cid 0x%04x, mtu in %u out %u)",
+               intr ? "interrupt" : "control", c->rx.cid, c->rx.mtu, c->tx.mtu);
+}
+
+static void bthid_chan_disconnected(struct bt_l2cap_chan *chan)
+{
+    const bool intr = (chan == &s_bt->intr.chan);
+    if (intr) {
+        s_bt->intr_up = false;
+    } else {
+        s_bt->ctrl_up = false;
+    }
+    bthid_note("%s channel closed", intr ? "interrupt" : "control");
+}
+
+static int bthid_chan_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
+{
+    char hex[BTHID_LINE - 24];
+    if (chan == &s_bt->intr.chan) {
+        s_bt->reports++;
+        const uint16_t n = (uint16_t)(buf->len < BTHID_REPORT_MAX ? buf->len : BTHID_REPORT_MAX);
+        if (n == s_bt->last_len && memcmp(s_bt->last, buf->data, n) == 0) {
+            return 0;
+        }
+        memcpy(s_bt->last, buf->data, n);
+        s_bt->last_len = n;
+        s_bt->shown++;
+        bthid_hex(hex, sizeof hex, buf->data, n);
+        bthid_note("#%lu %u: %s", (unsigned long)s_bt->reports, (unsigned)buf->len, hex);
+    } else {
+        bthid_hex(hex, sizeof hex, buf->data, buf->len < 48 ? buf->len : 48);
+        bthid_note("control %u: %s", (unsigned)buf->len, hex);
+    }
+    return 0;
+}
+
+static const struct bt_l2cap_chan_ops s_bthid_ops = {
+    .connected = bthid_chan_connected,
+    .disconnected = bthid_chan_disconnected,
+    .recv = bthid_chan_recv,
+};
+
+/* A channel the stack does not hold, made ready to connect or accept. */
+static void bthid_chan_reset(struct bt_l2cap_br_chan *c)
+{
+    memset(c, 0, sizeof *c);
+    c->chan.ops = &s_bthid_ops;
+    c->chan.required_sec_level = BT_SECURITY_L2;
+    c->rx.mtu = BTHID_MTU;
+}
+
+static int bthid_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan, bool intr)
+{
+    if (s_bt == NULL || conn != s_bt->conn) {
+        return -EACCES;
+    }
+    struct bt_l2cap_br_chan *c = intr ? &s_bt->intr : &s_bt->ctrl;
+    if (intr ? s_bt->intr_up : s_bt->ctrl_up) {
+        return -EBUSY;
+    }
+    bthid_chan_reset(c);
+    *chan = &c->chan;
+    bthid_note("the pad opens its %s channel", intr ? "interrupt" : "control");
+    return 0;
+}
+
+static int bthid_accept_ctrl(struct bt_conn *conn, struct bt_l2cap_chan **chan)
+{
+    return bthid_accept(conn, chan, false);
+}
+
+static int bthid_accept_intr(struct bt_conn *conn, struct bt_l2cap_chan **chan)
+{
+    return bthid_accept(conn, chan, true);
+}
+
+static struct bt_l2cap_server s_bthid_srv_ctrl = {
+    .psm = BTHID_PSM_CTRL, .sec_level = BT_SECURITY_L2, .accept = bthid_accept_ctrl,
+};
+static struct bt_l2cap_server s_bthid_srv_intr = {
+    .psm = BTHID_PSM_INTR, .sec_level = BT_SECURITY_L2, .accept = bthid_accept_intr,
+};
+
+/* The connection callbacks for a Classic link, from the LE ones (which would
+ * otherwise close a connection no LE slot owns). */
+static void bthid_connected(struct bt_conn *conn, u8_t err)
+{
+    if (s_bt == NULL) {
+        return;
+    }
+    if (err) {
+        bthid_note("connect failed (HCI 0x%02X)", err);
+        if (conn == s_bt->conn) {
+            /* The stack dropped its own reference (CONNECT -> DISCONNECTED in
+             * bt_conn_set_state); the one bt_conn_create_br returned is ours. */
+            bt_conn_unref(conn);
+            s_bt->conn = NULL;
+        }
+        return;
+    }
+    if (s_bt->conn == NULL) {
+        s_bt->conn = bt_conn_ref(conn);      /* the pad connected to us */
+        s_bt->outbound = false;
+        bthid_note("the pad connected to us");
+    } else if (conn != s_bt->conn) {
+        bthid_note("another Classic device connected; ignored");
+        return;
+    }
+    s_bt->ctrl_asked = s_bt->intr_asked = false;
+    s_bt->linked_ms = bflb_mtimer_get_time_ms();
+    s_bt->linked = true;
+    bthid_note("link up");
+}
+
+static void bthid_disconnected(struct bt_conn *conn, u8_t reason)
+{
+    if (s_bt == NULL || conn != s_bt->conn) {
+        return;
+    }
+    bthid_note("link down (reason 0x%02X); %lu report(s), %lu shown",
+               reason, (unsigned long)s_bt->reports, (unsigned long)s_bt->shown);
+    s_bt->linked = false;
+    s_bt->ctrl_up = s_bt->intr_up = false;
+    s_bt->conn = NULL;
+    /* A link we made holds the reference bt_conn_create_br returned until it
+     * goes down, and the stack drops that itself after this callback
+     * (notify_disconnected, BFLB_BREDR_PATCH_FIX_BREDR_CONN_REF_AFTER_ROLE_SWITCH,
+     * for BT_CONN_BR_INITIAL_MASTER links).  Dropping it here too took the
+     * count below zero, and bt_conn_unref's assert reset the board when the
+     * pad was turned off.  Only a link the pad made carries a reference of
+     * ours.  A failed connect is different: it never reaches
+     * notify_disconnected, so bthid_connected drops that reference. */
+    if (!s_bt->outbound) {
+        bt_conn_unref(conn);
+    }
+}
+
+static void bthid_security(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
+{
+    if (s_bt != NULL && conn == s_bt->conn) {
+        bthid_note("security level %d (err %d)", (int)level, (int)err);
+    }
+}
+
+static void bthid_paired(struct bt_conn *conn, bool bonded, int failed)
+{
+    if (s_bt == NULL || conn != s_bt->conn) {
+        return;
+    }
+    if (failed) {
+        bthid_note("pairing failed (%d)", failed);
+    } else {
+        bthid_note("paired (%s); the key is not saved in this test", bonded ? "bonded" : "not bonded");
+    }
+}
+
+/* A pad that reconnects opens its own channels (the PSM servers take them);
+ * opening ours at the same time collided on the board, and the link went down
+ * with LMP response timeout (0x24) before security was up.  So on a link the
+ * pad made we wait this long for it before opening them ourselves. */
+#define BTHID_PAD_OPENS_MS 3000u
+
+/* From the shell's task: open whatever channel is due, print what was noted. */
+static void bthid_step(void)
+{
+    const bool ours_to_open = s_bt->outbound ||
+        bflb_mtimer_get_time_ms() - s_bt->linked_ms >= BTHID_PAD_OPENS_MS;
+    if (s_bt->linked && s_bt->conn != NULL && ours_to_open) {
+        if (!s_bt->ctrl_up && !s_bt->ctrl_asked) {
+            s_bt->ctrl_asked = true;
+            bthid_chan_reset(&s_bt->ctrl);
+            const int rc = bt_l2cap_chan_connect(s_bt->conn, &s_bt->ctrl.chan, BTHID_PSM_CTRL);
+            bthid_note("opening the control channel (%d)", rc);
+        } else if (s_bt->ctrl_up && !s_bt->intr_up && !s_bt->intr_asked) {
+            s_bt->intr_asked = true;
+            bthid_chan_reset(&s_bt->intr);
+            const int rc = bt_l2cap_chan_connect(s_bt->conn, &s_bt->intr.chan, BTHID_PSM_INTR);
+            bthid_note("opening the interrupt channel (%d)", rc);
+        }
+    }
+    while (s_bt->tail != s_bt->head) {
+        tdsh_printf("bthid: %s\r\n", s_bt->line[s_bt->tail]);
+        s_bt->tail = (s_bt->tail + 1u) % BTHID_LINES;
+    }
+    if (s_bt->dropped) {
+        tdsh_printf("bthid: (%lu line(s) lost: too many at once)\r\n", (unsigned long)s_bt->dropped);
+        s_bt->dropped = 0;
+    }
+}
+
+static void bthid_watch(int secs)
+{
+    tdsh_printf("bthid: watching for %d s\r\n", secs);
+    const uint64_t end = bflb_mtimer_get_time_ms() + (uint64_t)secs * 1000u;
+    while (bflb_mtimer_get_time_ms() < end) {
+        bthid_step();
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    bthid_step();
+}
+
+static bool bthid_parse_addr(const char *text, bt_addr_t *out)
+{
+    unsigned b[6];
+    char tail;
+    if (sscanf(text, "%2x:%2x:%2x:%2x:%2x:%2x%c", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &tail) != 6) {
+        return false;
+    }
+    for (int i = 0; i < 6; i++) {
+        out->val[5 - i] = (uint8_t)b[i];
+    }
+    return true;
+}
+
+static int bthid_ready(void)
+{
+    if (ble_start() != 0) {
+        return -1;
+    }
+    if (s_bt == NULL) {
+        s_bt = calloc(1, sizeof *s_bt);
+        if (s_bt == NULL) {
+            tdsh_printf("bthid: not enough memory\r\n");
+            return -1;
+        }
+    }
+    if (!s_bt_servers) {
+        const int a = bt_l2cap_br_server_register(&s_bthid_srv_ctrl);
+        const int b = bt_l2cap_br_server_register(&s_bthid_srv_intr);
+        if (a != 0 || b != 0) {
+            tdsh_printf("bthid: PSM servers not registered (%d, %d); the pad cannot open channels to us\r\n", a, b);
+        }
+        s_bt_servers = true;
+        (void)bt_br_set_connectable(true);
+    }
+    return 0;
+}
+
+static int cmd_bthid(tdsh_session_t *session, int argc, char **argv)
+{
+    (void)session;
+    if (argc < 2) {
+        tdsh_printf("usage: bthid <addr> [secs] | watch [secs] | send <hex bytes> | status | off\r\n");
+        return 1;
+    }
+    if (bthid_ready() != 0) {
+        return 1;
+    }
+    const char *op = argv[1];
+    int secs = 30;
+    if (argc >= 3 && (strcmp(op, "watch") == 0 || strchr(op, ':') != NULL)) {
+        secs = atoi(argv[2]);
+        if (secs < 1 || secs > 600) {
+            tdsh_printf("bthid: seconds are 1 to 600\r\n");
+            return 1;
+        }
+    }
+
+    if (strcmp(op, "status") == 0) {
+        tdsh_printf("bthid: link %s, control %s, interrupt %s, %lu report(s), %lu shown\r\n",
+                    s_bt->linked ? "up" : "down", s_bt->ctrl_up ? "open" : "closed",
+                    s_bt->intr_up ? "open" : "closed",
+                    (unsigned long)s_bt->reports, (unsigned long)s_bt->shown);
+        bthid_step();
+        return 0;
+    }
+    if (strcmp(op, "watch") == 0) {
+        bthid_watch(secs);
+        return 0;
+    }
+    if (strcmp(op, "off") == 0) {
+        if (s_bt->conn == NULL) {
+            tdsh_printf("bthid: not connected\r\n");
+            return 0;
+        }
+        const int rc = bt_conn_disconnect(s_bt->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+        tdsh_printf("bthid: disconnecting (%d)\r\n", rc);
+        bthid_watch(3);
+        return 0;
+    }
+    if (strcmp(op, "send") == 0) {
+        /* Bytes as given, on the interrupt channel: a HID output report
+         * starts with 0xa2. */
+        if (!s_bt->intr_up) {
+            tdsh_printf("bthid: the interrupt channel is not open\r\n");
+            return 1;
+        }
+        uint8_t data[64];
+        int n = 0;
+        for (int i = 2; i < argc && n < (int)sizeof data; i++) {
+            char *end;
+            const unsigned long v = strtoul(argv[i], &end, 16);
+            if (*end != '\0' || v > 0xFF) {
+                tdsh_printf("bthid: '%s' is not a hex byte\r\n", argv[i]);
+                return 1;
+            }
+            data[n++] = (uint8_t)v;
+        }
+        if (n == 0) {
+            tdsh_printf("usage: bthid send <hex bytes>\r\n");
+            return 1;
+        }
+        struct net_buf *buf = bt_l2cap_create_pdu_timeout(NULL, 0, K_SECONDS(1));
+        if (buf == NULL) {
+            tdsh_printf("bthid: no buffer to send with\r\n");
+            return 1;
+        }
+        net_buf_add_mem(buf, data, (size_t)n);
+        const int rc = bt_l2cap_chan_send(&s_bt->intr.chan, buf);
+        if (rc < 0) {
+            net_buf_unref(buf);
+        }
+        tdsh_printf("bthid: sent %d byte(s) (%d)\r\n", n, rc);
+        bthid_watch(2);
+        return 0;
+    }
+
+    bt_addr_t addr;
+    if (!bthid_parse_addr(op, &addr)) {
+        tdsh_printf("bthid: '%s' is not an address like E4:17:D8:17:4D:7F\r\n", op);
+        return 1;
+    }
+    if (s_bt->conn != NULL) {
+        tdsh_printf("bthid: already connected; bthid off first\r\n");
+        return 1;
+    }
+    struct bt_conn *existing = bt_conn_lookup_addr_br(&addr);
+    if (existing != NULL) {
+        bt_conn_unref(existing);
+        tdsh_printf("bthid: the stack already has a link to it; bthid off, or wait for it to drop\r\n");
+        return 1;
+    }
+    s_bt->reports = s_bt->shown = 0;
+    s_bt->last_len = 0;
+    s_bt->linked = false;
+    struct bt_conn *conn = bt_conn_create_br(&addr, BT_BR_CONN_PARAM_DEFAULT);
+    if (conn == NULL) {
+        tdsh_printf("bthid: the connection was not started\r\n");
+        return 1;
+    }
+    s_bt->conn = conn;
+    s_bt->outbound = true;
+    tdsh_printf("bthid: connecting to %s; the pad should be in pairing mode\r\n", op);
+    bthid_watch(secs);
+    return 0;
+}
 #endif /* CONFIG_BT_BREDR */
 
 static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
@@ -1594,6 +2037,12 @@ static bool hid_le_param_req(struct bt_conn *conn, struct bt_le_conn_param *para
 
 static void hid_connected(struct bt_conn *conn, u8_t err)
 {
+#if defined(CONFIG_BT_BREDR)
+    if (bthid_is_br(conn)) {
+        bthid_connected(conn, err);   /* not the LE slots' to close */
+        return;
+    }
+#endif
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
         /* Only the slots create connections, so this is one a slot let go of
@@ -1661,6 +2110,12 @@ static void hid_connected(struct bt_conn *conn, u8_t err)
 
 static void hid_disconnected(struct bt_conn *conn, u8_t reason)
 {
+#if defined(CONFIG_BT_BREDR)
+    if (bthid_is_br(conn)) {
+        bthid_disconnected(conn, reason);
+        return;
+    }
+#endif
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
         return;
@@ -1723,6 +2178,12 @@ static void hid_mtu_exchanged(struct bt_conn *conn, u8_t err,
 static void hid_security_changed(struct bt_conn *conn, bt_security_t level,
                                  enum bt_security_err err)
 {
+#if defined(CONFIG_BT_BREDR)
+    if (bthid_is_br(conn)) {
+        bthid_security(conn, level, err);
+        return;
+    }
+#endif
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
         return;
@@ -1798,6 +2259,12 @@ static bool hid_capture_bond(hid_dev_t *d, struct bt_conn *conn)
 
 static void hid_pairing_complete(struct bt_conn *conn, bool bonded)
 {
+#if defined(CONFIG_BT_BREDR)
+    if (bthid_is_br(conn)) {
+        bthid_paired(conn, bonded, 0);
+        return;
+    }
+#endif
     hid_dev_t *d = hid_by_conn(conn);
     if (!d) {
         return;
@@ -1813,6 +2280,12 @@ static void hid_pairing_complete(struct bt_conn *conn, bool bonded)
 
 static void hid_pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 {
+#if defined(CONFIG_BT_BREDR)
+    if (bthid_is_br(conn)) {
+        bthid_paired(conn, false, reason != 0 ? (int)reason : -1);
+        return;
+    }
+#endif
     hid_dev_t *d = hid_by_conn(conn);
     if (d) {
         hid_log(d, "pairing failed (%d)", reason);
@@ -2884,6 +3357,9 @@ static const tdsh_command_t s_ble_commands[] = {
 #if defined(CONFIG_BT_BREDR)
     { "btscan", "btscan [seconds]", "Classic Bluetooth inquiry (test build): list devices in range",
       cmd_btscan, 0 },
+    { "bthid", "bthid <addr> [secs] | watch [secs] | send <hex> | status | off",
+      "Classic HID test: connect a pad, show its raw reports",
+      cmd_bthid, 0 },
 #endif
     { "blescan", "blescan [seconds]",
       "List Bluetooth LE devices by signal strength (dBm)",
