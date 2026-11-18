@@ -325,20 +325,25 @@ int index_of(const char *path)
 
 uint32_t read_duration(const char *real)
 {
-    static uint8_t header[phosphor_media::HEADER_BYTES];
+    /* 4 KB for the header, taken for this read only rather than held for
+     * ever; no memory just means no duration shown. */
+    uint8_t *header = static_cast<uint8_t *>(malloc(phosphor_media::HEADER_BYTES));
+    if (header == nullptr) {
+        return 0;
+    }
     FIL file;
     if (real[0] == '\0' || f_open(&file, real, FA_READ) != FR_OK) {
+        free(header);
         return 0;
     }
     UINT got = 0;
     const FSIZE_t size = f_size(&file);
-    const bool read = f_read(&file, header, sizeof(header), &got) == FR_OK;
+    const bool read = f_read(&file, header, phosphor_media::HEADER_BYTES, &got) == FR_OK;
     (void)f_close(&file);
     uint32_t ms = 0;
-    if (!read || !phosphor_media::duration_ms(real, header, got, size, &ms)) {
-        return 0;
-    }
-    return ms;
+    const bool ok = read && phosphor_media::duration_ms(real, header, got, size, &ms);
+    free(header);
+    return ok ? ms : 0;
 }
 
 bool check_core(void)

@@ -179,6 +179,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | What happens now when the heap runs out, and why did loading cores use it up? | BL6 | BL6-009 |
 | Why does an allocation fail with free memory left, and why did phosphor.tdsh stop loading? | BL6 | BL6-010 |
 | Which UART1 rates can the BL616 make exactly, and why not 12 or 16 Mbaud? | BL6 | BL6-011 |
+| What takes the RAM, and how much heap does a build have? | BL6 | BL6-012, BL6-010 |
 | What speed does the console negotiate? | USB | USB-001 |
 | Can the OTG block tell me what is on the other end of the cable? | USB | USB-002 |
 | Can the OTG connector power a keyboard? | USB | USB-003 |
@@ -347,6 +348,7 @@ BL6-008: "On SDK 2.3.36 exception_entry prints to an unconnected UART and spins,
 BL6-009: "kmalloc and krealloc are wrapped with --wrap to count refused requests (tang_heap.c; 2.3.36 already returns NULL); every tangload leaked 4 KB (the JTAG programmer's unused fbuf_cached) until that was fixed; script workers are capped at 16 KB of stack (TDSH_SCRIPT_TASK_STACK=16384), and a cartridge script uses 10,728 B; a krealloc its own heap refuses is moved to the other (BL6-010)"
 BL6-010: "SDK 2.3.36 splits the heap into OCRAM and a 32 KB WRAM heap; krealloc stays in its block's heap and FreeRTOS stacks come only from OCRAM, so phosphor.tdsh's 1,056 B line table was refused with WRAM free; tang_heap.c moves such a block and wraps pvPortMalloc to take any heap, but a script started from the desktop could still be refused its worker or its line table, so no desktop path runs one any more: Phosphor's Load and the TinyNES Library load in-process, and the open-handler rule is gone; bletrace allocates its 16 KB only while capturing"
 BL6-011: "UART1 is clocked from the 40 MHz crystal (GLB_Set_UART_CLK with HBN_UART_CLK_XCLK in board.c) and bflb_uart_init rounds 40 MHz over the baud rate to a whole divider, so the exact rates are 40 MHz over n: 2, 5, 6.67, 8, 10 and 13.3 Mbaud; 12 and 16 Mbaud both come out as 13.3"
+BL6-012: "Static RAM is measured from the link map with tools/ram_report.py; buffers used only during an update, a core load, a tangput or tangget, an AE350 run, a scan or a duration read are now taken from the heap for that operation, the Gutenberg app's tables while its window is open, and the BLE log ring is 32 lines: 45 KB back on the ordinary build and 74.5 KB on the Classic build, whose heap rose from 76,552 bytes (42,828 free) to 151,112 (95,468 free with the radio up)"
 USB-001: "The CDC console negotiates USB 2.0 High Speed, 480 Mbps (lsusb -t); CONFIG_USB_HS sets CDC_MAX_MPS 512, which is legal only at HS"
 USB-002: "No role signal follows the cable: OTG_CSR's ID bit tracks the forced configuration (PDS IDDIG), not the connector"
 USB-003: "The OTG connector does not source VBUS: A_BUS_REQ is set and nothing comes out, in both DRVBUS_POL polarities, and a device that reacts to power stayed dark for 60 s"
@@ -1003,6 +1005,19 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   sources:
     - "Bouffalo SDK 2.3.36: bsp/board/bl616dk/board.c lines 93 and 182; drivers/lhal/src/bflb_uart.c lines 20-39 and 515-516"
   verification: "Read from the SDK source; 10 Mbaud measured at its wire rate on the board on 2026-11-17 (TDESK-023), 992 KB/s of the 1,000 KB/s ten-bit characters allow."
+
+- record_id: BL6-012
+  kind: TOOLCHAIN
+  topic_id: BL6
+  title: "Where the RAM goes, and the 45-75 KB given back to the heap on 2026-11-18"
+  status: VERIFIED
+  verified_date: 2026-11-18
+  statement: "The heap is what static RAM leaves (BL6-010), so static RAM is now measured from each build's link map with tools/ram_report.py, which counts only input sections placed in the RAM output sections (ram_data, ram_bss, ram_noinit and the TCM and no-cache data), not the discarded ones a raw map search also finds. Before this change the ordinary build held 325,330 bytes of static RAM; the largest users were TinyDesk's two 80x45 screen buffers (s_front, s_back, 28,808 bytes each) and its terminal (s_term, 8,624), the desk mirror's VT parser and HDMI shadow (tang_osd_desk.c s_vt 15,828 and s_shadow 14,400), the Terminal app's VT (15,828), the widget pool (10,752), the shell session (8,332) and the bridge's output (8,192). Moved to the heap for the operation that needs them: the updater's two sectors (tang_fw_update.c, allocated at open, freed at close, kept through the commit), the AE350 load block (8 KB, per tang_ae350_run), tangput's and tangget's sector (4 KB per command), the JTAG programmer's block (4 KB per fpga_program, a marked wrapper in the vendored file), Phosphor's duration header (4 KB per read), btscan's results (4 KB per scan), and the Gutenberg app's lists and page tables (13.2 KB while its window is open); the BLE diagnostic log ring went from 64 to 32 lines. The log viewer's 6.4 KB ring was left: it is TinyDesk's running system log, filled whether its window is open or not. The ordinary build fell to 280,366 bytes (-44,964). In the Classic build the SDK's default A2DP sink and AVRCP held 24,830 bytes (avdtp's 18,432-byte memory pool, a2dp, avrcp), dropped with CONFIG_BT_A2DP=n CONFIG_BT_AVRCP=n because the stack initialises them only when enabled; that build fell from 354,610 to 280,087 bytes (-74,523)."
+  consequence: "The Classic build's heap rose from 76,552 bytes, 42,828 free at boot and 20,204 free with the radio up and the K06 connected, at which point the desktop would not start, to 151,112 bytes with 95,468 free after the radio started at boot; the desktop runs on it with about 76 KB in use. A failed allocation in each moved path refuses that operation with a message instead of failing silently later. The large remaining users are the desktop's four copies of the screen (TinyDesk's two buffers, the mirror's VT and shadow, about 88 KB), the next candidates for a measured proposal."
+  sources:
+    - "`tools/ram_report.py`; `ports/bl616/tang_fw_update.c`, `tang_fpga_uart.c`, `tdsh_tang_flash.c`, `tang_jtag_glue.h`, `tang_jtag_programmer.c`, `phosphor/td_phosphor_app.cpp`, `td_gutenberg_app.cpp`, `tang_ble.c`; Bouffalo SDK 2.3.36 blestack/src/host/l2cap_br.c (A2DP and AVRCP initialised under IS_ENABLED)"
+    - "Records BL6-010 (the two heaps), BLE-020 (the Classic build)"
+  verification: "Link maps of both builds before and after, compared by ram_report.py; host tests 52 of 52; on the board on 2026-11-18 (core-log entry 52), Classic firmware 8ceef48-dirty.ee04aee: crash and ble reported the heap above, and the operator started the desktop and opened TinyGutenberg, reported all passing, and read about 76 KB in use and a 62 KB figure for its peak on System Monitor. A game-core load and a TinyNES AE350 run on this firmware were suggested but not confirmed separately."
 
 - record_id: USB-001
   kind: USB
@@ -2350,7 +2365,7 @@ Records are grouped in the order of the topic catalog, and numbered within each 
   sources:
     - "`ports/bl616/tang_ble.c` `cmd_btscan`, compiled only with CONFIG_BT_BREDR; Bouffalo SDK 2.3.36 components/wireless/bluetooth/blestack/src/include/bluetooth/bluetooth.h (bt_br_discovery_start, struct bt_br_discovery_result), ble_common.cmake and ble_common_readonly.cmake (the ble1m2s1bredr1 preset)"
     - "Records BLE-002, BLE-007, FLS-002"
-  verification: "On the board on 2026-11-18 (core-log entry 51), firmware bef2658-dirty.aa1a253 built that way: platform, crash (no record), and the btscan result above with the operator's pad in pairing mode."
+  verification: "On the board on 2026-11-18 (core-log entry 51), firmware bef2658-dirty.aa1a253 built that way: platform, crash (no record), and the btscan result above with the operator's pad in pairing mode. Revised 2026-11-18 (core-log entry 52): with A2DP and AVRCP off and the RAM cleanup of BL6-012 the Classic build is 1,041,952 bytes and has 95,468 bytes of heap free with the radio up, and the desktop runs on it; the LE combo keyboard and touchpad (BLE-019) paired and reported on it."
 
 - record_id: TOOL-001
   kind: TOOLCHAIN

@@ -64,8 +64,34 @@ td_widget_t *s_second;    // Page Up
 td_widget_t *s_third;     // Page Down
 td_widget_t *s_find;      // Find... / Contents
 
+/* The app's lists and page tables, about 13 KB, exist only while its window
+ * is open: allocated in launch(), freed in on_close(), so the heap has them
+ * back the rest of the time.  The names below are the fields'. */
+struct tables {
+    td_pack_entry_t packs[TD_PACK_MAX];
+    char titles[LIST_ROWS][TITLE_BYTES];
+    char authors[LIST_ROWS][AUTHOR_BYTES];
+    uint32_t author_book[LIST_ROWS];
+    uint32_t books_of[MAX_CHAPTERS];
+    char books_of_title[MAX_CHAPTERS][TITLE_BYTES];
+    uint16_t line_offset[MAX_PAGE_LINES];
+    uint32_t page_at[MAX_PAGE_STARTS];
+    char chapter_title[MAX_CHAPTERS][AUTHOR_BYTES];
+    uint32_t chapter_offset[MAX_CHAPTERS];
+};
+tables *s_t;
+#define s_packs           (s_t->packs)
+#define s_titles          (s_t->titles)
+#define s_authors         (s_t->authors)
+#define s_author_book     (s_t->author_book)
+#define s_books_of        (s_t->books_of)
+#define s_books_of_title  (s_t->books_of_title)
+#define s_line_offset     (s_t->line_offset)
+#define s_page_at         (s_t->page_at)
+#define s_chapter_title   (s_t->chapter_title)
+#define s_chapter_offset  (s_t->chapter_offset)
+
 mode_t s_mode;
-td_pack_entry_t s_packs[TD_PACK_MAX];
 int s_pack_count;
 int s_pack_open;
 
@@ -76,22 +102,16 @@ bool s_index_open;
 /* the title window */
 uint32_t s_first;
 int s_count;
-char s_titles[LIST_ROWS][TITLE_BYTES];
 
 /* the author window, and the books of one author */
-char s_authors[LIST_ROWS][AUTHOR_BYTES];
-uint32_t s_author_book[LIST_ROWS];
 uint32_t s_author_first;
 int s_author_count;
-uint32_t s_books_of[MAX_CHAPTERS];
-char s_books_of_title[MAX_CHAPTERS][TITLE_BYTES];
 int s_books_of_count;
 char s_author_title[AUTHOR_BYTES];
 
 /* one page of a book */
 char s_open_title[TITLE_BYTES];
 char *s_page;
-uint16_t s_line_offset[MAX_PAGE_LINES];
 int s_line_count;
 char s_line[LINE_BYTES];
 uint32_t s_chunk;
@@ -100,13 +120,10 @@ uint32_t s_cursor;
 uint32_t s_total;
 bool s_more;
 uint16_t s_page_no;
-uint32_t s_page_at[MAX_PAGE_STARTS];
 int s_page_count;
 uint32_t s_book_record;
 
 /* chapters of the open book */
-char s_chapter_title[MAX_CHAPTERS][AUTHOR_BYTES];
-uint32_t s_chapter_offset[MAX_CHAPTERS];
 int s_chapter_count;
 
 void set_text(td_widget_t *w, const char *text)
@@ -351,7 +368,7 @@ void load_books_of(uint32_t row)
 
 void position_save(void)
 {
-    if (s_pack_open < 0 || s_book_record == 0)
+    if (s_t == nullptr || s_pack_open < 0 || s_book_record == 0)
     {
         return;
     }
@@ -1169,6 +1186,8 @@ void on_close(td_window_t *)
     s_line_count = 0;
     s_chapter_count = 0;
     s_book_record = 0;
+    free(s_t);
+    s_t = nullptr;
 }
 
 void launch(void)
@@ -1177,6 +1196,11 @@ void launch(void)
     {
         td_win_focus(s_win);
         return;
+    }
+    s_t = static_cast<tables *>(calloc(1, sizeof(tables)));
+    if (s_t == nullptr)
+    {
+        return;     // no memory for the lists: the app does not open
     }
     td_window_desc_t d = {};
     d.title = "TinyGutenberg";
@@ -1188,6 +1212,8 @@ void launch(void)
     s_win = td_win_create(&d);
     if (s_win == nullptr)
     {
+        free(s_t);
+        s_t = nullptr;
         return;
     }
 

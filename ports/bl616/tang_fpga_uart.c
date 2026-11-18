@@ -2870,7 +2870,9 @@ static int ae350_follow_link(ae350_run_t *run)
     return code;
 }
 
-static uint8_t s_ae350_block[AE350_LOAD_BLOCK];
+/* The load protocol's block buffer, 8 KB, held only while a program runs
+ * (tang_ae350_run) instead of for ever. */
+static uint8_t *s_ae350_block;
 static FIL s_ae350_elf_file;
 static FIL s_ae350_data_file;
 
@@ -2943,7 +2945,22 @@ int tang_ae350_cartridge_cgb(void)
     return s_cart_cgb;
 }
 
+static int ae350_run(const char *player, const char *data);
+
 int tang_ae350_run(const char *player, const char *data)
+{
+    s_ae350_block = malloc(AE350_LOAD_BLOCK);
+    if (s_ae350_block == NULL) {
+        tdsh_printf("ae350run: not enough memory to load a program\r\n");
+        return 1;
+    }
+    const int code = ae350_run(player, data);
+    free(s_ae350_block);
+    s_ae350_block = NULL;
+    return code;
+}
+
+static int ae350_run(const char *player, const char *data)
 {
     s_cart_cgb = -1;    if (player == NULL || player[0] == '\0') {
         tdsh_printf("usage: ae350run <program.elf> [<file>]\r\n");

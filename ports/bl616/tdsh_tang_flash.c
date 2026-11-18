@@ -29,7 +29,8 @@
 
 #define FW_SECTOR_SIZE     0x1000u
 
-static uint8_t s_sector[FW_SECTOR_SIZE];
+/* tangput's and tangget's transfer buffer, 4 KB, held only while one runs. */
+static uint8_t *s_sector;
 
 int tdsh_printf(const char *fmt, ...);
 
@@ -99,7 +100,22 @@ static int cmd_tangflash(tdsh_session_t *session, int argc, char **argv)
 
 /* --------------------------------------------------------------- tangput */
 
+static int tangput_body(tdsh_session_t *session, int argc, char **argv);
+
 static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
+{
+    s_sector = malloc(FW_SECTOR_SIZE);
+    if (s_sector == NULL) {
+        tdsh_printf("tangput: not enough memory\r\n");
+        return 1;
+    }
+    const int rc = tangput_body(session, argc, argv);
+    free(s_sector);
+    s_sector = NULL;
+    return rc;
+}
+
+static int tangput_body(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
     if (argc < 3) {
@@ -163,7 +179,22 @@ static int cmd_tangput(tdsh_session_t *session, int argc, char **argv)
  * take it away.  `cat` and `head` are text and are cut short by the console
  * plumbing, which is no use for a save, a ROM or an image; this is raw bytes
  * with no line endings of their own. */
+static int tangget_body(tdsh_session_t *session, int argc, char **argv);
+
 static int cmd_tangget(tdsh_session_t *session, int argc, char **argv)
+{
+    s_sector = malloc(FW_SECTOR_SIZE);
+    if (s_sector == NULL) {
+        tdsh_printf("tangget: not enough memory\r\n");
+        return 1;
+    }
+    const int rc = tangget_body(session, argc, argv);
+    free(s_sector);
+    s_sector = NULL;
+    return rc;
+}
+
+static int tangget_body(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
     if (argc < 2) {

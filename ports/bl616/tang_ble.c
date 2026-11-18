@@ -442,14 +442,18 @@ static const char *ble_kind(const ble_device_t *d)
  * LE connections instead of 10:
  *
  *   make CHIP=bl616 BOARD=bl616dk BUILD_DIR=build-btclassic \
- *        CONFIG_BTBLECONTROLLER_LIB=ble1m2s1bredr1 CONFIG_BT_BREDR=y
+ *        CONFIG_BTBLECONTROLLER_LIB=ble1m2s1bredr1 CONFIG_BT_BREDR=y \
+ *        CONFIG_BT_A2DP=n CONFIG_BT_AVRCP=n
+ *
+ * The SDK's Classic side defaults to an A2DP sink and AVRCP, which hold about
+ * 25 KB of RAM for receiving audio this board does not want; they are off.
  *
  * The ordinary build (defconfig) does not include it.  It answers
  * one question before any Classic HID host is written: can this board see a
  * Classic gamepad in pairing mode at all.  Nothing connects. */
 
 #define BT_SCAN_MAX 16
-static struct bt_br_discovery_result s_br_results[BT_SCAN_MAX];
+static struct bt_br_discovery_result *s_br_results;   /* 4 KB, per scan */
 static volatile int s_br_found = -1;     /* -1 while the inquiry runs */
 
 static void br_discovery_done(struct bt_br_discovery_result *results, size_t count)
@@ -529,7 +533,12 @@ static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
         ble_release();
         return 1;
     }
-    memset(s_br_results, 0, sizeof s_br_results);
+    s_br_results = calloc(BT_SCAN_MAX, sizeof *s_br_results);
+    if (s_br_results == NULL) {
+        ble_release();
+        tdsh_printf("btscan: not enough memory\r\n");
+        return 1;
+    }
     s_br_found = -1;
     /* Inquiry length is in units of 1.28 s. */
     const struct bt_br_discovery_param param = {
@@ -540,6 +549,8 @@ static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
     const int err = bt_br_discovery_start(&param, s_br_results, BT_SCAN_MAX, br_discovery_done);
     if (err != 0) {
         ble_release();
+        free(s_br_results);
+        s_br_results = NULL;
         tdsh_printf("btscan: inquiry did not start (%d)\r\n", err);
         return 1;
     }
@@ -548,8 +559,11 @@ static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     if (s_br_found < 0) {
+        /* Stopped, the stack reports nothing more into the buffer. */
         (void)bt_br_discovery_stop();
         ble_release();
+        free(s_br_results);
+        s_br_results = NULL;
         tdsh_printf("btscan: the inquiry never finished\r\n");
         return 1;
     }
@@ -568,6 +582,8 @@ static int cmd_btscan(tdsh_session_t *session, int argc, char **argv)
                     r->cod[2], r->cod[1], r->cod[0], br_cod_kind(r->cod),
                     name[0] ? name : "-");
     }
+    free(s_br_results);
+    s_br_results = NULL;
     return 0;
 }
 #endif /* CONFIG_BT_BREDR */
@@ -631,8 +647,10 @@ static int cmd_blescan(tdsh_session_t *session, int argc, char **argv)
  * chain of ATT requests issued one by one (BLE-005), and two chains at once
  * would put that back in doubt. */
 
-#define HID_LOG_LINES      64  /* diagnostic: half a connect cycle is enough to
-                                * see the report flow, and 128 lines cost 12 KB */
+#define HID_LOG_LINES      32  /* diagnostic: the console drains it as it fills,
+                                * and a line it has no room for is counted and
+                                * reported; 64 lines cost 6 KB of RAM held for
+                                * ever, which the heap needs more */
 #define HID_LOG_LEN       96
 #define HID_MAX_CHRCS     24
 #define HID_MAX_SUBS      8

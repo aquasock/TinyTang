@@ -1746,3 +1746,40 @@ The next Classic step is a connection test before any driver: pair with the 8Bit
 - User Test: NOT RUN
 
 ---
+## 52 COMMIT Unreleased 2026-11-18T08:20:53-07:00
+
+#### Coming From:
+
+Unreleased 8ceef48
+
+#### Purpose:
+
+Give the heap back the static RAM that is held for ever but used only now and then, so the desktop runs on the Classic Bluetooth build with room left for a controller driver.
+
+#### Outcome:
+
+The Classic build's heap doubled and the desktop runs on it, and the operator passed it (BL6-012). After entry 51 the operator confirmed the LE Rii K06 still pairs and reports on the Classic build, which then had 20,204 bytes of heap free with the radio up and could not start the desktop. The new `tools/ram_report.py` measures static RAM from a build's link map, counting only sections placed in RAM; it corrected an earlier raw count that had put the Classic build's audio code at 34 KB, the true figure being about 25 KB. Phase 1 of the approved cleanup moved buffers used only during one operation to the heap for that operation: the updater's two sectors (freed at close, kept through the commit), the AE350 load block, tangput's and tangget's sector, the JTAG programmer's block through a marked wrapper in the vendored file, Phosphor's duration header, btscan's results, and the Gutenberg app's tables while its window is open; the BLE log ring went from 64 to 32 lines. The log viewer's ring was left because it is TinyDesk's running system log. The Classic build now also turns off the SDK's default A2DP sink and AVRCP (`CONFIG_BT_A2DP=n CONFIG_BT_AVRCP=n`), which the stack initialises only when enabled. Static RAM fell from 325,330 to 280,366 bytes on the ordinary build and from 354,610 to 280,087 on the Classic one. The Classic firmware `8ceef48-dirty.ee04aee`, 1,041,952 bytes, was installed with `tools/tinytang_flash.py`, which saw the commit end after 5 s, and booted with 151,112 bytes of heap and 95,468 free after the radio started for the K06's pairing. The operator started the desktop, opened TinyGutenberg, reported all passing, and read about 76 KB in use and 62 KB for the peak on System Monitor; a game-core load and a TinyNES run on this firmware were suggested and not confirmed separately. The ordinary build was rebuilt at 803,648 bytes and not installed, so the board stays on the Classic test firmware. Host tests are 52 of 52. The ESP32 another agent drives was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, the new BL6-012 with its index row and summary line, and a dated revision to BLE-020's verification, and this entry was validated as number 52 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 186 records.
+
+#### Next Steps:
+
+The Classic gamepad connection test comes next: pair with the 8BitDo in Switch mode, open its HID control and interrupt channels over the SDK's Classic L2CAP, and print raw input reports, before any HID host is written. Phase 2 of the cleanup, a measured proposal on the desktop's four copies of the screen, about 88 KB, waits until memory is short again. A game-core load and a TinyNES run on the Classic firmware should be confirmed. Entry 50's zoom mode still awaits its book upload and the operator's test, and the updater's silent failure of a sector that differs after three attempts is still unfixed.
+
+#### Files Modified:
+
+- ports/bl616/phosphor/td_phosphor_app.cpp
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_fw_update.c
+- ports/bl616/tang_jtag_glue.h
+- ports/bl616/tang_jtag_programmer.c
+- ports/bl616/td_gutenberg_app.cpp
+- ports/bl616/tdsh_tang_flash.c
+- tools/ram_report.py
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

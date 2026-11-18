@@ -953,7 +953,23 @@ void disable_jtag_pins(void) {
 
 /////////////// top programming functions ///////////////
 
+// TinyTang: the 4 KB file block is taken for one load and given back after,
+// so the heap has it the rest of the time; the programmer below is unchanged.
+static bool fpga_program_body(const char *fname);
+
 bool fpga_program(const char *fname) {
+    fbuf = (uint8_t *)malloc(BLOCK_SIZE);
+    if (!fbuf) {
+        overlay_printf("not enough memory to load a core\r\n");
+        return false;
+    }
+    const bool ok = fpga_program_body(fname);
+    free(fbuf);
+    fbuf = NULL;
+    return ok;
+}
+
+static bool fpga_program_body(const char *fname) {
     uint64_t writetdi_time_start;
     uint64_t time_total;
     UINT bytes = 0, total = 0;

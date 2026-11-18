@@ -26,6 +26,7 @@
 #include "tang_crash.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bflb_flash.h"
@@ -49,9 +50,19 @@ _Static_assert(FW_STAGING_BASE >= FW_VENDOR_DATA + 0x1000u, "staging overlaps ve
 _Static_assert(FW_STAGING_BASE + FW_APP_MAX_SIZE <= FW_CRASH_SECTOR, "staging overlaps the crash record");
 _Static_assert(FW_STAGING_BASE % FW_SECTOR_SIZE == 0, "staging is not sector-aligned");
 
-/* File data, and flash read back; the commit reuses both. */
-static uint8_t s_file[FW_SECTOR_SIZE];
-static uint8_t s_flash[FW_SECTOR_SIZE];
+/* File data, and flash read back; the commit reuses both.  They are taken
+ * from the heap when an update opens and given back when it closes, rather
+ * than held for ever: 8 KB the rest of the firmware has the rest of the time.
+ * The commit runs from TCM but these are ordinary RAM, which it may touch. */
+static uint8_t *s_buffers;
+static uint8_t *s_file;
+static uint8_t *s_flash;
+
+static void buffers_free(void)
+{
+    free(s_buffers);
+    s_buffers = s_file = s_flash = NULL;
+}
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -152,12 +163,22 @@ const char *tang_fw_update_open(tang_fw_update_t *u, const char *real_path)
     if (!running_from_app_slot()) {
         return "running outside the app slot; refusing";
     }
+    if (s_buffers == NULL) {
+        s_buffers = malloc(2u * FW_SECTOR_SIZE);
+        if (s_buffers == NULL) {
+            return "not enough memory for the update";
+        }
+        s_file = s_buffers;
+        s_flash = s_buffers + FW_SECTOR_SIZE;
+    }
 
     const FRESULT opened = f_open(&u->file, real_path, FA_READ);
     if (opened == FR_NO_FILE || opened == FR_NO_PATH) {
+        buffers_free();
         return "no such file";
     }
     if (opened != FR_OK) {
+        buffers_free();
         return "cannot open the image";
     }
     u->open = true;
@@ -256,6 +277,7 @@ void tang_fw_update_close(tang_fw_update_t *u)
         f_close(&u->file);
         u->open = false;
     }
+    buffers_free();
 }
 
 void tang_fw_update_commit(tang_fw_update_t *u)

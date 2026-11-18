@@ -69,7 +69,9 @@ static inline bool GPIO_PIN_JTAG_TDO_V(void) { return bflb_gpio_read(gpio_dev, G
 
 #define BLOCK_SIZE 4096
 
-static uint8_t fbuf[BLOCK_SIZE];
+/* The programmer's file block: taken from the heap for each load and given
+ * back after it (fpga_program in tang_jtag_programmer.c), not held for ever. */
+static uint8_t *fbuf;
 static FIL     fcore;
 
 static int get_file_size(const char *fname)
