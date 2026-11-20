@@ -2110,3 +2110,33 @@ Run the deferred hardware test of this cycle's firmware, which is already instal
 - User Test: NOT RUN
 
 ---
+
+## 62 COMMIT Unreleased 2026-11-20T09:10:30-07:00
+
+#### Coming From:
+
+Unreleased 19a5d94
+
+#### Purpose:
+
+Run the hardware test of the desktop Bluetooth window's Classic pad slots that entry 61 deferred, on the firmware already installed.
+
+#### Outcome:
+
+The operator passed the window on the board (BLE-023, revised). The firmware was entry 61's `1a0fa8d-dirty.3acbaae`, image SHA-256 `211b8686b81e49bb5c7bef285c4515d9618b6dd369537c5d2e01482d15511725`, unchanged since that entry, so nothing was built or installed this cycle. The operator opened Bluetooth from the desktop and saw the five slots, re-paired the 8BitDo into Pad 1 with Pair... from Switch-mode pairing and used it on the desktop, turned Pad 1 off and saw a woken pad refused, turned it on and saw it reconnect, forgot Pad 2, and saw Pad 1 reconnect after a relay power cycle. Forgetting Pad 2 removed the Wii U Pro's saved pairing, so that pad must be paired again before its reconnection can be worked on. The test was run by the operator alone, and the agent did not touch the board or gather data from it. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and dated revisions to BLE-023's verified date, consequence and verification, and this entry was validated as number 62 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The Wii U Pro's refused reconnection is the open blocker, and the BlueZ discriminator comes first: pair the pad with BlueZ on the PC, walk away and press a button; a reconnect there places the difference on this side, and the first attempt is then a role-switch request after the pad's own connect and before authentication. The pad must then be paired again on the board by PIN, since Pad 2 was forgotten in this test. Step 2, the handler that sets report mode 0x34 and initialises the extension on every connection and decodes it into the Wii Classic key map, follows that settlement and goes into `tools/tests/test_btpad_host.sh` first. The Rii K06's combo slot still needs `blecombo on`, and `blekbd pair` still cannot start a connection after a forget or a failed LE link until a reboot. Entry 60's and entry 57's older items stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
