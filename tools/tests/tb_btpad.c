@@ -180,6 +180,14 @@ int main(void)
     check(back[1].kind == TANG_BTPAD_KIND_SWITCH && back[1].flags == 0x01, "kind or flags lost");
     check(memcmp(back[1].addr, addr, 6) == 0 && memcmp(back[1].key, k[1].key, 16) == 0, "address or key lost");
     check(strcmp(back[1].name, "Pro Controller") == 0, "name lost");
+    check(!back[1].off && file[8 + TANG_BTPAD_RECORD_LEN + 3] == 0,
+          "a pad that is on came back off, or byte 3 is not 0 (older firmware's file)");
+    k[1].off = true;
+    tang_btpad_keys_encode(k, file);
+    check(file[8 + TANG_BTPAD_RECORD_LEN + 3] == 1, "off is not in record byte 3");
+    check(tang_btpad_keys_decode(file, sizeof file, back) == 0 && back[1].off, "off lost in the round trip");
+    k[1].off = false;
+    tang_btpad_keys_encode(k, file);
     file[8 + TANG_BTPAD_RECORD_LEN + 12] ^= 0x01;           /* one bit of the key */
     check(tang_btpad_keys_decode(file, sizeof file, back) != 0, "a damaged file decoded");
     check(!back[0].valid && !back[1].valid, "a damaged file left a slot valid");

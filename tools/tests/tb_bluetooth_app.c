@@ -5,10 +5,12 @@
  * buttons make, which ask first, how a scan's devices are offered, and how a
  * refusal is shown.
  *
- * The window reaches the engine only through td_bt_port_ops(), so this file
- * implements that table and nothing else.  A direct call to tang_ble.c from the
- * window would now fail to link here, which is the point: the test proves the
- * window goes through the interface.
+ * The window reaches the engine only through td_bt_port_ops() and, for the two
+ * Classic gamepad slots, tang_bt_pad_ops(), so this file implements those two
+ * tables and nothing else.  A direct call to tang_ble.c or tang_btpad.c from
+ * the window would now fail to link here, which is the point: the test proves
+ * the window goes through the interfaces, and the pad recorder proves a pad
+ * slot's buttons reach the pad table and never the LE one, and the reverse.
  */
 #include <assert.h>
 #include <stdio.h>
@@ -155,6 +157,103 @@ const td_bt_ops_t *td_bt_port_ops(void)
     return &s_fake;
 }
 
+/* ------------------------------------------------- the fake pad engine */
+
+static tang_bt_pad_status_t s_pinfo;
+static td_bt_device_t s_pdevs[TANG_BT_MAX_DEVICES];
+static int s_npdevs;
+static const char *s_prefuse;
+static int s_pscans, s_ppairs, s_pforgets, s_poffs, s_pons;
+static int s_plast;
+static td_bt_device_t s_plast_dev;
+static bool s_pscanning;
+
+static void pfake_status(tang_bt_pad_status_t *out) { *out = s_pinfo; }
+
+static bool ptake(void)
+{
+    const char *why = s_prefuse;
+    s_prefuse = NULL;
+    snprintf(s_pinfo.message, sizeof s_pinfo.message, "%s", why != NULL ? why : "");
+    s_pinfo.job_failed = why != NULL;
+    return why == NULL;
+}
+
+static bool pfake_scan(void)
+{
+    if (!ptake()) {
+        return false;
+    }
+    s_pscans++;
+    s_pinfo.busy = true;
+    s_pscanning = true;
+    return true;
+}
+
+static int pfake_scan_results(td_bt_device_t *out, int max)
+{
+    if (s_pscanning) {
+        return -1;
+    }
+    const int n = s_npdevs < max ? s_npdevs : max;
+    if (out != NULL && n > 0) {
+        memcpy(out, s_pdevs, sizeof(s_pdevs[0]) * (size_t)n);
+    }
+    return n;
+}
+
+static bool pfake_pair(int pad, const td_bt_device_t *dev)
+{
+    if (!ptake()) {
+        return false;
+    }
+    s_ppairs++;
+    s_plast = pad;
+    s_plast_dev = *dev;
+    return true;
+}
+
+static bool pfake_set_reconnect(int pad, bool on)
+{
+    if (!ptake()) {
+        return false;
+    }
+    on ? s_pons++ : s_poffs++;
+    s_plast = pad;
+    return true;
+}
+
+static bool pfake_forget(int pad)
+{
+    if (!ptake()) {
+        return false;
+    }
+    s_pforgets++;
+    s_plast = pad;
+    return true;
+}
+
+static const tang_bt_pad_ops_t s_pfake = {
+    .status = pfake_status,
+    .scan = pfake_scan,
+    .scan_results = pfake_scan_results,
+    .pair = pfake_pair,
+    .set_reconnect = pfake_set_reconnect,
+    .forget = pfake_forget,
+};
+
+const tang_bt_pad_ops_t *tang_bt_pad_ops(void)
+{
+    return &s_pfake;
+}
+
+static void pjob_done(const char *msg)
+{
+    s_pinfo.busy = false;
+    s_pscanning = false;
+    snprintf(s_pinfo.message, sizeof s_pinfo.message, "%s", msg);
+}
+
 void tang_heap_info(tang_heap_info_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -239,11 +338,14 @@ static bool on_screen(const char *text, int *row)
 static td_window_t *s_win;
 static td_rect_t s_c;
 
-/* The window's layout: slot buttons on row 5 + 5 * slot + 3, Pair...,
- * Off/On and Forget at columns 11, 23 and 31; the scan's Pair on row 30, which
- * is SCAN_Y + LIST_ROWS + 2 with three slots above it. */
-static void press_slot(int slot, int column) { click(s_c.x + column + 1, s_c.y + 8 + slot * 5); }
-#define SCAN_PAIR_ROW 30
+/* The window's layout: slot buttons on row 5 + 4 * slot + 3, Pair...,
+ * Off/On and Forget at columns 11, 23 and 31, for the five slots Keyboard,
+ * Mouse, Combo, Pad 1 and Pad 2; the scan's Pair on row 34, which is
+ * SCAN_Y + LIST_ROWS + 2. */
+static void press_slot(int slot, int column) { click(s_c.x + column + 1, s_c.y + 8 + slot * 4); }
+#define SCAN_PAIR_ROW 34
+#define PAD1 3
+#define PAD2 4
 #define PAIR_BTN   11
 #define TOGGLE_BTN 23
 #define FORGET_BTN 31
@@ -281,6 +383,11 @@ int main(void)
 
     s_info.radio = TD_BT_RADIO_OFF;
     s_info.pairings = "loaded from the card";
+    s_pinfo.available = true;
+    s_pinfo.pairings = "none on the card";
+    for (int i = 0; i < TANG_BT_PADS; i++) {
+        s_pinfo.slot[i].state = "idle";
+    }
     set_slot(0, true, true, true, 0xD9);     /* the K950, in use */
     set_slot(1, true, false, true, 0x5C);    /* the M750, waiting */
 
@@ -374,6 +481,102 @@ int main(void)
     key(TD_KEY_ENTER);
     assert(s_pairs == 1 && s_last_slot == 1 && s_last_dev.addr[0] == 5);
     assert(!on_screen("Pair a mouse", NULL));   /* back to the slots */
+    assert(s_ppairs == 0 && s_pscans == 0);       /* LE work stays LE */
+
+    /* ---- the gamepad slots (core-log entry 61) ---------------------------- */
+    job_done("");
+    assert(on_screen("Pad 1", NULL) && on_screen("Pad 2", NULL));
+    assert(on_screen("pads none on the card", NULL));
+
+    /* Pad 1's Pair... starts a Classic inquiry through the pad table only. */
+    const int le_scans = s_scans;
+    press_slot(PAD1, PAIR_BTN);
+    assert(s_pscans == 1 && s_scans == le_scans);
+    s_pinfo.scan_ms_left = 9000;
+    tick();
+    assert(on_screen("Pair pad 1: put the gamepad in pairing mode", NULL));
+    assert(on_screen("Listening... 9 s", NULL));
+    s_pdevs[0] = dev(TD_BT_KIND_OTHER, "Some Classic keyboard", -50, 7);
+    s_pdevs[0].classic = true;
+    s_pdevs[1] = dev(TD_BT_KIND_HID, "Pro Controller", -60, 0x7f);
+    s_pdevs[1].classic = true;
+    s_npdevs = 2;
+    s_pinfo.scan_ms_left = 0;
+    pjob_done("2 device(s) found, 1 gamepad(s)");
+    tick();
+    int r_gp, r_ck;
+    assert(on_screen("gamepad   Pro Controller", &r_gp));
+    assert(on_screen("Classic   Some Classic keyboard", &r_ck));
+    assert(r_gp < r_ck);                          /* the gamepad first */
+    /* Pad 1 is empty: no replacing to confirm. */
+    click(s_c.x + 2, s_c.y + SCAN_PAIR_ROW);
+    assert(td_win_focused() == s_win);
+    assert(s_ppairs == 1 && s_plast == 0 && s_plast_dev.addr[0] == 0x7f && s_plast_dev.classic);
+    assert(s_pairs == 1);                         /* the LE table was not asked */
+    s_pinfo.busy = true;
+    snprintf(s_pinfo.message, sizeof s_pinfo.message, "pairing Pro Controller as pad 1");
+    tick();
+    assert(on_screen("pairing Pro Controller as pad 1", NULL));
+
+    /* Pad 1 paired and reporting: shown by name, with Off and Forget. */
+    pjob_done("pad 1 is paired and reporting");
+    {
+        td_bt_slot_t *p = &s_pinfo.slot[0];
+        p->state = "ready";
+        p->active = p->ready = p->connected = p->paired = p->reconnects = true;
+        p->addr[0] = p->paired_addr[0] = 0x7f;
+        snprintf(p->name, sizeof p->name, "Pro Controller");
+        snprintf(p->paired_name, sizeof p->paired_name, "Pro Controller");
+        p->reports = 412;
+        snprintf(p->last, sizeof p->last, "the pad connected");
+    }
+    tick();
+    assert(on_screen("ready, Pro Controller", NULL) && on_screen("(412 reports)", NULL));
+    assert(!on_screen("boot, 412", NULL) && !on_screen("report, 412", NULL));
+    assert(on_screen("last: the pad connected", NULL));
+
+    /* Off on a connected pad asks first, then reaches the pad table. */
+    const int le_offs = s_offs;
+    press_slot(PAD1, TOGGLE_BTN);
+    assert(td_win_focused() != s_win && on_screen("stops working at once", NULL));
+    key(TD_KEY_ENTER);
+    assert(s_poffs == 1 && s_plast == 0 && s_offs == le_offs);
+    pjob_done("not reconnecting; pairing kept");
+    s_pinfo.slot[0].reconnects = false;
+    s_pinfo.slot[0].ready = s_pinfo.slot[0].active = false;
+    s_pinfo.slot[0].state = "off";
+    tick();
+    assert(on_screen("Pro Controller 00:00:00:00:00:7F, off", NULL));
+
+    /* On needs no confirmation. */
+    const int le_ons = s_ons;
+    press_slot(PAD1, TOGGLE_BTN);
+    assert(td_win_focused() == s_win && s_pons == 1 && s_plast == 0 && s_ons == le_ons);
+
+    /* A pad's refusal is shown on the bottom line. */
+    s_prefuse = "Bluetooth is busy; try again when it has finished";
+    press_slot(PAD2, PAIR_BTN);
+    tick();
+    assert(s_pscans == 1 && on_screen("Bluetooth is busy; try again", NULL));
+    assert(!on_screen("Pair pad 2", NULL));
+
+    /* Forget pad 1 asks, then reaches the pad table. */
+    const int le_forgets = s_forgets;
+    press_slot(PAD1, FORGET_BTN);
+    assert(td_win_focused() != s_win);
+    key(TD_KEY_ENTER);
+    assert(s_pforgets == 1 && s_plast == 0 && s_forgets == le_forgets);
+
+    /* The LE-only firmware: the pad rows say so and offer no buttons. */
+    pjob_done("");
+    memset(&s_pinfo.slot[0], 0, sizeof s_pinfo.slot[0]);
+    s_pinfo.slot[0].state = "not in this build";
+    s_pinfo.slot[1].state = "not in this build";
+    s_pinfo.available = false;
+    tick();
+    assert(on_screen("needs the Classic firmware; this one is LE-only", NULL));
+    press_slot(PAD2, PAIR_BTN);
+    assert(s_pscans == 1);
 
     printf("tb_bluetooth_app: PASS\n");
     return 0;

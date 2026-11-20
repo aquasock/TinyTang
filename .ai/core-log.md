@@ -2067,3 +2067,46 @@ Settle the reconnection with the PC discriminator before writing any fix: pair t
 - User Test: FAIL
 
 ---
+
+## 61 COMMIT Unreleased 2026-11-20T00:45:40-07:00
+
+#### Coming From:
+
+Unreleased 1a0fa8d
+
+#### Purpose:
+
+Make the desktop's Bluetooth window pair and manage the Classic gamepads, with five slots: keyboard, mouse, combo, pad 1 and pad 2.
+
+#### Outcome:
+
+The operator found that the window could not see the 8BitDo, which is Classic only, because the window's three slots reached only the LE engine in `ports/bl616/tang_ble.c`. TinyDesk's `td_bt_ops_t` was left unchanged, and a port-side `tang_bt_pad_ops_t` with the same contract now sits beside it in `ports/bl616/tang_bt_ops.h` and `ports/bl616/tang_bt_port.c`. Through it, `ports/bl616/td_bluetooth_app.c` shows Keyboard, Mouse, Combo, Pad 1 and Pad 2. A pad's Pair... runs a 10 s inquiry that lists only peripherals, gamepads first as HID, and then pairs into that pad with a 40 s limit. Off, On and Forget act on the pad slot, and in the LE-only build the pad rows explain why they cannot work there and have no buttons. `ports/bl616/tang_btpad.c` gained a job engine for scan, pair, on, off and forget. The ble task only steps it and never blocks, since the same task answers PINs and opens channels. One job runs at a time under the shared radio claim, which is released once the link is started. A pad already saved in the other slot is refused, and a different pad in the target slot is replaced once its link has dropped, after at most 5 s. A per-pad off flag is stored in byte 3 of each 50-byte `br_keys.bin` record, where older files hold 0 and so read as on. A pad that is off does not count toward starting the radio at boot, and its own reconnection is refused and disconnected. The shell gained `btpad on|off N`, and `btpad pair` now runs as a scan job followed by a pair job, with its wait bounded at 120 s after a mutation showed it could otherwise loop forever. On the host, `tools/tests/test_btpad.sh` has 90 checks, `tools/tests/test_btpad_host.sh` 95 (its new scenario covers the window's jobs) and the new `tools/tests/test_bt_port.sh` 19, `tools/tests/test_bluetooth_app.sh` passes with the pad slots, all 21 mutations were caught, and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped. `tools/build_both.sh` passes with images of 1,058,816 and 807,872 bytes. Firmware `1a0fa8d-dirty.3acbaae` (image SHA-256 `211b8686b81e49bb5c7bef285c4515d9618b6dd369537c5d2e01482d15511725`) was installed with `tools/tinytang_flash.py --yes` and started by the agent with the operator's relay script. On the board, `platform` confirmed the version, and `btpad status` showed both saved pads loaded from the old `br_keys.bin` as on and waiting: the 8BitDo as pad 1 and the Wii U Pro as pad 2. The desktop came up with its Bluetooth icon, checked by HDMI capture. The operator deferred the hardware test to a later session, so the window's pairing, Off, On and Forget have not been tried on the board. The 8BitDo's saved key is probably stale, because the pad has since been paired elsewhere. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, and `.ai/core.md` was confirmed unchanged. The complete `.ai/` diff was inspected and holds this entry, dated revisions to BLE-023 and TOOL-027, BLE-023's revised fast-lookup line and one new lookup row. This entry was validated as number 61 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Run the deferred hardware test of this cycle's firmware, which is already installed. Open Bluetooth from the desktop and check the five slots. Re-pair the 8BitDo into Pad 1 with Pair... with the pad in Switch-mode pairing, and use it on the desktop. Turn Pad 1 off and confirm that a woken pad is refused, then turn it on and confirm that it reconnects. Forget Pad 2, then check that Pad 1 reconnects after a relay power cycle. Record the result, and any fix it calls for, in the next entry. Entry 60's open items stand, the first being the BlueZ discriminator for the Wii U Pro's refused reconnection.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_bt_ops.h
+- ports/bl616/tang_bt_port.c
+- ports/bl616/tang_btpad.c
+- ports/bl616/tang_btpad.h
+- ports/bl616/tang_btpad_codec.c
+- ports/bl616/tang_btpad_codec.h
+- ports/bl616/tang_btpad_hooks.h
+- ports/bl616/td_bluetooth_app.c
+- tools/tests/tb_bluetooth_app.c
+- tools/tests/tb_btpad.c
+- tools/tests/tb_btpad_host.c
+- tools/tests/tb_bt_port.c
+- tools/tests/test_bt_port.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

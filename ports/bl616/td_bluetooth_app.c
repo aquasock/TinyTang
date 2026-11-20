@@ -1,4 +1,5 @@
-// TinyTang — the Bluetooth window: the radio, and the keyboard and mouse slots.
+// TinyTang — the Bluetooth window: the radio, the keyboard, mouse and combo
+// slots, and the two Classic gamepad slots.
 //
 // TinyDesk's Settings has a Network button for its own network app, which
 // this port leaves out (TDESK-008).  The carried patch
@@ -16,6 +17,13 @@
 // Everything here goes through the port's Bluetooth table (tang_bt_ops.h) and
 // not through tang_ble.c's own API, so TinyDesk can adopt the interface later
 // without this file being rewritten -- see tinydesk issue #7.
+//
+// The LE slots go through td_bt_ops_t, TinyDesk's interface; the gamepads,
+// which pair over Classic Bluetooth, go through the port's pad table beside it
+// (tang_bt_pad_ops_t, the same shape and contract), because TinyDesk's has three
+// slots and a scan that cannot ask for a Classic inquiry.  Slots 0 to 2 are
+// LE's and 3 and 4 the pads'; everything below asks which side a slot is on
+// through the side_* calls and otherwise treats the five alike.
 //
 // Letting go of a device that is connected confirms first, since it may be
 // the keyboard or mouse driving this desktop.
@@ -40,22 +48,35 @@ static const td_bt_ops_t *bt(void)
     return ops;
 }
 
+static const tang_bt_pad_ops_t *pads(void)
+{
+    static const tang_bt_pad_ops_t *ops;
+    if (ops == NULL) {
+        ops = tang_bt_pad_ops();
+    }
+    return ops;
+}
+
+#define SLOTS        (TANG_BT_SLOTS + TANG_BT_PADS)
 #define WIN_W        72
-#define WIN_H        34
+#define WIN_H        38
 #define TICK_MS      250
 #define HEAP_TICKS   4      /* the heap walk once a second */
 #define COL          11     /* where values start, after the headings */
-#define SLOT_Y(i)    (5 + (i) * 5)
-#define SCAN_Y       20
-#define LIST_ROWS    8
+#define SLOT_Y(i)    (5 + (i) * 4)
+#define SCAN_Y       26
+#define LIST_ROWS    6
 
 static td_window_t *s_win;
 static td_bt_status_t s_info;
+static tang_bt_pad_status_t s_pads;
 static tang_heap_info_t s_heap;
 static unsigned s_ticks;
 
-static td_widget_t *s_pair[TANG_BT_SLOTS], *s_toggle[TANG_BT_SLOTS],
-                   *s_forget[TANG_BT_SLOTS];
+/* Which side the bottom line follows: the one asked last. */
+static bool s_pad_side;
+
+static td_widget_t *s_pair[SLOTS], *s_toggle[SLOTS], *s_forget[SLOTS];
 static td_widget_t *s_list, *s_scroll, *s_pick, *s_rescan, *s_cancel;
 
 /* The slot a scan is choosing a device for, or -1 when no scan is shown. */
@@ -73,11 +94,71 @@ static enum { ACT_NONE, ACT_OFF, ACT_FORGET, ACT_PAIR } s_act;
 static int s_act_slot;
 static int s_act_device;
 
-static const char *const s_slot_names[TANG_BT_SLOTS] = {"Keyboard", "Mouse", "Combo"};
-static const char *const s_slot_lower[TANG_BT_SLOTS] = {"keyboard", "mouse", "combo"};
-static const td_bt_kind_t s_slot_kind[TANG_BT_SLOTS] = {
-    TD_BT_KIND_KEYBOARD, TD_BT_KIND_MOUSE, TD_BT_KIND_HID,
+static const char *const s_slot_names[SLOTS] = {"Keyboard", "Mouse", "Combo", "Pad 1", "Pad 2"};
+static const char *const s_slot_lower[SLOTS] = {"keyboard", "mouse", "combo", "pad 1", "pad 2"};
+static const td_bt_kind_t s_slot_kind[SLOTS] = {
+    TD_BT_KIND_KEYBOARD, TD_BT_KIND_MOUSE, TD_BT_KIND_HID, TD_BT_KIND_HID, TD_BT_KIND_HID,
 };
+
+/* ---- the two sides -------------------------------------------------------- */
+
+static bool is_pad(int slot)
+{
+    return slot >= TANG_BT_SLOTS;
+}
+
+static const td_bt_slot_t *slot_info(int slot)
+{
+    return is_pad(slot) ? &s_pads.slot[slot - TANG_BT_SLOTS] : &s_info.slot[slot];
+}
+
+/* Why the last request to `slot`'s side was refused: that side's status(). */
+static const char *side_reason(int slot)
+{
+    if (is_pad(slot)) {
+        pads()->status(&s_pads);
+        return s_pads.message;
+    }
+    bt()->status(&s_info);
+    return s_info.message;
+}
+
+static bool side_scan(int slot)
+{
+    s_pad_side = is_pad(slot);
+    return is_pad(slot) ? pads()->scan() : bt()->scan();
+}
+
+static int side_scan_results(int slot, td_bt_device_t *out, int max)
+{
+    return is_pad(slot) ? pads()->scan_results(out, max) : bt()->scan_results(out, max);
+}
+
+static bool side_pair(int slot, const td_bt_device_t *dev)
+{
+    s_pad_side = is_pad(slot);
+    return is_pad(slot) ? pads()->pair(slot - TANG_BT_SLOTS, dev) : bt()->pair(slot, dev);
+}
+
+static bool side_off(int slot)
+{
+    s_pad_side = is_pad(slot);
+    return is_pad(slot) ? pads()->set_reconnect(slot - TANG_BT_SLOTS, false)
+                        : bt()->disconnect(slot);
+}
+
+static bool side_on(int slot)
+{
+    s_pad_side = is_pad(slot);
+    return is_pad(slot) ? pads()->set_reconnect(slot - TANG_BT_SLOTS, true)
+                        : bt()->set_reconnect(slot, true);
+}
+
+static bool side_forget(int slot)
+{
+    s_pad_side = is_pad(slot);
+    return is_pad(slot) ? pads()->forget(slot - TANG_BT_SLOTS) : bt()->forget(slot);
+}
 
 static void note(const char *text)
 {
@@ -90,9 +171,12 @@ static void format_addr(char *out, size_t n, const uint8_t a[6])
     snprintf(out, n, "%02X:%02X:%02X:%02X:%02X:%02X", a[5], a[4], a[3], a[2], a[1], a[0]);
 }
 
-static const char *kind_name(td_bt_kind_t k)
+static const char *kind_name(const td_bt_device_t *d)
 {
-    switch (k) {
+    if (d->classic) {
+        return d->kind == TD_BT_KIND_HID ? "gamepad" : "Classic";
+    }
+    switch (d->kind) {
     case TD_BT_KIND_KEYBOARD: return "keyboard";
     case TD_BT_KIND_MOUSE:    return "mouse";
     case TD_BT_KIND_HID:      return "HID";
@@ -108,7 +192,7 @@ static const char *kind_name(td_bt_kind_t k)
 static void collect(int slot)
 {
     td_bt_device_t all[TANG_BT_MAX_DEVICES];
-    const int n = bt()->scan_results(all, TANG_BT_MAX_DEVICES);
+    const int n = side_scan_results(slot, all, TANG_BT_MAX_DEVICES);
     s_found_count = 0;
     for (int pass = 0; pass < 3; pass++) {
         for (int i = 0; i < n; i++) {
@@ -138,7 +222,7 @@ static const char *get_item(td_widget_t *w, int index, int *fg, void *user)
     const td_bt_device_t *d = &s_found[index];
     char addr[18];
     format_addr(addr, sizeof(addr), d->addr);
-    snprintf(line, sizeof(line), " %-8s  %-24s %4d dBm  %s", kind_name(d->kind),
+    snprintf(line, sizeof(line), " %-8s  %-24s %4d dBm  %s", kind_name(d),
              d->name[0] ? d->name : "(no name)", d->rssi, addr);
     if (s_scan_slot >= 0 && d->kind == s_slot_kind[s_scan_slot]) {
         *fg = td_theme()->accent;
@@ -163,11 +247,9 @@ static void start_scan(int slot)
 {
     s_found_count = 0;
     td_list_set_count(s_list, 0);
-    if (!bt()->scan()) {
+    if (!side_scan(slot)) {
         /* The reason is the interface's: status().message carries it. */
-        td_bt_status_t st;
-        bt()->status(&st);
-        note(st.message);
+        note(side_reason(slot));
         show_scan(false);
         return;
     }
@@ -184,18 +266,15 @@ static void run(void)
 {
     const int slot = s_act_slot;
     const char *why = NULL;
-    td_bt_status_t st;
     switch (s_act) {
     case ACT_OFF:
-        if (!bt()->disconnect(slot)) {
-            bt()->status(&st);
-            why = st.message;
+        if (!side_off(slot)) {
+            why = side_reason(slot);
         }
         break;
     case ACT_FORGET:
-        if (!bt()->forget(slot)) {
-            bt()->status(&st);
-            why = st.message;
+        if (!side_forget(slot)) {
+            why = side_reason(slot);
         }
         break;
     case ACT_PAIR:
@@ -203,11 +282,10 @@ static void run(void)
             why = "choose a device in the list first";
             break;
         }
-        if (bt()->pair(slot, &s_found[s_act_device])) {
+        if (side_pair(slot, &s_found[s_act_device])) {
             show_scan(false);
         } else {
-            bt()->status(&st);
-            why = st.message;
+            why = side_reason(slot);
         }
         break;
     case ACT_NONE:
@@ -233,7 +311,7 @@ static void confirm_answer(int button, void *user)
 /* The slot's device by name, or its kind when it has none. */
 static const char *slot_device(int slot)
 {
-    const td_bt_slot_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = slot_info(slot);
     if (s->paired && s->paired_name[0]) {
         return s->paired_name;
     }
@@ -243,7 +321,7 @@ static const char *slot_device(int slot)
 static void ask(const char *buttons, const char *fmt_question, int slot)
 {
     char text[320];
-    const td_bt_slot_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = slot_info(slot);
     int n = snprintf(text, sizeof(text), fmt_question, s_slot_lower[slot], slot_device(slot));
     if (s->ready && n > 0 && n < (int)sizeof(text)) {
         snprintf(text + n, sizeof(text) - (size_t)n,
@@ -264,19 +342,13 @@ static void on_toggle(td_widget_t *w, void *user)
 {
     (void)w;
     const int slot = (int)(intptr_t)user;
-    if (!s_info.slot[slot].reconnects) {
-        td_bt_status_t st;
-        if (!bt()->set_reconnect(slot, true)) {
-            bt()->status(&st);
-            note(st.message);
-        } else {
-            note(NULL);
-        }
+    if (!slot_info(slot)->reconnects) {
+        note(side_on(slot) ? NULL : side_reason(slot));
         return;
     }
     s_act = ACT_OFF;
     s_act_slot = slot;
-    if (!s_info.slot[slot].ready) {
+    if (!slot_info(slot)->ready) {
         run();
         return;
     }
@@ -308,7 +380,7 @@ static void pick(void)
     s_act = ACT_PAIR;
     s_act_slot = slot;
     s_act_device = index;
-    const td_bt_slot_t *s = &s_info.slot[slot];
+    const td_bt_slot_t *s = slot_info(slot);
     if (s->paired && memcmp(s->paired_addr, s_found[index].addr, 6) != 0) {
         ask("Replace|Cancel", "The %s %s is paired now. Pairing this one\n"
                               "forgets it.", slot);
@@ -356,17 +428,26 @@ static void row(int y, int w, const char *heading, const char *value, uint8_t fg
 static void draw_slot(int y, int w, int i)
 {
     const td_theme_t *t = td_theme();
-    const td_bt_slot_t *s = &s_info.slot[i];
+    const td_bt_slot_t *s = slot_info(i);
     char line[128];
     char addr[18];
 
+    if (is_pad(i) && !s_pads.available) {
+        row(y, w, s_slot_names[i], "needs the Classic firmware; this one is LE-only", t->dim);
+        return;
+    }
     if (s->active) {
         format_addr(addr, sizeof(addr), s->addr);
         int n = snprintf(line, sizeof(line), "%s, %s%s%s", s->state,
                          s->name[0] ? s->name : "", s->name[0] ? " " : "", addr);
         if (s->ready && n > 0 && n < (int)sizeof(line)) {
-            snprintf(line + n, sizeof(line) - (size_t)n, " (%s, %lu reports)",
-                     s->boot_protocol ? "boot" : "report", (unsigned long)s->reports);
+            if (is_pad(i)) {
+                snprintf(line + n, sizeof(line) - (size_t)n, " (%lu reports)",
+                         (unsigned long)s->reports);
+            } else {
+                snprintf(line + n, sizeof(line) - (size_t)n, " (%s, %lu reports)",
+                         s->boot_protocol ? "boot" : "report", (unsigned long)s->reports);
+            }
         }
     } else {
         snprintf(line, sizeof(line), "%s", s->state);
@@ -377,7 +458,8 @@ static void draw_slot(int y, int w, int i)
         format_addr(addr, sizeof(addr), s->paired_addr);
         snprintf(line, sizeof(line), "paired with %s%s%s, %s",
                  s->paired_name[0] ? s->paired_name : "", s->paired_name[0] ? " " : "",
-                 addr, s->reconnects ? "reconnects by itself" : "not reconnecting");
+                 addr, s->reconnects ? "reconnects by itself" :
+                       is_pad(i) ? "off" : "not reconnecting");
         row(y + 1, w, NULL, line, s->reconnects ? t->win_fg : t->dim);
     } else {
         row(y + 1, w, NULL, "not paired", t->dim);
@@ -412,23 +494,29 @@ static void on_draw(td_window_t *win, int w, int h)
         row(1, w, "Radio", line, t->win_fg);
         break;
     }
-    snprintf(line, sizeof(line), "%s (/root/ble/bonds.bin)", s_info.pairings);
+    snprintf(line, sizeof(line), "LE %s; pads %s", s_info.pairings ? s_info.pairings : "-",
+             s_pads.pairings ? s_pads.pairings : "-");
     row(2, w, "Pairings", line, t->win_fg);
     snprintf(line, sizeof(line), "%lu bytes free, largest block %lu",
              (unsigned long)s_heap.free, (unsigned long)s_heap.largest);
     row(3, w, "Heap", line, t->win_fg);
 
-    for (int i = 0; i < TANG_BT_SLOTS; i++) {
+    for (int i = 0; i < SLOTS; i++) {
         draw_slot(SLOT_Y(i), w, i);
     }
 
     if (s_scan_slot >= 0) {
-        snprintf(line, sizeof(line), "Pair a %s: put it in pairing mode near the Tang",
-                 s_slot_lower[s_scan_slot]);
+        if (is_pad(s_scan_slot)) {
+            snprintf(line, sizeof(line), "Pair %s: put the gamepad in pairing mode near the Tang",
+                     s_slot_lower[s_scan_slot]);
+        } else {
+            snprintf(line, sizeof(line), "Pair a %s: put it in pairing mode near the Tang",
+                     s_slot_lower[s_scan_slot]);
+        }
         td_text(1, SCAN_Y - 1, line, t->win_fg, t->win_bg, TD_BOLD);
         if (s_scan_pending) {
-            snprintf(line, sizeof(line), "Listening... %lu s",
-                     (unsigned long)((s_info.scan_ms_left + 999) / 1000));
+            const uint32_t left = is_pad(s_scan_slot) ? s_pads.scan_ms_left : s_info.scan_ms_left;
+            snprintf(line, sizeof(line), "Listening... %lu s", (unsigned long)((left + 999) / 1000));
         } else if (s_found_count == 0) {
             snprintf(line, sizeof(line), "Nothing found; check pairing mode and scan again");
         } else {
@@ -438,13 +526,17 @@ static void on_draw(td_window_t *win, int w, int h)
         td_textn(1, SCAN_Y, line, w - 2, t->win_fg, t->win_bg, 0);
     }
 
-    /* The bottom line: a job's progress or outcome, else the window's note. */
+    /* The bottom line: a job's progress or outcome, else the window's note.
+     * It follows the side asked last; LE's busy flag also covers a pad job
+     * holding the shared claim, so each side's own message is used. */
+    const bool busy = s_pad_side ? s_pads.busy : s_info.busy;
+    const char *side_msg = s_pad_side ? s_pads.message : s_info.message;
     const char *msg = s_note;
     bool failed = s_note[0] != '\0';
-    if (s_info.busy || (s_note[0] == '\0' && s_info.message[0] != '\0')) {
-        msg = s_info.message;
-        failed = s_info.job_failed;
-        if (s_info.busy && msg[0] == '\0') {
+    if (busy || (s_note[0] == '\0' && side_msg[0] != '\0')) {
+        msg = side_msg;
+        failed = s_pad_side ? s_pads.job_failed : s_info.job_failed;
+        if (busy && msg[0] == '\0') {
             msg = "working...";
         }
     }
@@ -456,20 +548,23 @@ static void on_draw(td_window_t *win, int w, int h)
 static void refresh(void)
 {
     bt()->status(&s_info);
+    pads()->status(&s_pads);
     if (s_ticks++ % HEAP_TICKS == 0) {
         tang_heap_info(&s_heap);
     }
 
-    for (int i = 0; i < TANG_BT_SLOTS; i++) {
-        const td_bt_slot_t *s = &s_info.slot[i];
-        td_widget_set_visible(s_toggle[i], s->paired);
-        td_widget_set_visible(s_forget[i], s->paired);
+    for (int i = 0; i < SLOTS; i++) {
+        const td_bt_slot_t *s = slot_info(i);
+        const bool here = !is_pad(i) || s_pads.available;
+        td_widget_set_visible(s_pair[i], here);
+        td_widget_set_visible(s_toggle[i], here && s->paired);
+        td_widget_set_visible(s_forget[i], here && s->paired);
         td_widget_set_text(s_toggle[i], s->reconnects ? "Off" : "On");
     }
 
     /* scan_results() is -1 while a scan runs, which is how this tells that the
      * job has finished without knowing anything about the engine's jobs. */
-    if (s_scan_slot >= 0 && s_scan_pending && bt()->scan_results(NULL, 0) != -1) {
+    if (s_scan_slot >= 0 && s_scan_pending && side_scan_results(s_scan_slot, NULL, 0) != -1) {
         s_scan_pending = false;
         collect(s_scan_slot);
         if (s_found_count > 0) {
@@ -524,7 +619,7 @@ static void launch(void)
     note(NULL);
     s_ticks = 0;
 
-    for (int i = 0; i < TANG_BT_SLOTS; i++) {
+    for (int i = 0; i < SLOTS; i++) {
         const int y = SLOT_Y(i) + 3;
         s_pair[i] = td_button(s_win, COL, y, "Pair...", on_pair, (void *)(intptr_t)i);
         s_toggle[i] = td_button(s_win, COL + 12, y, "Off", on_toggle, (void *)(intptr_t)i);

@@ -20,6 +20,7 @@
 
 #include "tang_ble.h"
 #include "tang_bt_ops.h"
+#include "tang_btpad.h"
 
 /* tang_ble_info() fills about 500 bytes; it is not a stack allocation on a port
  * whose script workers run in 16 KB, and the window already keeps its own copy
@@ -224,4 +225,118 @@ static const td_bt_ops_t s_ops = {
 const td_bt_ops_t *td_bt_port_ops(void)
 {
     return &s_ops;
+}
+
+/* ---- the Classic pads, over tang_btpad.c */
+
+static tang_btpad_info_t s_pad_info;
+static char s_pad_refusal[TANG_BT_MESSAGE_LEN];
+
+static bool pad_refused(const char *why)
+{
+    if (why == NULL) {
+        s_pad_refusal[0] = '\0';
+        return false;
+    }
+    snprintf(s_pad_refusal, sizeof s_pad_refusal, "%s", why);
+    return true;
+}
+
+static void pad_status(tang_bt_pad_status_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    tang_btpad_info(&s_pad_info);
+    memset(out, 0, sizeof *out);
+    out->available = s_pad_info.available;
+    out->pairings = s_pad_info.pairings;
+    out->busy = s_pad_info.job_running;
+    out->job_failed = s_pad_info.job_failed;
+    out->scan_ms_left = s_pad_info.scan_ms_left;
+    snprintf(out->message, sizeof out->message, "%s",
+             s_pad_refusal[0] != '\0' ? s_pad_refusal : s_pad_info.job_msg);
+    for (int i = 0; i < TANG_BTPAD_PADS && i < TANG_BT_PADS; i++) {
+        const tang_btpad_slot_info_t *s = &s_pad_info.pad[i];
+        td_bt_slot_t *d = &out->slot[i];
+        d->state = s->state;
+        d->active = s->linked || (s->saved && !s->off);
+        d->ready = s->ready;
+        d->connected = s->ready;
+        memcpy(d->addr, s->addr, sizeof d->addr);
+        snprintf(d->name, sizeof d->name, "%s", s->name);
+        d->reports = s->reports;
+        d->paired = s->saved;
+        if (s->saved) {
+            memcpy(d->paired_addr, s->addr, sizeof d->paired_addr);
+            snprintf(d->paired_name, sizeof d->paired_name, "%s", s->name);
+        }
+        d->reconnects = s->saved && !s->off;
+        snprintf(d->last, sizeof d->last, "%s", s->last);
+    }
+}
+
+static bool pad_scan(void)
+{
+    return !pad_refused(tang_btpad_scan_start());
+}
+
+static int pad_scan_results(td_bt_device_t *out, int max)
+{
+    tang_btpad_found_t found[TANG_BTPAD_FOUND_MAX];
+    const int n = tang_btpad_scan_results(found, TANG_BTPAD_FOUND_MAX);
+    if (n < 0) {
+        return -1;
+    }
+    /* Only peripherals: a speaker or a phone cannot be a pad slot's device. */
+    int take = 0;
+    for (int i = 0; i < n; i++) {
+        if (!found[i].peripheral) {
+            continue;
+        }
+        if (out != NULL && take < max) {
+            memset(&out[take], 0, sizeof out[take]);
+            memcpy(out[take].addr, found[i].addr, sizeof out[take].addr);
+            out[take].rssi = found[i].rssi;
+            out[take].kind = found[i].pad ? TD_BT_KIND_HID : TD_BT_KIND_OTHER;
+            out[take].classic = true;
+            snprintf(out[take].name, sizeof out[take].name, "%s", found[i].name);
+        }
+        if (out == NULL || take < max) {
+            take++;
+        }
+    }
+    return take;
+}
+
+static bool pad_pair(int pad, const td_bt_device_t *dev)
+{
+    if (dev == NULL) {
+        return false;
+    }
+    return !pad_refused(tang_btpad_pair_start(pad, dev->addr, dev->name[0] ? dev->name : NULL));
+}
+
+static bool pad_set_reconnect(int pad, bool on)
+{
+    return !pad_refused(tang_btpad_set_on(pad, on));
+}
+
+static bool pad_forget(int pad)
+{
+    return !pad_refused(tang_btpad_forget(pad));
+}
+
+static const tang_bt_pad_ops_t s_pad_ops = {
+    .status = pad_status,
+    .scan = pad_scan,
+    .scan_results = pad_scan_results,
+    .pair = pad_pair,
+    .set_reconnect = pad_set_reconnect,
+    .forget = pad_forget,
+};
+
+const tang_bt_pad_ops_t *tang_bt_pad_ops(void)
+{
+    return &s_pad_ops;
 }

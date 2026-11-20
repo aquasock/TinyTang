@@ -25,6 +25,7 @@ size_t tang_btpad_keys_encode(const tang_btpad_key_t k[TANG_BTPAD_SLOTS], uint8_
         r[0] = 1;
         r[1] = k[i].kind;
         r[2] = k[i].flags;
+        r[3] = k[i].off ? 1 : 0;
         memcpy(r + 4, k[i].addr, 6);
         memcpy(r + 10, k[i].key, 16);
         memcpy(r + 26, k[i].name, TANG_BTPAD_NAME_LEN);
@@ -59,6 +60,7 @@ int tang_btpad_keys_decode(const uint8_t *in, size_t len, tang_btpad_key_t k[TAN
         k[i].valid = true;
         k[i].kind = r[1];
         k[i].flags = r[2];
+        k[i].off = r[3] != 0;
         memcpy(k[i].addr, r + 4, 6);
         memcpy(k[i].key, r + 10, 16);
         memcpy(k[i].name, r + 26, TANG_BTPAD_NAME_LEN);

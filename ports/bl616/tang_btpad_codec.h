@@ -16,7 +16,9 @@
 //           0  valid   1 if the slot holds a pad
 //           1  kind    TANG_BTPAD_KIND_*
 //           2  flags   struct bt_keys_link_key.flags
-//           3  0
+//           3  off     1 if the pad is turned off: its reconnections are
+//                      refused until it is turned on (0 before core-log
+//                      entry 61, which reads as on)
 //           4  addr    6 bytes, bt_addr_t.val (least significant first)
 //          10  key     16 bytes
 //          26  name    24 bytes, NUL-terminated
@@ -60,6 +62,7 @@ typedef struct {
     bool    valid;
     uint8_t kind;
     uint8_t flags;
+    bool    off;                       /* turned off: refuse its reconnections */
     uint8_t addr[6];
     uint8_t key[16];
     char    name[TANG_BTPAD_NAME_LEN];

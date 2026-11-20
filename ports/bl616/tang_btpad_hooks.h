@@ -61,6 +61,11 @@ int tang_ble_radio_start(bool verbose);
 bool tang_ble_claim(void);
 void tang_ble_release(void);
 
+/* Why the Bluetooth window may not start the radio now (it failed before, or
+ * too little heap is free), or NULL.  The pad jobs check it as the LE scan
+ * does, so the window never starts the radio into a heap it would exhaust. */
+const char *tang_ble_radio_refusal(void);
+
 /* Wake the background task to call tang_btpad_work(). */
 void tang_ble_btpad_signal(void);
 

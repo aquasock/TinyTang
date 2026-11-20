@@ -387,6 +387,8 @@ int tang_ble_radio_start(bool verbose)
     }
     return 0;
 }
+static const char *g_refusal;           /* tang_ble_radio_refusal()'s answer */
+const char *tang_ble_radio_refusal(void) { return g_refusal; }
 bool tang_ble_claim(void) { g_claims++; return true; }
 void tang_ble_release(void) { g_claims--; }
 void tang_ble_btpad_signal(void) { g_signal = true; }
@@ -761,6 +763,167 @@ int main(void)
           "a PIN with a zero byte did not go as a raw HCI reply");
     check(memcmp(g_hci, wiiu, 6) == 0 && g_hci[6] == 6 && memcmp(g_hci + 7, g_own.a.val, 6) == 0,
           "the raw PIN reply is not the pad's address, length 6 and the board's address");
+
+    /* ---- 11. the Bluetooth window's jobs (core-log entry 61) ---------------
+     * Each request returns at once and the work happens on the background
+     * task, which must never block: it is also the task that answers PINs and
+     * opens channels while the pairing it started comes up. */
+    g_pad_mode = PAD_IDLE;
+    for (int i = 0; i < TANG_BTPAD_SLOTS; i++) {
+        if (s_pad[i].conn != NULL) {
+            sdk_disconnect(s_pad[i].conn, 0x16);   /* the last scenario's link */
+        }
+    }
+    cmd("forget", "all");
+    run_ms(100);
+    g_own.a.val[2] = 0xc9;
+    keys_clear_all();
+    reset_requests();
+    g_pad_mode = PAD_IDLE;
+    g_pad_secured = false;
+    tang_btpad_info_t info;
+
+    /* A refusal from the radio check is passed on, and claims nothing. */
+    g_refusal = "starting the radio needs 32 KB free; 20 KB is free";
+    check(tang_btpad_scan_start() == g_refusal && g_claims == 0,
+          "the radio check's refusal was not passed on, or the claim was kept");
+    g_refusal = NULL;
+
+    /* The inquiry: -1 until the task has run it, then strongest first. */
+    {
+        static const uint8_t eir_pad[] = { 15, 0x09, 'P', 'r', 'o', ' ', 'C', 'o', 'n', 't',
+                                           'r', 'o', 'l', 'l', 'e', 'r' };
+        static const uint8_t eir_spk[] = { 8, 0x09, 'C', 'u', 'b', 'e', ' ', '2', ' ' };
+        memset(g_found, 0, sizeof g_found);
+        g_found[0].addr = (bt_addr_t){ { 0xc5, 0x5f, 0x20, 0xd8, 0x17, 0xe4 } };
+        g_found[0].rssi = -84;
+        g_found[0].cod[0] = 0x14; g_found[0].cod[1] = 0x04; g_found[0].cod[2] = 0x24;  /* audio */
+        memcpy(g_found[0].eir, eir_spk, sizeof eir_spk);
+        g_found[1].addr = g_pad_addr;
+        g_found[1].rssi = -60;
+        g_found[1].cod[0] = 0x08; g_found[1].cod[1] = 0x25; g_found[1].cod[2] = 0x00;  /* gamepad */
+        memcpy(g_found[1].eir, eir_pad, sizeof eir_pad);
+        g_found_n = 2;
+    }
+    check(tang_btpad_scan_start() == NULL, "the window's inquiry was refused");
+    check(tang_btpad_scan_results(NULL, 0) == -1, "results were offered before the inquiry ran");
+    check(tang_btpad_scan_start() != NULL, "a second job was taken while one runs");
+    run_ms(200);
+    {
+        tang_btpad_found_t f[TANG_BTPAD_FOUND_MAX];
+        const int n = tang_btpad_scan_results(f, TANG_BTPAD_FOUND_MAX);
+        check(n == 2, "the inquiry's devices were not kept");
+        check(n == 2 && f[0].pad && f[0].peripheral && strcmp(f[0].name, "Pro Controller") == 0 &&
+              memcmp(f[0].addr, g_pad_addr.val, 6) == 0,
+              "the gamepad is not first, strongest, with its name and address");
+        check(n == 2 && !f[1].pad && !f[1].peripheral, "the speaker was taken for a gamepad");
+    }
+    tang_btpad_info(&info);
+    check(!info.job_running && !info.job_failed && g_claims == 0,
+          "the inquiry job did not end cleanly or kept the claim");
+    check(strstr(info.job_msg, "1 gamepad") != NULL, "the inquiry's outcome is not reported");
+
+    /* Pair into pad 2: the request returns, the task links and pairs. */
+    g_pad_mode = PAD_PAIRS;
+    check(tang_btpad_pair_start(1, g_pad_addr.val, "Pro Controller") == NULL,
+          "the window's pairing was refused");
+    tang_btpad_info(&info);
+    check(info.job_running && info.job == TANG_BTPAD_JOB_PAIR, "the pairing job is not shown running");
+    run_ms(500);
+    tang_btpad_info(&info);
+    check(!info.job_running && !info.job_failed, "the window's pairing did not finish");
+    check(s_pad[1].saved.valid && memcmp(s_pad[1].saved.key, k_key, 16) == 0 && !s_pad[0].saved.valid,
+          "the pairing was not kept in pad 2");
+    check(info.pad[1].ready && info.pad[1].saved && strcmp(info.pad[1].state, "ready") == 0 &&
+          strcmp(info.pad[1].name, "Pro Controller") == 0, "pad 2 is not shown ready by name");
+    check(strstr(info.pad[1].last, "pad ") == NULL && info.pad[1].last[0] != '\0',
+          "pad 2's last note is missing or keeps its prefix");
+    check(g_claims == 0 && g_underflows == 0, "the pairing kept the claim or dropped a reference twice");
+
+    /* The same pad cannot be paired into the other slot as well. */
+    check(tang_btpad_pair_start(0, g_pad_addr.val, NULL) == NULL, "a pairing was refused at once");
+    run_ms(100);
+    tang_btpad_info(&info);
+    check(info.job_failed && strstr(info.job_msg, "saved as pad 2") != NULL && !s_pad[0].saved.valid,
+          "a pad saved in pad 2 was paired into pad 1 too");
+
+    /* Off: the link goes, the card says off, and a woken pad is refused. */
+    struct bt_conn *c7 = s_pad[1].conn;
+    const int d7 = c7->disconnects;
+    check(tang_btpad_set_on(1, false) == NULL, "Off was refused");
+    run_ms(100);
+    check(c7->disconnects == d7 + 1 && s_pad[1].saved.off, "Off did not drop the link or mark the pad");
+    g_pad_mode = PAD_IDLE;
+    sdk_disconnect(c7, 0x16);
+    {
+        tang_btpad_key_t kk[TANG_BTPAD_SLOTS];
+        check(tang_btpad_keys_decode(g_file, g_file_len, kk) == 0 && kk[1].valid && kk[1].off,
+              "Off was not kept on the card");
+    }
+    struct bt_conn *c8 = sdk_incoming(&g_pad_addr);
+    check(c8->disconnects == 1 && s_pad[1].conn == NULL && c8->ref == 1,
+          "a pad that is off was let reconnect, or its link's reference was taken");
+    sdk_disconnect(c8, 0x13);
+    tang_btpad_info(&info);
+    check(strcmp(info.pad[1].state, "off") == 0 && info.pad[1].off, "pad 2 is not shown off");
+    check(!tang_btpad_load(), "a card holding only an off pad still starts the radio at boot");
+    check(s_pad[1].saved.valid && s_pad[1].saved.off, "loading lost the off pad");
+
+    /* On: the pad's next connection is taken again. */
+    check(tang_btpad_set_on(1, true) == NULL, "On was refused");
+    run_ms(100);
+    check(!s_pad[1].saved.off, "On did not clear off");
+    struct bt_conn *c9 = sdk_incoming(&g_pad_addr);
+    check(s_pad[1].conn == c9 && c9->disconnects == 0, "a pad turned on again was refused");
+
+    /* Replace: pairing another pad into a slot whose pad is connected drops
+     * that link first and deletes its key, then pairs the new one. */
+    {
+        const bt_addr_t other_pad = { { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 } };
+        g_pad_mode = PAD_PAIRS;
+        g_pad_secured = false;
+        reset_requests();
+        check(tang_btpad_pair_start(1, other_pad.val, "Other") == NULL, "the replacing pairing was refused");
+        run_ms(200);
+        check(c9->disconnects == 1 && g_created == NULL,
+              "the old link was not dropped first, or the new one started beside it");
+        sdk_disconnect(c9, 0x16);
+        check(bt_keys_find_link_key(&g_pad_addr) == NULL, "the replaced pad's key stayed in the host");
+        run_ms(500);
+        tang_btpad_info(&info);
+        check(!info.job_failed && !info.job_running && s_pad[1].saved.valid &&
+              memcmp(s_pad[1].saved.addr, other_pad.val, 6) == 0,
+              "the replacing pairing did not finish into pad 2");
+        check(g_underflows == 0, "the replacement dropped a reference twice");
+    }
+
+    /* A pad that never answers: the job gives up after 40 s, never blocks. */
+    {
+        const bt_addr_t gone = { { 0x01, 0x01, 0x01, 0x01, 0x01, 0x01 } };
+        g_pad_mode = PAD_IDLE;
+        check(tang_btpad_pair_start(0, gone.val, NULL) == NULL, "a pairing was refused");
+        run_ms(1000);
+        check(tang_btpad_scan_start() != NULL, "an inquiry was started beside a waiting pairing");
+        run_ms(40000);
+        tang_btpad_info(&info);
+        check(!info.job_running && info.job_failed && strstr(info.job_msg, "40 s") != NULL,
+              "a pairing that never finishes did not time out");
+
+        check(g_claims == 0, "the timed-out pairing kept the claim");
+        if (g_created != NULL) {
+            struct bt_conn *c = g_created;
+            g_created = NULL;
+            sdk_connect_fail(c, 0x04);
+        }
+    }
+
+    /* Forget from the window. */
+    check(tang_btpad_forget(1) == NULL, "Forget was refused");
+    run_ms(100);
+    check(!s_pad[1].saved.valid, "Forget did not clear pad 2");
+
+    /* The shell's on and off run the same jobs. */
+    check(cmd("off", "2") != 0 && out_has("not paired"), "btpad off on an empty pad did not say so");
 
     printf("btpad host: %s (%d checks)\n", fails ? "FAIL" : "PASS", checks);
     return fails ? 1 : 0;

@@ -48,6 +48,53 @@ void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
     (void)k;
 }
 
+#include <string.h>
+
+/* The Bluetooth window shows the pad slots as missing from this build. */
+static const char s_no_classic[] = "this firmware has no Classic Bluetooth (LE-only build)";
+
+void tang_btpad_info(tang_btpad_info_t *out)
+{
+    memset(out, 0, sizeof *out);
+    out->pairings = "not in this build";
+    for (int i = 0; i < TANG_BTPAD_PADS; i++) {
+        out->pad[i].state = "not in this build";
+    }
+}
+
+const char *tang_btpad_scan_start(void)
+{
+    return s_no_classic;
+}
+
+int tang_btpad_scan_results(tang_btpad_found_t *out, int max)
+{
+    (void)out;
+    (void)max;
+    return 0;
+}
+
+const char *tang_btpad_pair_start(int pad, const uint8_t addr[6], const char *name)
+{
+    (void)pad;
+    (void)addr;
+    (void)name;
+    return s_no_classic;
+}
+
+const char *tang_btpad_set_on(int pad, bool on)
+{
+    (void)pad;
+    (void)on;
+    return s_no_classic;
+}
+
+const char *tang_btpad_forget(int pad)
+{
+    (void)pad;
+    return s_no_classic;
+}
+
 #else /* CONFIG_BT_BREDR */
 
 #include <errno.h>
@@ -412,6 +459,13 @@ void tang_btpad_connected(struct bt_conn *conn, u8_t err)
             (void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
             return;
         }
+        if (p->saved.valid && p->saved.off && !p->pairing) {
+            /* Turned off in the Bluetooth window or with `btpad off`: the
+             * pairing is kept, its reconnections are not taken. */
+            note("pad %d: is turned off; its connection was refused", slot_no(p));
+            (void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+            return;
+        }
         p->conn = bt_conn_ref(conn);
         p->outbound = false;
         note("pad %d: the pad connected", slot_no(p));
@@ -569,7 +623,7 @@ bool tang_btpad_load(void)
     bool any = false;
     for (int i = 0; i < TANG_BTPAD_SLOTS; i++) {
         s_pad[i].saved = k[i];
-        any = any || k[i].valid;
+        any = any || (k[i].valid && !k[i].off);   /* an off pad needs no radio */
     }
     s_file_state = "loaded from the card";
     return any;
@@ -673,8 +727,14 @@ static void pin_reply(btpad_t *p)
     note("pad %d: answered the PIN with this board's address (%d)", slot_no(p), rc);
 }
 
+static bool job_busy(void);
+static void job_step(void);
+
 bool tang_btpad_busy(void)
 {
+    if (job_busy()) {
+        return true;
+    }
     for (int i = 0; i < TANG_BTPAD_SLOTS; i++) {
         if (waiting(&s_pad[i])) {
             return true;
@@ -685,6 +745,7 @@ bool tang_btpad_busy(void)
 
 void tang_btpad_work(void)
 {
+    job_step();
     if (s_save_due) {
         s_save_due = false;
         keys_save();
@@ -799,14 +860,15 @@ static bool cod_is_pad(const uint8_t cod[3])
     return (cod[1] & 0x1F) == 0x05 && (minor == 0x01 || minor == 0x02);
 }
 
-/* A Classic inquiry of `secs` seconds into s_found.  The count, or -1. */
-static int inquiry(int secs)
+/* Start a Classic inquiry of `secs` seconds into s_found and return at once:
+ * NULL, or why it did not start.  s_found_n stays -1 until it is done. */
+static char s_inquiry_why[48];
+static const char *inquiry_begin(int secs)
 {
     if (s_found == NULL) {
         s_found = calloc(BTPAD_SCAN_MAX, sizeof *s_found);
         if (s_found == NULL) {
-            tdsh_printf("btpad: not enough memory for an inquiry\r\n");
-            return -1;
+            return "not enough memory for an inquiry";
         }
     }
     s_found_n = -1;
@@ -816,19 +878,40 @@ static int inquiry(int secs)
     };
     const int err = bt_br_discovery_start(&param, s_found, BTPAD_SCAN_MAX, inquiry_done);
     if (err != 0) {
-        tdsh_printf("btpad: inquiry did not start (%d)\r\n", err);
+        snprintf(s_inquiry_why, sizeof s_inquiry_why, "the inquiry did not start (%d)", err);
+        return s_inquiry_why;
+    }
+    return NULL;
+}
+
+/* The inquiry's count once it is done, or -1 after stopping one that never
+ * finished: called when s_found_n is set or its time is up. */
+static int inquiry_end(void)
+{
+    if (s_found_n < 0) {
+        (void)bt_br_discovery_stop();
+        return -1;
+    }
+    return s_found_n < BTPAD_SCAN_MAX ? s_found_n : BTPAD_SCAN_MAX;
+}
+
+/* The shell's inquiry: start one and wait for it.  The count, or -1. */
+static int inquiry(int secs)
+{
+    const char *why = inquiry_begin(secs);
+    if (why != NULL) {
+        tdsh_printf("btpad: %s\r\n", why);
         return -1;
     }
     const uint64_t deadline = bflb_mtimer_get_time_ms() + (uint64_t)secs * 1000u + 5000u;
     while (s_found_n < 0 && bflb_mtimer_get_time_ms() < deadline) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    if (s_found_n < 0) {
-        (void)bt_br_discovery_stop();
+    const int n = inquiry_end();
+    if (n < 0) {
         tdsh_printf("btpad: the inquiry never finished\r\n");
-        return -1;
     }
-    return s_found_n < BTPAD_SCAN_MAX ? s_found_n : BTPAD_SCAN_MAX;
+    return n;
 }
 
 static void inquiry_free(void)
@@ -896,16 +979,16 @@ static bool parse_addr(const char *text, uint8_t out[6])
 }
 
 /* Make a link to the pad at `a` for slot `p`: a pairing when it has no saved
- * key (or `fresh` asks for a new one), a reconnection otherwise. */
-static int link_to(btpad_t *p, const uint8_t a[6], const char *name, bool fresh)
+ * key (or `fresh` asks for a new one), a reconnection otherwise.  NULL, or why
+ * it was not started. */
+static const char *link_to(btpad_t *p, const uint8_t a[6], const char *name, bool fresh)
 {
     bt_addr_t addr;
     memcpy(addr.val, a, 6);
     struct bt_conn *existing = bt_conn_lookup_addr_br(&addr);
     if (existing != NULL) {
         bt_conn_unref(existing);
-        tdsh_printf("btpad: already linked to it\r\n");
-        return -1;
+        return "already linked to it";
     }
     const bool pairing = fresh || !p->saved.valid || memcmp(p->saved.addr, a, 6) != 0;
     if (pairing) {
@@ -929,11 +1012,10 @@ static int link_to(btpad_t *p, const uint8_t a[6], const char *name, bool fresh)
     struct bt_conn *conn = bt_conn_create_br(&addr, BT_BR_CONN_PARAM_DEFAULT);
     if (conn == NULL) {
         p->pairing = false;
-        tdsh_printf("btpad: the connection was not started\r\n");
-        return -1;
+        return "the connection was not started";
     }
     p->conn = conn;
-    return 0;
+    return NULL;
 }
 
 /* Print notes until the slot's interrupt channel is open, it fails, or the
@@ -965,64 +1047,544 @@ static btpad_t *free_slot(void)
     return NULL;
 }
 
-static int cmd_pair(int secs, const uint8_t *given)
+/* ------------------------------------------------------- the jobs
+ *
+ * The Bluetooth window's requests, and the shell's pair, on and off, run as
+ * jobs on tang_ble.c's background task, as its LE jobs do: a request claims
+ * Bluetooth and returns at once, and the task does the work in steps from
+ * tang_btpad_work() without ever blocking, because the same task must keep
+ * answering PIN requests and opening channels while a pairing comes up.  The
+ * claim is held while the inquiry runs and the link is started, as the shell
+ * command always held it, and given back before the pairing is waited for. */
+
+#define BTPAD_JOB_SCAN_SECS  10
+#define BTPAD_JOB_PAIR_SECS  40
+#define BTPAD_JOB_DROP_MS    5000u     /* for a replaced pad's link to go */
+
+_Static_assert(TANG_BTPAD_PADS == TANG_BTPAD_SLOTS, "tang_btpad.h and the codec disagree");
+
+enum { PH_START, PH_SCAN, PH_DROP, PH_LINK };
+
+static volatile tang_btpad_job_t s_job;
+static volatile bool s_job_running;
+static volatile bool s_job_failed;
+static bool s_job_claimed;
+static volatile int s_job_phase;
+static int s_job_pad;                  /* -1: the shell's pairing picks the slot */
+static int s_job_secs;
+static uint8_t s_job_addr[6];
+static char s_job_name[TANG_BTPAD_NAME_LEN];
+static uint64_t s_job_until;
+static volatile uint64_t s_scan_end;   /* while an inquiry runs */
+static char s_job_msg[64];
+
+/* The last inquiry's devices, strongest first; taken from the heap at the
+ * first inquiry and kept, as the window reads them after the job. */
+static tang_btpad_found_t *s_results;
+static volatile int s_results_n;
+
+static bool job_busy(void)
+{
+    return s_job_running;
+}
+
+static void job_say(const char *fmt, ...)
+{
+    char tmp[sizeof s_job_msg];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(tmp, sizeof tmp, fmt, ap);
+    va_end(ap);
+    taskENTER_CRITICAL();
+    memcpy(s_job_msg, tmp, sizeof tmp);
+    taskEXIT_CRITICAL();
+}
+
+static void job_end(bool failed)
+{
+    if (s_job_claimed) {
+        s_job_claimed = false;
+        tang_ble_release();
+    }
+    s_job_failed = failed;
+    s_job_running = false;
+}
+
+static const char *job_submit(tang_btpad_job_t kind, int pad, const uint8_t *addr,
+                              const char *name, int secs)
 {
     if (!tang_ble_claim()) {
-        tdsh_printf("btpad: Bluetooth is busy; try again\r\n");
-        return 1;
+        return "Bluetooth is busy; try again when it has finished";
     }
-    if (tang_ble_radio_start(true) != 0) {
+    if (s_job_running) {
+        /* A pairing waiting for its pad has given the claim back. */
         tang_ble_release();
-        return 1;
+        return "a gamepad pairing is still running";
     }
+    s_job = kind;
+    s_job_pad = pad;
+    s_job_secs = secs;
+    memset(s_job_addr, 0, sizeof s_job_addr);
+    if (addr != NULL) {
+        memcpy(s_job_addr, addr, 6);
+    }
+    memset(s_job_name, 0, sizeof s_job_name);
+    if (name != NULL) {
+        strncpy(s_job_name, name, sizeof s_job_name - 1);
+    }
+    s_job_claimed = true;
+    s_job_failed = false;
+    s_job_phase = PH_START;
+    job_say("%s", "");
+    s_job_running = true;
+    tang_ble_btpad_signal();
+    return NULL;
+}
+
+/* Delete a slot's pairing: its key in the host and on the card, and its
+ * link unless `keep_link` (the caller drops it and waits for it to go). */
+static void forget_slot(btpad_t *p, bool keep_link)
+{
+    if (p->conn != NULL && !keep_link) {
+        (void)bt_conn_disconnect(p->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+    }
+    if (p->saved.valid) {
+        bt_addr_t addr;
+        memcpy(addr.val, p->saved.addr, 6);
+        bt_keys_link_key_clear_addr(&addr);
+    }
+    taskENTER_CRITICAL();
+    memset(&p->saved, 0, sizeof p->saved);
+    taskEXIT_CRITICAL();
+    p->pairing = false;
+    s_save_due = true;
+}
+
+/* The inquiry is over (or its time is): keep its devices, strongest first. */
+static void scan_finish(void)
+{
+    const int n = inquiry_end();
+    if (n < 0) {
+        inquiry_free();
+        job_say("the inquiry never finished");
+        job_end(true);
+        return;
+    }
+    if (s_results == NULL) {
+        s_results = calloc(TANG_BTPAD_FOUND_MAX, sizeof *s_results);
+    }
+    int kept = 0;
+    for (int i = 0; s_results != NULL && i < n && kept < TANG_BTPAD_FOUND_MAX; i++) {
+        const struct bt_br_discovery_result *r = &s_found[i];
+        tang_btpad_found_t f;
+        memset(&f, 0, sizeof f);
+        memcpy(f.addr, r->addr.val, 6);
+        memcpy(f.cod, r->cod, 3);
+        f.rssi = r->rssi;
+        f.pad = cod_is_pad(r->cod);
+        f.peripheral = (r->cod[1] & 0x1F) == 0x05;
+        eir_name(r->eir, sizeof r->eir, f.name, sizeof f.name);
+        int at = kept++;
+        while (at > 0 && s_results[at - 1].rssi < f.rssi) {
+            s_results[at] = s_results[at - 1];
+            at--;
+        }
+        s_results[at] = f;
+    }
+    inquiry_free();
+    s_results_n = kept;
+    int pads = 0;
+    for (int i = 0; i < kept; i++) {
+        pads += s_results[i].pad;
+    }
+    job_say("%d device(s) found, %d gamepad(s)", kept, pads);
+    job_end(false);
+}
+
+/* Start the link of a pairing; the slot's old link, if any, is gone. */
+static void pair_link(btpad_t *p)
+{
+    char t[18];
+    addr_text(s_job_addr, t);
+    note("pad %d: pairing %s (%s)", slot_no(p), t, s_job_name[0] ? s_job_name : "no name");
+    const char *why = link_to(p, s_job_addr, s_job_name, true);
+    if (why != NULL) {
+        job_say("%s", why);
+        job_end(true);
+        return;
+    }
+    /* The claim covered the start; the wait does not hold it (as the shell
+     * command never did), so the window can still be used. */
+    s_job_claimed = false;
+    tang_ble_release();
+    s_job_pad = slot_no(p) - 1;
+    s_job_until = bflb_mtimer_get_time_ms() + BTPAD_JOB_PAIR_SECS * 1000u;
+    s_job_phase = PH_LINK;
+    job_say("pairing %s as pad %d", s_job_name[0] ? s_job_name : t, slot_no(p));
+}
+
+static void pair_begin(void)
+{
+    btpad_t *other = by_addr(s_job_addr);
+    btpad_t *p;
+    if (s_job_pad < 0) {
+        p = other != NULL ? other : free_slot();
+        if (p == NULL) {
+            job_say("both pad slots are taken; forget one first");
+            job_end(true);
+            return;
+        }
+    } else {
+        p = &s_pad[s_job_pad];
+        if (other != NULL && other != p) {
+            job_say("that pad is saved as pad %d; forget it there first", slot_no(other));
+            job_end(true);
+            return;
+        }
+    }
+    if (p->saved.valid && memcmp(p->saved.addr, s_job_addr, 6) != 0) {
+        forget_slot(p, true);         /* the window asked to replace it */
+    }
+    p->saved.off = false;
+    if (p->conn != NULL) {
+        /* Its old link must be gone before the slot takes a new one: the
+         * disconnected callback finds the slot by the link it holds. */
+        (void)bt_conn_disconnect(p->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+        s_job_pad = slot_no(p) - 1;
+        s_job_until = bflb_mtimer_get_time_ms() + BTPAD_JOB_DROP_MS;
+        s_job_phase = PH_DROP;
+        return;
+    }
+    pair_link(p);
+}
+
+static void job_begin(void)
+{
+    if (s_job != TANG_BTPAD_JOB_FORGET && s_job != TANG_BTPAD_JOB_OFF &&
+        tang_ble_radio_start(false) != 0) {
+        job_say("the radio did not start; see ble in the Terminal");
+        job_end(true);
+        return;
+    }
+    btpad_t *p = s_job_pad >= 0 ? &s_pad[s_job_pad] : NULL;
+    switch (s_job) {
+    case TANG_BTPAD_JOB_SCAN: {
+        const char *why = inquiry_begin(s_job_secs);
+        if (why != NULL) {
+            job_say("%s", why);
+            job_end(true);
+            return;
+        }
+        s_scan_end = bflb_mtimer_get_time_ms() + (uint64_t)s_job_secs * 1000u;
+        s_job_until = s_scan_end + 5000u;
+        s_job_phase = PH_SCAN;
+        job_say("looking for gamepads in pairing mode");
+        return;
+    }
+    case TANG_BTPAD_JOB_PAIR:
+        pair_begin();
+        return;
+    case TANG_BTPAD_JOB_ON:
+    case TANG_BTPAD_JOB_OFF: {
+        const bool on = s_job == TANG_BTPAD_JOB_ON;
+        if (p == NULL || !p->saved.valid) {
+            job_say("not paired");
+            job_end(true);
+            return;
+        }
+        taskENTER_CRITICAL();
+        p->saved.off = !on;
+        taskEXIT_CRITICAL();
+        if (!on && p->conn != NULL) {
+            (void)bt_conn_disconnect(p->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+        }
+        s_save_due = true;
+        note("pad %d: turned %s", slot_no(p), on ? "on" : "off");
+        job_say(on ? "reconnects by itself when woken" : "not reconnecting; pairing kept");
+        job_end(false);
+        return;
+    }
+    case TANG_BTPAD_JOB_FORGET:
+        if (p != NULL) {
+            forget_slot(p, false);
+            note("pad %d: forgotten", slot_no(p));
+        }
+        job_say("pairing deleted");
+        job_end(false);
+        return;
+    case TANG_BTPAD_JOB_NONE:
+        break;
+    }
+    job_end(false);
+}
+
+/* One step of the running job, from tang_btpad_work(). */
+static void job_step(void)
+{
+    if (!s_job_running) {
+        return;
+    }
+    const uint64_t now = bflb_mtimer_get_time_ms();
+    switch (s_job_phase) {
+    case PH_START:
+        job_begin();
+        break;
+    case PH_SCAN:
+        if (s_found_n >= 0 || now >= s_job_until) {
+            scan_finish();
+        }
+        break;
+    case PH_DROP: {
+        btpad_t *p = &s_pad[s_job_pad];
+        if (p->conn == NULL) {
+            pair_link(p);
+        } else if (now >= s_job_until) {
+            job_say("pad %d's old link did not go", slot_no(p));
+            job_end(true);
+        }
+        break;
+    }
+    case PH_LINK: {
+        btpad_t *p = &s_pad[s_job_pad];
+        if (p->intr_up && !p->pairing) {
+            job_say("pad %d is paired and reporting", slot_no(p));
+            job_end(false);
+        } else if (p->conn == NULL) {
+            job_say("pad %d did not finish pairing", slot_no(p));
+            job_end(true);
+        } else if (now >= s_job_until) {
+            job_say("pad %d did not finish pairing in %d s", slot_no(p), BTPAD_JOB_PAIR_SECS);
+            job_end(true);
+        }
+        break;
+    }
+    }
+}
+
+/* ---- the window's calls (tang_btpad.h) */
+
+static bool pad_ok(int pad)
+{
+    return pad >= 0 && pad < TANG_BTPAD_SLOTS;
+}
+
+const char *tang_btpad_scan_start(void)
+{
+    const char *why = tang_ble_radio_refusal();
+    if (why != NULL) {
+        return why;
+    }
+    return job_submit(TANG_BTPAD_JOB_SCAN, -1, NULL, NULL, BTPAD_JOB_SCAN_SECS);
+}
+
+int tang_btpad_scan_results(tang_btpad_found_t *out, int max)
+{
+    if (s_job_running && s_job == TANG_BTPAD_JOB_SCAN) {
+        return -1;
+    }
+    const int n = s_results_n < max ? s_results_n : max;
+    if (out != NULL && n > 0 && s_results != NULL) {
+        memcpy(out, s_results, (size_t)n * sizeof *out);
+    }
+    return out != NULL ? (n > 0 ? n : 0) : s_results_n;
+}
+
+const char *tang_btpad_pair_start(int pad, const uint8_t addr[6], const char *name)
+{
+    if (!pad_ok(pad) || addr == NULL) {
+        return "no such pad";
+    }
+    const char *why = tang_ble_radio_refusal();
+    if (why != NULL) {
+        return why;
+    }
+    return job_submit(TANG_BTPAD_JOB_PAIR, pad, addr, name, 0);
+}
+
+const char *tang_btpad_set_on(int pad, bool on)
+{
+    if (!pad_ok(pad)) {
+        return "no such pad";
+    }
+    if (on) {
+        const char *why = tang_ble_radio_refusal();
+        if (why != NULL) {
+            return why;
+        }
+    }
+    return job_submit(on ? TANG_BTPAD_JOB_ON : TANG_BTPAD_JOB_OFF, pad, NULL, NULL, 0);
+}
+
+const char *tang_btpad_forget(int pad)
+{
+    if (!pad_ok(pad)) {
+        return "no such pad";
+    }
+    return job_submit(TANG_BTPAD_JOB_FORGET, pad, NULL, NULL, 0);
+}
+
+/* The slot's latest note, without its "pad N: ", or "". */
+static void last_note(int pad, char *out, size_t cap)
+{
+    char prefix[8] = "pad 1: ";
+    prefix[4] = (char)('1' + pad);    /* pad is 0 or 1 */
+    const size_t plen = strlen(prefix);
+    out[0] = '\0';
+    const unsigned head = s_note_head;
+    const unsigned oldest = head > BTPAD_NOTES ? head - BTPAD_NOTES : 0;
+    for (unsigned i = head; i-- > oldest;) {
+        char line[BTPAD_NOTE_LEN];
+        taskENTER_CRITICAL();
+        memcpy(line, s_note[i % BTPAD_NOTES], sizeof line);
+        taskEXIT_CRITICAL();
+        line[sizeof line - 1] = '\0';
+        if (strncmp(line, prefix, plen) == 0) {
+            snprintf(out, cap, "%s", line + plen);
+            return;
+        }
+    }
+}
+
+static const char *pad_state(const btpad_t *p)
+{
+    if (p->intr_up) {
+        return "ready";
+    }
+    if (p->linked) {
+        return "opening channels";
+    }
+    if (p->conn != NULL) {
+        return p->pairing ? "pairing" : "connecting";
+    }
+    if (!p->saved.valid) {
+        return "idle";
+    }
+    return p->saved.off ? "off" : "waiting";
+}
+
+void tang_btpad_info(tang_btpad_info_t *out)
+{
+    memset(out, 0, sizeof *out);
+    out->available = true;
+    out->pairings = s_file_state;
+    out->job = s_job;
+    out->job_running = s_job_running;
+    out->job_failed = s_job_failed;
+    taskENTER_CRITICAL();
+    memcpy(out->job_msg, s_job_msg, sizeof out->job_msg);
+    taskEXIT_CRITICAL();
+    out->job_msg[sizeof out->job_msg - 1] = '\0';
+    const uint64_t now = bflb_mtimer_get_time_ms();
+    if (s_job_running && s_job_phase == PH_SCAN && s_scan_end > now) {
+        out->scan_ms_left = (uint32_t)(s_scan_end - now);
+    }
+    for (int i = 0; i < TANG_BTPAD_SLOTS; i++) {
+        const btpad_t *p = &s_pad[i];
+        tang_btpad_slot_info_t *o = &out->pad[i];
+        taskENTER_CRITICAL();
+        const tang_btpad_key_t k = p->saved;
+        taskEXIT_CRITICAL();
+        o->state = pad_state(p);
+        o->saved = k.valid;
+        if (k.valid) {
+            memcpy(o->addr, k.addr, 6);
+            snprintf(o->name, sizeof o->name, "%s", k.name);
+            o->wii = k.kind == TANG_BTPAD_KIND_WII;
+            o->off = k.off;
+        } else if (p->conn != NULL) {
+            memcpy(o->addr, p->want_addr, 6);
+            snprintf(o->name, sizeof o->name, "%s", p->want_name);
+        }
+        o->linked = p->conn != NULL;
+        o->ready = p->intr_up;
+        o->reports = p->reports;
+        last_note(i, o->last, sizeof o->last);
+    }
+}
+
+/* ---- the shell's side of the jobs */
+
+/* Print the notes until the job is over, then its outcome.  0 when it worked.
+ * Every job ends by itself (an inquiry after its length, a pairing after
+ * BTPAD_JOB_PAIR_SECS), so the bound here only keeps the shell from hanging
+ * if one ever did not. */
+#define BTPAD_JOB_WAIT_MS 120000u
+static int job_wait(unsigned *seen)
+{
+    const uint64_t end = bflb_mtimer_get_time_ms() + BTPAD_JOB_WAIT_MS;
+    while (s_job_running) {
+        notes_print(seen);
+        if (bflb_mtimer_get_time_ms() >= end) {
+            tdsh_printf("btpad: still running after %u s; see btpad status\r\n",
+                        BTPAD_JOB_WAIT_MS / 1000u);
+            return 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    notes_print(seen);
+    char msg[sizeof s_job_msg];
+    taskENTER_CRITICAL();
+    memcpy(msg, s_job_msg, sizeof msg);
+    taskEXIT_CRITICAL();
+    if (msg[0] != '\0') {
+        tdsh_printf("btpad: %s\r\n", msg);
+    }
+    return s_job_failed ? 1 : 0;
+}
+
+static int cmd_pair(int secs, const uint8_t *given)
+{
     uint8_t a[6];
     char name[TANG_BTPAD_NAME_LEN] = "";
+    unsigned seen = s_note_head;
+    const char *why;
     if (given != NULL) {
         memcpy(a, given, 6);
     } else {
         tdsh_printf("btpad: looking for a gamepad in pairing mode for about %d s...\r\n", secs);
-        const int n = inquiry(secs);
+        why = job_submit(TANG_BTPAD_JOB_SCAN, -1, NULL, NULL, secs);
+        if (why != NULL) {
+            tdsh_printf("btpad: %s\r\n", why);
+            return 1;
+        }
+        if (job_wait(&seen) != 0) {
+            return 1;
+        }
         int best = -1;
-        for (int i = 0; i < n; i++) {
-            if (cod_is_pad(s_found[i].cod) && (best < 0 || s_found[i].rssi > s_found[best].rssi)) {
+        for (int i = 0; i < s_results_n; i++) {
+            if (s_results[i].pad && (best < 0 || s_results[i].rssi > s_results[best].rssi)) {
                 best = i;
             }
         }
         if (best < 0) {
-            inquiry_free();
-            tang_ble_release();
             tdsh_printf("btpad: no gamepad in pairing mode was found\r\n");
             return 1;
         }
-        memcpy(a, s_found[best].addr.val, 6);
-        eir_name(s_found[best].eir, sizeof s_found[best].eir, name, sizeof name);
-        inquiry_free();
+        memcpy(a, s_results[best].addr, 6);
+        snprintf(name, sizeof name, "%s", s_results[best].name);
     }
-    char t[18];
-    addr_text(a, t);
-    btpad_t *p = by_addr(a);
-    if (p == NULL) {
-        p = free_slot();
-    }
-    if (p == NULL) {
-        tang_ble_release();
-        tdsh_printf("btpad: both pad slots are taken; `btpad forget 1` or `2` first\r\n");
+    why = job_submit(TANG_BTPAD_JOB_PAIR, -1, a, name, 0);
+    if (why != NULL) {
+        tdsh_printf("btpad: %s\r\n", why);
         return 1;
     }
-    unsigned seen = s_note_head;
-    tdsh_printf("btpad: pairing %s (%s) as pad %d\r\n", t, name[0] ? name : "no name", slot_no(p));
-    const int rc = link_to(p, a, name, true);
-    tang_ble_release();
-    if (rc != 0) {
+    if (job_wait(&seen) != 0) {
         return 1;
     }
-    if (link_wait(p, &seen, 40) != 0) {
-        tdsh_printf("btpad: pad %d did not finish pairing\r\n", slot_no(p));
-        return 1;
-    }
-    tdsh_printf("btpad: pad %d is paired and reporting; it reconnects by itself when woken\r\n",
-                slot_no(p));
+    tdsh_printf("btpad: it reconnects by itself when woken\r\n");
     return 0;
+}
+
+static int cmd_on(int n, bool on)
+{
+    unsigned seen = s_note_head;
+    const char *why = on ? tang_btpad_set_on(n - 1, true)
+                         : job_submit(TANG_BTPAD_JOB_OFF, n - 1, NULL, NULL, 0);
+    if (why != NULL) {
+        tdsh_printf("btpad: %s\r\n", why);
+        return 1;
+    }
+    return job_wait(&seen);
 }
 
 static void cmd_status(void)
@@ -1040,7 +1602,8 @@ static void cmd_status(void)
         }
         const char *state = p->intr_up ? "reporting" :
                             p->linked ? "linked, opening channels" :
-                            p->conn ? "connecting" : "waiting for the pad";
+                            p->conn ? "connecting" :
+                            p->saved.off ? "off (btpad on N)" : "waiting for the pad";
         /* The kind decides how a woken pad is handled, so it is worth seeing:
          * a Switch pad opens its own channels and a Wii pad does not. */
         const char *kind = !p->saved.valid ? "-" :
@@ -1103,19 +1666,7 @@ static void cmd_watch(int secs)
 
 static void cmd_forget(btpad_t *p)
 {
-    if (p->conn != NULL) {
-        (void)bt_conn_disconnect(p->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-    }
-    if (p->saved.valid) {
-        bt_addr_t addr;
-        memcpy(addr.val, p->saved.addr, 6);
-        bt_keys_link_key_clear_addr(&addr);
-    }
-    taskENTER_CRITICAL();
-    memset(&p->saved, 0, sizeof p->saved);
-    taskEXIT_CRITICAL();
-    p->pairing = false;
-    s_save_due = true;
+    forget_slot(p, false);
     tang_ble_btpad_signal();
     tdsh_printf("btpad: pad %d forgotten\r\n", slot_no(p));
 }
@@ -1183,6 +1734,14 @@ int tang_btpad_cmd(tdsh_session_t *session, int argc, char **argv)
         cmd_watch(2);
         return 0;
     }
+    if (strcmp(op, "on") == 0 || strcmp(op, "off") == 0) {
+        const int n = argc >= 3 ? atoi(argv[2]) : 0;
+        if (n < 1 || n > TANG_BTPAD_SLOTS) {
+            tdsh_printf("usage: btpad on|off 1|2\r\n");
+            return 1;
+        }
+        return cmd_on(n, op[1] == 'n');
+    }
     if (strcmp(op, "forget") == 0) {
         if (argc < 3) {
             tdsh_printf("usage: btpad forget 1 | 2 | all\r\n");
@@ -1216,9 +1775,10 @@ int tang_btpad_cmd(tdsh_session_t *session, int argc, char **argv)
                 return 1;
             }
             unsigned seen = s_note_head;
-            const int rc = link_to(p, a, NULL, false);
+            const char *why = link_to(p, a, NULL, false);
             tang_ble_release();
-            if (rc != 0) {
+            if (why != NULL) {
+                tdsh_printf("btpad: %s\r\n", why);
                 return 1;
             }
             tdsh_printf("btpad: connecting to pad %d\r\n", slot_no(p));
@@ -1232,7 +1792,7 @@ int tang_btpad_cmd(tdsh_session_t *session, int argc, char **argv)
         return cmd_pair(0, a);
     }
     tdsh_printf("usage: btpad [status] | pair [secs] | <addr> | watch [secs] | send 1|2 <hex>"
-                " | forget 1|2|all\r\n");
+                " | on|off 1|2 | forget 1|2|all\r\n");
     return 1;
 }
 

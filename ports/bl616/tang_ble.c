@@ -2659,6 +2659,32 @@ static bool slot_ok(int slot)
     return slot >= 0 && slot < HID_SLOTS;
 }
 
+/* Why the window may not start the radio now, or NULL: it failed to start
+ * before, or it is off and too little heap is free to start it. */
+static const char *radio_refusal(void)
+{
+    if (s_start_phase == 2 && s_enable_result != 0) {
+        return "the radio failed to start; see ble in the Terminal";
+    }
+    if (s_start_phase == 0) {
+        const uint32_t free_now = kfree_size(0);
+        if (free_now < BLE_START_MIN_FREE) {
+            snprintf(s_reason, sizeof(s_reason),
+                     "starting the radio needs %u KB free; %lu KB is free",
+                     BLE_START_MIN_FREE / 1024u, (unsigned long)(free_now / 1024u));
+            return s_reason;
+        }
+    }
+    return NULL;
+}
+
+#if defined(CONFIG_BT_BREDR)
+const char *tang_ble_radio_refusal(void)
+{
+    return radio_refusal();
+}
+#endif
+
 const char *tang_ble_scan_start(void)
 {
     /* A scan beside a connection still being set up would collide with it,
@@ -2671,17 +2697,9 @@ const char *tang_ble_scan_start(void)
             return s_reason;
         }
     }
-    if (s_start_phase == 2 && s_enable_result != 0) {
-        return "the radio failed to start; see ble in the Terminal";
-    }
-    if (s_start_phase == 0) {
-        const uint32_t free_now = kfree_size(0);
-        if (free_now < BLE_START_MIN_FREE) {
-            snprintf(s_reason, sizeof(s_reason),
-                     "starting the radio needs %u KB free; %lu KB is free",
-                     BLE_START_MIN_FREE / 1024u, (unsigned long)(free_now / 1024u));
-            return s_reason;
-        }
+    const char *why = radio_refusal();
+    if (why != NULL) {
+        return why;
     }
     const ble_job_t j = { .kind = TANG_BLE_JOB_SCAN };
     return job_submit(&j);
@@ -2864,7 +2882,7 @@ static const tdsh_command_t s_ble_commands[] = {
 #if defined(CONFIG_BT_BREDR)
     { "btscan", "btscan [seconds]", "Classic Bluetooth inquiry: list devices in range",
       tang_btscan_cmd, 0 },
-    { "btpad", "btpad [status] | pair [s] | <addr> | watch [s] | send N <hex> | forget N",
+    { "btpad", "btpad [status] | pair [s] | <addr> | watch [s] | send N <hex> | on|off N | forget N",
       "Classic Bluetooth gamepads: pair, reconnect, watch",
       tang_btpad_cmd, 0 },
 #endif
