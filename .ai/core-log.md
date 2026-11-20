@@ -2140,3 +2140,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 63 COMMIT Unreleased 2026-11-20T11:48:57-07:00
+
+#### Coming From:
+
+Unreleased 7567aa5
+
+#### Purpose:
+
+Find why `blekbd pair` cannot start a connection after a forget or a failed LE link until a reboot, and bring the Rii K06's combo slot back into use.
+
+#### Outcome:
+
+The fault was reproduced once and parked by the operator, who has not met it in normal use (BLE-025). `ble` now lists every LE connection object the host holds with its state, reference count and holding slot, and with it a forgotten K06 at D1:10:38:F6:3A:FF was later refused by `blecombo D1:10:38:F6:3A:FF` with `could not start connection` while its object stood 'disconnected ref 1 held by -': the SDK's `bt_conn_create_le()` returns NULL for a peer whose object is still held in the disconnected state, and the Classic build's pool is two objects. The reading that the port leaks its own reference on every disconnect was refuted on the board before any fix was written, which matters because the comments in `hid_connected` and `hid_disconnected` record that releasing it there asserted and reset the board: a connected object made by `pair` holds 2 references and two other forgets and a whitelist reconnect ending in HCI 0x3E all released theirs completely, one of them traced step by step through `hid_off` and `bt_unpair`. The source was not caught again in one traced round, and a race in the SDK's own disconnect is recorded as an unproven lead. The trace points were removed and the object list kept, in `ports/bl616/tang_ble.c`. For the combo slot, `blecombo off` had not outlasted a reboot, since boot arms every saved slot, so the slot was already waiting; it never reconnected because the K06 now advertised at a different address, and the pad takes a new random address at every pairing, the second byte rising by one (BLE-019), so its pairing was stale rather than off. The K06 was forgotten and paired again and drives the console, and the Xbox Wireless Controller pairing still saved in the `blekbd` slot, which entry 59 had recorded as deleted, was deleted at the operator's request. The operator also parked the Wii U Pro Controller with its code kept in the firmware, which supersedes entry 62's first next step. `tools/build_both.sh` passes with images of 1,058,832 and 807,872 bytes, `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped, and three images were installed with `tools/tinytang_flash.py --yes` and started with the relay sequence, the last being `7567aa5-dirty.2d13f0d` (image SHA-256 `1ac16efb6325f8f4d8845eaf84c500e64f9e4fce538ffb8cfa60420006eb9fce`), on which `ble` showed the K06 at D1:12:38:F6:3A:FF ready with one object, connected with 2 references, and the keyboard and mouse slots empty. No fix was made, so there was no hardware result for the operator to accept. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, the new BLE-025 with its routing and fast-lookup rows, and dated revisions to BLE-017 and BLE-019, the six YAML blocks parse, and this entry was validated as number 63 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+If `could not start connection` recurs, run `ble` before rebooting: an object listed as disconnected with references and held by no slot confirms BLE-025, and the order of its states is the evidence that would settle the race. The open items are now a game-core load and a TinyNES run on the Classic firmware, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and Phase 4's pad word to the cores, and the 8BitDo Cube 2 speaker proposal; the Wii U Pro and the Xbox Wireless Controller are both parked.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

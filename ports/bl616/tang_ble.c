@@ -48,6 +48,7 @@
 #include "rfparam_adapter.h"
 
 #include "keys.h"
+#include "conn_internal.h"   /* struct bt_conn: `ble` prints each object's state and references */
 #include "ff.h"
 #include "mm.h"
 
@@ -2758,6 +2759,40 @@ const char *tang_ble_forget(int slot)
     return job_submit(&j);
 }
 
+static const char *const s_conn_states[] = {
+    "disconnected", "connect-scan", "connect-dir-adv", "connect", "connected", "disconnect",
+};
+
+static const char *conn_state_name(const struct bt_conn *conn)
+{
+    return conn->state < sizeof(s_conn_states) / sizeof(s_conn_states[0])
+        ? s_conn_states[conn->state] : "?";
+}
+
+/* One LE connection object the host still holds (bt_conn_foreach visits only
+ * those with a reference), with its state, its reference count and the slot
+ * that holds it.  An object left DISCONNECTED with references is one that
+ * bt_conn_create_le() refuses for that peer and conn_new() cannot reuse. */
+static void conn_obj_print(struct bt_conn *conn, void *data)
+{
+    unsigned *n = data;
+    (*n)++;
+    const bt_addr_le_t *a = &conn->le.dst;
+    const char *holder = "-";
+    bool owned = false;
+    for (int i = 0; i < HID_SLOTS; i++) {
+        if (s_hid[i].conn == conn) {
+            holder = s_hid[i].cmd;
+            owned = s_hid[i].conn_owned;
+        }
+    }
+    tdsh_printf("  %p %02X:%02X:%02X:%02X:%02X:%02X %s ref %ld held by %s%s\r\n",
+                (void *)conn, a->a.val[5], a->a.val[4], a->a.val[3], a->a.val[2],
+                a->a.val[1], a->a.val[0],
+                conn_state_name(conn),
+                (long)atomic_get(&conn->ref), holder, owned ? " (owned)" : "");
+}
+
 static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
 {
     (void)session;
@@ -2790,6 +2825,14 @@ static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
     }
     for (int i = 0; i < HID_SLOTS; i++) {
         hid_status(&s_hid[i]);
+    }
+    if (ble_up()) {
+        unsigned n = 0;
+        tdsh_printf("ble: LE connection objects in use (pool of %d):\r\n", CONFIG_BT_MAX_CONN);
+        bt_conn_foreach(BT_CONN_TYPE_LE, conn_obj_print, &n);
+        if (n == 0) {
+            tdsh_printf("  none\r\n");
+        }
     }
     return 0;
 }
