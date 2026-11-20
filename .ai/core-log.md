@@ -2210,3 +2210,33 @@ When the 8BitDo or the nunchuck is next in use, confirm that the 8BitDo feels un
 - User Test: PASS
 
 ---
+
+## 65 COMMIT Unreleased 2026-11-20T12:56:31-07:00
+
+#### Coming From:
+
+Unreleased b903958
+
+#### Purpose:
+
+Record the operator's confirmation of the two pads entry 64 left unconfirmed.
+
+#### Outcome:
+
+The operator confirmed that the 8BitDo over Bluetooth and the wired nunchuck both work on firmware `0839523-dirty.cf58fb6` with the standard desktop map of entry 64, which supersedes that entry's first next step; BLE-023 and WII-002 carry dated revisions saying so. The 8BitDo through the NES/SNES receiver on the Adafruit adapter, which by entry 64's design has buttons and arrows but no pointer, is left for the operator to test later. Nothing was built or installed and the board was not touched. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the two dated revisions, the six YAML blocks parse, and this entry was validated as number 65 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator will test the 8BitDo through the NES/SNES receiver on the Adafruit adapter, expecting the buttons, the d-pad as arrows and Home to work with no pointer. The open items are a game-core load and a TinyNES run on the Classic firmware, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and Phase 4's pad word to the cores, and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
