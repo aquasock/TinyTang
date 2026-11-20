@@ -2035,3 +2035,35 @@ Test step 1 on the board: with the Wii U Pro's red sync button pressed, run `btp
 - User Test: NOT RUN
 
 ---
+
+## 60 COMMIT Unreleased 2026-11-19T19:38:24-07:00
+
+#### Coming From:
+
+Unreleased e6f223e
+
+#### Purpose:
+
+Make the Wii U Pro Controller pair through its legacy PIN and then reconnect on its own, the second phase of the Bluetooth input plan.
+
+#### Outcome:
+
+Step 1 from entry 59 did not work, and the three faults were found in the SDK and the host before any was guessed at. With the pad in sync-button pairing mode, `btpad pair` found it as `Nintendo RVL-CNT-01-UC` and then reported `control channel closed` with no PIN ever noted: `bt_conn_auth_cb_register()` in `blestack/src/host/conn.c` refuses a table that sets an interactive callback without `cancel` and answers `-EINVAL`, so `bt_auth` stayed NULL and `bt_conn_pin_code_req()` took its `pin_code_neg_reply()` branch. `ports/bl616/tang_ble.c` gained `hid_auth_cancel`, which cannot disturb Secure Simple Pairing because `bt_conn_get_io_capa()` reads only the passkey callbacks and because the stack calls `cancel` from the LE SMP path alone; `ble` now reports whether the table was accepted. The PIN was then noted and answered (`answered the PIN with this board's address (0)`), the key was saved, both channels opened and the pad reported, but `btpad pair` still said the pad `did not finish pairing`: the stack calls `pairing_complete` only from its SSP path through `ssp_complete()` and `bt_conn_ssp_auth_complete()`, while a legacy pairing ends at the `AUTH_COMPLETE` event whose handler only calls `link_encr()`, so `key_due` was never set, the key was never taken and the slot never left its pairing state, which is why `tang_btpad_pincode()` now sets `key_due` itself. The third fault was the channel-opening rule: the 3 s wait of BLE-021 suits the Switch-mode 8BitDo, while a Wii pad opens nothing, and with the wait in place the trace and the notes showed the pad connecting and dropping with reason 0x13 about eight times in fifteen seconds with no channel ever opened, so the wait is now skipped for `TANG_BTPAD_KIND_WII`, which `btpad status` also prints. Setting the pad up by hand then proved the transport: player LED, both extension-initialisation writes acknowledged by report 0x22 with error 0, the extension identity read answering report 0x21 containing `a4 20 01 20`, and report mode 0x34 streaming extension data, for which `btpad watch` was widened from a 16-byte cut to whole reports in 12-byte rows, since a 0x34 report is 23 bytes and its buttons are at the end. What remains unfixed is the reconnection: a woken pad pages the board, is given the link key, and ends the link 1 ms later with `Auth Complete 0x13`, the pad initiating that cycle about every 1.3 s with no input, and `tools/ble_trace_to_btsnoop.py` with `btmon` showed the key handed over is byte for byte the `Link Key Notification` value the pad produced at pairing and that the same bytes read back out of `/root/ble/br_keys.bin`, so the codec, the slot and the card are faithful and the pad is refusing the key it generated itself; two candidates remain untested, that the pad keeps no key at all so only a sync-button pairing ever works, or that it requires the host as master, since it advertises `Role switch` and is master on its own links while this stack never asks for a role switch. The two candidate causes are recorded rather than an unproven fix, and the discriminator is a PC test: pair the pad with BlueZ, walk away and press a button, where a reconnect there would place the difference on this side. The operator did not accept the hardware result for that reason, so the cycle records a failed user test rather than a pass. The Xbox Wireless Controller stayed parked as entry 59 left it, and the 8BitDo remained pad 1 of the default build. Bench time was lost to a short in the TinyNode circuit, which made the relay appear not to move and the node's sensors appear absent; the operator found and fixed it and nothing in the TinyNode repository was modified, the node having been read only. `tools/build_both.sh` passes with images of 1,054,592 and 807,808 bytes, `tools/tests/run_all.sh --quick` is 46 of 46 with nine skipped, and `tools/tests/test_btpad_host.sh` is 55 checks, its fake stack now modelling the legacy event order instead of delivering `pairing_complete`, with both new behaviours failing under mutation. Firmware `e6f223e-dirty.277a291` was installed with `tools/tinytang_flash.py` and started with the relay sequence. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry together with dated revisions to BLE-022 and BLE-023 and the new BLE-024, and this entry was validated as number 60 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 191 live records, 16 of which still lack a fast-lookup row exactly as they did before this cycle, since the six YAML blocks all parse and every record added or revised here carries its row.
+
+#### Next Steps:
+
+Settle the reconnection with the PC discriminator before writing any fix: pair the Wii U Pro with BlueZ, walk away and press a button, and a reconnect there means the pad keeps its key and this side is the difference, in which case the first attempt is a role-switch request after the pad's own connect and before authentication, since the pad advertises `Role switch` and is master on the links it makes. Step 2, the handler that sets report mode and initialises the extension on every connection and decodes the 0x34 extension report into the Wii Classic key map, should follow that settlement and be extended into `tools/tests/test_btpad_host.sh` before it reaches the board, and the raw material for it is recorded above. Two loose ends in the already-qualified devices are cheap: the Rii K06's combo slot is still switched off from the Xbox test and needs `blecombo on`, and `blekbd pair` cannot start a connection after a forget or a failed LE link until a reboot. The 8BitDo Cube 2 speaker is a feature and not a qualification, since `defconfig` leaves `CONFIG_BT_A2DP` off and no port code registers an A2DP source, so it needs a proposal covering the cost and where its PCM would come from. Entry 57's older items stand.
+
+#### Files Modified:
+
+- ports/bl616/tang_ble.c
+- ports/bl616/tang_btpad.c
+- tools/tests/tb_btpad_host.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

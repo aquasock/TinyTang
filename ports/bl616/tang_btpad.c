@@ -626,6 +626,14 @@ void tang_btpad_pincode(struct bt_conn *conn, bool highsec)
     note("pad %d: asked for a PIN (legacy pairing)", slot_no(p));
     p->pin_due = true;
     p->used_pin = true;
+    /* A key worth keeping is coming, and this is the only notice of it: a
+     * legacy pairing never reaches tang_btpad_paired(), because the stack
+     * calls pairing_complete only from its SSP path (bt_conn_ssp_auth_complete
+     * in ssp_complete) while PIN pairing ends in the AUTH_COMPLETE event, whose
+     * handler only calls link_encr().  Without this the key is never taken, the
+     * slot never leaves its pairing state, and `btpad pair` reports a pad that
+     * actually connected as one that did not finish pairing. */
+    p->key_due = true;
     tang_ble_btpad_signal();
 }
 
@@ -692,9 +700,16 @@ void tang_btpad_work(void)
             pin_reply(p);
             continue;
         }
-        /* On a link the pad made, it opens the channels; step in only if it
-         * has not after BTPAD_PAD_OPENS_MS. */
-        if (!p->outbound && now - p->linked_ms < BTPAD_PAD_OPENS_MS) {
+        /* On a link the pad made, a Switch-mode pad opens the channels itself;
+         * step in only if it has not after BTPAD_PAD_OPENS_MS (BLE-021: opening
+         * them at the same moment collided with the pad's own connect and took
+         * the link down with 0x24).  A Wii-family pad does not: the Wii U Pro
+         * connects, opens nothing and drops the link about a second later with
+         * reason 0x13, eight times in fifteen seconds on the board with no
+         * channel ever opened, so the host must open both channels at once
+         * (core-log entry 60). */
+        const bool pad_opens = !p->outbound && p->saved.kind != TANG_BTPAD_KIND_WII;
+        if (pad_opens && now - p->linked_ms < BTPAD_PAD_OPENS_MS) {
             continue;
         }
         if (!p->ctrl_up && !p->ctrl_asked) {
@@ -1026,8 +1041,12 @@ static void cmd_status(void)
         const char *state = p->intr_up ? "reporting" :
                             p->linked ? "linked, opening channels" :
                             p->conn ? "connecting" : "waiting for the pad";
-        tdsh_printf("  pad %d: %s %s, %s, %lu report(s), word 0x%03x\r\n", i + 1, t,
-                    p->saved.name[0] ? p->saved.name : "(no name)", state,
+        /* The kind decides how a woken pad is handled, so it is worth seeing:
+         * a Switch pad opens its own channels and a Wii pad does not. */
+        const char *kind = !p->saved.valid ? "-" :
+                           p->saved.kind == TANG_BTPAD_KIND_WII ? "wii" : "switch";
+        tdsh_printf("  pad %d: %s %s, %s, %s, %lu report(s), word 0x%03x\r\n", i + 1, t,
+                    p->saved.name[0] ? p->saved.name : "(no name)", kind, state,
                     (unsigned long)p->reports, (unsigned)tang_btpad_pad_word(i));
     }
     unsigned seen = s_note_head > BTPAD_NOTES ? s_note_head - BTPAD_NOTES : 0;
@@ -1057,13 +1076,25 @@ static void cmd_watch(int secs)
             n = p->raw_len;
             memcpy(raw, p->raw, n);
             taskEXIT_CRITICAL();
-            char hex[3 * 16 + 1];
-            size_t o = 0;
-            for (uint8_t k = 0; k < n && k < 16; k++) {
-                o += (size_t)snprintf(hex + o, sizeof hex - o, "%02x ", raw[k]);
+            /* The whole report, twelve bytes a row: a 0x34 extension report is
+             * 23 bytes and its buttons are at the end, so the old 16-byte cut
+             * hid exactly what this command exists to show. */
+            /* Twelve bytes plus their spaces and the terminator. */
+            char row[3 * 12 + 1];
+            const int indent = 25;    /* under the first row's hex column */
+            for (uint8_t k = 0; k < n; k += 12) {
+                const uint8_t m = (uint8_t)(n - k < 12 ? n - k : 12);
+                size_t r = 0;
+                for (uint8_t j = 0; j < m; j++) {
+                    r += (size_t)snprintf(row + r, sizeof row - r, "%02x ", raw[k + j]);
+                }
+                if (k == 0) {
+                    tdsh_printf("btpad: pad %d word 0x%03x: %s\r\n", i + 1,
+                                (unsigned)tang_btpad_pad_word(i), row);
+                } else {
+                    tdsh_printf("%*s%s\r\n", indent, "", row);
+                }
             }
-            tdsh_printf("btpad: pad %d word 0x%03x: %s%s\r\n", i + 1,
-                        (unsigned)tang_btpad_pad_word(i), hex, n > 16 ? "..." : "");
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }

@@ -507,9 +507,16 @@ static void pad_tick(void)
             }
         }
         if (!g_pad_secured) {
-            /* The control channel needs security: the pairing completes,
-             * then the key arrives, then encryption is up (BLE-023). */
-            tang_btpad_paired(ch->conn, true, 0);
+            /* The control channel needs security.  The two pairing styles end
+             * differently, and the host must survive both (core-log entry 60).
+             * Secure Simple Pairing (the 8BitDo) reports pairing complete,
+             * then delivers the key, then brings encryption up.  A legacy PIN
+             * pairing (the Wii U Pro) never reports pairing complete at all:
+             * AUTH_COMPLETE only raises encryption, so all the host gets is the
+             * key and the encryption change. */
+            if (g_pad_mode != PAD_PIN) {
+                tang_btpad_paired(ch->conn, true, 0);
+            }
             sdk_link_key(&ch->conn->dst);     /* the key for this link's pad */
             tang_btpad_security(ch->conn, BT_SECURITY_L2, 0);
             g_pad_secured = true;
@@ -707,6 +714,30 @@ int main(void)
     g_pad_mode = PAD_IDLE;
     sdk_disconnect(s_pad[0].conn, 0x13);
     check(g_underflows == 0, "the PIN-paired link's references do not balance");
+
+    /* ---- 10. a Wii pad woken: it opens nothing, the host must open both
+     * The board's Wii U Pro connects, opens no channel and drops the link with
+     * reason 0x13 about a second later, eight times in fifteen seconds, so the
+     * 3 s wait that suits a Switch-mode pad loses the link (core-log entry 60). */
+    {
+        const bt_addr_t wii = { { 0x91, 0x5c, 0x45, 0x7b, 0x2a, 0x18 } };
+        g_pad_mode = PAD_IDLE;
+        g_pad_secured = true;         /* bonded already: no new pairing */
+        reset_requests();
+        const uint64_t linked_at = g_now;
+        struct bt_conn *c6 = sdk_incoming(&wii);
+        g_pad_mode = PAD_PAIRS;       /* accepts the channels the host opens */
+        check(s_pad[0].linked, "a woken Wii pad's link was not taken");
+        run_ms(200);
+        check(g_requests == 2,
+              "the host waited for a Wii pad to open channels it never opens");
+        check(g_req_ms[0] - linked_at < BTPAD_PAD_OPENS_MS,
+              "the Wii pad's channels were opened behind the Switch pad's wait");
+        check(s_pad[0].intr_up, "the Wii pad's channels do not report");
+        g_pad_mode = PAD_IDLE;
+        sdk_disconnect(c6, 0x13);
+        check(g_underflows == 0, "the Wii pad's references do not balance");
+    }
 
     /* With a 0x00 in the address the SDK's strlen would cut the PIN short:
      * the raw HCI reply carries the pad's address, length 6 and the PIN. */

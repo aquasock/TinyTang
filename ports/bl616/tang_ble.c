@@ -1733,20 +1733,37 @@ static void hid_pincode_entry(struct bt_conn *conn, bool highsec)
         tang_btpad_pincode(conn, highsec);
     }
 }
+
+/* bt_conn_auth_cb_register() refuses any table that sets an interactive
+ * callback without cancel and answers -EINVAL, which leaves bt_auth NULL and
+ * quietly turns every Classic PIN request into a negative reply: the Wii U
+ * Pro's control channel then closes with no PIN ever noted.  Registering this
+ * is what makes the table acceptable.  It does not affect the IO capability
+ * (bt_conn_get_io_capa() reads the passkey callbacks only), and on Classic
+ * links the stack never calls it; the LE SMP code calls it when it abandons a
+ * pairing it asked about. */
+static void hid_auth_cancel(struct bt_conn *conn)
+{
+    (void)conn;
+}
 #endif
 
 static struct bt_conn_auth_cb s_auth_cb = {
 #if defined(CONFIG_BT_BREDR)
     .pincode_entry = hid_pincode_entry,
+    .cancel = hid_auth_cancel,
 #endif
     .pairing_complete = hid_pairing_complete,
     .pairing_failed = hid_pairing_failed,
 };
 
+static int s_auth_err = -1;   /* -1 not tried yet, 0 registered, else the SDK's error */
+
 static void hid_register_callbacks(void)
 {
     bt_conn_cb_register(&s_conn_cb);
     int err = bt_conn_auth_cb_register(&s_auth_cb);
+    s_auth_err = err;
     if (err) {
         tdsh_printf("ble: auth callback registration failed (%d)\r\n", err);
     }
@@ -2746,6 +2763,13 @@ static int cmd_ble(tdsh_session_t *session, int argc, char **argv)
                     (unsigned long)s_heap_before, (unsigned long)s_heap_after);
     }
     tdsh_printf("ble: pairings %s (%s)\r\n", s_bonds_state, BLE_BONDS_PATH);
+    if (s_auth_err == -1) {
+        tdsh_printf("ble: auth callbacks not registered yet\r\n");
+    } else if (s_auth_err != 0) {
+        tdsh_printf("ble: auth callbacks REFUSED (%d): no pairing replies\r\n", s_auth_err);
+    } else {
+        tdsh_printf("ble: auth callbacks registered\r\n");
+    }
     for (int i = 0; i < HID_SLOTS; i++) {
         hid_status(&s_hid[i]);
     }
