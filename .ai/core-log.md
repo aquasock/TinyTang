@@ -2170,3 +2170,43 @@ If `could not start connection` recurs, run `ble` before rebooting: an object li
 - User Test: NOT RUN
 
 ---
+
+## 64 COMMIT Unreleased 2026-11-20T12:51:17-07:00
+
+#### Coming From:
+
+Unreleased 0839523
+
+#### Purpose:
+
+Make the 8BitDo Bluetooth pad's controls the standard desktop map and bring the wired Wii Classic Controller and nunchuck onto it.
+
+#### Outcome:
+
+The operator passed the cycle on the board with the official Classic Controller on the Adafruit adapter (WII-003, revised). The 8BitDo's stick handling moved unchanged into the new `ports/bl616/tang_pad_stick.c`, which the 8BitDo, the Classic and the nunchuck now share: on the desktop the left stick is the pointer, linear past a dead zone and at most 48 counts a poll, and the right stick's vertical axis is the wheel, and at the prompt the left stick walks the shell's history. The Classic's format-3 sticks were measured first with `wiipad trace`, at rest 128/128 left and 130/133 right with about 100 counts each way on both, so the nunchuck's 98-count full scale serves both; `ports/bl616/tang_wiipad.c` now learns both centers, negates Y because the Wii reports up as larger, and gives the Classic the standard sticks, while the R-held d-pad pointer was removed, so the d-pad is always the arrows and R is a game's button. By the operator's decision the 8BitDo NES/SNES receiver, which folds an SN30's sticks into the d-pad and never reports their axes, now has no pointer rather than a faked one (WII-004, revised). The nunchuck takes the standard response in place of its squared curve at up to 96 counts, and by the operator's choice C and Z held together are its Home, latched so that neither clicks again until both are up (WII-002, revised). A sample now says whether it carries sticks, so the 8BitDo's sample, which passes its buttons through `tang_wii_apply` and its sticks through `tang_btpad_sticks`, can never be read as a Wii stick. `README.md` replaces the Wii pointer description with one control table for all three pads. On the board, firmware `0839523-dirty.cf58fb6` (image SHA-256 `6c993e71753f8f2f7807c7a0d96256280936f4f3dd75b9fdf9ccbec225641f2b`) was installed with `tools/tinytang_flash.py --yes` and started with the relay sequence, `wiipad status` learned the centers 128/128 and 131/134, and the operator reported the history at the prompt, the pointer, the wheel, the arrows with and without R, the buttons and Home all working; the 8BitDo and the nunchuck were optional items and were not reported separately. `tools/tests/test_wiipad.sh` has 130 checks with new sections for the Classic's sticks, the receiver's missing pointer and the nunchuck's Home, `test_btpad.sh` 90 and `test_btpad_host.sh` 95 pass unchanged, of ten mutations tried eight were caught at once, a repeated Home from the chord was caught after a test for pressing Z again was added, and an unclamped 8-bit deflection was not caught because `tang_stick_counts` clamps anyway, so that redundant clamp was removed, `tools/build_both.sh` passes with images of 1,058,832 and 807,888 bytes, and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, dated revisions to WII-002, WII-003, WII-004 and BLE-023, two routing rows and two fast-lookup rows, the six YAML blocks parse, and this entry was validated as number 64 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+When the 8BitDo or the nunchuck is next in use, confirm that the 8BitDo feels unchanged and that the nunchuck's new speed and its C and Z Home suit the operator. The open items are a game-core load and a TinyNES run on the Classic firmware, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and Phase 4's pad word to the cores, and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_btpad_codec.c
+- ports/bl616/tang_btpad_codec.h
+- ports/bl616/tang_pad_stick.c
+- ports/bl616/tang_pad_stick.h
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- tools/tests/tb_wiipad.c
+- tools/tests/test_btpad.sh
+- tools/tests/test_btpad_host.sh
+- tools/tests/test_wiipad.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

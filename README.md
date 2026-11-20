@@ -150,33 +150,36 @@ python tools/tinytang_sync.py
   button and wheel are passed on too. All of them drive the same pointer. The pointer exists only while
   the desktop runs: at the bare console it is not drawn and does not move,
   and the mouse is the shell's instead (next bullet).
-- **A Wii controller as the pointer.** A nunchuck or a Classic Controller on
-  the Adafruit adapter in the populated USB-A port drives the same pointer.
-  The nunchuck's stick is a velocity control -- push to move, release to stop,
-  with a squared response so the middle of the travel is fine control -- Z is
-  the left button and C the right. The Classic's left stick does the same, its
-  right stick moves the pointer at half the speed for fine work, and A and B
-  are the left and right buttons. At the console prompt the left stick's vertical axis
-  becomes the wheel, so pushing up recalls the last command the way wheel-up
-  does, and the left button presses Enter. They are read through the desktop
-  core's own I2C engine, so they need that core loaded and do nothing while
-  another core holds the fabric; a part the driver does not recognise is
-  refused rather than decoded as the wrong packing. A wireless receiver made
-  for the NES/SNES Classic -- an 8BitDo one, say -- works the same way: it
-  identifies as a Classic and is put into data format 3, which is the format
-  it wants and the one TinyNES uses. `wiipad status|raw|center` prints which
-  part is fitted and what it reports, and `center` re-learns the rest position
-  while both sticks sit untouched; `nunchuck` is an alias. A Classic's d-pad
-  works as the keyboard's arrows work here: the arrow keys normally, and with
-  the R shoulder held -- the keyboard's Alt -- it moves the pointer instead,
-  a cell a poll. The sticks themselves are not used: a receiver for the
-  NES/SNES Classic mirrors them onto the d-pad and never reports their axes,
-  so on such a pad the stick and the d-pad are the same input. The other
-  buttons are keys the desktop already understands: Y is Tab, X is Escape, +
-  is Enter, - opens the start menu, and Home switches the screen between the
-  desktop and whatever core is running. ZL, ZR and L are left unmapped for
-  now. A diagonal needs no special timing: pressing a second direction while
-  the first is held is a diagonal, because the whole held mask is used.
+- **Gamepads on the desktop.** A Switch-mode Bluetooth pad paired with
+  `btpad pair` (an 8BitDo, say), a Wii Classic Controller and a nunchuck on
+  the Adafruit adapter in the populated USB-A port all drive the desktop the
+  same way:
+
+  | Control | On the desktop | At the console prompt |
+  |---|---|---|
+  | Left stick | the pointer | up and down walk the shell's history |
+  | Right stick | up and down are the wheel | nothing |
+  | A / B | left / right button | A presses Enter |
+  | X / Y | Escape / Tab | Escape / Tab |
+  | + / - | Enter / F10, the start menu | Enter / F10 |
+  | Home | switches the screen between the desktop and the running core | the same |
+  | D-pad | the arrow keys, repeating | the arrow keys |
+  | L, R, ZL, ZR | nothing: they are the games' | nothing |
+
+  The stick is a velocity control: past a small dead zone the pointer moves in
+  proportion to the push, three cells a poll at full tilt. The nunchuck has
+  only the one stick and two buttons, Z the left and C the right, and C and Z
+  held together are its Home; neither clicks again until both are let go. The
+  Wii parts are read through the desktop core's own I2C engine, so they need
+  that core loaded and do nothing while another core holds the fabric, and a
+  part the driver does not recognise is refused rather than decoded as the
+  wrong packing. A wireless receiver made for the NES/SNES Classic -- an
+  8BitDo one -- identifies as a Classic and is put into data format 3, which
+  it needs, but it never reports its pad's stick positions: it folds the
+  sticks into the d-pad. Its buttons and d-pad work as above and it has no
+  pointer, which is not faked from the d-pad. `wiipad status|raw|center|trace`
+  prints which part is fitted and what it reports, and `center` re-learns the
+  rest position while the sticks sit untouched; `nunchuck` is an alias.
 - **The mouse at the console prompt.** With the desktop not running the wheel
   scrolls the shell's own history -- one detent is one Up or Down, so wheel up
   once recalls the last command -- and a left click presses Enter on the line

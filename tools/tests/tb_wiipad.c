@@ -258,18 +258,24 @@ static void test_mapping_nunchuck(void)
         int dx, dy;
         const char *what;
     } cases[] = {
+        /* The standard stick (tang_pad_stick.h, the 8BitDo's): 98 counts
+         * from the center is full deflection, the dead zone is about 9 of
+         * them, then linear to TANG_STICK_POINTER_MAX. */
         {123, 131,    0,    0, "at rest"},
-        {131, 131,    0,    0, "dead zone edge, +8"},
-        {115, 131,    0,    0, "dead zone edge, -8"},
-        {221, 131,   96,    0, "full right"},
-        {24,  131,  -96,    0, "full left"},
-        {123, 229,    0,  -96, "full up (Y grows upward)"},
-        {123, 33,     0,   96, "full down"},
-        {172, 131,   19,    0, "half stick is a quarter of the speed"},
+        {131, 131,    0,    0, "inside the dead zone, +8"},
+        {115, 131,    0,    0, "inside the dead zone, -8"},
+        {133, 131,    0,    0, "dead zone edge, +10"},
+        {140, 131,    4,    0, "just past the dead zone"},
+        {221, 131,   48,    0, "full right"},
+        {24,  131,  -48,    0, "full left"},
+        {255, 131,   48,    0, "past full is clamped"},
+        {123, 229,    0,  -48, "full up (Y grows upward)"},
+        {123, 33,     0,   48, "full down"},
+        {172, 131,   21,    0, "half stick is linear, not squared"},
     };
 
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
-        tang_wii_sample_t s = {.lx = cases[i].sx, .ly = cases[i].sy};
+        tang_wii_sample_t s = {.lx = cases[i].sx, .ly = cases[i].sy, .sticks = true};
         tang_mouse_t m = {0};
         tang_wii_apply(n, &s, &m, false, 0, NULL);
         CHECK(m.dx == cases[i].dx && m.dy == cases[i].dy,
@@ -278,39 +284,139 @@ static void test_mapping_nunchuck(void)
     }
 }
 
-static void test_classic_sticks_ignored(void)
+static void test_classic_sticks(void)
 {
     tang_wiipad_t *n = fresh();
     n->kind = TANG_WII_KIND_CLASSIC;
+    tang_mouse_t m;
 
-    /* The receiver maps this part's sticks onto the d-pad and never reports
-     * their axes (WII-004), so nothing in the stick bytes may move anything. */
+    /* The genuine Classic's rest in format 3, measured on the board (WII-003):
+     * the first sample becomes both centers and moves nothing. */
+    tang_wii_sample_t rest = {.lx = 128, .ly = 128, .rx = 130, .ry = 133, .sticks = true};
+    m = (tang_mouse_t){0};
+    tang_wii_apply(n, &rest, &m, false, 0, NULL);
+    CHECK(n->centered && n->rcentered && n->cx == 128 && n->cy == 128 &&
+          n->crx == 130 && n->cry == 133, "the rest becomes both centers (%d/%d %d/%d)",
+          n->cx, n->cy, n->crx, n->cry);
+    CHECK(m.dx == 0 && m.dy == 0 && m.wheel == 0, "and moves nothing");
+
     const struct {
         int lx, ly, rx, ry;
+        int dx, dy, wheel;
         const char *what;
     } cases[] = {
-        {0,   0,   0,   0,   "all sticks hard over"},
-        {255, 255, 255, 255, "and hard over the other way"},
-        {132, 134, 134, 134, "at rest"},
+        {226, 128, 130, 133,  48,   0,  0, "left stick full right is the pointer"},
+        {30,  128, 130, 133, -48,   0,  0, "left stick full left"},
+        {128, 226, 130, 133,   0, -48,  0, "left stick up moves the pointer up"},
+        {128, 30,  130, 133,   0,  48,  0, "left stick down"},
+        {177, 128, 130, 133,  21,   0,  0, "half stick is the 8BitDo's half speed"},
+        {128, 128, 130, 231,   0,   0,  1, "right stick up is wheel-up"},
+        {128, 128, 130, 35,    0,   0, -1, "right stick down is wheel-down"},
+        {128, 128, 232, 133,   0,   0,  0, "the right stick's X does nothing"},
     };
-
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         tang_wii_sample_t s = {.lx = cases[i].lx, .ly = cases[i].ly,
-                               .rx = cases[i].rx, .ry = cases[i].ry};
-        tang_mouse_t m = {0};
+                               .rx = cases[i].rx, .ry = cases[i].ry, .sticks = true};
+        m = (tang_mouse_t){0};
+        n->next_wheel_ms = 0;
+        tang_wii_apply(n, &s, &m, false, 1000 + (uint32_t)i * 1000u, NULL);
+        CHECK(m.dx == cases[i].dx && m.dy == cases[i].dy && m.wheel == cases[i].wheel,
+              "%s: got %d/%d wheel %d", cases[i].what, m.dx, m.dy, m.wheel);
+    }
+
+    /* At the prompt the left stick walks the history and the right does
+     * nothing, as on the 8BitDo. */
+    {
+        tang_wii_sample_t up = {.lx = 128, .ly = 226, .rx = 130, .ry = 133, .sticks = true};
+        m = (tang_mouse_t){0};
+        n->next_wheel_ms = 0;
+        tang_wii_apply(n, &up, &m, true, 20000, NULL);
+        CHECK(m.wheel == 1 && m.dx == 0 && m.dy == 0, "at the prompt left stick up is wheel-up");
+        tang_wii_sample_t rup = {.lx = 128, .ly = 128, .rx = 130, .ry = 231, .sticks = true};
+        m = (tang_mouse_t){0};
+        tang_wii_apply(n, &rup, &m, true, 30000, NULL);
+        CHECK(m.wheel == 0 && m.dx == 0 && m.dy == 0, "and the right stick does nothing there");
+    }
+
+    /* The 8BitDo receiver folds an SN30's sticks into the d-pad and leaves
+     * the axis bytes at rest (WII-004): it has no pointer, and none is faked
+     * from the d-pad, which stays the arrows. */
+    {
+        n = fresh();
+        n->kind = TANG_WII_KIND_CLASSIC;
+        tang_wii_sample_t s = classic_sample(TANG_WII_BTN_RIGHT);
+        s.sticks = true;
         tang_wii_keys_t k = {0};
-        n->btn_prev = 0;
+        m = (tang_mouse_t){0};
         tang_wii_apply(n, &s, &m, false, 0, &k);
         CHECK(m.dx == 0 && m.dy == 0 && m.wheel == 0,
-              "%s: a Classic's sticks move nothing (%d/%d)", cases[i].what,
-              m.dx, m.dy);
-        CHECK(k.n == 0, "%s: and send no key", cases[i].what);
-        m = (tang_mouse_t){0};
-        k = (tang_wii_keys_t){0};
-        tang_wii_apply(n, &s, &m, true, 5000, &k);
-        CHECK(m.wheel == 0, "%s: and scroll nothing at the prompt", cases[i].what);
+              "the receiver's d-pad moves no pointer (%d/%d)", m.dx, m.dy);
+        CHECK(k.n == 3 && memcmp(k.keys, "\x1b[C", 3) == 0, "it is the Right arrow");
     }
-    CHECK(!n->centered && !n->rcentered, "and no center is learned for them");
+}
+
+static void test_nunchuck_home(void)
+{
+    tang_wiipad_t *n = fresh();
+    n->kind = TANG_WII_KIND_NUNCHUCK;
+    tang_mouse_t m;
+    tang_wii_keys_t k;
+
+    /* Z, then C added: Z clicks, the chord is Home, and the buttons let go. */
+    tang_wii_sample_t z = {.lx = 123, .ly = 131, .left = true, .sticks = true};
+    tang_wii_sample_t zc = {.lx = 123, .ly = 131, .left = true, .right = true, .sticks = true};
+    tang_wii_sample_t c = {.lx = 123, .ly = 131, .right = true, .sticks = true};
+    tang_wii_sample_t none = {.lx = 123, .ly = 131, .sticks = true};
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &z, &m, false, 0, &k);
+    CHECK(m.pressed == TANG_MOUSE_LEFT && !k.toggle, "Z alone is the left click");
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &zc, &m, false, 40, &k);
+    CHECK(k.toggle, "C and Z together are Home");
+    CHECK(m.buttons == 0 && m.pressed == 0, "and neither is a button while held (%u/%u)",
+          m.buttons, m.pressed);
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &zc, &m, false, 80, &k);
+    CHECK(!k.toggle, "held, the chord is one Home, not one per poll");
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &c, &m, false, 120, &k);
+    CHECK(m.buttons == 0 && m.pressed == 0 && !k.toggle,
+          "letting Z go first leaves C held but not clicking");
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &zc, &m, false, 140, &k);
+    CHECK(!k.toggle && m.buttons == 0,
+          "pressing Z again before C is let go is not a second Home");
+
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &none, &m, false, 160, &k);
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &c, &m, false, 200, &k);
+    CHECK(m.pressed == TANG_MOUSE_RIGHT && !k.toggle,
+          "once both are up, C alone is the right click again");
+
+    /* Both in one poll: Home and no click at all. */
+    n = fresh();
+    n->kind = TANG_WII_KIND_NUNCHUCK;
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &zc, &m, false, 0, &k);
+    CHECK(k.toggle && m.buttons == 0 && m.pressed == 0,
+          "C and Z pressed in one poll are Home and no click");
+
+    /* A Classic has its own Home: A and B together are two clicks. */
+    n = fresh();
+    n->kind = TANG_WII_KIND_CLASSIC;
+    tang_wii_sample_t ab = classic_sample(TANG_WII_BTN_A | TANG_WII_BTN_B);
+    ab.left = true;
+    ab.right = true;
+    m = (tang_mouse_t){0}; k = (tang_wii_keys_t){0};
+    tang_wii_apply(n, &ab, &m, false, 0, &k);
+    CHECK(!k.toggle && m.buttons == (TANG_MOUSE_LEFT | TANG_MOUSE_RIGHT),
+          "on a Classic A and B together are both buttons, not Home");
 }
 
 static void test_buttons(void)
@@ -351,7 +457,7 @@ static void test_console_wheel(void)
     n->cx = 123;
     n->cy = 131;
 
-    tang_wii_sample_t up = {.lx = 123, .ly = 229};
+    tang_wii_sample_t up = {.lx = 123, .ly = 229, .sticks = true};
     tang_mouse_t m = {0};
     tang_wii_apply(n, &up, &m, true, 1000, NULL);
     CHECK(m.wheel == 1 && m.dx == 0 && m.dy == 0,
@@ -363,7 +469,7 @@ static void test_console_wheel(void)
     tang_wii_apply(n, &up, &m, true, 1140, NULL);
     CHECK(m.wheel == 1, "the gate opens after TANG_WIIPAD_WHEEL_MS");
 
-    tang_wii_sample_t down = {.lx = 123, .ly = 33};
+    tang_wii_sample_t down = {.lx = 123, .ly = 33, .sticks = true};
     m = (tang_mouse_t){0};
     tang_wii_apply(n, &down, &m, true, 2000, NULL);
     CHECK(m.wheel == -1, "stick down is one detent the other way");
@@ -384,7 +490,7 @@ static void test_keys(void)
         {TANG_WII_BTN_PLUS,   "\r",       "plus is Enter"},
         {TANG_WII_BTN_MINUS,  "\x1b[21~", "minus is F10"},
         {TANG_WII_BTN_L,      "",         "L is unmapped"},
-        {TANG_WII_BTN_R,      "",         "R alone is the cursor modifier, not a key"},
+        {TANG_WII_BTN_R,      "",         "R is a game's button, not a key"},
         {TANG_WII_BTN_ZL,     "",         "ZL is unmapped for now"},
         {TANG_WII_BTN_ZR,     "",         "ZR is unmapped for now"},
         {TANG_WII_BTN_A,      "",         "A is a click, not a key"},
@@ -466,64 +572,24 @@ static void test_dpad(void)
         CHECK(k.n == 3, "the next repeat comes at the rate");
     }
 
-    /* With L held the d-pad is the pointer, a cell a poll, and sends no key. */
+    /* R is a game's button: with it held the d-pad is still the arrows and
+     * moves no pointer, on the desktop and at the prompt (BLE-023). */
     {
         tang_wii_sample_t s = classic_sample(TANG_WII_BTN_UP | TANG_WII_BTN_R);
         tang_mouse_t m = {0};
         tang_wii_keys_t k = {0};
         n->btn_prev = 0;
         tang_wii_apply(n, &s, &m, false, 0, &k);
-        CHECK(k.n == 0, "R plus the d-pad sends no arrow");
-        CHECK(m.dy == -16, "R plus d-pad up moves the pointer a cell (%d)", m.dy);
+        CHECK(k.n == 3 && memcmp(k.keys, "\x1b[A", 3) == 0, "R plus d-pad up is the Up arrow");
+        CHECK(m.dx == 0 && m.dy == 0, "and moves no pointer (%d/%d)", m.dx, m.dy);
+
+        tang_wii_sample_t p = classic_sample(TANG_WII_BTN_UP);
         m = (tang_mouse_t){0};
         k = (tang_wii_keys_t){0};
-        tang_wii_apply(n, &s, &m, false, 40, &k);
-        CHECK(m.dy == -16, "and another cell on the next poll");
-    }
-
-    /* A second direction added while the first is held is a diagonal: the
-     * held mask is used, not the newest bit, so no slamming two buttons in
-     * one poll is needed. */
-    {
-        tang_wii_sample_t right = classic_sample(TANG_WII_BTN_RIGHT | TANG_WII_BTN_R);
-        tang_mouse_t m = {0};
-        tang_wii_keys_t k = {0};
         n->btn_prev = 0;
-        tang_wii_apply(n, &right, &m, false, 0, &k);
-        CHECK(m.dx == 16 && m.dy == 0, "right alone moves right (%d/%d)", m.dx, m.dy);
-
-        tang_wii_sample_t up = classic_sample(TANG_WII_BTN_RIGHT | TANG_WII_BTN_UP |
-                                              TANG_WII_BTN_R);
-        m = (tang_mouse_t){0};
-        k = (tang_wii_keys_t){0};
-        tang_wii_apply(n, &up, &m, false, 40, &k);
-        CHECK(m.dx == 16 && m.dy == -16, "adding up while right is held is a diagonal (%d/%d)",
-              m.dx, m.dy);
-
-        m = (tang_mouse_t){0};
-        k = (tang_wii_keys_t){0};
-        tang_wii_apply(n, &up, &m, false, 80, &k);
-        CHECK(m.dx == 16 && m.dy == -16, "and the diagonal holds while both are down");
-    }
-
-    /* At the prompt the d-pad is the arrows, and L takes them nowhere: there
-     * is no pointer, which is what Alt+arrows do there too. */
-    {
-        tang_wii_sample_t s = classic_sample(TANG_WII_BTN_UP);
-        tang_mouse_t m = {0};
-        tang_wii_keys_t k = {0};
-        n->btn_prev = 0;
-        tang_wii_apply(n, &s, &m, true, 1000, &k);
+        tang_wii_apply(n, &p, &m, true, 1000, &k);
         CHECK(k.n == 3 && memcmp(k.keys, "\x1b[A", 3) == 0,
               "at the prompt the d-pad is the Up arrow");
-
-        tang_wii_sample_t held = classic_sample(TANG_WII_BTN_UP | TANG_WII_BTN_R);
-        m = (tang_mouse_t){0};
-        k = (tang_wii_keys_t){0};
-        n->btn_prev = 0;
-        tang_wii_apply(n, &held, &m, true, 2000, &k);
-        CHECK(k.n == 0 && m.dx == 0 && m.dy == 0,
-              "at the prompt R takes the d-pad nowhere");
     }
 }
 
@@ -641,7 +707,8 @@ static void test_swap_and_unsupported(void)
     CHECK(n->kind == TANG_WII_KIND_CLASSIC, "the Classic is adopted");
     s_ms += 40;
     CHECK(poll_once(&m, false), "the format-3 report is read");
-    CHECK(!n->centered, "and no stick center is learned for it");
+    CHECK(n->centered && n->cx == 0x84 && n->cy == 0x86,
+          "and its resting sticks become the centers (%d/%d)", n->cx, n->cy);
     CHECK(m.dx == 0 && m.dy == 0, "a rest sample moves nothing after the swap");
 }
 
@@ -651,7 +718,8 @@ int main(void)
     test_decode_classic();
     test_identity();
     test_mapping_nunchuck();
-    test_classic_sticks_ignored();
+    test_classic_sticks();
+    test_nunchuck_home();
     test_buttons();
     test_console_wheel();
     test_keys();

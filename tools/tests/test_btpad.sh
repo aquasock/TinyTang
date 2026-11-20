@@ -9,5 +9,6 @@ trap 'rm -rf "$work"' EXIT
 cc -std=c11 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined \
    -I "$root/ports/bl616" \
    "$root/tools/tests/tb_btpad.c" "$root/ports/bl616/tang_btpad_codec.c" \
-   "$root/ports/bl616/tang_ble_bonds.c" -o "$work/tb"
+   "$root/ports/bl616/tang_ble_bonds.c" \
+   "$root/ports/bl616/tang_pad_stick.c" -o "$work/tb"
 "$work/tb"

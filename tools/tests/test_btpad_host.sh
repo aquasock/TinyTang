@@ -11,5 +11,6 @@ cc -std=c11 -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function
    -fsanitize=address,undefined -DCONFIG_BT_BREDR \
    -I "$root/tools/tests/stubs/btpad" -I "$root/tools/tests/stubs" -I "$root/ports/bl616" \
    "$root/tools/tests/tb_btpad_host.c" "$root/ports/bl616/tang_btpad_codec.c" \
-   "$root/ports/bl616/tang_ble_bonds.c" -o "$work/tb"
+   "$root/ports/bl616/tang_ble_bonds.c" \
+   "$root/ports/bl616/tang_pad_stick.c" -o "$work/tb"
 "$work/tb"

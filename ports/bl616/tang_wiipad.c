@@ -74,6 +74,7 @@ void tang_wii_decode(tang_wii_kind_t kind, const uint8_t b[8],
         /* Data format 3 (WII-003): left X, right X, left Y, right Y, the two
          * triggers, then the buttons, all axes 8-bit.  A is byte 7 bit 4 and
          * B bit 6, active low. */
+        s->sticks = true;
         s->lx = b[0];
         s->rx = b[1];
         s->ly = b[2];
@@ -103,6 +104,7 @@ void tang_wii_decode(tang_wii_kind_t kind, const uint8_t b[8],
 
     /* The nunchuck's format: stick, three accelerometer bytes, then Z and C
      * as bits 0 and 1 of the last byte, active low (WII-002). */
+    s->sticks = true;
     s->lx = b[0];
     s->ly = b[1];
     s->left = (b[5] & 0x01u) == 0;
@@ -141,25 +143,6 @@ bool tang_wiipad_all_ff(const uint8_t *b, unsigned n)
     return true;
 }
 
-/* One axis: dead zone, then a squared response so the middle of the travel
- * is fine control and the edge is fast.  Counts are positive for a larger raw
- * value. */
-static int axis_counts(int v, int center, int dz, int full, int max)
-{
-    const int d = v - center;
-    const int mag = d < 0 ? -d : d;
-    if (mag <= dz) {
-        return 0;
-    }
-    const int span = full - dz;
-    int over = mag - dz;
-    if (over > span) {
-        over = span;
-    }
-    const int counts = (max * over * over) / (span * span);
-    return d < 0 ? -counts : counts;
-}
-
 /* Accept a sample as a center only when it is resting near the middle of the
  * part's encoding: a stick held over during `wiipad center`, or one reporting
  * garbage, must not become the new zero. */
@@ -196,13 +179,12 @@ static const char *dpad_seq(uint32_t dir)
     }
 }
 
-/* The Classic's buttons as desktop input.  The d-pad is the keyboard's
- * arrows: the arrow keys normally, and with the right shoulder held (the
- * keyboard's Alt) the pointer instead, one cell a poll.  The arrows repeat as
- * the keyboard's do. */
+/* The buttons as desktop input, the standard key map (BLE-023): X Escape,
+ * Y Tab, plus Enter, minus F10, Home the desktop's show and hide, and the
+ * d-pad the arrow keys, repeating as the keyboard's do.  L, R, ZL and ZR are
+ * the games' and do nothing here. */
 static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
-                              uint32_t now_ms, tang_wii_keys_t *k,
-                              bool console_mode, tang_mouse_t *m)
+                              uint32_t now_ms, tang_wii_keys_t *k)
 {
     const uint32_t pressed = s->btn & ~n->btn_prev;
 
@@ -222,27 +204,10 @@ static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
     const uint32_t dpad = s->btn & (TANG_WII_BTN_UP | TANG_WII_BTN_DOWN |
                                     TANG_WII_BTN_LEFT | TANG_WII_BTN_RIGHT);
     const uint32_t fresh = dpad & ~n->btn_prev;
-    const bool cursor = (s->btn & TANG_WII_BTN_R) != 0;
 
     if (dpad == 0) {
         n->dpad_dir = 0;
         n->dpad_next_ms = 0;
-    } else if (cursor) {
-        /* Alt+arrows: there is no key, the pointer moves instead.  The whole
-         * held mask is used, not the newest bit, so pressing a second
-         * direction while the first is held gives a diagonal -- the d-pad
-         * reports both bits, and latching only the new one meant a diagonal
-         * survived only if both landed in the same poll.  With no pointer to
-         * move -- the shell prompt -- the arrows go nowhere, which is what
-         * Alt+arrows do there too. */
-        if (!console_mode && m != NULL) {
-            const int step = TANG_MOUSE_COUNTS_PER_CELL;
-            if (dpad & TANG_WII_BTN_UP)    m->dy -= step;
-            if (dpad & TANG_WII_BTN_DOWN)  m->dy += step;
-            if (dpad & TANG_WII_BTN_LEFT)  m->dx -= step;
-            if (dpad & TANG_WII_BTN_RIGHT) m->dx += step;
-        }
-        n->dpad_dir = dpad;
     } else if (fresh != 0) {
         /* One arrow at once: opposite directions never both fire. */
         const char *seq = dpad_seq(fresh);
@@ -263,66 +228,82 @@ static void keys_from_buttons(tang_wiipad_t *n, const tang_wii_sample_t *s,
     n->btn_prev = s->btn;
 }
 
-void tang_wii_apply(tang_wiipad_t *n, const tang_wii_sample_t *s,
+/* Learn a stick's center from a resting sample, keeping the old one when the
+ * sample is not plausibly at rest. */
+static void learn(int v, int *center)
+{
+    if (plausible_center(v)) {
+        *center = v;
+    }
+}
+
+/* The part's sticks through the standard stick handling (tang_pad_stick.h),
+ * learning each center from its first resting sample. */
+static void stick_apply(tang_wiipad_t *n, const tang_wii_sample_t *s, bool classic,
+                        bool console_mode, uint32_t now_ms, tang_mouse_t *m)
+{
+    if (!n->centered || n->relearn) {
+        learn(s->lx, &n->cx);
+        learn(s->ly, &n->cy);
+        n->centered = true;
+    }
+    if (classic && (!n->rcentered || n->relearn)) {
+        learn(s->rx, &n->crx);
+        learn(s->ry, &n->cry);
+        n->rcentered = true;
+    }
+    n->relearn = false;
+
+    /* Both parts report a larger Y for a push away from the user, while the
+     * standard counts downward as the mouse does (tang_pad.h), so Y is
+     * negated.  A Classic whose axes never leave their rest -- the 8BitDo
+     * receiver (WII-004) -- therefore moves nothing. */
+    const int lx = tang_stick_from_8bit(s->lx, n->cx, TANG_WIIPAD_FULL_8);
+    const int ly = -tang_stick_from_8bit(s->ly, n->cy, TANG_WIIPAD_FULL_8);
+    const int ry = classic ? -tang_stick_from_8bit(s->ry, n->cry, TANG_WIIPAD_FULL_8) : 0;
+    tang_stick_apply(lx, ly, ry, classic, console_mode, now_ms, &n->next_wheel_ms, m);
+}
+
+void tang_wii_apply(tang_wiipad_t *n, const tang_wii_sample_t *in,
                     tang_mouse_t *m, bool console_mode, uint32_t now_ms,
                     tang_wii_keys_t *k)
 {
     const bool classic = n->kind == TANG_WII_KIND_CLASSIC;
+    tang_wii_sample_t s = *in;
 
-    if (!classic) {
-        /* The nunchuck's stick is a real analog axis, so it drives the pointer
-         * -- or the shell's history -- directly.  The Classic's sticks are
-         * not read at all: the receiver mirrors them onto the d-pad and never
-         * reports their axes (WII-004), so the d-pad is that part's pointing
-         * input and keys_from_buttons() handles it. */
-        if (!n->centered || n->relearn) {
-            if (plausible_center(s->lx)) {
-                n->cx = s->lx;
-            }
-            if (plausible_center(s->ly)) {
-                n->cy = s->ly;
-            }
-            n->centered = true;
-        }
-        n->relearn = false;
+    if (s.sticks) {
+        stick_apply(n, &s, classic, console_mode, now_ms, m);
+    }
 
-        if (console_mode) {
-            /* There is no pointer to move, so the stick's vertical axis is
-             * the wheel: pushing away walks back through the history, as
-             * wheel-up does.  One detent per TANG_WIIPAD_WHEEL_MS, and the
-             * gate re-arms as soon as the stick comes back to the middle. */
-            const int up = s->ly - n->cy;
-            if (up > TANG_WIIPAD_DZ_8 || up < -TANG_WIIPAD_DZ_8) {
-                if ((int32_t)(now_ms - n->next_wheel_ms) >= 0) {
-                    m->wheel += up > 0 ? 1 : -1;
-                    n->next_wheel_ms = now_ms + TANG_WIIPAD_WHEEL_MS;
-                }
-            } else {
-                n->next_wheel_ms = now_ms;
-            }
-        } else {
-            /* The part reports a larger Y for a push away from the user,
-             * while the mouse counts +y downward (tang_pad.h), so Y is
-             * negated. */
-            m->dx += axis_counts(s->lx, n->cx, TANG_WIIPAD_DZ_8,
-                                 TANG_WIIPAD_FULL_8, TANG_WIIPAD_MAX_COUNTS);
-            m->dy -= axis_counts(s->ly, n->cy, TANG_WIIPAD_DZ_8,
-                                 TANG_WIIPAD_FULL_8, TANG_WIIPAD_MAX_COUNTS);
+    if (!classic && s.left && s.right) {
+        /* The nunchuck has no Home: C and Z held together are its Home.
+         * Neither is a button from then until both are up, so the second one
+         * pressed does not click, and nor does the one still held when the
+         * other is let go first. */
+        if (!n->chord) {
+            s.btn |= TANG_WII_BTN_HOME;
         }
+        n->chord = true;
+    } else if (!s.left && !s.right) {
+        n->chord = false;
+    }
+    if (n->chord) {
+        s.left = false;
+        s.right = false;
     }
 
     uint8_t b = 0;
-    if (s->left) {
+    if (s.left) {
         b |= TANG_MOUSE_LEFT;
     }
-    if (s->right) {
+    if (s.right) {
         b |= TANG_MOUSE_RIGHT;
     }
     m->pressed |= (uint8_t)(b & (uint8_t)~n->buttons);
     m->buttons |= b;
     n->buttons = b;
 
-    keys_from_buttons(n, s, now_ms, k, console_mode, m);
+    keys_from_buttons(n, &s, now_ms, k);
 }
 
 /* --------------------------------------------------------------- the part */

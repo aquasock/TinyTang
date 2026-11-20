@@ -8,6 +8,7 @@
 
 #include "tang_ble_bonds.h"   /* tang_bonds_crc32 */
 #include "tang_pad.h"
+#include "tang_pad_stick.h"
 
 static const uint8_t k_magic[4] = { 'T', 'T', 'B', 'R' };
 
@@ -126,9 +127,7 @@ void tang_btpad_wii_sample(const tang_btpad_input_t *in, tang_wii_sample_t *s)
         { TANG_BTPAD_SW_A, TANG_WII_BTN_A },     { TANG_BTPAD_SW_B, TANG_WII_BTN_B },
         { TANG_BTPAD_SW_X, TANG_WII_BTN_X },     { TANG_BTPAD_SW_Y, TANG_WII_BTN_Y },
         { TANG_BTPAD_SW_L, TANG_WII_BTN_L },
-        /* Not R: on the Classic, R held turns the D-pad into the pointer,
-         * because that part's sticks are not read.  This pad's left stick
-         * is the pointer, so its D-pad is always the arrows. */
+        /* L, R, ZL and ZR are the games'; the key map gives them nothing. */
         { TANG_BTPAD_SW_ZL, TANG_WII_BTN_ZL },   { TANG_BTPAD_SW_ZR, TANG_WII_BTN_ZR },
         { TANG_BTPAD_SW_PLUS, TANG_WII_BTN_PLUS }, { TANG_BTPAD_SW_MINUS, TANG_WII_BTN_MINUS },
     };
@@ -152,43 +151,14 @@ void tang_btpad_wii_sample(const tang_btpad_input_t *in, tang_wii_sample_t *s)
 
 int tang_btpad_axis_counts(uint16_t v, int max_counts)
 {
-    int d = (int)v - 0x8000;
-    const int sign = d < 0 ? -1 : 1;
-    d = d < 0 ? -d : d;
-    if (d <= TANG_BTPAD_POINTER_DEADZONE) {
-        return 0;
-    }
-    if (d > 0x7FF0) {
-        d = 0x7FF0;                   /* 0x0000 is a little further than 0xfff0 */
-    }
-    return sign * (int)(((long)(d - TANG_BTPAD_POINTER_DEADZONE) * max_counts) /
-                        (0x7FF0 - TANG_BTPAD_POINTER_DEADZONE));
-}
-
-/* One wheel detent per TANG_WIIPAD_WHEEL_MS while `axis` leans past the
- * direction dead zone: up (a smaller value) is +1, scrolling back. */
-static void wheel_from(uint16_t axis, uint32_t now_ms, uint32_t *next, tang_mouse_t *m)
-{
-    const int d = (int)axis - 0x8000;
-    if (d <= -TANG_BTPAD_STICK_DEADZONE || d >= TANG_BTPAD_STICK_DEADZONE) {
-        if ((int32_t)(now_ms - *next) >= 0) {
-            m->wheel += d < 0 ? 1 : -1;
-            *next = now_ms + TANG_WIIPAD_WHEEL_MS;
-        }
-    } else {
-        *next = now_ms;
-    }
+    return tang_stick_counts((int)v - 0x8000, max_counts);
 }
 
 void tang_btpad_sticks(const tang_btpad_input_t *in, bool console_mode, uint32_t now_ms,
                        uint32_t *next_wheel_ms, tang_mouse_t *m)
 {
-    if (console_mode) {
-        wheel_from(in->ly, now_ms, next_wheel_ms, m);
-        return;
-    }
-    /* Y grows downward, as the mouse's does (tang_pad.h): no negation. */
-    m->dx += tang_btpad_axis_counts(in->lx, TANG_BTPAD_POINTER_MAX_COUNTS);
-    m->dy += tang_btpad_axis_counts(in->ly, TANG_BTPAD_POINTER_MAX_COUNTS);
-    wheel_from(in->ry, now_ms, next_wheel_ms, m);
+    /* The pad's own scale is the standard one, and its Y already grows
+     * downward as the mouse's does (tang_pad.h): no negation. */
+    tang_stick_apply((int)in->lx - 0x8000, (int)in->ly - 0x8000, (int)in->ry - 0x8000,
+                     true, console_mode, now_ms, next_wheel_ms, m);
 }

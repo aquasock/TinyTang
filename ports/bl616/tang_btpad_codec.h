@@ -42,6 +42,7 @@
 #include <stdint.h>
 
 #include "tang_pad.h"       /* tang_mouse_t */
+#include "tang_pad_stick.h" /* the standard stick handling */
 #include "tang_wiipad.h"    /* tang_wii_sample_t */
 
 #define TANG_BTPAD_SLOTS       2
@@ -108,9 +109,9 @@ typedef struct {
  * least 13 bytes; false for anything else, leaving `in` alone. */
 bool tang_btpad_switch_decode(const uint8_t *rep, size_t len, tang_btpad_input_t *in);
 
-/* How far a stick must lean from 0x8000 to count as a direction: a little
- * over a third of its travel, clear of drift and of a resting thumb. */
-#define TANG_BTPAD_STICK_DEADZONE 0x3000
+/* How far a stick must lean from 0x8000 to count as a direction in the pad
+ * word: the wheel's lean, a little over a third of the travel. */
+#define TANG_BTPAD_STICK_DEADZONE TANG_STICK_WHEEL_DZ
 
 /* The pad word (tang_pad.h) for a decoded report: the D-pad or the left
  * stick are the directions, A and B are A and B, and home is LB, which shows
@@ -124,30 +125,24 @@ uint16_t tang_btpad_word(const tang_btpad_input_t *in);
  * drives the console and the desktop through the same key map
  * (tang_wii_apply, kind CLASSIC): A and B are the pointer's left and right
  * buttons, X Escape, Y Tab, plus Enter, minus F10, and the D-pad the arrow
- * keys.  R is left out, so the D-pad is never the pointer as it is on the
- * Classic with R held: the left stick is this pad's pointer.  Home is
- * left out: the desk layer takes it as LB from the pad word, and both would
- * toggle the desktop twice.  The sticks are not in the sample (a Classic's
- * are not read); tang_btpad_sticks() handles them. */
+ * keys.  Home is left out: the desk layer takes it as LB from the pad word,
+ * and both would toggle the desktop twice.  The sticks are not in the sample;
+ * tang_btpad_sticks() hands them to the standard stick handling. */
 void tang_btpad_wii_sample(const tang_btpad_input_t *in, tang_wii_sample_t *s);
 
-/* The sticks into the mouse, as a nunchuck's stick is used: on the desktop
- * the left stick moves the pointer (up to TANG_BTPAD_POINTER_MAX_COUNTS a
- * poll) and
- * the right stick's vertical axis is the wheel; at the console prompt the
- * left stick's vertical axis is the wheel, which walks the shell's history.
- * A wheel detent is at most one per TANG_WIIPAD_WHEEL_MS, kept in
- * *next_wheel_ms, which re-arms when the stick comes back to the middle. */
+/* The sticks into the mouse through the desktop's standard stick handling
+ * (tang_pad_stick.h), which this pad defined: on the desktop the left stick
+ * moves the pointer and the right stick's vertical axis is the wheel; at the
+ * console prompt the left stick's vertical axis is the wheel, which walks the
+ * shell's history.  *next_wheel_ms paces the wheel. */
 void tang_btpad_sticks(const tang_btpad_input_t *in, bool console_mode, uint32_t now_ms,
                        uint32_t *next_wheel_ms, tang_mouse_t *m);
 
-/* A stick axis as signed pointer counts: 0 inside the pointer's dead zone,
- * then in proportion out to max_counts at full travel. */
-#define TANG_BTPAD_POINTER_DEADZONE 0x0C00
-/* The pointer's speed at full stick: three cells a 40 ms poll, half the
- * nunchuck's TANG_WIIPAD_MAX_COUNTS, which the operator found too fast on a
- * pad's longer, finer stick. */
-#define TANG_BTPAD_POINTER_MAX_COUNTS 48
+/* A stick axis as signed pointer counts (tang_stick_counts on this pad's
+ * 16-bit axis): 0 inside the dead zone, then in proportion out to max_counts
+ * at full travel. */
+#define TANG_BTPAD_POINTER_DEADZONE TANG_STICK_POINTER_DZ
+#define TANG_BTPAD_POINTER_MAX_COUNTS TANG_STICK_POINTER_MAX
 int tang_btpad_axis_counts(uint16_t v, int max_counts);
 
 #endif /* TANG_BTPAD_CODEC_H */

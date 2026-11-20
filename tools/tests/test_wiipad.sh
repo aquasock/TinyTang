@@ -9,5 +9,6 @@ trap 'rm -rf "$work"' EXIT
 
 cc -std=c11 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -DTANG_WIIPAD_HOST \
    -I "$root/ports/bl616" \
-   "$root/tools/tests/tb_wiipad.c" "$root/ports/bl616/tang_wiipad.c" -o "$work/tb"
+   "$root/tools/tests/tb_wiipad.c" "$root/ports/bl616/tang_wiipad.c" \
+   "$root/ports/bl616/tang_pad_stick.c" -o "$work/tb"
 "$work/tb"

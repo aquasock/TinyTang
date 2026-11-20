@@ -17,11 +17,16 @@
  * decoded as a nunchuck would read as hard over, which is why the identity is
  * checked before the report is used.
  *
- * Both sticks are velocity controls: push to move, release to stop.  The left
- * stick is mapped exactly as the nunchuck's, the right stick at half the
- * counts, and both add into the one pointer.  On a Classic, A is the left
- * button and B the right.  At the shell prompt the left stick's
- * vertical axis becomes the wheel, as the Bluetooth mouse's wheel does there.
+ * Both parts drive the desktop as the 8BitDo Bluetooth pad does, which is the
+ * standard (BLE-023): the sticks go through tang_pad_stick.h -- on the
+ * desktop the left stick is the pointer and a Classic's right stick the
+ * wheel, at the prompt the left stick walks the shell's history -- and the
+ * buttons through one key map: A and B (Z and C on a nunchuck) the pointer's
+ * left and right buttons, X Escape, Y Tab, plus Enter, minus F10, Home shows
+ * and hides the desktop, and the d-pad is always the arrow keys.  The
+ * nunchuck has no Home, so C and Z held together are its Home.  A Classic
+ * whose sticks report nothing -- the 8BitDo receiver, which folds an SN30's
+ * sticks into the d-pad (WII-004) -- has no pointer: it is not faked.
  *
  * The mapping is a pure function of the six bytes, so the host test can drive
  * it with recorded samples (tools/tests/tb_wiipad.c); the four hooks at the
@@ -36,6 +41,7 @@
 #include <stdint.h>
 
 #include "tang_pad.h"   /* tang_mouse_t */
+#include "tang_pad_stick.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,30 +63,18 @@ extern "C" {
 #define TANG_WIIPAD_FORMAT3 0x03u
 #define TANG_WIIPAD_CLASSIC_LEN 8u
 
-/* Pointer counts at full deflection, one poll.  tang_pad.h counts 16 to a
- * cell on the 80x45 grid, so the left stick is six cells per 40 ms poll -- a
- * second to cross the screen held over, a quarter of that at half stick --
- * and the right stick, at half the counts, is three. */
-#define TANG_WIIPAD_MAX_COUNTS   96
-#define TANG_WIIPAD_RIGHT_COUNTS 48
-
 /* Both parts' sticks are 8-bit in the formats the driver uses -- the
- * nunchuck's always, the Classic's in format 3 -- with about 98 counts of
- * travel each way on the nunchuck measured here (WII-002).  The dead zone is
- * the same proportion of the travel for both. */
-#define TANG_WIIPAD_DZ_8   8
+ * nunchuck's always, the Classic's in format 3 -- and travel about 98 to 107
+ * counts each way from rest: the nunchuck measured in WII-002, the Classic's
+ * two sticks in WII-003.  This many counts from the center is full
+ * deflection on the standard scale (tang_pad_stick.h). */
 #define TANG_WIIPAD_FULL_8 98
 
-/* While the vertical axis drives the shell's history, one detent per this
- * many milliseconds. */
-#define TANG_WIIPAD_WHEEL_MS 140
+/* While a stick drives the wheel, one detent per this many milliseconds. */
+#define TANG_WIIPAD_WHEEL_MS TANG_STICK_WHEEL_MS
 
-/* The Classic's d-pad is its only pointing input: the receiver maps the pad's
- * analog sticks onto it and never reports their axes (WII-004), so the driver
- * reads no sticks on that part.  It works as the keyboard's arrows work here:
- * normally they are the arrow keys, and with the right shoulder held they
- * move the pointer instead, one cell a poll.  The arrows repeat as the
- * keyboard's do: this long before the first repeat, then this often. */
+/* The d-pad is always the arrow keys, and they repeat as the keyboard's do:
+ * this long before the first repeat, then this often. */
 #define TANG_WIIPAD_ARROW_DELAY_MS 500
 #define TANG_WIIPAD_ARROW_RATE_MS   50
 
@@ -131,11 +125,13 @@ typedef enum {
 
 /* One decoded report, in the part's own counts. */
 typedef struct {
-    int      lx, ly;  /* left stick (the nunchuck's only stick) */
-    int      rx, ry;  /* right stick; zero on a part without one */
+    int      lx, ly;  /* left stick (the nunchuck's only stick), raw 8-bit */
+    int      rx, ry;  /* right stick, raw 8-bit; zero on a part without one */
     bool     left;    /* the left button: Z on a nunchuck, A on a Classic */
     bool     right;   /* the right button: C on a nunchuck, B on a Classic */
     uint32_t btn;     /* the TANG_WII_BTN_* bits that are held */
+    bool     sticks;  /* lx..ry are this part's 8-bit sticks; a Bluetooth
+                         pad's sample carries none (tang_btpad_sticks) */
 } tang_wii_sample_t;
 
 typedef struct {
@@ -151,6 +147,8 @@ typedef struct {
     uint8_t  last[8];      /* the last report, for the command */
     bool     have_last;
     uint8_t  buttons;      /* the pointer buttons last reported */
+    bool     chord;        /* a nunchuck's C and Z were held together: neither
+                              is a button again until both are up */
     uint32_t btn_prev;     /* the key buttons held at the last report */
     uint32_t dpad_dir;     /* the d-pad direction repeating, 0 when none */
     uint32_t dpad_next_ms; /* when the next arrow repeat is due */
