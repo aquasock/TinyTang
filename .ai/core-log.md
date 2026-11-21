@@ -2322,3 +2322,33 @@ The board already runs this firmware with TinyNES's new core on the card, so the
 - User Test: NOT RUN
 
 ---
+
+## 68 COMMIT Unreleased 2026-11-21T14:08:25-07:00
+
+#### Coming From:
+
+Unreleased 81bd00a
+
+#### Purpose:
+
+Record the operator's test of entry 67, the wired Wii Classic Controller driving TinyDesk over a running TinyNES game through the core's 0x21 report.
+
+#### Outcome:
+
+The operator passed entry 67's test on firmware `606b98c-dirty.1f2522c` with TinyNES's 0x21 sender (TinyNES entry 58), reporting that the wired Classic on the Adafruit adapter and the 8BitDo over Bluetooth work the same on TinyDesk and in TinyNES, which supersedes that entry's first next step; WII-003 carries a dated revision saying so. Before that report the board was read once over `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` after the status probe: `platform` confirmed the firmware, `wiipad status` read the official Classic on the desktop core's bus with centers 128/128 and 130/134 and so did not show the core-report path, which only appears while a game core is loaded, and `btpad status` showed the 8BitDo `E4:17:D8:17:4D:7F` as pad 1 reporting with both channels open. Nothing was built or installed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the one dated revision, the six YAML blocks parse, and this entry was validated as number 68 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinySNES should take the 8BitDo with no core change, since it already merges 0x09, so a SNES game played with it is the next cheap check, and TinySNES and TinyGBC could send the same 0x21 report as TinyNES in cycles of their own so the wired Classic drives TinyDesk over them too. The 8BitDo through the NES/SNES receiver on the Adafruit adapter is still the operator's to test, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal remain open, and TinyGBC, TinyGBA and Tiny89 each need their own 0x09 receiver.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
