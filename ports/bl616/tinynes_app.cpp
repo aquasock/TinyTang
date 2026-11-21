@@ -1141,7 +1141,9 @@ void launch(void)
     s_lib_path = td_label(s_win, 1, 2, 0, "");
     s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
                          lib_on_activate, nullptr);
-    td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
+    /* The scrollbar belongs to the page like the list it moves: left off it,
+     * it stood greyed beside every other tab. */
+    page_add(0, td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list));
     page_add(0, s_lib_path);
     page_add(0, s_lib_list);
     page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
@@ -1154,23 +1156,24 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* Input: whose mapping is shown, the eight rows, and the actions. */
-    s_player_button = td_button(s_win, 1, 2, "Player 1", on_player, nullptr);
-    page_add(1, s_player_button);
-    /* 18 columns: a row is drawn from the list's second column, so this holds
+    /* Input: the eight rows, and beside them whose mapping is shown and the
+     * actions.  A row steps to the next controller button when it is
+     * double-clicked or Enter is pressed on it, so it needs no Change button.
+     * 18 columns: a row is drawn from the list's second column, so this holds
      * the widest, "select   select *", 17, without the edge's ellipsis. */
-    s_list = td_list(s_win, td_rect(1, 4, INPUT_LIST_W, TANG_NES_BUTTONS),
+    s_list = td_list(s_win, td_rect(1, 2, INPUT_LIST_W, TANG_NES_BUTTONS),
                      input_item, on_row, nullptr);
     if (s_list != nullptr) {
         td_list_set_count(s_list, TANG_NES_BUTTONS);
     }
     page_add(1, s_list);
-    /* The actions stand in a column beside the list, as the Video page's do;
-     * "Restore defaults" is the widest at 20 and ends at column 40 of 52. */
-    page_add(1, td_button(s_win, INPUT_ACTION_X, 4, "Change", on_row, nullptr));
-    page_add(1, td_button(s_win, INPUT_ACTION_X, 6, "Restore defaults", on_restore, nullptr));
-    page_add(1, td_button(s_win, INPUT_ACTION_X, 8, "Save", on_save, nullptr));
-    page_add(1, td_label(s_win, 1, 13, 0, "Change steps the selected row."));
+    /* The column beside the list, as the Video page's: "Restore defaults" is
+     * the widest at 20 and ends at column 40 of 52. */
+    s_player_button = td_button(s_win, INPUT_ACTION_X, 2, "Player 1", on_player, nullptr);
+    page_add(1, s_player_button);
+    page_add(1, td_button(s_win, INPUT_ACTION_X, 4, "Restore defaults", on_restore, nullptr));
+    page_add(1, td_button(s_win, INPUT_ACTION_X, 6, "Save", on_save, nullptr));
+    page_add(1, td_label(s_win, 1, 11, 0, "Double-click a row or press Enter to step it."));
 
     /* Video: two rows, the pixel aspect and the palette, and the Save that
      * writes them.  Scale, scanlines and overscan were dropped, so the page

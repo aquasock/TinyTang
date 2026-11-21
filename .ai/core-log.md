@@ -2382,3 +2382,33 @@ The operator asked next to move the Player button into the Input tab's action co
 - User Test: PASS
 
 ---
+
+## 70 COMMIT Unreleased 2026-11-21T15:47:26-07:00
+
+#### Coming From:
+
+Unreleased fe0bf3b
+
+#### Purpose:
+
+Finish the TinyNES Input tab's cleanup by moving the Player button beside the list, removing the Change button and removing the greyed scrollbar seen on the tab.
+
+#### Outcome:
+
+In `ports/bl616/tinynes_app.cpp` the mapping list moved up to row 2 where the Player button was, and the column at `INPUT_ACTION_X` now holds the Player button on row 2, Restore defaults on row 4 and Save on row 6. The Change button was removed at the operator's request: a row already steps to the next controller button when it is double-clicked or Enter is pressed on it, which the operator chose to keep, and the hint on row 11 now says so. The greyed scrollbar was the Library list's, created without being added to the Library page, so `show_tab()` never hid it and it stood beside every tab; it is now on the Library page only. TinySNES, TinyGBC, TinyGBA and Tiny89 create their Library scrollbar the same way and were not changed. `tools/build_both.sh` passes with images of 1,062,976 and 807,920 bytes and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped; no host test covers this layout. Firmware `fe0bf3b-dirty.b3f90d8` (image SHA-256 `a30a416f174e0ce418c15cd77c04fa1df9c2186d9b63423d1a97787ce1e0fb3a`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` after the operator's go and started with the relay sequence, and `platform` confirmed it. The operator passed the tab. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 70 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator asked next for the same layout on TinyNES's Video tab with its Change button removed and only Save beside the list. The other game windows' Library scrollbars can be fixed the same way in a cycle of their own. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
