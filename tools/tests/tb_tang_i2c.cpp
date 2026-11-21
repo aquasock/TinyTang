@@ -68,6 +68,7 @@ BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t s)
 static bool s_core_bus = true;
 extern "C" int tang_fpga_link_open(void) { return 0; }
 extern "C" bool tang_fpga_pipe_open(void) { return false; }
+extern "C" bool tang_fpga_wii_report(uint8_t *, uint32_t *) { return false; }
 extern "C" bool tang_core_i2c_bus(void) { return s_core_bus; }
 
 /* The clock's software half; the hardware half is in the module under test. */

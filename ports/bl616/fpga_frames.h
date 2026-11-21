@@ -40,6 +40,14 @@
 /* A TinyNES core's AE350 text in link mode: the program's output, a line or
  * up to 128 bytes at a time (TinyNES fpga/ae350_soc/desk_link.sv). */
 #define FPGA_RESP_AE350_TEXT 0x20u
+/* A core's Wii Classic Controller 1, as the controller sent its last data
+ * format 3 report: the four 8-bit stick bytes (LX, RX, LY, RY), then the two
+ * button bytes, active low -- report bytes 0 to 3, 6 and 7.  TinyNES sends it
+ * every 20 ms while a Classic is present (fpga/ae350_soc/desk_link.sv), so the
+ * desktop can read the pad the core holds as it reads the one on its own I2C
+ * bus (tang_wiipad.c).  It is kept as the newest, never queued. */
+#define FPGA_RESP_WII        0x21u
+#define FPGA_RESP_WII_LEN    6u
 /* Save persistence: 128 bytes of cartridge save memory, and the acknowledgement
  * of a 128-byte write (address echoed back, then a status byte). */
 #define FPGA_RESP_SAVE_DATA 0x10u
@@ -108,5 +116,11 @@ void fpga_frames_joypad(uint16_t *joy1, uint16_t *joy2);
 
 /* True once a joypad report has ever been seen. */
 bool fpga_frames_joypad_seen(void);
+
+/* The newest FPGA_RESP_WII report into `out` (FPGA_RESP_WII_LEN bytes) and
+ * how many have arrived since boot into *seq, which only ever counts up, so a
+ * reader can tell a new report from the same one read again.  False, leaving
+ * both alone, when none has arrived. */
+bool fpga_frames_wii(uint8_t out[FPGA_RESP_WII_LEN], uint32_t *seq);
 
 #endif /* FPGA_FRAMES_H */

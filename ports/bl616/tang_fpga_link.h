@@ -207,4 +207,9 @@ void     tang_fpga_link_slow(void);
  * so it is safe to call from a task that is also driving the pad. */
 void tang_fpga_joypad(uint16_t *joy1, uint16_t *joy2);
 
+/* The newest Wii Classic report the core sent (FPGA_RESP_WII, fpga_frames.h):
+ * six bytes into `r` and the count of reports since boot into *seq.  False
+ * when none has ever arrived.  Never blocks, like tang_fpga_joypad. */
+bool tang_fpga_wii_report(uint8_t r[6], uint32_t *seq);
+
 #endif /* TANG_FPGA_LINK_H */

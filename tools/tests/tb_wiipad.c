@@ -81,6 +81,32 @@ bool tang_wiipad_hw_write(uint8_t reg, const uint8_t *buf, unsigned n)
 
 uint32_t tang_wiipad_hw_ms(void) { return s_ms; }
 
+/* The loaded core's reports (FPGA_RESP_WII), as the link hands them over. */
+static bool     s_core_have;
+static uint8_t  s_core_r[6];
+static uint32_t s_core_seq;
+
+bool tang_wiipad_hw_core_report(uint8_t r[6], uint32_t *seq)
+{
+    if (!s_core_have) {
+        return false;
+    }
+    memcpy(r, s_core_r, 6);
+    *seq = s_core_seq;
+    return true;
+}
+
+/* A new report from the core: the four stick bytes, then report bytes 6 and
+ * 7, the buttons, active low. */
+static void core_report(uint8_t lx, uint8_t rx, uint8_t ly, uint8_t ry,
+                        uint8_t b6, uint8_t b7)
+{
+    const uint8_t r[6] = { lx, rx, ly, ry, b6, b7 };
+    memcpy(s_core_r, r, 6);
+    s_core_have = true;
+    s_core_seq++;
+}
+
 /* ---- helpers ---- */
 static tang_wiipad_t *fresh(void)
 {
@@ -98,6 +124,8 @@ static tang_wiipad_t *fresh(void)
     s_wake_writes = 0;
     s_format_writes = 0;
     s_ms = 0;
+    s_core_have = false;
+    s_core_seq = 0;
     return n;
 }
 
@@ -712,6 +740,107 @@ static void test_swap_and_unsupported(void)
     CHECK(m.dx == 0 && m.dy == 0, "a rest sample moves nothing after the swap");
 }
 
+/* A game core holds the bus: the Classic is read through the core's own
+ * reports, with the same decode and key map, Home left to the core's LB, and
+ * only while new reports keep coming. */
+static void test_core_report(void)
+{
+    tang_wiipad_t *n = fresh();
+    s_ready = false;                     /* no I2C engine in this core */
+    tang_mouse_t m;
+    tang_wii_keys_t k;
+
+    memset(&k, 0, sizeof k);
+    m = (tang_mouse_t){0};
+    CHECK(!tang_wiipad_poll(&m, false, &k), "a core with no report is nothing to read");
+    CHECK(!tang_wiipad_core_live() && n->state == TANG_WIIPAD_OFF, "and the pad is off");
+
+    /* The genuine Classic's rest (WII-003): it becomes both centers. */
+    s_ms = 1000;
+    core_report(128, 130, 128, 133, 0xff, 0xff);
+    m = (tang_mouse_t){0};
+    CHECK(tang_wiipad_poll(&m, false, &k), "a core's report is read");
+    CHECK(tang_wiipad_core_live(), "the core's reports are live");
+    CHECK(n->kind == TANG_WII_KIND_CLASSIC && n->state == TANG_WIIPAD_READY,
+          "the core's pad is a ready Classic");
+    CHECK(n->cx == 128 && n->cy == 128 && n->crx == 130 && n->cry == 133,
+          "the first report is the centers (%d/%d %d/%d)", n->cx, n->cy, n->crx, n->cry);
+    CHECK(m.dx == 0 && m.dy == 0 && m.wheel == 0, "and moves nothing");
+    CHECK(s_wake_writes == 0, "nothing was written to a bus the core holds");
+
+    /* The standard sticks, as on the bus. */
+    s_ms += 40;
+    core_report(226, 130, 128, 133, 0xff, 0xff);
+    m = (tang_mouse_t){0};
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(m.dx == 48 && m.dy == 0, "left stick full right is the pointer (%d/%d)", m.dx, m.dy);
+    s_ms += 40;
+    core_report(128, 130, 226, 133, 0xff, 0xff);
+    m = (tang_mouse_t){0};
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(m.dy == -48, "left stick up moves the pointer up (%d)", m.dy);
+
+    /* The key map: X Escape, the d-pad the arrows, A the left button. */
+    s_ms += 40;
+    core_report(128, 130, 128, 133, 0xff, 0xf7);          /* X */
+    memset(&k, 0, sizeof k);
+    m = (tang_mouse_t){0};
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(k.n == 1 && k.keys[0] == 0x1b, "X is Escape through the core (%d bytes)", k.n);
+    s_ms += 40;
+    core_report(128, 130, 128, 133, 0xff, 0xfe);          /* d-pad up */
+    memset(&k, 0, sizeof k);
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(k.n == 3 && memcmp(k.keys, "\x1b[A", 3) == 0, "the d-pad is the arrows (%d bytes)", k.n);
+    s_ms += 40;
+    core_report(128, 130, 128, 133, 0xff, 0xef);          /* A */
+    memset(&k, 0, sizeof k);
+    m = (tang_mouse_t){0};
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK((m.pressed & TANG_MOUSE_LEFT) && (m.buttons & TANG_MOUSE_LEFT), "A is the left button");
+
+    /* Home is the core's: its tap is LB in the pad word, so here it is not
+     * the screen switch, nor anything else. */
+    s_ms += 40;
+    core_report(128, 130, 128, 133, 0xf7, 0xff);          /* Home */
+    memset(&k, 0, sizeof k);
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(!k.toggle && k.n == 0, "Home through the core is not the switch (%d bytes)", k.n);
+    s_ms += 40;
+    core_report(128, 130, 128, 133, 0xff, 0xff);
+    (void)tang_wiipad_poll(&m, false, &k);
+
+    /* The same report read again is not a new one: once the reports stop the
+     * pad is let go. */
+    s_ms += TANG_WIIPAD_CORE_MS - 1;
+    CHECK(tang_wiipad_poll(&m, false, &k) && tang_wiipad_core_live(),
+          "live until TANG_WIIPAD_CORE_MS after the last report");
+    s_ms += 1;
+    CHECK(!tang_wiipad_poll(&m, false, &k), "no new report for TANG_WIIPAD_CORE_MS");
+    CHECK(!tang_wiipad_core_live() && n->state == TANG_WIIPAD_OFF, "and the pad is let go");
+
+    /* Back after a gap with X already held: not a press, and the centers are
+     * learned again from that report. */
+    s_ms += 1000;
+    core_report(130, 128, 126, 131, 0xff, 0xf7);
+    memset(&k, 0, sizeof k);
+    m = (tang_mouse_t){0};
+    CHECK(tang_wiipad_poll(&m, false, &k), "the reports are read again");
+    CHECK(k.n == 0, "a button held across the gap is not a press (%d bytes)", k.n);
+    CHECK(n->cx == 130 && n->cy == 126, "the centers are learned again (%d/%d)", n->cx, n->cy);
+
+    /* The desktop core again: its bus wins and the core's reports are not
+     * used, and the part is woken on the bus. */
+    s_ready = true;
+    s_ms += 40;
+    core_report(226, 130, 128, 133, 0xff, 0xff);
+    m = (tang_mouse_t){0};
+    (void)tang_wiipad_poll(&m, false, &k);
+    CHECK(!tang_wiipad_core_live(), "a core with the bus is read on the bus");
+    CHECK(m.dx == 0, "the core's report is not used beside the bus (%d)", m.dx);
+    CHECK(s_wake_writes == 1, "the part is woken on the bus (%d)", s_wake_writes);
+}
+
 int main(void)
 {
     test_decode_nunchuck();
@@ -727,6 +856,7 @@ int main(void)
     test_center_learning();
     test_state_machine();
     test_swap_and_unsupported();
+    test_core_report();
     printf("tang_wiipad: %d checks, %d failed\n", s_checks, s_failed);
     return s_failed ? 1 : 0;
 }

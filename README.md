@@ -170,10 +170,12 @@ python tools/tinytang_sync.py
   proportion to the push, three cells a poll at full tilt. The nunchuck has
   only the one stick and two buttons, Z the left and C the right, and C and Z
   held together are its Home; neither clicks again until both are let go. The
-  Wii parts are read through the desktop core's own I2C engine, so they need
-  that core loaded and do nothing while another core holds the fabric, and a
-  part the driver does not recognise is refused rather than decoded as the
-  wrong packing. A wireless receiver made for the NES/SNES Classic -- an
+  Wii parts are read through the desktop core's own I2C engine, and a part the
+  driver does not recognise is refused rather than decoded as the wrong
+  packing. A game core holds that bus itself; TinyNES sends its first Classic's
+  report up the link instead (frame 0x21), so over a running TinyNES game the
+  wired Classic drives TinyDesk the same way, while over other game cores it
+  is still only their pad word. A wireless receiver made for the NES/SNES Classic -- an
   8BitDo one -- identifies as a Classic and is put into data format 3, which
   it needs, but it never reports its pad's stick positions: it folds the
   sticks into the d-pad. Its buttons and d-pad work as above and it has no

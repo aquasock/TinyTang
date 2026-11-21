@@ -342,19 +342,82 @@ static void adopt(tang_wiipad_t *n, tang_wii_kind_t kind)
     default_centers(n);
 }
 
-bool tang_wiipad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
+bool tang_wiipad_core_live(void)
 {
-    const uint32_t now = tang_wiipad_hw_ms();
+    LOCK();
+    const bool live = s_pad.core;
+    UNLOCK();
+    return live;
+}
 
-    if (!tang_wiipad_hw_ready()) {
-        /* A core without the I2C engine, or a host-owned link.  Not an
-         * error: the next poll after a core load tries again. */
-        LOCK();
+/* The Classic as a game core reports it, where the bus is the core's.  Live
+ * while a new report has come within TANG_WIIPAD_CORE_MS; the first one after
+ * a gap adopts the part afresh, so a button already held is not a press and
+ * the centers are learned from it. */
+static bool core_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k,
+                      uint32_t now)
+{
+    uint8_t r[6];
+    uint32_t seq = 0;
+    const bool have = tang_wiipad_hw_core_report(r, &seq);
+
+    LOCK();
+    if (have && (!s_pad.core_seen || seq != s_pad.core_seq)) {
+        s_pad.core_seen = true;
+        s_pad.core_seq = seq;
+        s_pad.core_ms = now;
+    }
+    const bool live = s_pad.core_seen &&
+                      (int32_t)(now - s_pad.core_ms) < (int32_t)TANG_WIIPAD_CORE_MS;
+    if (!live) {
+        s_pad.core = false;
         s_pad.state = TANG_WIIPAD_OFF;
         s_pad.awake = false;
         UNLOCK();
         return false;
     }
+    UNLOCK();
+
+    /* Report bytes 0 to 3, then 6 and 7: the triggers are not sent. */
+    const uint8_t b[8] = { r[0], r[1], r[2], r[3], 0x00u, 0x00u, r[4], r[5] };
+    tang_wii_sample_t s;
+    tang_wii_decode(TANG_WII_KIND_CLASSIC, b, &s);
+    s.btn &= ~TANG_WII_BTN_HOME;          /* the core reports its tap as LB */
+
+    LOCK();
+    if (!s_pad.core) {
+        adopt(&s_pad, TANG_WII_KIND_CLASSIC);
+        s_pad.awake = false;              /* the bus must wake the part again */
+        s_pad.core = true;
+        s_pad.btn_prev = s.btn;
+        s_pad.buttons = (uint8_t)((s.left ? TANG_MOUSE_LEFT : 0u) |
+                                  (s.right ? TANG_MOUSE_RIGHT : 0u));
+        s_pad.chord = false;
+        s_pad.dpad_dir = 0;
+        s_pad.next_wheel_ms = now;
+    }
+    memcpy(s_pad.last, b, sizeof b);
+    s_pad.have_last = true;
+    s_pad.state = TANG_WIIPAD_READY;
+    tang_wii_apply(&s_pad, &s, m, console_mode, now, k);
+    UNLOCK();
+    return true;
+}
+
+bool tang_wiipad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
+{
+    const uint32_t now = tang_wiipad_hw_ms();
+
+    if (!tang_wiipad_hw_ready()) {
+        /* A core without the I2C engine, or a host-owned link: read the
+         * Classic through the core's own reports if it sends them.  Not an
+         * error either way: the next poll after a core load tries again. */
+        return core_poll(m, console_mode, k, now);
+    }
+
+    LOCK();
+    s_pad.core = false;
+    UNLOCK();
 
     tang_wii_state_t st;
     bool awake;
@@ -654,7 +717,7 @@ static int cmd_wiipad(tdsh_session_t *session, int argc, char **argv)
             if (st == TANG_WIIPAD_UNSUPPORTED) {
                 tdsh_printf("wiipad: a Wii extension part is fitted but it is not a nunchuck or a Classic\r\n");
             } else if (st == TANG_WIIPAD_OFF) {
-                tdsh_printf("wiipad: no I2C bus -- load a desktop core with the bus\r\n");
+                tdsh_printf("wiipad: no I2C bus, and no Classic report from the core\r\n");
             } else {
                 tdsh_printf("wiipad: waking; run it again\r\n");
             }
@@ -697,11 +760,13 @@ static int cmd_wiipad(tdsh_session_t *session, int argc, char **argv)
     const int cx = n->cx, cy = n->cy;
     const int crx = n->crx, cry = n->cry;
     const bool have = n->have_last;
+    const bool core = n->core;
     uint8_t b[8];
     memcpy(b, n->last, sizeof b);
     UNLOCK();
 
-    tdsh_printf("wiipad: %s %s%s\r\n", kind_name(kind), state_name(st),
+    tdsh_printf("wiipad: %s %s%s%s\r\n", kind_name(kind), state_name(st),
+                core ? ", read through the core's reports" : "",
                 st == TANG_WIIPAD_READY ? "" : " -- not pointing");
     if (kind == TANG_WII_KIND_CLASSIC) {
         tdsh_printf("wiipad: center left %d/%d right %d/%d%s\r\n", cx, cy, crx, cry,

@@ -291,6 +291,49 @@ int main(void)
         check_int("after a queue flush the reply arrives", got_reply, 8);
     }
 
+    /* The core's Wii Classic report (0x21): kept as the newest with a count
+     * that only goes up, never queued, so fifty a second cannot crowd out a
+     * reply; one of the wrong length is dropped. */
+    {
+        clear();
+        uint8_t r[FPGA_RESP_WII_LEN];
+        uint32_t seq = 99;
+        check_int("no Wii report before one arrives", fpga_frames_wii(r, &seq), 0);
+        check_int("seq left alone without a report", (long)seq, 99);
+
+        const uint8_t a[6] = { 0x80, 0x83, 0x7f, 0x85, 0xff, 0xfb };
+        const uint8_t b[6] = { 0x10, 0x20, 0x30, 0x40, 0xdf, 0xfe };
+        const uint8_t id[1] = { 0x4e };
+        for (unsigned i = 0; i < FPGA_FRAMES_MAX + 4u; i++) {
+            put_frame(FPGA_RESP_WII, (i & 1) ? b : a, 6);
+        }
+        check_int("Wii reports never fill the queue", fpga_frames_space(), 1);
+        put_frame(FPGA_RESP_CORE_ID, id, 1);
+        uint8_t got[8];
+        check_int("a reply after a run of Wii reports is reachable",
+                  fpga_frames_take(FPGA_RESP_CORE_ID, got, sizeof got), 1);
+        check_int("a Wii report is never queued",
+                  fpga_frames_take(FPGA_RESP_WII, got, sizeof got), FPGA_FRAMES_NONE);
+        check_int("the Wii report is there", fpga_frames_wii(r, &seq), 1);
+        check_int("the count is every report", (long)seq, FPGA_FRAMES_MAX + 4);
+        check_int("the newest report is kept", memcmp(r, b, 6), 0);
+
+        const uint8_t shortr[4] = { 1, 2, 3, 4 };
+        put_frame(FPGA_RESP_WII, shortr, 4);
+        uint32_t seq2 = 0;
+        (void)fpga_frames_wii(r, &seq2);
+        check_int("a short Wii frame is not a report", (long)seq2, (long)seq);
+        check_int("a short Wii frame changes nothing", memcmp(r, b, 6), 0);
+        put_frame(FPGA_RESP_WII, a, 6);
+        (void)fpga_frames_wii(r, &seq2);
+        check_int("the decoder is back in step after a short frame", (long)seq2, (long)seq + 1);
+        check_int("and keeps the new report", memcmp(r, a, 6), 0);
+
+        clear();
+        (void)fpga_frames_wii(r, &seq2);
+        check_int("a reset keeps the count going up", (long)seq2, (long)seq + 1);
+    }
+
     printf("fpga_frames: %s (%d checks)\n", fails == 0 ? "PASS" : "FAIL", checks);
     return fails == 0 ? 0 : 1;
 }

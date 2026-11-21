@@ -28,6 +28,9 @@ static uint8_t  s_type;
 static uint16_t s_joy1, s_joy2;
 static bool     s_joy_seen;
 
+static uint8_t  s_wii[FPGA_RESP_WII_LEN];
+static uint32_t s_wii_seq;
+
 void fpga_frames_reset(void)
 {
     s_state = RS_MAGIC;
@@ -110,6 +113,17 @@ void fpga_frames_push(uint8_t byte)
                 s_joy2 = (uint16_t)((s_body[2] << 8) | s_body[3]);
                 s_joy_seen = true;
             }
+            if (s_type == FPGA_RESP_WII) {
+                /* Fifty a second while a game runs: kept as the newest and
+                 * never queued, so they cannot crowd out a reply.  One of
+                 * another length is not this report, and is dropped. */
+                if (s_got == FPGA_RESP_WII_LEN) {
+                    memcpy(s_wii, s_body, FPGA_RESP_WII_LEN);
+                    s_wii_seq++;
+                }
+                s_state = RS_MAGIC;
+                break;
+            }
             push_frame(s_type, s_body, s_got);
             s_state = RS_MAGIC;
         }
@@ -169,4 +183,14 @@ void fpga_frames_joypad(uint16_t *joy1, uint16_t *joy2)
 bool fpga_frames_joypad_seen(void)
 {
     return s_joy_seen;
+}
+
+bool fpga_frames_wii(uint8_t out[FPGA_RESP_WII_LEN], uint32_t *seq)
+{
+    if (s_wii_seq == 0) {
+        return false;
+    }
+    memcpy(out, s_wii, FPGA_RESP_WII_LEN);
+    *seq = s_wii_seq;
+    return true;
 }

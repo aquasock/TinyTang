@@ -28,6 +28,16 @@
  * whose sticks report nothing -- the 8BitDo receiver, which folds an SN30's
  * sticks into the d-pad (WII-004) -- has no pointer: it is not faked.
  *
+ * A game core holds the bus itself, so there the driver reads the Classic
+ * through the core instead: TinyNES sends its Wii controller 1's format-3
+ * report every 20 ms (FPGA_RESP_WII), and while those keep coming the same
+ * decode and key map drive the desktop over the game.  Home is left out of
+ * that sample, because the core already reports a tap of Home as LB in its
+ * pad word, which is what shows and hides the desktop there, and Home held
+ * with another button is the game's chord.  The desk layer takes only LB
+ * from the pad word meanwhile (tang_wiipad_core_live), so the d-pad is not
+ * also the old pad-word pointer.
+ *
  * The mapping is a pure function of the six bytes, so the host test can drive
  * it with recorded samples (tools/tests/tb_wiipad.c); the four hooks at the
  * end are the hardware, supplied by tang_i2c.cpp on the board.
@@ -69,6 +79,10 @@ extern "C" {
  * two sticks in WII-003.  This many counts from the center is full
  * deflection on the standard scale (tang_pad_stick.h). */
 #define TANG_WIIPAD_FULL_8 98
+
+/* A core's report counts as live for this long after the last new one; the
+ * core sends one every 20 ms. */
+#define TANG_WIIPAD_CORE_MS 150u
 
 /* While a stick drives the wheel, one detent per this many milliseconds. */
 #define TANG_WIIPAD_WHEEL_MS TANG_STICK_WHEEL_MS
@@ -155,6 +169,10 @@ typedef struct {
     uint32_t next_try_ms;  /* when to retry a failed wake-up or read */
     uint32_t next_wheel_ms;
     uint32_t next_id_ms;   /* when to re-read the identity */
+    bool     core;         /* reading the loaded core's report, not the bus */
+    bool     core_seen;    /* core_seq and core_ms hold a report */
+    uint32_t core_seq;     /* the last core report's count (fpga_frames_wii) */
+    uint32_t core_ms;      /* when it arrived */
 } tang_wiipad_t;
 
 /* Forget everything but the centers: the next poll wakes the part again. */
@@ -166,6 +184,11 @@ void tang_wiipad_reset(void);
  * receives the bytes the key map produced and Home's screen-switch request.
  * Returns true when a report was read. */
 bool tang_wiipad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k);
+
+/* True while the Classic is being read through the loaded core's reports
+ * rather than the bus: the desk layer then takes only LB from the core's pad
+ * word, because the d-pad and the buttons already reach the desktop here. */
+bool tang_wiipad_core_live(void);
 
 /* How many times X has been pressed since boot.  X types Escape like the
  * keyboard's key, so an app that gives X a meaning of its own -- TinyReader's
@@ -197,6 +220,9 @@ bool tang_wiipad_hw_ready(void);
 bool tang_wiipad_hw_read(uint8_t reg, uint8_t *buf, unsigned n);
 bool tang_wiipad_hw_write(uint8_t reg, const uint8_t *buf, unsigned n);
 uint32_t tang_wiipad_hw_ms(void);
+/* The loaded core's newest Classic report (FPGA_RESP_WII: report bytes 0 to
+ * 3, 6 and 7) and its count since boot; false when there is none to read. */
+bool tang_wiipad_hw_core_report(uint8_t r[6], uint32_t *seq);
 
 #ifdef __cplusplus
 }

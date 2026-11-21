@@ -157,6 +157,9 @@ bool tang_ble_mouse(tang_mouse_t *out)
 static tang_mouse_t g_wiipad;
 static bool         g_wiipad_live;
 static bool         g_wiipad_console;   /* the mode the last poll was asked for */
+static bool         g_wiipad_core;      /* read through the core's reports */
+
+bool tang_wiipad_core_live(void) { return g_wiipad_core; }
 
 void tang_wiipad_reset(void)
 {
@@ -600,6 +603,27 @@ int main(void)
     g_joy = TANG_PAD_LB;
     desk_poll();
     check(g_osd_set_calls == 1, "L did not switch while the desktop was hidden");
+
+    /* ---- a Classic the core reports in full is not the pad-word pointer ---
+     * Its d-pad and buttons reach the desktop through the Wii key map, so of
+     * the core's pad word only the tap of Home, LB, is taken. */
+    g_joy = 0;
+    desk_poll();
+    g_osd_last = true;
+    g_wiipad_core = true;
+    g_joy = TANG_PAD_RIGHT | TANG_PAD_A;
+    while (tang_osd_desk_read_byte() >= 0) { }
+    desk_poll();
+    check(tang_osd_desk_read_byte() < 0,
+          "the core's d-pad moved the pad-word pointer beside the Wii key map");
+    g_osd_set_calls = 0;
+    g_joy = TANG_PAD_LB;
+    desk_poll();
+    check(g_osd_set_calls == 1, "the core's tap of Home did not switch");
+    g_joy = 0;
+    desk_poll();
+    g_wiipad_core = false;
+    g_osd_last = false;
 
     /* ---- a reprogrammed core takes the layer with it ---------------------
      * tangload wipes the FPGA: the enable goes back to 0 and the cell store

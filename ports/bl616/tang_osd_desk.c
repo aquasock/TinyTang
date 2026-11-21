@@ -581,6 +581,13 @@ void tang_osd_desk_core_reloaded(void)
 static void desk_joypad(uint16_t *joy1, uint16_t *joy2)
 {
     tang_fpga_joypad(joy1, joy2);
+    /* A Classic the core reports in full reaches the desktop through the Wii
+     * key map (tang_wiipad.c), as the pad on the bus does: of the pad word
+     * only the core's tap of Home is wanted, or the d-pad would move the old
+     * pad-word pointer as well as typing arrows. */
+    if (tang_wiipad_core_live()) {
+        *joy1 &= TANG_PAD_LB;
+    }
     *joy1 |= (uint16_t)((tang_btpad_pad_word(0) | tang_btpad_pad_word(1)) & TANG_PAD_LB);
 }
 

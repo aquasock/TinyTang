@@ -2280,3 +2280,45 @@ TinySNES should take the 8BitDo with no core change, since it already merges 0x0
 - User Test: PASS
 
 ---
+
+## 67 COMMIT Unreleased 2026-11-21T11:58:35-07:00
+
+#### Coming From:
+
+Unreleased 606b98c
+
+#### Purpose:
+
+Make the wired Wii Classic Controller drive TinyDesk over a running TinyNES game with the same map as the 8BitDo Bluetooth pad.
+
+#### Outcome:
+
+The operator found that over TinyNES the wired Classic on the Adafruit adapter did not drive TinyDesk the way the 8BitDo does. The cause was read from the code: `tang_wiipad.c` reads the Classic only through the desktop core's I2C engine, which a game core replaces, so over TinyNES the driver was off and the desktop saw nothing but TinyNES's 0x03 pad word, whose d-pad moved the old pad-word pointer and whose B and Y clicked, with no sticks and none of the keys. TinyNES already reads the whole format-3 report in its fabric, so the operator approved having it send that report up the link; the fabric half is TinyNES's entry 58, which sends report bytes 0 to 3, 6 and 7 as response 0x21 every 20 ms while a Classic is present in link mode. Here, `fpga_frames.c` keeps the newest 0x21 report with a count that only goes up and never queues it, so fifty a second cannot crowd out a reply, and drops one of the wrong length; `tang_fpga_uart.c` hands it out as `tang_fpga_wii_report()`, and `tang_i2c.cpp` gives it to the driver as the hook `tang_wiipad_hw_core_report()` only while the link is the desk layer's. When the loaded core has no I2C bus, `tang_wiipad_poll()` now runs `core_poll()`, which decodes the report as a format-3 Classic and applies the same key map and sticks as on the bus while a new report has come within `TANG_WIIPAD_CORE_MS` (150 ms), adopts the part afresh after a gap so a held button is not a press and the centers are learned again, and leaves Home out because TinyNES already reports a tap of Home as LB, so HOME with SELECT, L or R stays the game's chord; `tang_osd_desk.c`'s `desk_joypad()` takes only LB from the pad word while that is live (`tang_wiipad_core_live()`), so the d-pad is not also the pad-word pointer, and `wiipad status` says when the part is read through the core. WII-003 carries a dated revision and a routing row, and `README.md` no longer says the Wii parts do nothing under another core. On the host, `test_wiipad.sh` has 153 checks with a new section for the core's reports, `test_frames.sh` 40, `test_osd_desk.sh` 151, `tb_tang_i2c.cpp` gained a stand-in for the new accessor after the first gate run failed to link without it, ten mutations were all caught, `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped, and `tools/build_both.sh` passes with images of 1,062,976 and 807,920 bytes. Firmware `606b98c-dirty.1f2522c` (image SHA-256 `8dcec33463d24ecabe2bfe70846d30a81629733a74956395acc36d07a84934a8`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` and started with the relay sequence, `platform` confirmed it, and `wiipad status` on the desktop core read the Classic on the bus as before; TinyNES's new core was then deployed and loaded. The operator asked for this handoff before testing, so the wired Classic over a running TinyNES game has not been tried. `third_party/tinydesk` carries uncommitted changes that are not this cycle's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, a dated revision to WII-003 with its fast-lookup line and one new routing row, the six YAML blocks parse, and this entry was validated as number 67 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The board already runs this firmware with TinyNES's new core on the card, so the next step is the operator's test: start a game from the TinyNES Library, tap Home on the wired Classic to bring up TinyDesk, and check that the left stick is the pointer, the right stick the wheel, A and B the buttons, X, Y, plus and minus Escape, Tab, Enter and F10, the d-pad the arrows without also moving the pointer, that a Home tap swaps back, that HOME with SELECT, L or R still quits, saves and loads, and that play is unchanged; `wiipad status` should then say the part is read through the core's reports. If it fails, `wiipad status` and `wiipad raw` over the running game are the first data to take. TinySNES and TinyGBC could send the same 0x21 report in cycles of their own. Entry 66's items stand: a TinySNES game with the 8BitDo, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/fpga_frames.c
+- ports/bl616/fpga_frames.h
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_i2c.cpp
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_wiipad.c
+- ports/bl616/tang_wiipad.h
+- tools/tests/tb_frames.c
+- tools/tests/tb_osd_desk.c
+- tools/tests/tb_tang_i2c.cpp
+- tools/tests/tb_wiipad.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: NOT RUN
+
+---

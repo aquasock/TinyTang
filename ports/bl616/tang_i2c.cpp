@@ -729,6 +729,13 @@ extern "C" uint32_t tang_wiipad_hw_ms(void)
     return (uint32_t)bflb_mtimer_get_time_ms();
 }
 
+extern "C" bool tang_wiipad_hw_core_report(uint8_t r[6], uint32_t *seq)
+{
+    // Only while the link is the desk layer's: a host's pipe owns it then.
+    return tang_fpga_link_open() == 0 && !tang_fpga_pipe_open() &&
+           tang_fpga_wii_report(r, seq);
+}
+
 extern "C" void tang_i2c_mux_for_game_core(void)
 {
     // A core that drives H13/G13 itself (any game core) cannot select a
