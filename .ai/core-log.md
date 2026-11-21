@@ -2352,3 +2352,33 @@ None.
 - User Test: PASS
 
 ---
+
+## 69 COMMIT Unreleased 2026-11-21T15:20:48-07:00
+
+#### Coming From:
+
+Unreleased 836893b
+
+#### Purpose:
+
+Make the TinyNES window's Input tab less wide by narrowing its button mapping list and moving its actions beside it.
+
+#### Outcome:
+
+The operator asked for the mapping list at about half its 34 columns with Change, Restore defaults and Save to its right. `td_list` draws a row from its second column and ends an overlong one with an ellipsis, so exactly half, 17, would have cut the unsaved marker off the widest row, `select   select *`; with the operator's leave to judge the layout, `ports/bl616/tinynes_app.cpp` now gives the list 18 columns (`INPUT_LIST_W`) with its row text unchanged and stands the three actions in a column at `INPUT_ACTION_X`, 21, on rows 4, 6 and 8 as the Video page does, where "Restore defaults" ends at column 40 of the window's 52, and the hint moved up to row 13 where the button row was. `tools/build_both.sh` passes with images of 1,062,976 and 807,920 bytes and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped; no host test covers this layout. Firmware `836893b-dirty.9b571fa` (image SHA-256 `df877962dd03d321ce7a2f1843c17ce75e68e93aa1e7cc6c4a09c759eb45ec56`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` and started with the relay sequence, and `platform` confirmed it. The operator looked at the tab and passed it. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 69 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator asked next to move the Player button into the Input tab's action column, remove the Change button since a row is stepped by double-clicking it or pressing Enter, and remove the greyed scrollbar seen on that tab, which is the Library list's scrollbar left visible on every tab because it was never added to the Library page. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

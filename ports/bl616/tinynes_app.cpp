@@ -77,6 +77,10 @@ constexpr char DESKTOP_REAL[] = "/sd/root/cores/console138k/tinytang.bin";
 constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
+/* The Input page: the mapping list's width, and the column its actions stand
+ * in, two clear of the list's right edge. */
+constexpr int INPUT_LIST_W = 18;
+constexpr int INPUT_ACTION_X = 1 + INPUT_LIST_W + 2;
 
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 5;
@@ -1153,18 +1157,20 @@ void launch(void)
     /* Input: whose mapping is shown, the eight rows, and the actions. */
     s_player_button = td_button(s_win, 1, 2, "Player 1", on_player, nullptr);
     page_add(1, s_player_button);
-    s_list = td_list(s_win, td_rect(1, 4, 34, TANG_NES_BUTTONS), input_item,
-                     on_row, nullptr);
+    /* 18 columns: a row is drawn from the list's second column, so this holds
+     * the widest, "select   select *", 17, without the edge's ellipsis. */
+    s_list = td_list(s_win, td_rect(1, 4, INPUT_LIST_W, TANG_NES_BUTTONS),
+                     input_item, on_row, nullptr);
     if (s_list != nullptr) {
         td_list_set_count(s_list, TANG_NES_BUTTONS);
     }
     page_add(1, s_list);
-    /* The actions sit in a row under the list, because beside it they ran
-     * past the 48 columns of the fixed window. */
-    page_add(1, td_button(s_win, 1, 13, "Change", on_row, nullptr));
-    page_add(1, td_button(s_win, 13, 13, "Restore defaults", on_restore, nullptr));
-    page_add(1, td_button(s_win, 35, 13, "Save", on_save, nullptr));
-    page_add(1, td_label(s_win, 1, 14, 0, "Change steps the selected row."));
+    /* The actions stand in a column beside the list, as the Video page's do;
+     * "Restore defaults" is the widest at 20 and ends at column 40 of 52. */
+    page_add(1, td_button(s_win, INPUT_ACTION_X, 4, "Change", on_row, nullptr));
+    page_add(1, td_button(s_win, INPUT_ACTION_X, 6, "Restore defaults", on_restore, nullptr));
+    page_add(1, td_button(s_win, INPUT_ACTION_X, 8, "Save", on_save, nullptr));
+    page_add(1, td_label(s_win, 1, 13, 0, "Change steps the selected row."));
 
     /* Video: two rows, the pixel aspect and the palette, and the Save that
      * writes them.  Scale, scanlines and overscan were dropped, so the page
