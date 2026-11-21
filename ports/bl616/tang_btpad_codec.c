@@ -84,7 +84,8 @@ bool tang_btpad_switch_decode(const uint8_t *rep, size_t len, tang_btpad_input_t
     return true;
 }
 
-uint16_t tang_btpad_word(const tang_btpad_input_t *in)
+/* The directions: the hat, or the left stick past the dead zone. */
+static uint16_t directions(const tang_btpad_input_t *in)
 {
     uint16_t w = 0;
     /* The hat: 0 up, 1 up-right, 2 right ... 7 up-left; 8 and above centred. */
@@ -108,16 +109,61 @@ uint16_t tang_btpad_word(const tang_btpad_input_t *in)
     } else if (y >= TANG_BTPAD_STICK_DEADZONE) {
         w |= TANG_PAD_DOWN;
     }
+    return w;
+}
+
+uint16_t tang_btpad_word(const tang_btpad_input_t *in)
+{
+    uint16_t w = directions(in);
     if (in->buttons & TANG_BTPAD_SW_A) {
         w |= TANG_PAD_A;
     }
     if (in->buttons & TANG_BTPAD_SW_B) {
         w |= TANG_PAD_B;
     }
-    if (in->buttons & TANG_BTPAD_SW_HOME) {
-        w |= TANG_PAD_LB;            /* L is the game's, not the desktop's */
+    return w;
+}
+
+uint16_t tang_btpad_core_bits(const tang_btpad_input_t *in)
+{
+    static const struct { uint16_t sw, pad; } map[] = {
+        { TANG_BTPAD_SW_A, TANG_PAD_A },           { TANG_BTPAD_SW_B, TANG_PAD_B },
+        { TANG_BTPAD_SW_X, TANG_PAD_X },           { TANG_BTPAD_SW_Y, TANG_PAD_Y },
+        { TANG_BTPAD_SW_L, TANG_PAD_LB },          { TANG_BTPAD_SW_R, TANG_PAD_RB },
+        { TANG_BTPAD_SW_MINUS, TANG_PAD_SELECT },  { TANG_BTPAD_SW_PLUS, TANG_PAD_START },
+        { TANG_BTPAD_SW_HOME, TANG_PAD_HOME },
+    };
+    uint16_t w = directions(in);
+    for (size_t i = 0; i < sizeof map / sizeof map[0]; i++) {
+        if (in->buttons & map[i].sw) {
+            w |= map[i].pad;
+        }
     }
     return w;
+}
+
+void tang_btpad_tap_report(tang_btpad_tap_t *t, uint16_t buttons, uint32_t now_ms)
+{
+    const bool home = (buttons & TANG_BTPAD_SW_HOME) != 0;
+    const bool others = (buttons & (uint16_t)~TANG_BTPAD_SW_HOME) != 0;
+    if (home && !t->down) {
+        t->alone = !others;
+    } else if (others) {
+        t->alone = false;
+    }
+    if (!home && t->down && t->alone) {
+        t->tapped = true;
+        t->until_ms = now_ms + TANG_BTPAD_TAP_MS;
+    }
+    t->down = home;
+}
+
+bool tang_btpad_tap_on(tang_btpad_tap_t *t, uint32_t now_ms)
+{
+    if (t->tapped && (int32_t)(t->until_ms - now_ms) <= 0) {
+        t->tapped = false;
+    }
+    return t->tapped;
 }
 
 void tang_btpad_wii_sample(const tang_btpad_input_t *in, tang_wii_sample_t *s)

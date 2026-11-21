@@ -114,12 +114,39 @@ bool tang_btpad_switch_decode(const uint8_t *rep, size_t len, tang_btpad_input_t
 #define TANG_BTPAD_STICK_DEADZONE TANG_STICK_WHEEL_DZ
 
 /* The pad word (tang_pad.h) for a decoded report: the D-pad or the left
- * stick are the directions, A and B are A and B, and home is LB, which shows
- * and hides the desktop -- home only, as TinySNES reports a home tap, so L
- * stays a game's button.  The desk layer takes only LB from it (the rest is
- * for the cores, later); the desktop's keys and pointer come from the two
- * functions below. */
+ * stick are the directions, A and B are A and B.  Home is not in it: LB, the
+ * desk layer's show and hide, is a tap of home (tang_btpad_tap_*), joined by
+ * tang_btpad_pad_word().  The desktop's keys and pointer come from the
+ * functions below, and the game's word from tang_btpad_core_bits(). */
 uint16_t tang_btpad_word(const tang_btpad_input_t *in);
+
+/* The word the core is given for this pad (FPGA_CMD_JOYSTICK): the pad word's
+ * directions, A, B, X, Y, L as LB, R as RB, minus as SELECT, plus as START
+ * and home as HOME (tang_pad.h), by position, so the SNES-labelled pad's
+ * buttons are the SNES pad's.  ZL, ZR, the stick clicks and capture are not
+ * in it. */
+uint16_t tang_btpad_core_bits(const tang_btpad_input_t *in);
+
+/* A tap of home: pressed and released with no other button pressed in
+ * between, the rule TinyNES's desk_link.sv applies to the wired pad, so home
+ * held with another button is a game's chord (minus quits, L saves, R
+ * loads) and does not also show the desktop.  The tap is reported as LB for
+ * TANG_BTPAD_TAP_MS after the release, long enough for the desk layer's
+ * 40 ms poll to see its edge. */
+#define TANG_BTPAD_TAP_MS 260u
+
+typedef struct {
+    bool     down;        /* home is held */
+    bool     alone;       /* and nothing else has been pressed since */
+    bool     tapped;      /* a tap is being reported */
+    uint32_t until_ms;    /* until then */
+} tang_btpad_tap_t;
+
+/* One report's buttons (tang_btpad_input_t.buttons) at `now_ms`. */
+void tang_btpad_tap_report(tang_btpad_tap_t *t, uint16_t buttons, uint32_t now_ms);
+
+/* Whether a tap is being reported at `now_ms`. */
+bool tang_btpad_tap_on(tang_btpad_tap_t *t, uint32_t now_ms);
 
 /* The report as the wired Wii Classic Controller's sample, so a Bluetooth pad
  * drives the console and the desktop through the same key map

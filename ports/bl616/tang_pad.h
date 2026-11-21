@@ -41,6 +41,18 @@
 #define TANG_PAD_B     0x001u
 #define TANG_PAD_LB    0x400u
 
+/* The rest of the word, for a pad the BL616 sends to the core (command 0x09,
+ * FPGA_CMD_JOYSTICK): the SNES order the core's own pads use, bit 0 B to bit
+ * 11 R -- (R L X A RT LT DN UP START SELECT Y B) in iosys_bl616.v's naming,
+ * RT and LT being right and left -- and HOME in bit 12, past the SNES pad's
+ * twelve bits, so a core that keeps only those never sees it.  L is LB. */
+#define TANG_PAD_Y      0x002u
+#define TANG_PAD_SELECT 0x004u
+#define TANG_PAD_START  0x008u
+#define TANG_PAD_X      0x200u
+#define TANG_PAD_RB     0x800u
+#define TANG_PAD_HOME   0x1000u
+
 /* A mouse, as the pointer sees it: movement, wheel and presses gathered
  * since the last step, and the buttons as they are now.  HID boot mouse
  * buttons: bit 0 left, bit 1 right, bit 2 middle. */

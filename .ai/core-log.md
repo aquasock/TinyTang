@@ -2240,3 +2240,43 @@ None.
 - User Test: PASS
 
 ---
+
+## 66 COMMIT Unreleased 2026-11-21T11:10:19-07:00
+
+#### Coming From:
+
+Unreleased e674376
+
+#### Purpose:
+
+Carry the Classic Bluetooth pads' buttons to the game core, so the 8BitDo plays TinyNES as the wired Classic Controller does, which is Phase 4 of the Bluetooth input plan.
+
+#### Outcome:
+
+The operator ran TinyNES with the wired Classic on the Adafruit adapter and the 8BitDo over Bluetooth and found only home working on the 8BitDo, which is what BLE-023 recorded: the BL616 kept each pad's word, the desk layer took only LB from it, and nothing carried the rest to a core, while TinyNES reads its wired pads in its own fabric and its `desk_link.sv` skipped every frame type but 0x01, 0x08 and 0x13 to 0x15. PROT-002 already defines 0x09 for this, two big-endian 16-bit words, and TinySNES's `iosys_bl616.v` already ORs them into its SNES pads, while the desktop core leaves them unconnected and TinyPhosphor only shows them in a debug register, so the frame is sent to whatever core is loaded. `tang_btpad_core_bits()` in `ports/bl616/tang_btpad_codec.c` puts every button by position into `tang_pad.h`'s SNES order, which gained Y, SELECT, START, X, RB and HOME in bit 12 past the SNES pad's twelve bits; `tang_btpad.c` keeps the word per pad, clears it when the interrupt channel goes and reports it through `tang_btpad_core_word()`, and `btpad status` prints it as `core`. Home now shows and hides the desktop only as a tap, pressed and released with no other button between, reported as LB for 260 ms, the rule TinyNES's fabric applies to the wired pad, so HOME with SELECT, L or R is the game's chord and the toggle comes on release rather than on press. `joystick_frame()` in `ports/bl616/tang_osd_desk.c` sends `FPGA_CMD_JOYSTICK` from both desk polls every 40 ms while a button is held and once when all are released, zeros while the overlay is shown, nothing through a host's pipe, and remembers a word only once its frame is on the link, so a refused lock or frame cannot lose a release. The operator chose that Pad 1 is player 1 and Pad 2 player 2, each merged with the wired pad of that player, and the TinyNES half is that repository's entry 57: the frame is held in a new PADS register for 250 ms past the last frame and the player merges it into `read_pad()`. On the host, `test_btpad.sh` has 119 checks, `test_btpad_host.sh` 104 and `test_osd_desk.sh` 149, ten mutations were all caught after three that were first missed (a release remembered before its frame was sent, a stale word kept across a reconnection, and a tap ending before a clock wrap) gained tests, `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped, and `tools/build_both.sh` passes with images of 1,058,864 and 807,888 bytes. Firmware `e674376-dirty.d7be480` (image SHA-256 `004b6a02b2550a336aa89924ed1e018679cb18832c39732a9f2748319d2d1d2b`) was installed with `tools/tinytang_flash.py --yes` and started with the relay sequence, and `platform` and `btpad status` confirmed it; the first attempt was refused without sending, because `/dev/ttyACM0` was an ESP32-S3's USB-JTAG unit being flashed by esptool and the Tang was `/dev/ttyACM1`, so one status probe went to the ESP32 and the install used `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00`. The operator reported everything on the 8BitDo working in TinyNES. `README.md` says a Bluetooth pad plays TinyNES. `third_party/tinydesk` carries uncommitted changes that are not this cycle's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, dated revisions to BLE-023 and PROT-002 with their fast-lookup rows and one new routing row, the six YAML blocks parse, and this entry was validated as number 66 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinySNES should take the 8BitDo with no core change, since it already merges 0x09, but no SNES game has been played with it, so that is the next cheap check; TinyGBC, TinyGBA and Tiny89 skip the frame and each needs its own receiver as a cycle of its own. The 8BitDo through the NES/SNES receiver on the Adafruit adapter is still the operator's to test. The open items are entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- README.md
+- ports/bl616/tang_btpad.c
+- ports/bl616/tang_btpad.h
+- ports/bl616/tang_btpad_codec.c
+- ports/bl616/tang_btpad_codec.h
+- ports/bl616/tang_fpga_link.h
+- ports/bl616/tang_osd_desk.c
+- ports/bl616/tang_pad.h
+- tools/tests/tb_btpad.c
+- tools/tests/tb_btpad_host.c
+- tools/tests/tb_osd_desk.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

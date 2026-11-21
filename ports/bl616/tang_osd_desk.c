@@ -633,6 +633,37 @@ static void pointer_frame(const tang_mouse_t *mouse)
     tang_fpga_unlock();
 }
 
+/* Hand the Bluetooth pads to the game, as the joystick frame (0x09): the
+ * wired pads reach a core through its own fabric, but these end here.  While
+ * the desktop is shown the pads are the desktop's, so the game is given
+ * nothing then -- a release, if something was held.  A frame goes every poll
+ * while a button is held, so a core can let a word go when the frames stop
+ * (the link was taken, or this task stalled), and once more when all are
+ * released; with nothing held nothing is sent.  The words are remembered only
+ * once a frame is on the link, as for the keyboard below, so a poll whose lock
+ * was refused cannot lose a release. */
+static void joystick_frame(bool shown)
+{
+    static uint16_t last1, last2;
+    const uint16_t hid1 = shown ? 0u : tang_btpad_core_word(0);
+    const uint16_t hid2 = shown ? 0u : tang_btpad_core_word(1);
+
+    if (hid1 == 0 && hid2 == 0 && last1 == 0 && last2 == 0) {
+        return;
+    }
+    if (!desk_lock()) {
+        return;
+    }
+    const uint8_t payload[4] = {
+        (uint8_t)(hid1 >> 8), (uint8_t)hid1, (uint8_t)(hid2 >> 8), (uint8_t)hid2,
+    };
+    if (tang_fpga_frame(FPGA_CMD_JOYSTICK, payload, sizeof payload) == 0) {
+        last1 = hid1;
+        last2 = hid2;
+    }
+    tang_fpga_unlock();
+}
+
 /* The mouse at the shell prompt, where there is no pointer to move.
  *
  * The line editor already knows the two things this hardware can drive: Up
@@ -763,6 +794,7 @@ static void desk_poll(void)
     /* A Classic Bluetooth pad, with the same key map. */
     tang_btpad_poll(&mouse, !s_pointer, &padkeys);
     pointer_frame(&mouse);
+    joystick_frame(tang_osd_shown());
     if (padkeys.n > 0) {
         desk_in_push(padkeys.keys, (size_t)padkeys.n);
     }
@@ -883,6 +915,7 @@ static void desk_poll_hidden(void)
     (void)tang_wiipad_poll(&mouse, false, NULL);
     tang_btpad_poll(&mouse, false, NULL);
     pointer_frame(&mouse);
+    joystick_frame(tang_osd_shown());
 
     /* After the pointer, so a keystroke and a pointer move arriving in the
      * same poll keep the order they happened in, as in desk_poll(). */

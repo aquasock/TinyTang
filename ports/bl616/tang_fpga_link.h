@@ -35,6 +35,15 @@
 #define FPGA_CMD_OSD_TEXT   0x05u   /* characters, from the cursor   */
 #define FPGA_CMD_OVERLAY    0x08u   /* one byte; bit 0 shows/hides   */
 
+/* The pads the BL616 holds, for the game: hid1[15:0] then hid2[15:0], each
+ * big-endian, in the SNES order of tang_pad.h's word with HOME in bit 12
+ * (PROT-002's 0x09, "send USB joystick state").  TinySNES ORs each into its
+ * joypad; TinyNES merges them with its wired pads; a core that does not take
+ * them skips the frame by its length.  Sent every poll while a button is held
+ * and once more when all are released, so a core may let a word go after a
+ * while without a frame. */
+#define FPGA_CMD_JOYSTICK   0x09u   /* hid1, hid2; big-endian words  */
+
 /* Desktop layer: 80 columns by 45 rows, per-cell colour.  Additive -- a core
  * that does not implement these ignores the frame types, which is what keeps
  * nand2mario's other cores and every stock host working.  The layer is shown

@@ -41,7 +41,7 @@ int main(void)
     memcpy(r, rest, 13); r[2] = 0x01;                       /* B */
     check(word_of(r, 13, &ok) == TANG_PAD_B, "B is not TANG_PAD_B");
     memcpy(r, rest, 13); r[3] = 0x10;                       /* home */
-    check(word_of(r, 13, &ok) == TANG_PAD_LB, "home is not LB");
+    check(word_of(r, 13, &ok) == 0, "home held is in the word: only its tap is LB");
     memcpy(r, rest, 13); r[2] = 0x04 | 0x08 | 0x10 | 0x20 | 0x40 | 0x80;   /* Y X L R ZL ZR */
     r[3] = 0x01 | 0x02 | 0x04 | 0x08 | 0x20;                /* minus plus clicks capture */
     check(word_of(r, 13, &ok) == 0, "a button the desktop does not use set a bit");
@@ -73,6 +73,82 @@ int main(void)
     check(word_of(r, 13, &ok) == TANG_PAD_UP, "a stick pushed up is not UP");
     memcpy(r, rest, 13); r[5] = 0x00; r[6] = 0x00;          /* X 0x0000: left */
     check(word_of(r, 13, &ok) == TANG_PAD_LEFT, "a stick pushed left is not LEFT");
+
+    /* The game's word: every button by position into the SNES order, with
+     * home in bit 12 as a level; ZL, ZR, the clicks and capture in nothing. */
+    {
+        static const struct { uint8_t b1, b2; uint16_t want; } m[] = {
+            { 0x02, 0, TANG_PAD_A }, { 0x01, 0, TANG_PAD_B },
+            { 0x08, 0, TANG_PAD_X }, { 0x04, 0, TANG_PAD_Y },
+            { 0x10, 0, TANG_PAD_LB }, { 0x20, 0, TANG_PAD_RB },
+            { 0x40, 0, 0 }, { 0x80, 0, 0 },
+            { 0, 0x01, TANG_PAD_SELECT }, { 0, 0x02, TANG_PAD_START },
+            { 0, 0x04, 0 }, { 0, 0x08, 0 }, { 0, 0x10, TANG_PAD_HOME }, { 0, 0x20, 0 },
+        };
+        for (size_t i = 0; i < sizeof m / sizeof m[0]; i++) {
+            tang_btpad_input_t in;
+            memcpy(r, rest, 13); r[2] = m[i].b1; r[3] = m[i].b2;
+            tang_btpad_switch_decode(r, 13, &in);
+            char what[64];
+            snprintf(what, sizeof what, "buttons %02x %02x are not core bits %04x",
+                     m[i].b1, m[i].b2, (unsigned)m[i].want);
+            check(tang_btpad_core_bits(&in) == m[i].want, what);
+        }
+        tang_btpad_input_t in;
+        tang_btpad_switch_decode(pushed, 13, &in);
+        check(tang_btpad_core_bits(&in) == (TANG_PAD_RIGHT | TANG_PAD_DOWN | TANG_PAD_RB),
+              "the stick and R are not right+down+RB in the core word");
+        memcpy(r, rest, 13); r[4] = 7;                       /* hat up-left */
+        tang_btpad_switch_decode(r, 13, &in);
+        check(tang_btpad_core_bits(&in) == (TANG_PAD_UP | TANG_PAD_LEFT),
+              "a diagonal is not two directions in the core word");
+        tang_btpad_switch_decode(rest, 13, &in);
+        check(tang_btpad_core_bits(&in) == 0, "a pad at rest has a core word");
+    }
+
+    /* Home's tap: pressed and released alone is LB for TANG_BTPAD_TAP_MS;
+     * with another button pressed in between it is a chord, never LB. */
+    {
+        const uint16_t H = TANG_BTPAD_SW_HOME;
+        tang_btpad_tap_t t;
+        memset(&t, 0, sizeof t);
+        tang_btpad_tap_report(&t, H, 100);
+        check(!tang_btpad_tap_on(&t, 100), "home pressed is already a tap");
+        tang_btpad_tap_report(&t, 0, 180);
+        check(tang_btpad_tap_on(&t, 180), "home released alone is not a tap");
+        check(tang_btpad_tap_on(&t, 180 + TANG_BTPAD_TAP_MS - 1), "the tap ended early");
+        check(!tang_btpad_tap_on(&t, 180 + TANG_BTPAD_TAP_MS), "the tap did not end");
+        check(!tang_btpad_tap_on(&t, 180), "a tap came back after it ended");
+
+        /* Home with minus: the quit chord, in either order of release. */
+        memset(&t, 0, sizeof t);
+        tang_btpad_tap_report(&t, H, 0);
+        tang_btpad_tap_report(&t, H | TANG_BTPAD_SW_MINUS, 20);
+        tang_btpad_tap_report(&t, H, 40);
+        tang_btpad_tap_report(&t, 0, 60);
+        check(!tang_btpad_tap_on(&t, 60), "home with minus, minus let go first, was a tap");
+        memset(&t, 0, sizeof t);
+        tang_btpad_tap_report(&t, TANG_BTPAD_SW_L, 0);
+        tang_btpad_tap_report(&t, TANG_BTPAD_SW_L | H, 20);
+        tang_btpad_tap_report(&t, TANG_BTPAD_SW_L, 40);
+        tang_btpad_tap_report(&t, 0, 60);
+        check(!tang_btpad_tap_on(&t, 60), "home pressed while L was held was a tap");
+
+        /* After a chord, a lone tap is a tap again. */
+        tang_btpad_tap_report(&t, H, 100);
+        tang_btpad_tap_report(&t, 0, 120);
+        check(tang_btpad_tap_on(&t, 120), "a tap after a chord was not a tap");
+
+        /* The same report repeated is not a release, and the clock wraps. */
+        memset(&t, 0, sizeof t);
+        tang_btpad_tap_report(&t, H, 0xFFFFFF00u);
+        tang_btpad_tap_report(&t, H, 0xFFFFFF10u);
+        check(!tang_btpad_tap_on(&t, 0xFFFFFF10u), "a repeated home report was a tap");
+        tang_btpad_tap_report(&t, 0, 0xFFFFFFF0u);
+        check(tang_btpad_tap_on(&t, 0xFFFFFFF8u), "a tap ending past the clock's wrap ended before it");
+        check(tang_btpad_tap_on(&t, 0x00000010u), "a tap across the clock's wrap ended early");
+        check(!tang_btpad_tap_on(&t, 0xFFFFFFF0u + TANG_BTPAD_TAP_MS), "a tap across the wrap did not end");
+    }
 
     /* Not a 0x3F report, or too short: refused. */
     check(!tang_btpad_switch_decode(rest, 12, &(tang_btpad_input_t){0}), "a short report decoded");

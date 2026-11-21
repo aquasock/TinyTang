@@ -41,6 +41,12 @@ uint16_t tang_btpad_pad_word(int pad)
     return 0;
 }
 
+uint16_t tang_btpad_core_word(int pad)
+{
+    (void)pad;
+    return 0;
+}
+
 void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
 {
     (void)m;
@@ -156,6 +162,8 @@ typedef struct {
     bool ctrl_asked, intr_asked;       /* opened by this host on this link */
     uint64_t linked_ms;
     volatile uint16_t word;
+    volatile uint16_t core;            /* the game's word (tang_btpad_core_bits) */
+    tang_btpad_tap_t tap;              /* home's tap, as LB; under the critical section */
     tang_btpad_input_t in;             /* the latest report, decoded */
     volatile bool have_in;
     tang_wiipad_t wii;                 /* the Wii Classic key map's state; desk task only */
@@ -261,10 +269,23 @@ static void key_capture(btpad_t *p);
 
 uint16_t tang_btpad_pad_word(int pad)
 {
+    if (pad < 0 || pad >= TANG_BTPAD_SLOTS || !s_pad[pad].intr_up) {
+        return 0;
+    }
+    btpad_t *p = &s_pad[pad];
+    const uint32_t now = (uint32_t)bflb_mtimer_get_time_ms();
+    taskENTER_CRITICAL();
+    const bool tap = tang_btpad_tap_on(&p->tap, now);
+    taskEXIT_CRITICAL();
+    return (uint16_t)(p->word | (tap ? TANG_PAD_LB : 0u));
+}
+
+uint16_t tang_btpad_core_word(int pad)
+{
     if (pad < 0 || pad >= TANG_BTPAD_SLOTS) {
         return 0;
     }
-    return s_pad[pad].intr_up ? s_pad[pad].word : 0;
+    return s_pad[pad].intr_up ? s_pad[pad].core : 0;
 }
 
 /* The controls as the desktop's input (tang_btpad.h).  A report seen for the
@@ -344,6 +365,10 @@ static void chan_disconnected(struct bt_l2cap_chan *chan)
         p->intr_up = false;
         p->have_in = false;
         p->word = 0;                  /* nothing stays held */
+        p->core = 0;
+        taskENTER_CRITICAL();
+        memset(&p->tap, 0, sizeof p->tap);
+        taskEXIT_CRITICAL();
     } else {
         p->ctrl_up = false;
     }
@@ -371,8 +396,10 @@ static int chan_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
         taskENTER_CRITICAL();
         p->in = in;
         p->have_in = true;
+        tang_btpad_tap_report(&p->tap, in.buttons, (uint32_t)bflb_mtimer_get_time_ms());
         taskEXIT_CRITICAL();
         p->word = tang_btpad_word(&in);
+        p->core = tang_btpad_core_bits(&in);
     }
     return 0;
 }
@@ -1608,9 +1635,10 @@ static void cmd_status(void)
          * a Switch pad opens its own channels and a Wii pad does not. */
         const char *kind = !p->saved.valid ? "-" :
                            p->saved.kind == TANG_BTPAD_KIND_WII ? "wii" : "switch";
-        tdsh_printf("  pad %d: %s %s, %s, %s, %lu report(s), word 0x%03x\r\n", i + 1, t,
-                    p->saved.name[0] ? p->saved.name : "(no name)", kind, state,
-                    (unsigned long)p->reports, (unsigned)tang_btpad_pad_word(i));
+        tdsh_printf("  pad %d: %s %s, %s, %s, %lu report(s), word 0x%03x, core 0x%04x\r\n",
+                    i + 1, t, p->saved.name[0] ? p->saved.name : "(no name)", kind, state,
+                    (unsigned long)p->reports, (unsigned)tang_btpad_pad_word(i),
+                    (unsigned)tang_btpad_core_word(i));
     }
     unsigned seen = s_note_head > BTPAD_NOTES ? s_note_head - BTPAD_NOTES : 0;
     notes_print(&seen);

@@ -599,8 +599,21 @@ int main(void)
     tang_wii_keys_t keys = { 0 };
     tang_btpad_poll(&m, false, &keys);
     check(g_wii_calls == 1 && g_wii_last.left, "the poll did not give the key map A as the left button");
+    check(tang_btpad_core_word(0) == TANG_PAD_A, "A is not in pad 1's core word");
     report(0x00, 0x10, 0x08);
-    check(tang_btpad_pad_word(0) == TANG_PAD_LB, "home is not LB");
+    check(tang_btpad_pad_word(0) == 0, "home held is LB before it is let go");
+    check(tang_btpad_core_word(0) == TANG_PAD_HOME, "home held is not HOME in the core word");
+    g_now += 40;
+    report(0x00, 0x00, 0x08);
+    check(tang_btpad_pad_word(0) == TANG_PAD_LB, "a tap of home is not LB");
+    check(tang_btpad_core_word(0) == 0, "home let go stayed in the core word");
+    g_now += TANG_BTPAD_TAP_MS;
+    check(tang_btpad_pad_word(0) == 0, "the tap of home stayed LB");
+    report(0x00, 0x11, 0x08);          /* home and minus: the quit chord */
+    g_now += 40;
+    report(0x00, 0x00, 0x08);
+    check(tang_btpad_pad_word(0) == 0, "home with minus showed the desktop");
+    report(0x00, 0x10, 0x08);          /* held across the link going */
 
     /* ---- 2. the pad switches off: a link this host made ---------------- */
     struct bt_conn *c1 = s_pad[0].conn;
@@ -610,6 +623,8 @@ int main(void)
     check(c1->ref == 0, "a reference was leaked on an outbound link");
     check(s_pad[0].conn == NULL && !s_pad[0].linked, "the slot still holds the link");
     check(tang_btpad_pad_word(0) == 0, "a button stayed held after the link went");
+    check(tang_btpad_core_word(0) == 0, "the game kept a button after the link went");
+    check(!s_pad[0].tap.down, "home stayed down in the tap after the link went");
     tang_btpad_poll(&m, false, &keys);
     check(g_wii_calls == 1, "a pad that is gone was still polled");
 
@@ -623,6 +638,7 @@ int main(void)
     check(sdk_pad_opens(c2, 0x11) == 0 && sdk_pad_opens(c2, 0x13) == 0,
           "the servers refused the pad's channels");
     check(s_pad[0].intr_up, "the pad's channels did not make it report");
+    check(tang_btpad_core_word(0) == 0, "a button held when the last link went is held again");
     run_ms(4000);
     check(g_requests == 0, "the host opened a channel after the pad had");
     sdk_disconnect(c2, 0x08);

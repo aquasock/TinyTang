@@ -28,6 +28,7 @@ static uint8_t g_type[MAX_FRAMES];
 static uint8_t g_payload[MAX_FRAMES][MAX_PAYLOAD];
 static size_t  g_len[MAX_FRAMES];
 static int     g_frames;
+static bool    g_frame_fail;     /* the next frames are refused, as by a closing link */
 
 static void frames_clear(void)
 {
@@ -57,7 +58,7 @@ bool tang_fpga_lock_within(uint32_t ms)
 
 int tang_fpga_frame(uint8_t type, const uint8_t *payload, size_t length)
 {
-    if (g_frames >= MAX_FRAMES || length > MAX_PAYLOAD) {
+    if (g_frame_fail || g_frames >= MAX_FRAMES || length > MAX_PAYLOAD) {
         return -1;
     }
     g_type[g_frames] = type;
@@ -104,7 +105,12 @@ static uint16_t g_btpad_word;
 static int g_btpad_dx;
 static const char *g_btpad_keys = "";
 static int g_btpad_console = -1;      /* the mode the last poll was asked for */
+static uint16_t g_btpad_core[2];      /* the game's words (tang_btpad_core_word) */
 uint16_t tang_btpad_pad_word(int pad) { return pad == 0 ? g_btpad_word : 0; }
+uint16_t tang_btpad_core_word(int pad)
+{
+    return pad == 0 || pad == 1 ? g_btpad_core[pad] : 0;
+}
 void tang_btpad_poll(tang_mouse_t *m, bool console_mode, tang_wii_keys_t *k)
 {
     g_btpad_console = console_mode;
@@ -961,6 +967,112 @@ int main(void)
         g_mouse_live = false;
         memset(g_ble_rep, 0, sizeof g_ble_rep);
         g_mouse.dx = g_mouse.dy = g_mouse.wheel = 0;
+    }
+
+    /* ---- the Bluetooth pads reach the game as the joystick frame ----------
+     * The wired pads reach a core through its fabric; these end at the BL616,
+     * so without this frame only home ever reached TinyNES. */
+    {
+        int n = 0, at = -1;
+#define JOY_FRAMES()                                                    \
+        do {                                                            \
+            n = 0; at = -1;                                             \
+            for (int i = 0; i < g_frames; i++) {                        \
+                if (g_type[i] == 0x09) { n++; at = i; }                 \
+            }                                                           \
+        } while (0)
+
+        g_osd_last = false;                  /* the game has the screen */
+        g_btpad_core[0] = g_btpad_core[1] = 0;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 0, "a joystick frame went with nothing ever held");
+
+        g_btpad_core[0] = TANG_PAD_A | TANG_PAD_START;
+        g_btpad_core[1] = TANG_PAD_HOME | TANG_PAD_SELECT;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1, "a held button sent no joystick frame");
+        if (at >= 0) {
+            check(g_len[at] == 4, "the joystick frame is not four bytes");
+            check(g_payload[at][0] == 0x01 && g_payload[at][1] == 0x08 &&
+                  g_payload[at][2] == 0x10 && g_payload[at][3] == 0x04,
+                  "the joystick frame is not hid1 then hid2, big-endian");
+        }
+
+        /* Held: a frame every poll, so the core's hold never lapses. */
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1, "a held button was not resent on the next poll");
+
+        /* Released, with the lock busy: nothing goes, and the release is not
+         * forgotten -- the next poll sends it, once. */
+        g_btpad_core[0] = g_btpad_core[1] = 0;
+        g_lock_available = false;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 0, "a joystick frame went without the lock");
+        g_lock_available = true;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1 && at >= 0 && g_payload[at][0] == 0 && g_payload[at][1] == 0 &&
+              g_payload[at][2] == 0 && g_payload[at][3] == 0,
+              "a release refused the lock was never sent");
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 0, "the release was sent more than once");
+
+        /* Released, and the frame itself refused: the release is still owed. */
+        g_btpad_core[0] = TANG_PAD_Y;
+        desk_poll_hidden();
+        g_btpad_core[0] = 0;
+        g_frame_fail = true;
+        desk_poll_hidden();
+        g_frame_fail = false;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1 && at >= 0 && g_payload[at][1] == 0,
+              "a release whose frame was refused was never sent");
+
+        /* The desktop over the game: the pads are the desktop's, so the game
+         * is given a release and then nothing. */
+        g_btpad_core[0] = TANG_PAD_B;
+        frames_clear();
+        desk_poll_hidden();
+        g_osd_last = true;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1 && at >= 0 && g_payload[at][0] == 0 && g_payload[at][1] == 0,
+              "the game kept a button while the desktop was shown");
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 0, "a joystick frame went while the desktop was shown");
+
+        /* A host owns the link: nothing is the desk layer's to send. */
+        g_osd_last = false;
+        g_pipe = true;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 0, "a joystick frame went through a host's pipe");
+        g_pipe = false;
+        frames_clear();
+        desk_poll_hidden();
+        JOY_FRAMES();
+        check(n == 1, "the held button was not sent once the pipe closed");
+
+        g_btpad_core[0] = 0;
+        desk_poll_hidden();
+#undef JOY_FRAMES
     }
 
     /* ---- L on the pad brings the layer up from off, and only once ---------

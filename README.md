@@ -608,7 +608,10 @@ Library does that same work in-process, in a task of its own, through the same
 routines `tangload` and `ae350run` call.
 
 While a game runs, a tap of HOME on the controller, or F12, swaps between the
-game and TinyDesk; HOME and `-` held together end it.  The core and the player
+game and TinyDesk; HOME and `-` held together end it.  A Bluetooth pad plays
+too: the firmware sends every button of Pad 1 and Pad 2 to the core (frame
+0x09), and TinyNES takes them as players 1 and 2 beside the wired Classics,
+with the same chords.  The core and the player
 come from the TinyNES repository, whose `tools/deploy_tinytang.sh` puts them on
 the card.
 

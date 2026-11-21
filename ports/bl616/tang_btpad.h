@@ -18,9 +18,15 @@
 #include "tang_wiipad.h"    /* tang_wii_keys_t */
 
 /* The pad word (tang_pad.h) pad `pad` (0 or 1) is holding now: directions,
- * A, B and LB (home).  0 when the slot is empty, disconnected or idle.  The
- * desk layer takes LB from it, to show and hide the desktop. */
+ * A and B, and LB for a moment after a tap of home (tang_btpad_codec.h).  0
+ * when the slot is empty, disconnected or idle.  The desk layer takes LB from
+ * it, to show and hide the desktop. */
 uint16_t tang_btpad_pad_word(int pad);
+
+/* The word the game is given for pad `pad` (FPGA_CMD_JOYSTICK): the SNES
+ * order with HOME in bit 12 (tang_pad.h), home held as a level, so a core sees
+ * its chords.  0 when the slot is empty, disconnected or idle. */
+uint16_t tang_btpad_core_word(int pad);
 
 /* The connected pads' controls as the desktop's input, beside the wired Wii
  * pad's (tang_wiipad_poll): the same key map as the Wii Classic Controller
