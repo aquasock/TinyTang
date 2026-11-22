@@ -27,8 +27,12 @@ The default is A for A, B for B, `+` for START, `-` for SELECT and the
 d-pad for the d-pad. HOME cannot be chosen: it belongs to TinyDesk.
 
 The controller is a Wii Classic Controller in a Wii Nunchuck adapter on
-USB-A port 2. Bluetooth pads drive TinyDesk but do not reach a Game Boy
-game yet.
+USB-A port 2. A Bluetooth gamepad paired as Pad 1 plays beside it, and
+the map above applies to it too. Over a running game, the wired Classic
+drives TinyDesk with the same controls as on the desktop.
+
+This needs the TinyGBC core and player from after v0.2.1; the v0.2.1
+card's TinyGBC takes neither.
 
 ## Video
 

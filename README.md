@@ -182,10 +182,10 @@ python tools/tinytang_sync.py
   held together are its Home; neither clicks again until both are let go. The
   Wii parts are read through the desktop core's own I2C engine, and a part the
   driver does not recognise is refused rather than decoded as the wrong
-  packing. A game core holds that bus itself; TinyNES sends its first Classic's
-  report up the link instead (frame 0x21), so over a running TinyNES game the
-  wired Classic drives TinyDesk the same way, while over other game cores it
-  is still only their pad word. A wireless receiver made for the NES/SNES Classic -- an
+  packing. A game core holds that bus itself; TinyNES and TinyGBC send their
+  first Classic's report up the link instead (frame 0x21), so over a running
+  TinyNES or TinyGBC game the wired Classic drives TinyDesk the same way,
+  while over other game cores it is still only their pad word. A wireless receiver made for the NES/SNES Classic -- an
   8BitDo one -- identifies as a Classic and is put into data format 3, which
   it needs, but it never reports its pad's stick positions: it folds the
   sticks into the d-pad. Its buttons and d-pad work as above and it has no
@@ -420,7 +420,8 @@ python tools/tinytang_sync.py
   writes an output report, `btpad <address>` pairs a given address, and `btpad`
   alone reports both slots with each pad's word to the core. A pad drives the
   desktop as the wired Classic does (*Gamepads on the desktop*, above), and
-  Pad 1 and Pad 2 reach a game core as players 1 and 2 (frame 0x09). This
+  Pad 1 and Pad 2 reach a game core as players 1 and 2 (frame 0x09), and
+  TinyGBC, with one player, takes Pad 1. This
   needs the default firmware, which carries the Classic controller library;
   the LE-only build has no pad host. Proven with an 8BitDo pad in Switch mode.
 
@@ -638,7 +639,7 @@ While a game runs, a tap of HOME on the controller, or F12, swaps between the
 game and TinyDesk; HOME and `-` held together end it.  A Bluetooth pad plays
 too: the firmware sends every button of Pad 1 and Pad 2 to the core (frame
 0x09), and TinyNES takes them as players 1 and 2 beside the wired Classics,
-with the same chords.  The core and the player
+with the same chords; TinyGBC takes Pad 1 beside its wired Classic.  The core and the player
 come from the TinyNES repository, whose `tools/deploy_tinytang.sh` puts them on
 the card.
 

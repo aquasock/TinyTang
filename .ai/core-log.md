@@ -2726,3 +2726,34 @@ Tiny89's README should say its input is the Bluetooth keyboard, in a Tiny89 cycl
 - User Test: N/A
 
 ---
+
+## 81 COMMIT Unreleased 2026-11-22T15:30:19-07:00
+
+#### Coming From:
+
+Unreleased 04beb11
+
+#### Purpose:
+
+Record the operator's pass of TinyGBC's entry 44, the 8BitDo playing a Game Boy game and the wired Classic driving TinyDesk over one through the core's 0x21 report, and correct this repository's documents that said neither happens.
+
+#### Outcome:
+
+The operator found that the 8BitDo did nothing in a TinyGBC game and that the wired Classic moved TinyDesk the old way over one, which entry 68 had already named as TinyGBC's missing 0x09 receiver and 0x21 report. The fix is TinyGBC's alone: this firmware sends frame 0x09 to every core from `joystick_frame()` in `ports/bl616/tang_osd_desk.c` and reads response 0x21 from any core in `ports/bl616/fpga_frames.c`, so nothing here changed and nothing was flashed. TinyGBC's entry 44, pushed as `60fbac0`, took TinyNES's two link changes into its core under GPL-2.0-only by the operator's grant, merges Bluetooth Pad 1 into its player's held word before the mapping, and was built at seed 8 after seed 6 failed timing and seed 4 used an unmeasured pixel-clock spine; its core, `tinygbc.bin` of 4,762,092 bytes with SHA-256 `4286d8606f83877d1512578c034dc6ad32b5b2a179f83cf148119e27d6fc4c56`, and its player, 3,249,288 bytes with SHA-256 `830c4cd6eb21c3d2e114312e2924e999296a115b6c004d3ca4e58f1d03ccff1b`, were put on the card with `tools/tinytang_put.py` over the by-id console port, replacing the v0.2.1 pair. The operator then reported both working on the board. `README.md` now says TinyNES and TinyGBC send the 0x21 report, that TinyGBC takes Pad 1 as its one player, and so in the TinyNES section beside it; `manual/tinygbc.md`, which entry 80 wrote saying Bluetooth pads do not reach a Game Boy game, now says Pad 1 plays beside the wired Classic under the same map, that the wired Classic drives TinyDesk over a game, and that this needs the core and player from after v0.2.1. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 81 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinySNES already merges 0x09, so a SNES game with the 8BitDo is the next cheap check, and TinySNES could send the 0x21 report as TinyNES and TinyGBC now do; TinyGBA ORs 0x09 into its pads in `gbatang_top.sv` but has not been played with a Bluetooth pad, and Tiny89 takes only the keyboard. The next release decides whether it ships TinyGBC's entry 44 pair. Tiny89's README input line, the stale header comment in `ports/bl616/tinygbc_app.cpp`, TinyGutenberg's reading position, the README's OLED text, the site's TinyNES screenshots, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- README.md
+- manual/tinygbc.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---
