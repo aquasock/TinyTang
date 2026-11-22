@@ -161,9 +161,15 @@ td_widget_t *s_status[TABS];     /* one per page: a shared widget cannot be
  * (TinyNES core-log entry 49), read again whenever the page is shown. */
 const char STATE_SHOWN[] = "/root/states/nes";
 const char STATE_REAL[] = "/sd/root/states/nes";
-const int STATE_LINES = 6;
-td_widget_t *s_state_line[STATE_LINES];
+const char SAVES_SHOWN[] = "/root/saves/nes";
+/* The page: the cartridge, a row for its state and one for its battery save
+ * in the 8-column name the other pages use, and under them, dimmed, what the
+ * state file holds -- a heading and three lines. */
+const int DETAIL_LINES = 4;
+td_widget_t *s_save_name;
+td_widget_t *s_state_line;  /* when the state was last written */
 td_widget_t *s_batt_line;   /* when the battery save was last written */
+td_widget_t *s_detail[DETAIL_LINES];
 int s_player;
 bool s_dirty;                    /* edited here and not yet saved */
 
@@ -808,33 +814,47 @@ uint32_t state_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
     return ~crc;
 }
 
-void state_lines(const char *const text[STATE_LINES])
-{
-    for (int i = 0; i < STATE_LINES; i++) {
-        if (s_state_line[i] != nullptr) {
-            td_widget_set_text(s_state_line[i], text[i] != nullptr ? text[i] : "");
-        }
-    }
-    if (s_win != nullptr) {
-        td_win_invalidate(s_win);
-    }
-}
-
-/* One saved file, in the page's words.  The stamp is the RTC-kept clock's
- * local time as the firmware wrote it; a save made before the clock had been
- * set says so rather than passing "no-clock" off as a date. */
-void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
-                   size_t cap)
+/* One saved file's last record, in the page's words: when, and what came of
+ * it.  The stamp is the RTC-kept clock's local time as the firmware wrote it;
+ * a save made before the clock had been set says so rather than passing
+ * "no-clock" off as a date.  The size is the details' to show, not this. */
+void describe_save(const td_saves_attempt_t &rec, char *out, size_t cap)
 {
     char when[32];
 
     td_saves_when(rec.stamp, when, sizeof when);
     if (rec.verdict[0] != '\0' && strcmp(rec.stamp, "no-clock") == 0) {
-        snprintf(out, cap, "%s, %lu B; clock was unset then", verb, rec.want);
+        snprintf(out, cap, "%s, clock was unset then", rec.verdict);
     } else if (rec.verdict[0] != '\0') {
-        snprintf(out, cap, "%s %s, %s, %lu B", verb, when, rec.verdict, rec.want);
+        snprintf(out, cap, "%s, %s", when, rec.verdict);
     } else {
-        snprintf(out, cap, "%s %s, did not finish", verb, when);
+        snprintf(out, cap, "%s, did not finish", when);
+    }
+}
+
+/* A row with its 8-column name, as the Input and Video pages lay theirs. */
+void saves_row(td_widget_t *w, const char *name, const char *text)
+{
+    char row[TD_TEXT_MAX];
+
+    if (w != nullptr) {
+        snprintf(row, sizeof row, "%-8s%s", name, text);
+        td_widget_set_text(w, row);
+    }
+}
+
+/* The details are secondary, so they take the theme's dim colour, read each
+ * time in case the theme has changed since the window opened. */
+void saves_details(const char *const text[DETAIL_LINES])
+{
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        if (s_detail[i] != nullptr) {
+            td_widget_set_color(s_detail[i], td_theme()->dim, TD_COLOR_DEFAULT);
+            td_widget_set_text(s_detail[i], text[i] != nullptr ? text[i] : "");
+        }
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
     }
 }
 
@@ -843,23 +863,29 @@ void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
  * one TinyTang verifies it by, so the three can be matched by eye. */
 void state_show(void)
 {
-    static char line[STATE_LINES][TD_TEXT_MAX];
-    static char batt[TD_TEXT_MAX];
-    const char *text[STATE_LINES] = {};
+    static char detail[DETAIL_LINES][TD_TEXT_MAX];
+    const char *details[DETAIL_LINES] = {};
+    char text[TD_TEXT_MAX];
     const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
 
     if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
         s_lib_entries[row].is_dir) {
-        text[0] = "Select a cartridge in the Library.";
-        state_lines(text);
-        if (s_batt_line != nullptr) {
-            td_widget_set_text(s_batt_line, "Battery save: select a cartridge.");
+        if (s_save_name != nullptr) {
+            td_widget_set_text(s_save_name, "Select a cartridge in the Library.");
         }
+        saves_row(s_state_line, "State", "");
+        saves_row(s_batt_line, "Battery", "");
+        saves_details(details);
         return;
     }
     const char *name = s_lib_entries[row].name;
     const char *dot = strrchr(name, '.');
     const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+
+    if (s_save_name != nullptr) {
+        snprintf(text, sizeof text, "%.*s", stem, name);
+        td_widget_set_text(s_save_name, text);
+    }
 
     /* The board's log, read once for both files: every line names the file it
      * carried and is stamped with the RTC-kept clock's local time.  The files
@@ -888,26 +914,19 @@ void state_show(void)
             (void)f_close(&log);
         }
     }
-    if (s_batt_line != nullptr) {
-        if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
-            describe_save(saved_batt, "Battery save", batt, sizeof batt);
-        } else {
-            snprintf(batt, sizeof batt, "Battery save: none written yet.");
-        }
-        td_widget_set_text(s_batt_line, batt);
+    if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
+        describe_save(saved_batt, text, sizeof text);
+    } else {
+        snprintf(text, sizeof text, "none written yet");
     }
+    saves_row(s_batt_line, "Battery", text);
 
     char real[TD_PATH_MAX + 8];
-    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
-    snprintf(line[1], sizeof line[1], "%s/%.*s.state", STATE_SHOWN, stem, name);
     snprintf(real, sizeof real, "%s/%.*s.state", STATE_REAL, stem, name);
-    text[0] = line[0];
-    text[1] = line[1];
-
     FIL file;
     if (f_open(&file, real, FA_READ) != FR_OK) {
-        text[2] = "No save state yet. L saves one in the game.";
-        state_lines(text);
+        saves_row(s_state_line, "State", "none yet");
+        saves_details(details);
         return;
     }
     const uint32_t size = (uint32_t)f_size(&file);
@@ -932,29 +951,31 @@ void state_show(void)
     }
     (void)f_close(&file);
 
-    snprintf(line[2], sizeof line[2], "Size %lu bytes, CRC-32 %08lx",
+    details[0] = "State details";
+    snprintf(detail[1], sizeof detail[1], "%lu B, CRC-32 %08lx",
              (unsigned long)size, (unsigned long)crc);
-    text[2] = line[2];
+    details[1] = detail[1];
     if (!ok || memcmp(h.magic, "TNS1", 4) != 0 || h.header_bytes != sizeof h ||
         h.length + sizeof h != size) {
-        text[3] = "Not a TinyNES save state, or cut short.";
-    } else {
-        snprintf(line[3], sizeof line[3], "Game CRC-32 %08lx, frame %lu",
-                 (unsigned long)h.rom_crc, (unsigned long)h.frame);
-        snprintf(line[4], sizeof line[4], "Core %08lx, patches %lu",
-                 (unsigned long)h.fceumm, (unsigned long)h.patches);
-        text[3] = line[3];
-        text[4] = line[4];
+        saves_row(s_state_line, "State", "not a TinyNES state, or cut short");
+        saves_details(details);
+        return;
     }
+    snprintf(detail[2], sizeof detail[2], "Game CRC-32 %08lx, frame %lu",
+             (unsigned long)h.rom_crc, (unsigned long)h.frame);
+    snprintf(detail[3], sizeof detail[3], "Core %08lx, patches %lu",
+             (unsigned long)h.fceumm, (unsigned long)h.patches);
+    details[2] = detail[2];
+    details[3] = detail[3];
     /* When it was written: the log's record, since the file itself predates
      * any clock.  A save that started and never finished says that instead. */
     if (saved_state.verdict[0] != '\0' || saved_state.armed) {
-        describe_save(saved_state, "Saved", line[5], sizeof line[5]);
+        describe_save(saved_state, text, sizeof text);
     } else {
-        snprintf(line[5], sizeof line[5], "Saved: no record in the log.");
+        snprintf(text, sizeof text, "on the card, no record in the log");
     }
-    text[5] = line[5];
-    state_lines(text);
+    saves_row(s_state_line, "State", text);
+    saves_details(details);
 }
 
 /* ---------------------------------------------------------------- actions */
@@ -1221,16 +1242,27 @@ void launch(void)
     page_add(3, td_label(s_win, 1, 6, 0, "Left and Right move the slider 5%."));
     page_add(3, td_label(s_win, 1, 7, 0, "Taken when the next game starts."));
 
-    /* Saves: the selected cartridge's save state, then where battery saves
-     * go.  L saves and R loads in the game; there is one state a cartridge. */
-    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
-    for (int i = 0; i < STATE_LINES; i++) {
-        s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
-        page_add(SAVES_TAB, s_state_line[i]);
-    }
-    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves are in /root/saves/nes"));
-    s_batt_line = td_label(s_win, 1, 11, 0, "Battery save: none written yet.");
+    /* Saves: the selected cartridge, when its state and its battery save were
+     * last written, the two folders in that order, how a state is made, and
+     * the state file's details dimmed under them.  There is one state a
+     * cartridge, and nothing here deletes either file. */
+    s_save_name = td_label(s_win, 1, 2, 0, "");
+    page_add(SAVES_TAB, s_save_name);
+    s_state_line = td_label(s_win, 1, 3, 0, "");
+    page_add(SAVES_TAB, s_state_line);
+    s_batt_line = td_label(s_win, 1, 4, 0, "");
     page_add(SAVES_TAB, s_batt_line);
+    {
+        char folders[TD_TEXT_MAX];
+        snprintf(folders, sizeof folders, "%-8s%s, %s", "Folders", STATE_SHOWN, SAVES_SHOWN);
+        page_add(SAVES_TAB, td_label(s_win, 1, 5, 0, folders));
+    }
+    page_add(SAVES_TAB, td_label(s_win, 1, 7, 0, "In a game, HOME with L saves the state"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 8, 0, "and HOME with R loads it."));
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        s_detail[i] = td_label(s_win, 1, 10 + i, 0, "");
+        page_add(SAVES_TAB, s_detail[i]);
+    }
 
     /* What the file is, and what a save said.  One label per page, because a
      * widget shared between pages takes the visibility of whichever page is

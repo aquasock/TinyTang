@@ -2442,3 +2442,33 @@ The operator asked next for suggestions to tidy TinyNES's Saves tab. The other g
 - User Test: PASS
 
 ---
+
+## 72 COMMIT Unreleased 2026-11-21T19:55:11-07:00
+
+#### Coming From:
+
+Unreleased d0b2307
+
+#### Purpose:
+
+Tidy TinyNES's Saves tab into the other tabs' layout, leading with when the state and the battery save were written and moving the state file's details below.
+
+#### Outcome:
+
+The operator asked for suggestions and chose the layout-only one, and ruled out any way to delete a save from the interface. `state_show()` in `ports/bl616/tinynes_app.cpp` now fills the cartridge's name on row 2, then rows in the Input and Video pages' 8-column name: State and Battery, each saying when the file was last written and the log's verdict for it (`describe_save()` no longer repeats the size), and Folders, which names `/root/states/nes` and `/root/saves/nes` in that order because states and battery saves are kept apart; the HOME with L and HOME with R hint is on rows 7 and 8, and under it the state file's size and CRC-32, the game's CRC-32 and frame, and the core and patch count stand as a "State details" block in the theme's dim colour, read from `td_theme()` each time the page is shown. A missing state says `none yet` with no details, a file that is not a TinyNES state or is cut short says so on the State row with only its size and CRC-32 below, a state with no log record says `on the card, no record in the log`, and with no cartridge selected only the name row speaks. Before this the page carried a heading mixing title and instructions, the state's full path, its size twice and the details between the name and the date. `tools/build_both.sh` passes with images of 1,062,976 and 812,016 bytes and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped; no host test covers this page. Firmware `d0b2307-dirty.2d0fda4` (image SHA-256 `f58c80a1808c741680f428c24f7460a9f143c69f08ed19fc7a34a21d4ff9bae0`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` after the operator's go and started with the relay sequence, and `platform` confirmed it. The operator passed the tab. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 72 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinyNES's five tabs are now tidied. TinySNES, TinyGBC, TinyGBA and Tiny89 keep their old page layouts and their Library scrollbars still stand on every tab, which entry 70's one-line fix would cure, so carrying the TinyNES layout to them is the natural next cycle if the operator wants it. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
