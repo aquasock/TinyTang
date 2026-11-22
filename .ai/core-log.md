@@ -2412,3 +2412,33 @@ The operator asked next for the same layout on TinyNES's Video tab with its Chan
 - User Test: PASS
 
 ---
+
+## 71 COMMIT Unreleased 2026-11-21T19:44:24-07:00
+
+#### Coming From:
+
+Unreleased e461113
+
+#### Purpose:
+
+Give TinyNES's Video and Audio tabs the Input tab's layout, with no Change button on Video and the Audio controls on the slider's row.
+
+#### Outcome:
+
+In `ports/bl616/tinynes_app.cpp` the Video rows now use the Input page's 8-column name, so the longest palette, `composite-direct-fbx`, with the unsaved marker is 30 columns and the list is 31 (`VIDEO_LIST_W`); the old 34-column list had cut that row's marker. The Change button was removed, since a row steps on a double-click or Enter, Save stands alone beside the list at `VIDEO_ACTION_X`, 34, and a hint on row 5 says how a row steps. On the Audio page the operator first saw Mute and Save in a column beside the slider and asked for them on the slider's row, left to right after it; the client area is 52 columns (`td_win_client`), so the reading `100%  muted` would have pushed Save one column past the edge, and since the Mute box now stands beside it the reading was cut to the percentage alone, giving the slider at 1, the reading at 23, Mute at 29 and Save at 39 on row 4, with the two hints moved up to rows 6 and 7. `tools/build_both.sh` passes with images of 1,062,976 and 807,920 bytes and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped; no host test covers these layouts. The column version was installed as `e461113-dirty.3a9261b` and the final one as `e461113-dirty.9222fcb` (image SHA-256 `6cecb86472b4fc5c5815961573a8272865a1854e9fed1a1a1e4da2afe00b79d8`), each with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` after the operator's go and the relay sequence, with `platform` confirming it. An earlier pass the operator gave for the Video tab was given before that build was on the board and was not counted; the operator passed both tabs on `e461113-dirty.9222fcb`. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 71 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator asked next for suggestions to tidy TinyNES's Saves tab. The other game windows' Library scrollbars can be fixed as entry 70 did in a cycle of their own. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinynes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

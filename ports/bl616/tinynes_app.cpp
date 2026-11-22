@@ -81,6 +81,19 @@ constexpr int LIB_ROWS = 12;
  * in, two clear of the list's right edge. */
 constexpr int INPUT_LIST_W = 18;
 constexpr int INPUT_ACTION_X = 1 + INPUT_LIST_W + 2;
+/* The Video page, in the same shape: a row is the 8-column name and the
+ * setting, and the longest palette, "composite-direct-fbx", with the unsaved
+ * marker is 30, drawn from the list's second column. */
+constexpr int VIDEO_LIST_W = 31;
+constexpr int VIDEO_ACTION_X = 1 + VIDEO_LIST_W + 2;
+/* The Audio page is one row: the slider, its reading, at most "100%", then
+ * the mute and the Save, each two clear of the one before.  The mute box
+ * beside the reading shows the mute, so the reading does not repeat it. */
+constexpr int VOLUME_SLIDER_W = 20;
+constexpr int VOLUME_LABEL_X = 1 + VOLUME_SLIDER_W + 2;
+constexpr int VOLUME_LABEL_W = 4;
+constexpr int MUTE_X = VOLUME_LABEL_X + VOLUME_LABEL_W + 2;
+constexpr int AUDIO_SAVE_X = MUTE_X + 8 + 2;   /* "Mute" and its box are 8 */
 
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 5;
@@ -485,10 +498,10 @@ const char *video_item(td_widget_t *, int index, int *fg, void *)
 
     (void)fg;
     if (index == 0) {
-        snprintf(text, sizeof text, "Aspect      %s%s",
+        snprintf(text, sizeof text, "%-8s%s%s", "Aspect",
                  tang_nes_aspect_name(s_set.aspect), s_dirty ? " *" : "");
     } else if (index == 1) {
-        snprintf(text, sizeof text, "Palette     %s%s",
+        snprintf(text, sizeof text, "%-8s%s%s", "Palette",
                  tang_nes_palette_name(s_set.palette), s_dirty ? " *" : "");
     } else {
         return "";
@@ -521,8 +534,7 @@ void on_video_row(td_widget_t *, void *)
 void show_volume(void)
 {
     if (s_volume_label != nullptr) {
-        td_widget_printf(s_volume_label, "%3u%%%s", (unsigned)s_set.audio.volume,
-                         s_set.audio.mute ? "  muted" : "");
+        td_widget_printf(s_volume_label, "%3u%%", (unsigned)s_set.audio.volume);
     }
 }
 
@@ -1175,35 +1187,39 @@ void launch(void)
     page_add(1, td_button(s_win, INPUT_ACTION_X, 6, "Save", on_save, nullptr));
     page_add(1, td_label(s_win, 1, 11, 0, "Double-click a row or press Enter to step it."));
 
-    /* Video: two rows, the pixel aspect and the palette, and the Save that
-     * writes them.  Scale, scanlines and overscan were dropped, so the page
-     * no longer offers them. */
-    s_video_list = td_list(s_win, td_rect(1, 2, 34, VIDEO_ROWS), video_item,
-                           on_video_row, nullptr);
+    /* Video: two rows, the pixel aspect and the palette, and beside them the
+     * Save that writes them, laid out as the Input page; a row steps the same
+     * way, so there is no Change button either.  Scale, scanlines and overscan
+     * were dropped, so the page no longer offers them. */
+    s_video_list = td_list(s_win, td_rect(1, 2, VIDEO_LIST_W, VIDEO_ROWS),
+                           video_item, on_video_row, nullptr);
     if (s_video_list != nullptr) {
         td_list_set_count(s_video_list, VIDEO_ROWS);
     }
     page_add(2, s_video_list);
-    page_add(2, td_button(s_win, 38, 2, "Change", on_video_row, nullptr));
-    page_add(2, td_button(s_win, 38, 4, "Save", on_save, nullptr));
+    page_add(2, td_button(s_win, VIDEO_ACTION_X, 2, "Save", on_save, nullptr));
+    page_add(2, td_label(s_win, 1, 5, 0, "Double-click a row or press Enter to step it."));
     page_add(2, td_label(s_win, 1, 6, 0, "Both are taken when the next game"));
     page_add(2, td_label(s_win, 1, 7, 0, "starts, like the buttons."));
 
-    /* Audio: the master volume, its percentage, the mute, and the Save. */
+    /* Audio: the master volume, its percentage, the mute and the Save, left
+     * to right on the slider's row. */
     page_add(3, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
-    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    s_volume = td_slider(s_win, 1, 4, VOLUME_SLIDER_W, TANG_VOLUME_STEP, on_volume,
+                         nullptr);
     if (s_volume != nullptr) {
         td_slider_set(s_volume, s_set.audio.volume);
     }
     page_add(3, s_volume);
-    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    s_volume_label = td_label(s_win, VOLUME_LABEL_X, 4, VOLUME_LABEL_W, "");
     page_add(3, s_volume_label);
     show_volume();
-    s_mute = td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0, on_mute, nullptr);
+    s_mute = td_checkbox(s_win, MUTE_X, 4, "Mute", s_set.audio.mute != 0,
+                         on_mute, nullptr);
     page_add(3, s_mute);
-    page_add(3, td_button(s_win, 1, 8, "Save", on_save, nullptr));
-    page_add(3, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
-    page_add(3, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+    page_add(3, td_button(s_win, AUDIO_SAVE_X, 4, "Save", on_save, nullptr));
+    page_add(3, td_label(s_win, 1, 6, 0, "Left and Right move the slider 5%."));
+    page_add(3, td_label(s_win, 1, 7, 0, "Taken when the next game starts."));
 
     /* Saves: the selected cartridge's save state, then where battery saves
      * go.  L saves and R loads in the game; there is one state a cartridge. */
