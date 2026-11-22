@@ -2595,3 +2595,33 @@ None.
 - User Test: N/A
 
 ---
+
+## 77 COMMIT Unreleased 2026-11-22T10:08:17-07:00
+
+#### Coming From:
+
+Unreleased 1bbe148
+
+#### Purpose:
+
+Bring the aquasock.github.io site's content up to date with everything since TinyTang v0.2.1 except TinySNES and TinyGBA, as a documentation cycle, and correct the stale statements found in TinyGBC's README and TinyNES's repository description on the way.
+
+#### Outcome:
+
+Every claim on the site was checked against the repository that owns it, which found three that were wrong rather than stale: the "100% open source" stat, false because `THIRD_PARTY.md` records the BL616's Bluetooth controller and radio as prebuilt binaries with no source, now the latest release, v0.2.1; TinyPhosphor called a hardware vector display processor when its README describes a music player and stereo XY visualiser on Rockbox's codecs, relabelled AUDIO; and Tang-Phosphor called vector-graphics work when it is the MiSTer-Phosphor audio core ported to the Tang and the source of the desktop core's OLED panel engine. TinyNES's own claims, FCEUmm, 750 MHz, 32 MiB, the 80 by 45 layer, 90 of 146 AccuracyCoin checks and its controls and buses, matched its README, but the page said it had no packaged release when TinyTang's release card has carried it since v0.2.0, so that was corrected, and an unverifiable "roughly ten seconds" load time was dropped. In aquasock.github.io, commit `562b90f`, by the operator's choices, labels everything after v0.2.1 "on main since v0.2.1, not yet released", removes the decorative coordinates, and leaves the TinyNES tab screenshots, which predate entries 69 to 72, as they are. The home page gains a "What's new" section on the Bluetooth gamepads and the five-slot window, one control map for every pad, TinyReader and the tidier game windows, and the boot mock-up names the card's real `tinynes.bin` and `tinynes-play.elf`; the projects page describes TinyTang, TinyNES, TinyGBC, Tiny89, TinyPhosphor, TinyCreature and Tang-Phosphor as their repositories do; the getting-started path follows the v0.2.1 release notes, which pair a keyboard and mouse from a computer and do not claim the board starts in TinyDesk, and its checklist adds the antenna the release notes require, the controllers, a computer and the optional Pmod I2S2; and the TinyNES page adds Bluetooth Pad 1 and Pad 2 as players 1 and 2, the wired Classic driving TinyDesk over a game from this README's control table, the Input tab's double-click and Enter stepping and the Saves tab's new rows. The architecture page was accurate and is unchanged. The operator reviewed it served locally and passed it, GitHub Pages built `562b90f` and the new section was confirmed live. At the operator's request TinyNES's GitHub description, which read "Nestopia libretro core ported to the AE350", now says it runs libretro FCEUmm on the AE350 and began as a Nestopia port, and TinyGBC's README, which said nothing had been shown on a screen and that its Saves page was a placeholder, now says it is integrated and playable, ships on the release card from v0.2.0 and does not yet take Bluetooth pads because its `desk_link.sv` has no 0x09 case, which was read from that source; that is TinyGBC's commit `c3438a2` with its own log entry 43. A correction to this log's own record: the headers of entries 74, 75 and 76 were typed rather than read from the clock and are 23, 18 and 25 seconds later than their commits `2b0a215`, `717e827` and `1bbe148`, and TinyGBC's entry 43 is stamped 10:12:40 for a commit made at 10:05:28; those settled entries are left as they are, the commits carry the true times, and this entry's header was taken from `date`. Nothing in this repository changed apart from this entry, and no firmware was built or deployed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 77 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The site's TinyNES Input, Video, Audio and Saves screenshots still show the layouts before entries 69 to 72 and can be retaken from the HDMI capture when the operator has the board free, and TinySNES and TinyGBA can be added to the site when the operator wants them. In this repository `README.md` and `manual/gutenberg.md` still claim TinyGutenberg resumes a reading position it does not restore, and `README.md`'s opening still says the desktop is driven by a Bluetooth keyboard and mouse only. A release would move the site's "since v0.2.1" material into a version. The operator's upload of the social preview in each repository's settings, Tiny89's window layout and entry 68's items stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
