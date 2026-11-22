@@ -2502,3 +2502,34 @@ TinySNES, TinyGBA and Tiny89 keep their old page layouts and their Library scrol
 - User Test: PASS
 
 ---
+
+## 74 COMMIT Unreleased 2026-11-22T08:41:12-07:00
+
+#### Coming From:
+
+Unreleased 140735b
+
+#### Purpose:
+
+Apply the TinyNES window's tab layout and formatting from entries 69 to 72 to the TinySNES and TinyGBA windows.
+
+#### Outcome:
+
+In `ports/bl616/tinysnes_app.cpp` and `ports/bl616/tinygba_app.cpp` the Library's scrollbar is now on the Library page only, as entry 70 did for TinyNES. On TinySNES the Input list starts on row 2 at 18 columns (`LIST_W`) in the 8-column name, the widest row being `select   select *`, with Player, Restore defaults (renamed from Restore) and Save beside it at `ACTION_X`, 21, on rows 2, 4 and 6, and Change removed in favour of the double-click and Enter hint; the Video rows take the same name, `Extra lines` becoming `Lines` so `Lines   cropped *` fits the same 18-column list, with Save alone beside it and the hints on rows 5 to 9, the overscan hint now reading as the 15 lines past 224. TinyGBA's Input and Video pages, still placeholders not wired to anything, take the same layout, Input's list at 18 columns and Video's at 38 (`VIDEO_LIST_W`) because its widest row, `Aspect  3:2, 1080x720 in a 1280 frame`, is 37, with `Side bars` shortened to `Bars`. Both Audio pages put the slider, a percentage-only reading, Mute and Save on row 4 as TinyNES's does. Both Saves pages follow entry 72's layout: the cartridge's name on row 2, then rows in the 8-column name saying when the save was last written and the log's verdict in TinyNES's words, `none yet`, `on the card, no record in the log` or a save made while the clock was unset, then the folder, the in-game save chord on two lines and a dimmed details block of a heading and the file's size against what the cartridge holds. TinySNES has a Battery row and a Folder row naming `/root/saves/snes`, and a cartridge with no battery says so on its row; TinyGBA has Save, Type and Folder rows, the Type row giving the save type and size from the image's marker or saying it is being checked or will be found when the load is done, and the Folder row naming the Library folder because a GBA save sits beside its cartridge. Nothing on either page deletes a file. The work was written and built by the previous session, which stopped awaiting the operator's go to install; this session confirmed that the image's build id matched the unchanged working tree by re-running `cmake/tinytang_build_id.cmake`. `tools/build_both.sh` had produced images of 1,063,008 and 812,032 bytes, `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped, and no host test covers these pages. Firmware `140735b-dirty.02284fa` (image SHA-256 `af11a8ddf3d0a789ec4b962c7cf2b59ac7473f5a57ff95806f1c912ac60bb152`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` after the operator's go and started with the relay sequence, and `platform` confirmed it. The operator passed both windows. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 74 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Tiny89 is the one game window left untouched: it has only Library and Saves tabs, its Saves page keeps the old layout and its Library scrollbar, created without `page_add`, stands on the Saves tab too, so carrying entry 70's scrollbar fix and entry 72's Saves layout to it is the next cycle if the operator wants it. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinygba_app.cpp
+- ports/bl616/tinysnes_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

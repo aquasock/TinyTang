@@ -63,6 +63,20 @@ constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
+/* The Input and Video pages, laid out as TinyNES's: a list in the 8-column
+ * name, and two clear of its right edge the column its actions stand in.  A
+ * row is drawn from the list's second column, and the widest of both pages,
+ * "select   select *" and "Lines   cropped *", is 17, so the lists are 18. */
+constexpr int LIST_W = 18;
+constexpr int ACTION_X = 1 + LIST_W + 2;
+/* The Audio page is one row: the slider, its reading, at most "100%", then
+ * the mute and the Save, each two clear of the one before.  The mute box
+ * beside the reading shows the mute, so the reading does not repeat it. */
+constexpr int VOLUME_SLIDER_W = 20;
+constexpr int VOLUME_LABEL_X = 1 + VOLUME_SLIDER_W + 2;
+constexpr int VOLUME_LABEL_W = 4;
+constexpr int MUTE_X = VOLUME_LABEL_X + VOLUME_LABEL_W + 2;
+constexpr int AUDIO_SAVE_X = MUTE_X + 8 + 2;   /* "Mute" and its box are 8 */
 
 const int TABS = 5;
 const int PAGE_WIDGETS = 16;
@@ -84,7 +98,10 @@ const int SAVES_TAB = 4;
  * TinySNES has no save states, so the battery save is the whole page. */
 constexpr char SAVES_SHOWN[] = "/root/saves/snes";
 constexpr char SAVES_REAL[] = "/sd/root/saves/snes";
-const int SAVE_LINES = 6;
+/* The page, as TinyNES's: the cartridge, a row for its battery save in the
+ * 8-column name, the folder, and under them, dimmed, what the file holds -- a
+ * heading and two lines. */
+const int DETAIL_LINES = 3;
 
 td_window_t *s_win;
 td_widget_t *s_tab[TABS];
@@ -111,7 +128,9 @@ char s_lib_real[TD_PATH_MAX + 4];
 char s_launch_cart[TD_PATH_MAX + 4];
 
 /* The Saves page's lines. */
-td_widget_t *s_save_line[SAVE_LINES];
+td_widget_t *s_save_name;
+td_widget_t *s_batt_line;   /* when the battery save was last written */
+td_widget_t *s_detail[DETAIL_LINES];
 td_widget_t *s_volume;          /* the Audio page's slider */
 td_widget_t *s_volume_label;    /* ...and the percentage beside it */
 td_widget_t *s_mute;            /* ...and its mute */
@@ -219,7 +238,7 @@ const char *input_item(td_widget_t *, int index, int *fg, void *)
         return "";
     }
     const int src = s_map[s_player][index];
-    snprintf(text, sizeof text, "%-6s <- %s%s",
+    snprintf(text, sizeof text, "%-8s %s%s",
              tang_snes_button_name(index), tang_snes_source_name(src),
              s_dirty ? " *" : "");
     *fg = src == TANG_SNES_SRC_NONE ? td_theme()->dim : TD_COLOR_DEFAULT;
@@ -240,7 +259,7 @@ void on_input_row(td_widget_t *, void *)
     if (s_input_list != nullptr) {
         td_win_invalidate(s_win);
     }
-    lib_say("Change cycles the binding; Save writes it.");
+    lib_say("A double-click or Enter steps the row; Save writes it.");
 }
 
 void on_player(td_widget_t *, void *)
@@ -289,10 +308,10 @@ const char *video_item(td_widget_t *, int index, int *fg, void *)
 
     (void)fg;
     if (index == 0) {
-        snprintf(text, sizeof text, "Aspect      %s%s",
+        snprintf(text, sizeof text, "%-8s%s%s", "Aspect",
                  tang_snes_aspect_name(s_set.aspect), s_dirty ? " *" : "");
     } else if (index == 1) {
-        snprintf(text, sizeof text, "Extra lines %s%s",
+        snprintf(text, sizeof text, "%-8s%s%s", "Lines",
                  s_set.overscan ? "shown" : "cropped", s_dirty ? " *" : "");
     } else {
         return "";
@@ -315,7 +334,7 @@ void on_video_row(td_widget_t *, void *)
     if (s_win != nullptr) {
         td_win_invalidate(s_win);
     }
-    lib_say("Change steps the setting; Save writes it.");
+    lib_say("A double-click or Enter steps the row; Save writes it.");
 }
 
 void on_video_save(td_widget_t *, void *)
@@ -352,9 +371,7 @@ void on_video_save(td_widget_t *, void *)
 void show_volume(void)
 {
     if (s_volume_label != nullptr) {
-        td_widget_printf(s_volume_label, "%3u%%%s",
-                         (unsigned)s_set.audio.volume,
-                         s_set.audio.mute ? "  muted" : "");
+        td_widget_printf(s_volume_label, "%3u%%", (unsigned)s_set.audio.volume);
     }
 }
 
@@ -400,11 +417,43 @@ void on_audio_save(td_widget_t *, void *)
 
 /* ----------------------------------------------------------------- the saves */
 
-void save_lines(const char *const text[SAVE_LINES])
+/* One saved file's last record, in the page's words: when, and what came of
+ * it, as TinyNES's page says it.  The stamp is the RTC-kept clock's local time
+ * as the firmware wrote it; a save made before the clock had been set says so
+ * rather than passing "no-clock" off as a date. */
+void describe_save(const td_saves_attempt_t &rec, char *out, size_t cap)
 {
-    for (int i = 0; i < SAVE_LINES; i++) {
-        if (s_save_line[i] != nullptr) {
-            td_widget_set_text(s_save_line[i], text[i] != nullptr ? text[i] : "");
+    char when[32];
+
+    td_saves_when(rec.stamp, when, sizeof when);
+    if (rec.verdict[0] != '\0' && strcmp(rec.stamp, "no-clock") == 0) {
+        snprintf(out, cap, "%s, clock was unset then", rec.verdict);
+    } else if (rec.verdict[0] != '\0') {
+        snprintf(out, cap, "%s, %s", when, rec.verdict);
+    } else {
+        snprintf(out, cap, "%s, did not finish", when);
+    }
+}
+
+/* A row with its 8-column name, as the Input and Video pages lay theirs. */
+void saves_row(td_widget_t *w, const char *name, const char *text)
+{
+    char row[TD_TEXT_MAX];
+
+    if (w != nullptr) {
+        snprintf(row, sizeof row, "%-8s%s", name, text);
+        td_widget_set_text(w, row);
+    }
+}
+
+/* The details are secondary, so they take the theme's dim colour, read each
+ * time in case the theme has changed since the window opened. */
+void saves_details(const char *const text[DETAIL_LINES])
+{
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        if (s_detail[i] != nullptr) {
+            td_widget_set_color(s_detail[i], td_theme()->dim, TD_COLOR_DEFAULT);
+            td_widget_set_text(s_detail[i], text[i] != nullptr ? text[i] : "");
         }
     }
     if (s_win != nullptr) {
@@ -412,26 +461,35 @@ void save_lines(const char *const text[SAVE_LINES])
     }
 }
 
-/* The selected cartridge's battery save: where it lives, how big it is, and
- * when the last attempt to write it ran.  FatFS gives the file no date, so the
- * time comes from the board's own log (td_saves_log.h), which the save path
- * stamps as it writes.  Nothing here is a save state: TinySNES has none. */
+/* The selected cartridge's battery save: when the last attempt to write it
+ * ran, and under it how big it is against what the cartridge holds.  FatFS
+ * gives the file no date, so the time comes from the board's own log
+ * (td_saves_log.h), which the save path stamps as it writes.  Nothing here is
+ * a save state: TinySNES has none. */
 void saves_show(void)
 {
-    static char line[SAVE_LINES][TD_TEXT_MAX];
-    const char *text[SAVE_LINES] = {};
+    static char detail[DETAIL_LINES][TD_TEXT_MAX];
+    const char *details[DETAIL_LINES] = {};
+    char text[TD_TEXT_MAX];
     const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
 
     if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
         s_lib_entries[row].is_dir) {
-        text[0] = "Select a cartridge in the Library.";
-        text[1] = "Its battery save is shown here.";
-        save_lines(text);
+        if (s_save_name != nullptr) {
+            td_widget_set_text(s_save_name, "Select a cartridge in the Library.");
+        }
+        saves_row(s_batt_line, "Battery", "");
+        saves_details(details);
         return;
     }
     const char *name = s_lib_entries[row].name;
     const char *dot = strrchr(name, '.');
     const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
+
+    if (s_save_name != nullptr) {
+        snprintf(text, sizeof text, "%.*s", stem, name);
+        td_widget_set_text(s_save_name, text);
+    }
 
     /* The cartridge's own header decides whether it has a battery at all, and
      * how large it is; the same rule the loader uses to size a save. */
@@ -440,67 +498,51 @@ void saves_show(void)
     char cart_real[TD_PATH_MAX + 8];
     snprintf(cart_real, sizeof cart_real, "%s/%s", s_lib_real, name);
     if (tang_snes_save_for(cart_real, &want, save_path, sizeof save_path) != 0) {
-        snprintf(line[0], sizeof line[0], "%.*s", stem, name);
-        text[0] = line[0];
-        text[1] = "No battery: this cartridge keeps no save.";
-        text[2] = "A game may still save in memory for the session.";
-        save_lines(text);
+        saves_row(s_batt_line, "Battery", "none, this cartridge has no battery");
+        details[0] = "Battery details";
+        details[1] = "A game may still save in memory for the session.";
+        saves_details(details);
         return;
     }
 
-    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
-    snprintf(line[1], sizeof line[1], "%.*s.sav in %s",
-             stem, name, SAVES_SHOWN);
-    text[0] = line[0];
-    text[1] = line[1];
-
     FIL file;
     if (f_open(&file, save_path, FA_READ) != FR_OK) {
-        text[2] = "No save yet. HOME+SELECT in the game writes one.";
-    } else {
-        const uint32_t size = (uint32_t)f_size(&file);
-        (void)f_close(&file);
-        snprintf(line[2], sizeof line[2], "%lu bytes, cartridge holds %lu",
-                 (unsigned long)size, (unsigned long)want);
-        text[2] = line[2];
-        if (size != want) {
-            text[3] = "Size differs from the header; the game may ignore it.";
-        }
+        saves_row(s_batt_line, "Battery", "none yet");
+        saves_details(details);
+        return;
+    }
+    const uint32_t size = (uint32_t)f_size(&file);
+    (void)f_close(&file);
+    details[0] = "Battery details";
+    snprintf(detail[1], sizeof detail[1], "%lu B, cartridge holds %lu",
+             (unsigned long)size, (unsigned long)want);
+    details[1] = detail[1];
+    if (size != want) {
+        details[2] = "Differs from the header; the game may ignore it.";
     }
 
     /* When it was written: the log's record, since the file itself has none. */
-    {
-        char needle[LIB_NAME_BYTES + 8];
-        snprintf(needle, sizeof needle, "/%.*s.sav", stem, name);
-        td_saves_attempt_t rec = {};
-        td_saves_reader_t reader;
-        td_saves_reader_init(&reader);
-        FIL log;
-        if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
-            char buf[256];
-            UINT got = 0;
-            while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
-                td_saves_reader_feed(&reader, buf, got, needle, &rec);
-            }
-            (void)f_close(&log);
+    char needle[LIB_NAME_BYTES + 8];
+    snprintf(needle, sizeof needle, "/%.*s.sav", stem, name);
+    td_saves_attempt_t rec = {};
+    td_saves_reader_t reader;
+    td_saves_reader_init(&reader);
+    FIL log;
+    if (f_open(&log, "/sd/root/saves/last.log", FA_READ) == FR_OK) {
+        char buf[256];
+        UINT got = 0;
+        while (f_read(&log, buf, sizeof buf, &got) == FR_OK && got > 0) {
+            td_saves_reader_feed(&reader, buf, got, needle, &rec);
         }
-        if (rec.verdict[0] != '\0' || rec.armed) {
-            char when[32];
-            td_saves_when(rec.stamp, when, sizeof when);
-            if (rec.verdict[0] != '\0') {
-                snprintf(line[4], sizeof line[4], "%s %s, %s, %lu B",
-                         rec.armed ? "Started" : "Saved", when, rec.verdict,
-                         rec.want);
-            } else {
-                snprintf(line[4], sizeof line[4], "Started %s, did not finish", when);
-            }
-        } else {
-            snprintf(line[4], sizeof line[4], "No record in the log.");
-        }
-        text[4] = line[4];
+        (void)f_close(&log);
     }
-    text[5] = "HOME+SELECT in the game saves and returns to the desk.";
-    save_lines(text);
+    if (rec.verdict[0] != '\0' || rec.armed) {
+        describe_save(rec, text, sizeof text);
+    } else {
+        snprintf(text, sizeof text, "on the card, no record in the log");
+    }
+    saves_row(s_batt_line, "Battery", text);
+    saves_details(details);
 }
 
 /* ----------------------------------------------------------------- the list */
@@ -917,8 +959,10 @@ void on_close(td_window_t *)
     s_lib_path = nullptr;
     s_lib_message = nullptr;
     s_tab_shown = -1;
-    for (int i = 0; i < SAVE_LINES; i++) {
-        s_save_line[i] = nullptr;
+    s_save_name = nullptr;
+    s_batt_line = nullptr;
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        s_detail[i] = nullptr;
     }
     s_volume = nullptr;
     s_volume_label = nullptr;
@@ -974,7 +1018,9 @@ void launch(void)
     s_lib_path = td_label(s_win, 1, 2, 0, "");
     s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
                          lib_on_activate, nullptr);
-    td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
+    /* The scrollbar belongs to the page like the list it moves: left off it,
+     * it stood greyed beside every other tab. */
+    page_add(0, td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list));
     page_add(0, s_lib_path);
     page_add(0, s_lib_list);
     page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
@@ -994,56 +1040,70 @@ void launch(void)
     for (int p = 0; p < PLAYERS; p++) {
         memcpy(s_map[p], p == 0 ? s_set.p1 : s_set.p2, TANG_SNES_BUTTONS);
     }
-    s_player_button = td_button(s_win, 1, 1, "Player 1", on_player, nullptr);
-    page_add(INPUT_TAB, s_player_button);
-    page_add(INPUT_TAB, td_label(s_win, 12, 1, 0, "Controller button per SNES button:"));
-    s_input_list = td_list(s_win, td_rect(1, 3, -1, TANG_SNES_BUTTONS), input_item,
+    /* Laid out as TinyNES's page: the rows, stepped on a double-click or
+     * Enter, and beside them the player and the actions. */
+    s_input_list = td_list(s_win, td_rect(1, 2, LIST_W, TANG_SNES_BUTTONS), input_item,
                            on_input_row, nullptr);
     page_add(INPUT_TAB, s_input_list);
-    page_add(INPUT_TAB, td_button(s_win, 1, 16, "Change", on_input_row, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, 12, 16, "Restore", on_restore, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, 22, 16, "Save", on_input_save, nullptr));
+    s_player_button = td_button(s_win, ACTION_X, 2, "Player 1", on_player, nullptr);
+    page_add(INPUT_TAB, s_player_button);
+    page_add(INPUT_TAB, td_button(s_win, ACTION_X, 4, "Restore defaults", on_restore, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, ACTION_X, 6, "Save", on_input_save, nullptr));
+    page_add(INPUT_TAB, td_label(s_win, 1, 15, 0, "Double-click a row or press Enter to step it."));
     settings_show();
 
     /* Video: the picture's shape.  Two rows, and a Save -- which writes the
      * whole file, so an Input edit and a Video edit are written together. */
-    s_video_list = td_list(s_win, td_rect(1, 2, -1, VIDEO_ROWS), video_item,
+    s_video_list = td_list(s_win, td_rect(1, 2, LIST_W, VIDEO_ROWS), video_item,
                            on_video_row, nullptr);
     if (s_video_list != nullptr) {
         td_list_set_count(s_video_list, VIDEO_ROWS);
     }
     page_add(VIDEO_TAB, s_video_list);
-    page_add(VIDEO_TAB, td_button(s_win, 1, 5, "Change", on_video_row, nullptr));
-    page_add(VIDEO_TAB, td_button(s_win, 10, 5, "Save", on_video_save, nullptr));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 7, 0, "Aspect is the pixel's shape, not the picture's."));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 8, 0, "Extra lines are the 239 a few games draw."));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "There is no palette: SNES colour is digital."));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+    page_add(VIDEO_TAB, td_button(s_win, ACTION_X, 2, "Save", on_video_save, nullptr));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 5, 0, "Double-click a row or press Enter to step it."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 6, 0, "Aspect is the pixel's shape, not the picture's."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 7, 0, "Lines are the 15 past 224 a few games draw."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 8, 0, "There is no palette: SNES colour is digital."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "Taken when the next game starts."));
 
-    /* Audio: the master volume, its percentage, the mute, and the Save. */
+    /* Audio: the master volume, its percentage, the mute and the Save, left
+     * to right on the slider's row, as TinyNES's page. */
     page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
-    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    s_volume = td_slider(s_win, 1, 4, VOLUME_SLIDER_W, TANG_VOLUME_STEP, on_volume,
+                         nullptr);
     if (s_volume != nullptr) {
         td_slider_set(s_volume, s_set.audio.volume);
     }
     page_add(AUDIO_TAB, s_volume);
-    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    s_volume_label = td_label(s_win, VOLUME_LABEL_X, 4, VOLUME_LABEL_W, "");
     page_add(AUDIO_TAB, s_volume_label);
     show_volume();
-    s_mute = td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0, on_mute, nullptr);
+    s_mute = td_checkbox(s_win, MUTE_X, 4, "Mute", s_set.audio.mute != 0, on_mute, nullptr);
     page_add(AUDIO_TAB, s_mute);
-    page_add(AUDIO_TAB, td_button(s_win, 1, 8, "Save", on_audio_save, nullptr));
-    page_add(AUDIO_TAB, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
-    page_add(AUDIO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+    page_add(AUDIO_TAB, td_button(s_win, AUDIO_SAVE_X, 4, "Save", on_audio_save, nullptr));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 6, 0, "Left and Right move the slider 5%."));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 7, 0, "Taken when the next game starts."));
 
-    /* Saves: the selected cartridge's battery save.  There is no save state on
-     * TinySNES, so this page is the save itself and when it was written. */
-    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Battery save of the selected cartridge:"));
-    for (int i = 0; i < SAVE_LINES; i++) {
-        s_save_line[i] = td_label(s_win, 3, 3 + i, 0, "");
-        page_add(SAVES_TAB, s_save_line[i]);
+    /* Saves, as TinyNES's page: the selected cartridge, when its battery
+     * save was last written, the folder, how a save is made, and the file's
+     * details dimmed under them.  There is no save state on TinySNES, and
+     * nothing here deletes a file. */
+    s_save_name = td_label(s_win, 1, 2, 0, "");
+    page_add(SAVES_TAB, s_save_name);
+    s_batt_line = td_label(s_win, 1, 3, 0, "");
+    page_add(SAVES_TAB, s_batt_line);
+    {
+        char folder[TD_TEXT_MAX];
+        snprintf(folder, sizeof folder, "%-8s%s", "Folder", SAVES_SHOWN);
+        page_add(SAVES_TAB, td_label(s_win, 1, 4, 0, folder));
     }
-    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Saves are in /root/saves/snes"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 6, 0, "In a game, HOME with SELECT saves the game"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 7, 0, "and returns to the desk."));
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        s_detail[i] = td_label(s_win, 1, 9 + i, 0, "");
+        page_add(SAVES_TAB, s_detail[i]);
+    }
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */
