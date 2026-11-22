@@ -1,7 +1,9 @@
 # Getting started
 
-Power the Tang Console over USB-C. The board always starts in the
-shell; the desktop is a program you launch from it.
+Power the Tang Console from its power input, which is what selects
+TinyTang rather than Sipeed's debugger; the USB-C port is the console.
+The board always starts in the shell; the desktop is a program you
+launch from it.
 
 ## The two halves
 
@@ -23,7 +25,8 @@ loaded and replaced. That is why you can press F12 mid-game.
      platform
 
    It answers with the firmware build it is running.
-4. Type `osd desk on` to start the desktop, or press F12.
+4. Type `desktop` to start the desktop. Exit in its start menu
+   returns to the shell.
 
 ## The shell
 

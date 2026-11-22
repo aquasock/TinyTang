@@ -1,6 +1,7 @@
 # TinyNES: games
 
-TinyNES runs NES cartridges from the card. Its window has four tabs.
+TinyNES runs NES cartridges from the card. Its window has five tabs:
+Library, Input, Video, Audio and Saves.
 
 ## Library
 
@@ -15,18 +16,41 @@ that, because it lives on the BL616; F12 brings it back over the game.
 ## Input
 
 Which controller button each NES button answers to, for two players.
-Change steps the selected row; Save writes /tinynes.ini for the next
+Player beside the list picks the player; double-click a row, or press
+Enter on it, to step it to the next controller button. Restore defaults
+puts the standard map back, and Save writes /tinynes.ini for the next
 game.
+
+Player one is the Wii Classic Controller on USB-A port 2 and player two
+the one on PMOD0. A Bluetooth gamepad paired as Pad 1 or Pad 2 plays as
+player 1 or 2 beside them.
 
 ## Video
 
 The pixel aspect and the palette. Both are taken when the next game
 starts.
 
+## Audio
+
+One master volume and a mute, for HDMI and the Pmod I2S2 together.
+
+## In a game
+
+     Tap HOME         TinyDesk over the game, and back
+     HOME with L      save the game's state
+     HOME with R      load that state
+     HOME with -      end the game and return to the desktop
+
+While TinyDesk is up over a game the wired Classic drives the desktop,
+as on the desktop core.
+
 ## Saves
 
 Battery saves live in /root/saves/nes and are written when the game
-ends. Save states are not implemented.
+ends. Each cartridge also has one save state, in /root/states/nes,
+taken with HOME and L and loaded with HOME and R. The Saves tab shows
+when the state and the battery save were last written, with the
+state's details below.
 
 ## Sound
 

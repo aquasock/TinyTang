@@ -2656,3 +2656,37 @@ The site could give TinySNES and TinyGBA pages of their own like TinyNES's, and 
 - User Test: N/A
 
 ---
+
+## 79 COMMIT Unreleased 2026-11-22T10:30:08-07:00
+
+#### Coming From:
+
+Unreleased 890b0b9
+
+#### Purpose:
+
+Correct the README and manual statements in this repository and across the ecosystem's repositories that later work had made wrong, as an operator-approved documentation cycle.
+
+#### Outcome:
+
+In this repository, `README.md` said reopening TinyGutenberg resumes where you stopped, while `position_save()` in `ports/bl616/td_gutenberg_app.cpp` writes `/root/gutenberg.pos` and nothing reads it, as entry 4 found; it and `manual/gutenberg.md` now say the place is written but not yet restored, the restore itself being left for a firmware cycle. The README's opening now names keyboards, mice, gamepads and the wired Classic; its claim that only Bluetooth LE devices work now says keyboards and mice must be LE while the port's own Classic host takes gamepads; its Bluetooth window paragraph describes the five slots and the pad inquiry of entry 61 instead of three; and a `btpad` entry beside `blekbd`, `blemouse` and `blecombo` documents pairing, the card's `/root/ble/br_keys.bin`, `on`, `off`, `forget`, `watch`, `send`, the core word, the need for the default firmware and the 8BitDo it was proven with. `manual/getting-started.md` now says to power the board from its power input, which selects TinyTang over Sipeed's debugger as the release notes say, and to start the desktop with `desktop` rather than `osd desk on`; the board does start at the shell, because the desktop-first boot of entry 5 was reverted in `d16d3bb` before v0.2.0, which was checked in git rather than assumed. `manual/desktop.md` replaces the pad map entry 64 retired with the README's current table and gains the Bluetooth pad, and its app list gains TinySNES, TinyGBC, TinyGBA, Tiny89, TinyReader, Image Viewer and Software Update from `td_apps_register_all()`. `manual/tinynes.md` now has five tabs with Audio, the double-click and Enter stepping, the Player button and the two players' controllers including Bluetooth pads, the in-game chords, and save states, which it had said were not implemented. Across the ecosystem, each repository's own rules were followed, with a log entry, an audit and only the README and the log committed, leaving others' uncommitted work in Tiny89, TinyPhosphor, Tang-Phosphor and Tang-PSX untouched: TinyNES's opening described a planned emulator and now says it is integrated, shipping and began with Nestopia (`f0f8501`, its entry 59); TinySNES said the BL616 never sends frame 0x09 and that no ROM browser exists, and now says the frame reaches its pads, read from `snestang_top.v`, though no SNES game has been played with a Bluetooth pad, and that the browser is this repository's TinySNES window (`ba215ef`, entry 25); Tiny89's dated milestone gave way to its window, folders, saves and release status (`e8c31a0`, entry 23); TinyPhosphor told users to declare the I2S2 in `/tang.ini` with `pmod1 = i2s2`, which `tang_ini.c` refuses, and now gives `/tinytang.ini` and `layout = lora_i2s2` (`14ae78f`, entry 28, committed but not pushed because TinyPhosphor already had three unpushed commits that a push would publish, which is the operator's decision); TinyVCMI's current state gained the DDR3 controller training and testing 1 GiB on the board (`2dab51e`, entry 6); Tang-Phosphor is marked superseded by TinyPhosphor (`457b0b9`, entry 85); and Tang-PSX is marked archived (`8e7eee4`, entry 47). TinyGBA, TinyGBC, TinyCreature, TinyMaps and Tang-Build were read and needed no change, TinyGBC having been corrected in entry 77. The README's FPGA-cores text about the OLED, which entry 32 dropped from every socket layout, was left for a closer look because the command may still exist. Nothing was built or deployed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 79 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator decides whether TinyPhosphor's four unpushed commits, three earlier ones and this cycle's README fix, are pushed. Restoring TinyGutenberg's reading position is a firmware cycle of about thirty lines beside `position_save()`. The README's OLED text needs checking against what the firmware still does after entry 32. Manual pages for TinySNES, TinyGBC, TinyGBA, Tiny89 and TinyReader would be new content. The site's TinyNES screenshots, a SNES game with a Bluetooth pad, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- README.md
+- manual/desktop.md
+- manual/getting-started.md
+- manual/gutenberg.md
+- manual/tinynes.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

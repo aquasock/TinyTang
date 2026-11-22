@@ -10,14 +10,22 @@ the BL616, over whatever core is loaded.
 - The close box in the title bar closes it.
 - The taskbar at the bottom lists open windows and the start menu.
 
-Keyboard and mouse come over Bluetooth, and a Wii nunchuck or Classic
-Controller on the USB-A adapter drives the same pointer: the nunchuck's
-stick or the Classic's left stick moves it, the Classic's right stick moves
-it more slowly, Z or A is the left button and C or B the right. On a Classic
-the d-pad is the arrow keys, and holding the R shoulder turns it into the
-pointer, the way Alt does on the keyboard. Y moves the focus on, X cancels, + is
-Enter, - opens the start menu, and Home switches the screen. The pointer appears when a
-mouse is paired; without either, the keyboard alone drives everything.
+Keyboard and mouse come over Bluetooth LE. A Switch-mode Bluetooth
+gamepad, paired as Pad 1 or Pad 2 in Settings' Bluetooth window, and a Wii
+Classic Controller or nunchuck on the USB-A adapter all drive the desktop
+the same way:
+
+     Left stick   the pointer
+     Right stick  up and down are the wheel
+     A / B        left / right button
+     X / Y        Escape / Tab
+     + / -        Enter / F10, the start menu
+     D-pad        the arrow keys
+     Home         switches the screen between the desktop and the core
+
+The nunchuck has one stick and two buttons: Z is the left button, C the
+right, and C with Z held together is Home. Without a mouse or a pad, the
+keyboard alone drives everything.
 
 ## F12
 
@@ -35,9 +43,16 @@ playing, and back again.
      TinyWiki   this manual, and an encyclopedia
      TinyGutenberg  books on the card
      Phosphor   music
-     TinyNES    games, and their settings
+     TinyNES    NES games, and their settings
+     TinySNES   SNES games
+     TinyGBC    Game Boy and Game Boy Color games
+     TinyGBA    Game Boy Advance games
+     Tiny89     the TI-89 Titanium calculator
+     TinyReader pictures and books at full resolution
+     Image Viewer  BMP, PPM and PGM pictures in a window
      TinyCreature  the Celtic land
      TinyNode   the Arduino's relays, and its sensors
+     Software Update  installs the firmware on the card
      Settings   display, Bluetooth, time
 
 ## Menus and dialogs

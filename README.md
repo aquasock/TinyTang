@@ -10,7 +10,8 @@
 
 A Tang Console 138K with a real desktop on it: **TinyDesk Shell** and the
 **TinyDesk** desktop running on the board's BL616, shown on the board's own
-HDMI output, driven by a Bluetooth keyboard and mouse, with the SD card
+HDMI output, driven by Bluetooth keyboards, mice and gamepads or a wired Wii
+Classic Controller, with the SD card
 as the filesystem and the FPGA booting cores on command. F12 switches the
 screen between TinyDesk and whatever core is running, the way MiSTer's menu
 key does.
@@ -87,10 +88,13 @@ python tools/tinytang_sync.py
   app's Library. The network apps (Network, MQTT, Modbus, OTA) are left out because
   they are built on POSIX sockets and mbedTLS. In their place, Settings'
   **Bluetooth...** button opens a Bluetooth window showing the radio, the heap,
-  and the keyboard, mouse and combo slots with their connection state and
-  latest event. Each slot pairs from an 8-second scan (its own kind listed
-  first), turns reconnecting off and on, and forgets its pairing, asking first
-  before letting go of a connected device; the work runs on the Bluetooth
+  and five slots -- keyboard, mouse and combo over Bluetooth LE, Pad 1 and Pad 2
+  over Bluetooth Classic -- with their connection state and latest event. Each
+  LE slot pairs from an 8-second scan (its own kind listed first) and each pad
+  slot from a 10-second inquiry that lists only peripherals, gamepads first;
+  every slot turns reconnecting off and on and forgets its pairing, asking first
+  before letting go of a connected device. In the LE-only firmware the pad rows
+  say why they cannot work there and have no buttons; the work runs on the Bluetooth
   task, so the desktop never waits, and a `blekbd`, `blemouse`, `blecombo` or
   `blescan` started while the
   window is busy is refused rather than queued. A scan that would start the
@@ -130,8 +134,10 @@ python tools/tinytang_sync.py
   TinyWiki, so neither app lists the other's packs.
   Because a book is read rather than looked up, this is its own app: books
   browse by title or by author surname, a book's chapters come from the pack's
-  chapter table, and your page is kept in `/root/gutenberg.pos` so reopening the
-  app resumes where you stopped. Books are converted with a two-megabyte
+  chapter table, and your place -- the shelf, the book and the page -- is written
+  to `/root/gutenberg.pos` when you leave a book or close the window. Nothing
+  reads it back yet, so reopening the app starts at the library rather than
+  where you stopped. Books are converted with a two-megabyte
   article cap and a size floor that drops the archive's own author, bookshelf
   and home pages.
 - **F12 switches between TinyDesk and the core.** It flips the overlay: the
@@ -384,8 +390,9 @@ python tools/tinytang_sync.py
   deletes the pairing, `blekbd watch [seconds]` prints the reports,
   `blekbd <address> [pub|rand] [seconds]` pairs a given address, and `blekbd`
   alone reports the state. Proven with a Logitech K950 (from the MK955 set) in
-  Bluetooth mode. Only Bluetooth LE devices work: the SDK has no Bluetooth
-  Classic HID host. The keys are stored unencrypted on the card.
+  Bluetooth mode. Keyboards and mice must be Bluetooth LE: the SDK has no
+  Bluetooth Classic HID host, and the Classic host this port adds (`btpad`,
+  below) takes gamepads only. The keys are stored unencrypted on the card.
 - **`blemouse pair [name]`** does the same for a Bluetooth LE mouse, on its own
   connection beside the keyboard: boot protocol, whose report is buttons, X, Y
   and (if the mouse adds it) the wheel, and the mouse then drives the
@@ -402,6 +409,20 @@ python tools/tinytang_sync.py
   and mouse reports on its report characteristics rather than its boot inputs,
   so the two boot formats are routed wherever they arrive. A device that
   refuses boot protocol is paired and logged, but its reports are not decoded.
+- **`btpad pair [seconds]`** pairs a Bluetooth Classic gamepad -- a Switch-mode
+  pad such as an 8BitDo, in its pairing mode -- into the first free of two pad
+  slots, Pad 1 and Pad 2. It runs an inquiry that keeps only peripherals,
+  gamepads first, then pairs and opens the pad's HID control and interrupt
+  channels. **The pairing is saved to the card** (`/root/ble/br_keys.bin`), so a
+  woken pad reconnects by itself. `btpad on|off 1|2` stops and resumes a pad's
+  reconnecting and is kept across a reboot, `btpad forget 1|2|all` deletes a
+  pairing, `btpad watch [seconds]` prints whole reports, `btpad send 1|2 <hex>`
+  writes an output report, `btpad <address>` pairs a given address, and `btpad`
+  alone reports both slots with each pad's word to the core. A pad drives the
+  desktop as the wired Classic does (*Gamepads on the desktop*, above), and
+  Pad 1 and Pad 2 reach a game core as players 1 and 2 (frame 0x09). This
+  needs the default firmware, which carries the Classic controller library;
+  the LE-only build has no pad host. Proven with an 8BitDo pad in Switch mode.
 
   **Every connected device acts.** The slots do not compete for a role: a
   keyboard and a mouse never did, but two keyboards used to, because a

@@ -46,9 +46,10 @@ checked by `tools/check_wiki_pack.py`.
     Page Down  the page after
     Back       out of a book, out of a shelf
 
-Your place is kept in `/root/gutenberg.pos` -- the shelf, the book and the
-page -- written when you leave a book and when the window closes. Reopening
-the app opens that book at that page.
+Your place -- the shelf, the book and the page -- is written to
+`/root/gutenberg.pos` when you leave a book and when the window closes. Nothing
+reads it back yet: reopening the app starts at the library, so note the page
+if you want to return to it.
 
 ## What is not there
 
