@@ -2690,3 +2690,39 @@ The operator decides whether TinyPhosphor's four unpushed commits, three earlier
 - User Test: N/A
 
 ---
+
+## 80 COMMIT Unreleased 2026-11-22T11:38:52-07:00
+
+#### Coming From:
+
+Unreleased fc3a1f2
+
+#### Purpose:
+
+Write manual pages for the apps that had none, TinySNES, TinyGBC, TinyGBA, Tiny89, TinyReader and TinyNode, as an operator-approved documentation cycle.
+
+#### Outcome:
+
+Six pages were added to `manual/` in the shape of `manual/tinynes.md`, one section per tab, and `manual/index.md` links them. Each statement was taken from the app's source in `ports/bl616/`, the owning repository's README or the v0.2.1 release notes and its card README, and a placeholder page is described as one. `manual/tinysnes.md` covers the raw `.sfc` and `.smc` library, the two-player Input page, Video's aspect and lines rows, the master volume, HOME and HOME with SELECT, the battery save in `/root/saves/snes`, the absence of save states, and the eleven MIT homebrew titles and the Retro Regen test on the card; it says Bluetooth pads reach the core but no SNES game has been played with one, as TinySNES's README says. `manual/tinygbc.md` covers the library at `/root/media` limited to `gb`, `gbc` and `gbcolor`, the Input and Video pages, whose palette and colour-correction values come from `tang_gbc_ini.c`, the launch-time volume, the four chords, battery saves, the `.rtc` clock file and its dependence on the board's clock, and the save state in `/root/states/gbc`; the header comment of `ports/bl616/tinygbc_app.cpp` still calls Input and Video placeholders, which the code beneath it contradicts, so the code was followed and the comment left for a code cycle. `manual/tinygba.md` says TinyGBA postdates v0.2.1, which `git cat-file` against the tag confirmed, that Input, Video and Audio change nothing yet, gives the controller mapping from TinyGBA's README, the minus-with-HOME exit, the `<cartridge>.gba.sav` beside the image and its mGBA compatibility, and the size check on the Saves page. `manual/tiny89.md` covers the user's own OS image, the keyboard map read from `firmware/common/t89_key.c` in Tiny89, Ctrl+S, Ctrl+Alt+Q, End as ON, the three save files, and the v0.2.1 flash-save stall; two F-row bindings to TiEmu keys whose TI-89 meaning could not be confirmed were left out. Tiny89's own README still says its input is a Wii Classic Controller, while `fpga/tiny89_soc/ae350_soc.sv` says the pad unit was removed and the keyboard on the link is the only input, so the manual follows the source and the README is left for a Tiny89 cycle, being this cycle's finding rather than its scope. `manual/tinyreader.md` gives the book and picture controls from `on_book_event()` and `on_event()`, including that X on a Bluetooth pad types Escape and so leaves a book, the zoom mode, the reading position in `<book>.trb.pos`, which unlike TinyGutenberg's is read back by `book_pos_read()`, `tools/make_book.py` and its options, and that it needs a desktop core with the pixel plane, which the v0.2.1 card's ABI 1.6 core lacks. `manual/tinynode.md` covers the LoRa layout, the relays in cable order, Update and the status reply, and the three four-second attempts with the window's own messages. The pages are ASCII, because the desktop draws the manual in its own font. The operator also approved pushing TinyPhosphor after entry 79, and its four commits are on GitHub at `14ae78f`; none of them moves the `third_party/rockbox` gitlink, whose uncommitted change stays local. Nothing was built or deployed, and the card's TinyWiki pack of the manual gains these pages only when it is next rebuilt. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 80 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Tiny89's README should say its input is the Bluetooth keyboard, in a Tiny89 cycle. The stale header comment in `ports/bl616/tinygbc_app.cpp` can be corrected in the next code cycle that touches it. The TinyDesk apps, Settings, Software Update, Image Viewer and Terminal, have no manual pages and could have them. Restoring TinyGutenberg's reading position, the README's OLED text, the site's TinyNES screenshots, a SNES game with a Bluetooth pad, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- manual/index.md
+- manual/tiny89.md
+- manual/tinygba.md
+- manual/tinygbc.md
+- manual/tinynode.md
+- manual/tinyreader.md
+- manual/tinysnes.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
