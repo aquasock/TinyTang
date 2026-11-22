@@ -2565,3 +2565,33 @@ The operator uploads `assets/brand/tinytang-social.png` from aquasock.github.io 
 - User Test: N/A
 
 ---
+
+## 76 COMMIT Unreleased 2026-11-22T09:56:30-07:00
+
+#### Coming From:
+
+Unreleased 717e827
+
+#### Purpose:
+
+Retheme the aquasock.github.io ecosystem site to match the TinyTang logo entry 75 introduced.
+
+#### Outcome:
+
+The operator approved a plan and chose a strictly black, white and grey palette over tinting project cards with the pastel fills the master SVG still carries, and a heavy condensed system font over a self-hosted display face. In aquasock.github.io, commit `40c7c84` replaces the lime, cyan and orange theme with the logo's black outline, the cat's charcoal `#292929`, one light grey `#dcdcdc` and white, and turns the site's green-tinted greys into neutral greys of the same lightness. The header is now white under a 3 px black rule, which also lets the cat mark's dark face read, page headings take the logo's own treatment of white letters, a black outline and a charcoal offset shadow, frames, buttons and screenshots are square with heavy outlines and hard shadows, the paper grain is gone, and the hero shows the logo in place of the drawn handheld, whose system-name rotation was removed from `site.js`. The ticker is a black band edged with tangram triangles and the closing band carries the seven-piece tangram the cat is cut from, drawn as an inline SVG. Impact is absent on Linux, so the display stack gained Liberation Sans Narrow, Nimbus Sans Narrow and DejaVu Sans Condensed. Every page was checked in headless Chrome at 1280 and 390 px wide, which found and fixed a hero heading wider than a phone screen, dim text on the dark path card and outlined headings whose letters ran together; a tangram set behind the hero logo was tried and removed because it collided with the lettering. The page text was deliberately left unchanged for the content cleanup that follows. The operator reviewed the site served locally and passed it, GitHub Pages built `40c7c84`, and the served stylesheet matched the local file. Nothing in this repository changed apart from this entry, and no firmware was built or deployed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 76 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, `None.` in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The site's content cleanup comes next: its TinyNES screenshots predate entries 69 to 72, its TinyNES page describes remapping by pressing a button and does not mention Bluetooth pads, TinySNES and TinyGBA are not on it, TinyPhosphor is described differently from its repository, and its "100% open source" and "750 MHz AE350" claims need checking; in this repository `README.md` and `manual/gutenberg.md` still claim TinyGutenberg resumes a reading position it does not restore. The operator's upload of the social preview in each repository's settings, Tiny89's window layout and entry 68's items stand.
+
+#### Files Modified:
+
+None.
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
