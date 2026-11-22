@@ -2625,3 +2625,34 @@ None.
 - User Test: N/A
 
 ---
+
+## 78 COMMIT Unreleased 2026-11-22T10:18:54-07:00
+
+#### Coming From:
+
+Unreleased a152ded
+
+#### Purpose:
+
+Add TinySNES and TinyGBA to the aquasock.github.io site, and correct the release notes and repository descriptions that misdescribed them.
+
+#### Outcome:
+
+Both cores were described from their own READMEs and TinyTang's windows rather than from this log alone, which established the fact that shapes everything else: TinySNES and TinyGBA are nand2mario's SNESTang and GBATang running in the FPGA fabric, ported with the open flow, not emulators on the AE350 like the other four systems. In aquasock.github.io, commit `a398688` makes the home page six systems, with the stat at 06, an introduction that says four run as software on the AE350 and two are whole consoles in the fabric, a TinySNES card with a d-pad glyph and a TinyGBA card with a tangram parallelogram, and the windows item of the "What's new" section naming all four game windows; the projects page gains a TinySNES row, pill Integrated, naming its HiROM, DSP-1 and SuperFX titles, battery saves, remapping and aspect and overscan settings, and a TinyGBA row, pill Unreleased, naming its save hardware set up at load and its saves kept on the card; the getting-started page lists all six systems and puts the Wii Classic on USB-A port 2 for every game system. TinyGBA is labelled "on main since v0.2.1, not yet released" because its window arrived after that release, and its README's claim to be the first open-flow GBA core running retail software was left off the site because that README itself labels it the operator's assessment rather than a verified fact. The operator reviewed the site locally and passed it, GitHub Pages built `a398688` and the page was confirmed live. Three corrections were folded in at the operator's request. `docs/releases/v0.2.0.md` and `docs/releases/v0.2.1.md` said "SNESTang on the AE350" and now say it runs in the FPGA fabric, marked as corrected on 2026-11-22 because those notes are published; the same phrase was replaced in both GitHub release bodies, which differ from the files, by substituting that one phrase in each, after which each body differed from its previous text only by that phrase and one trailing newline. TinySNES's repository description, "SNES emulator for the Tang 138k", and TinyGBA's, "A port of nand2marios GBA core to the Tang 138k open-flow", now both name nand2mario's core, the fabric and the open flow. Nothing was built or deployed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 78 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The site could give TinySNES and TinyGBA pages of their own like TinyNES's, and its TinyNES tab screenshots, which predate entries 69 to 72, can be retaken from the HDMI capture when the operator has the board free. TinySNES merges frame 0x09 but no SNES game has been played with a Bluetooth pad, which remains entry 68's cheap check. In this repository `README.md` and `manual/gutenberg.md` still claim TinyGutenberg resumes a reading position it does not restore, and `README.md`'s opening still names only a Bluetooth keyboard and mouse. The operator's upload of the social preview, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- docs/releases/v0.2.0.md
+- docs/releases/v0.2.1.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
