@@ -295,6 +295,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Does this project carry the licences and notices it owes? | PROV | PROV-005 |
 | What licence is this project under, and what is the exception? | PROV | PROV-005 |
 | Where is colibri, and what are its terms? | PROV | PROV-003 |
+| What typeface is the logo set in, and may it be published? | PROV | PROV-006 |
 | Which silicon revision is this board, and which revision is the core image? | PSX | PSX-001 |
 | How much logic and block RAM does the device have? | PSX | PSX-002 |
 | Which FPGA pins carry the core UART, and where is the board's clock? | PSX | PSX-003 |
@@ -435,6 +436,7 @@ PHOS-013: "Lessons from the discarded resident gapless player experiment: detect
 PROV-001: "Lineage as the user states it: nand2mario's TangCore is the origin for Tang-Phosphor and Tang-PSX; Tang-Control is a fork of the same repo for peek/poke and the 1-wire and 2-wire debug arrangements; the family also uses a DDR3 IP block, TinyDesk, and CERN's colibri as a reference; the remembered memory module turned out to be nand2mario's JTAG bit-bang programmer, and Tang-PSX is being archived rather than deleted"
 PROV-003: "colibri is CERN's vendor-independent, fully verified, open-source VHDL common library at gitlab.cern.ch/colibri/colibri, with an unofficial SystemVerilog port at github.com/kavierim/colibri-sv pinned to upstream 3fa78412; read the port when working in SystemVerilog since it ships an AGENTS.md and targets Verilator and free tooling, but treat the original as the authority; licensed CERN-OHL-W-2.0 (weakly reciprocal), not MIT, with no code copied here"
 PROV-005: "TinyTang is MIT with thirteen Apache-2.0 files: nand2mario's JTAG programmer, and ten Phosphor transport files and two host tests written by this project's author in Tang-Control; it descends from nand2mario's TangCore firmware-bl616 through Tang-Control, a fork of it, and copies no other TangCore source; THIRD_PARTY.md must keep saying the UART protocol was read from GPL-3.0 nestang as a specification, not copied"
+PROV-006: "The logo's wordmark is Amsterdam Tangram by Nick Curtis (c) 2002 under the 1001Fonts FFC licence: logos and commercial use allowed, no attribution required, but the font may not be modified or published, so only rendered images are committed, never the TTF or a webfont; tools/make_brand_pngs.py refuses to render without it installed"
 PSX-001: "This board is GW5AST-138 revision C (package mark 2518CA0N), while the console138k core image it loads is built for revision B and works anyway"
 PSX-002: "GW5AST-138: 138,240 LUTs, 139,095 registers, 340 BSRAM blocks of 18 Kbit, about 765 KB"
 PSX-003: "50 MHz oscillator on FPGA pin V22; the BL616 control UART reaches the FPGA on V14 (FPGA RX) and U15 (FPGA TX), LVCMOS33 - the other end of the link PROT-003 describes from the BL616 side"
@@ -2054,6 +2056,20 @@ Records are grouped in the order of the topic catalog, and numbered within each 
     - "Tang-Phosphor, LICENSE and THIRD_PARTY.md: the model followed"
     - "Project statement recorded with the user, 2026-10-03: a preference for MIT unless Apache-2.0 turned out to be required"
   verification: "On 2026-10-06 every file under ports, tools, scripts and cmake was searched for Apache-2.0 and for nand2mario, TangCore and Tang-Control, and the authorship of each carried-over file was read from Tang-Control's history (core-log entry 38). Each THIRD_PARTY.md entry was written from a licence read directly. Revised 2026-10-11 (core-log entry 10): folded in THIRD_PARTY.md's coverage from the retired PROV-002 and the MIT trade-offs from the retired PROV-004."
+
+- record_id: PROV-006
+  kind: EXTERNAL
+  topic_id: PROV
+  title: "Amsterdam Tangram, the logo's typeface: 1001Fonts FFC licence, font never published"
+  status: VERIFIED
+  verified_date: 2026-11-22
+  statement: "Amsterdam Tangram is a typeface by Nick Curtis, copyright (c) 2002 (the TTF's own copyright string: 'Copyright (c) 2002 Nick Curtis. All Rights Reserved'), one style, Regular, based on the lettering of the Dutch comic artist Joost Swarte. 1001Fonts distributes it under the 1001Fonts Free For Commercial Use License (FFC), whose text ships in the download as 1001fonts-amsterdamtangram-eula.txt. Section 2 permits free personal and commercial use, naming logos among commercial uses, provided the use is not racist or illegal; section 3 forbids modifying, altering, adapting or building upon the font without the author's written permission; section 4 permits conversion to webfont formats only unmodified; section 5 allows passing the original zip along for private use but forbids selling or publishing the font without the author's written permission; section 6 allows embedding in an application that does not distribute the font. The licence asks for no attribution."
+  consequence: "The TinyTang logo's wordmark is set in this face, so the logo images may be published while the font may not: the TTF is never committed to this or any of the project's repositories, and aquasock.github.io does not load it as a webfont. The master logo SVG references the family by name, so it renders correctly only where the font is installed; tools/make_brand_pngs.py refuses to run otherwise rather than let Inkscape substitute a fallback face. The master names font-weight bold while the face has only Regular, so the rendered weight is whatever Inkscape synthesises, which is what the logo's author sees in Inkscape. Attribution is credited voluntarily in THIRD_PARTY.md, the site's footer and the site's README."
+  sources:
+    - "https://www.1001fonts.com/amsterdamtangram-font.html, read 2026-11-22: author Nick Curtis, licence 'Free for commercial use', 1001Fonts FFC"
+    - "https://www.1001fonts.com/licenses/ffc.html, read 2026-11-22: the FFC licence, sections 1 to 7"
+    - "amsterdamtangram.zip as downloaded by the user: 1001fonts-amsterdamtangram-eula.txt (2,457 bytes) and AmsterdamTangram.ttf (21,048 bytes, name table copyright string)"
+  verification: "Confirmed 2026-11-22 (core-log entry 75) by reading the EULA shipped in the user's download against the licence page on 1001fonts.com, and the copyright string in the TTF's name table; the two licence texts agree. The installed copy at /usr/local/share/fonts/a/AmsterdamTangram.ttf was found by fc-list and is the one Inkscape renders with."
 
 - record_id: PSX-001
   kind: DEVICE

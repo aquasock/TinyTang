@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://aquasock.github.io/assets/brand/tinytang-logo-640.png" alt="TinyTang" width="320">
+</p>
+
 # TinyTang
 
 ![TinyDesk on the Tang Console: the About box over the desktop, the Phosphor player and its visualizer, Bluetooth pairing, the System Monitor and Task Manager, and the editor](docs/images/tinytang-desktop.png)

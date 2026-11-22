@@ -368,3 +368,22 @@ The source was taken from the committed files, leaving that repository's
 working changes untouched. The compact font and desktop text renderer are
 original TinyTang work under GPL-3.0-only.
 
+
+## Amsterdam Tangram font (Nick Curtis) — logo lettering, font not distributed
+
+The TinyTang logo's "TINY TANG" lettering is set in Amsterdam Tangram,
+copyright (c) 2002 Nick Curtis, used under the 1001Fonts Free For Commercial
+Use licence (FFC), as published at
+https://www.1001fonts.com/amsterdamtangram-font.html and in the
+`1001fonts-amsterdamtangram-eula.txt` shipped in the font's download. That
+licence allows logos (its section 2) and asks no attribution; it is credited
+here anyway. It forbids modifying the font (section 3) and publishing it
+without the author's written permission (section 5), so the font file is not
+in this repository or any other of this project's, and no site loads it as a
+webfont. Only images rendered from it are published.
+
+The master logo SVG is likewise kept outside every repository.
+`tools/make_brand_pngs.py` renders the logo PNGs from it and refuses to run
+unless the font is installed, so a missing font cannot silently become a
+fallback face. The PNGs are published from https://github.com/aquasock/aquasock.github.io
+under `assets/brand/`, and this README's header image is loaded from there.

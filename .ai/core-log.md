@@ -2533,3 +2533,35 @@ Tiny89 is the one game window left untouched: it has only Library and Saves tabs
 - User Test: PASS
 
 ---
+
+## 75 COMMIT Unreleased 2026-11-22T09:43:10-07:00
+
+#### Coming From:
+
+Unreleased 2b0a215
+
+#### Purpose:
+
+Apply the operator's new TinyTang ecosystem logo to the README, the GitHub social preview and the aquasock.github.io site, with the logo's typeface credited and its licence respected.
+
+#### Outcome:
+
+The operator's master logo, `cat_final.svg`, a tangram cat beside the wordmark "TINY TANG", is kept on the operator's desktop and deliberately outside every repository. Its wordmark is set in Amsterdam Tangram by Nick Curtis, whose 1001Fonts FFC licence, read both on 1001fonts.com and in the EULA shipped in the operator's download, allows logos and asks no credit but forbids modifying or publishing the font, so the TTF is committed nowhere, the site does not load it as a webfont, and the font is credited anyway in a new `THIRD_PARTY.md` entry, the site's footer and the site's README; the finding is recorded as PROV-006. The new `tools/make_brand_pngs.py` takes the SVG's path and an output directory and renders, through Inkscape and ImageMagick, the whole logo at 640 px transparent for README headers, a 1280 by 640 social preview and a 1200 by 630 Open Graph card on the site's paper colour `#e9eadf`, the cat's head alone as an 80 px header mark, 16, 32 and 48 px favicons with a `favicon.ico`, and a 180 px iPhone icon on paper because iOS fills transparency with black, which would have hidden the cat's dark face. The head is the master's ears, face and eyes (`p1`, `p2`, `p3`, `path1`, `path1-9`) cut from a scratch copy, chosen after a comparison at 16, 32 and 48 px on light and dark tabs showed the whole logo and the whole cat to be noise at favicon sizes; the operator saw it in a browser tab and accepted it. The script strips all metadata and forces 8-bit output, two runs gave byte-identical files, and it refuses to run unless the font is installed so Inkscape cannot silently substitute a fallback face. In aquasock.github.io, commit `a28027e` adds the images under `assets/brand/` with `favicon.ico` and `apple-touch-icon.png` at the root, replaces the placeholder `favicon.svg`, puts the cat mark in place of the three-bar mark in every page's header and footer, adds Open Graph and Twitter card tags to every page but the 404, which takes absolute paths because Pages serves it at any address, and adds the credit and a Logo section to its README; the operator reviewed it served locally before it was pushed, GitHub Pages built `a28027e`, and the served logo and favicon were byte-identical to the local files. TinyTang's `README.md` now opens with the logo centred at 320 px, loaded from the site so a change of logo is one commit there. The social preview still has to be uploaded by the operator under each repository's Settings, since GitHub offers no API for it, and the operator's own avatar was left unchanged at the operator's request. `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped and no firmware was built or deployed. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry and the new PROV-006 with its routing and fast-lookup rows, the six YAML blocks parse, and this entry was validated as number 75 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+The operator uploads `assets/brand/tinytang-social.png` from aquasock.github.io as the social preview of each repository wanted, and the other project READMEs can open with the same logo URL. The documentation cleanup the operator raised before the logo comes next: the site still dates from 2026-10-26, its TinyNES screenshots predate entries 69 to 72, its TinyNES page describes remapping by pressing a button and does not mention Bluetooth pads, TinySNES and TinyGBA are not on it, TinyPhosphor is described differently from its repository, and its "100% open source" and "750 MHz AE350" claims need checking, while in this repository `README.md` and `manual/gutenberg.md` still claim TinyGutenberg resumes a reading position it does not restore. Tiny89's window layout and entry 68's items stand.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- tools/make_brand_pngs.py
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---
