@@ -2472,3 +2472,33 @@ TinyNES's five tabs are now tidied. TinySNES, TinyGBC, TinyGBA and Tiny89 keep t
 - User Test: PASS
 
 ---
+
+## 73 COMMIT Unreleased 2026-11-21T20:16:00-07:00
+
+#### Coming From:
+
+Unreleased 085bd17
+
+#### Purpose:
+
+Apply the TinyNES window's tab layout and formatting from entries 69 to 72 to the TinyGBC window.
+
+#### Outcome:
+
+In `ports/bl616/tinygbc_app.cpp` the Library's scrollbar is now on the Library page only, as entry 70 did for TinyNES. The Input page lost its heading and its Change button: the mapping list starts on row 2 at 19 columns (`LIST_W`), and beside it at `ACTION_X`, 22, stand Restore defaults, renamed from Restore to match TinyNES, and Save, with no Player button because TinyGBC has one player; the double-click and Enter hint and "Taken when the next game starts." are under the list. The Video rows now use the 8-column name, so the widest of both pages, `Colour  accurate *`, is 18 and both lists are 19 with the action column lining up across the pages; Change was removed, Save stands beside the list, the palette row is still greyed for a colour cartridge, and four hint lines follow on rows 5 to 8. The Audio page puts the slider, a percentage-only reading, Mute and Save on row 4 as TinyNES's does. The Saves page follows entry 72's layout with two rows TinyGBC needs: Clock, the MBC3 or HuC3 cartridge's own clock in the same words as State and Battery, and Board, which `board_clock_check()` now fills as `clock set, cartridge clocks are kept` or `clock not set:` with its reason; the old single board clock sentence would not fit the row, so when the board has no date a cartridge with no clock record says `not kept while the board clock is unset` on the Clock row instead, and the Folders row names `/root/states/gbc` and `/root/saves/gbc`, where the clocks sit with the battery saves. Nothing on the page deletes a file. `tools/build_both.sh` passes with images of 1,062,992 and 812,016 bytes and `tools/tests/run_all.sh --quick` is 47 of 47 with nine skipped; no host test covers these pages. The first install was refused before anything was sent because the console probe answered that the desktop was running on it, and after the operator returned the console to the shell, firmware `085bd17-dirty.8f7b10a` (image SHA-256 `87d1d42613680c315bfb28f154df4d0ee02bd7611bb6cde0d9f80f24536adc9f`) was installed with `tools/tinytang_flash.py --yes` on `/dev/serial/by-id/usb-TinyTang_TinyTang_CDC_0.1.3-if00` and started with the relay sequence, and `platform` confirmed it. The operator passed the window. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 73 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinySNES, TinyGBA and Tiny89 keep their old page layouts and their Library scrollbars still stand on every tab, so the same layout can be carried to them in cycles of their own if the operator wants it. Entry 68's items stand: a TinySNES game with the 8BitDo, the 0x21 report from TinySNES and TinyGBC, the 8BitDo through the NES/SNES receiver, entry 50's zoom mode test, the updater's silent sector failure, the Phase 3 LE checks and the 8BitDo Cube 2 speaker proposal.
+
+#### Files Modified:
+
+- ports/bl616/tinygbc_app.cpp
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

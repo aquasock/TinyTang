@@ -77,6 +77,21 @@ const char *const GB_DIRS[] = { "gb", "gbc", "gbcolor" };
 constexpr int WIN_W = 54;
 constexpr int WIN_H = 20;
 constexpr int LIB_ROWS = 12;
+/* The Input and Video pages, laid out as TinyNES's: a list in the 8-column
+ * name, and two clear of its right edge the column its actions stand in.  A
+ * row is drawn from the list's second column, and the widest of both pages,
+ * "Colour  accurate *", is 18, so the lists are 19 and the column lines up
+ * across the two. */
+constexpr int LIST_W = 19;
+constexpr int ACTION_X = 1 + LIST_W + 2;
+/* The Audio page is one row: the slider, its reading, at most "100%", then
+ * the mute and the Save, each two clear of the one before.  The mute box
+ * beside the reading shows the mute, so the reading does not repeat it. */
+constexpr int VOLUME_SLIDER_W = 20;
+constexpr int VOLUME_LABEL_X = 1 + VOLUME_SLIDER_W + 2;
+constexpr int VOLUME_LABEL_W = 4;
+constexpr int MUTE_X = VOLUME_LABEL_X + VOLUME_LABEL_W + 2;
+constexpr int AUDIO_SAVE_X = MUTE_X + 8 + 2;   /* "Mute" and its box are 8 */
 
 constexpr uint32_t LAUNCH_STACK_WORDS = 2048;
 const int TABS = 5;
@@ -149,10 +164,16 @@ int s_last_cgb = -1;
  * game (TinyGBC core-log entry 25), read again whenever the page is shown. */
 const char STATE_SHOWN[] = "/root/states/gbc";
 const char STATE_REAL[] = "/sd/root/states/gbc";
-const int STATE_LINES = 6;
-td_widget_t *s_state_line[STATE_LINES];
+const char SAVES_SHOWN[] = "/root/saves/gbc";
+/* The page, as TinyNES's: the cartridge, a row each for its state, its battery
+ * save, its clock and this board's clock in the 8-column name, and under them,
+ * dimmed, what the state file holds -- a heading and three lines. */
+const int DETAIL_LINES = 4;
+td_widget_t *s_save_name;
+td_widget_t *s_state_line;  /* when the state was last written */
 td_widget_t *s_batt_line;   /* when the battery save was last written */
 td_widget_t *s_rtc_line;    /* when the cartridge's clock was last written */
+td_widget_t *s_detail[DETAIL_LINES];
 /* Whether this board's clock has a date, which is what a cartridge's clock is
  * kept against.  Read while the desktop core still owns the I2C bus, because
  * the clock is an RTC behind that core's engine and a launch replaces it. */
@@ -228,11 +249,12 @@ void board_clock_check(void)
     if (s_clock_line == NULL) {
         return;
     }
+    /* The Board row; when it has no date, the Clock row says what that means
+     * for the cartridge's clock. */
     if (why == NULL) {
-        snprintf(text, sizeof text, "Board clock: set, so cartridge clocks are kept.");
+        snprintf(text, sizeof text, "%-8s%s", "Board", "clock set, cartridge clocks are kept");
     } else {
-        snprintf(text, sizeof text, "Board clock: not set (%s), so a cartridge's "
-                                    "clock is not kept.", why);
+        snprintf(text, sizeof text, "%-8sclock not set: %s", "Board", why);
     }
     td_widget_set_text(s_clock_line, text);
 }
@@ -459,8 +481,7 @@ const char *save_settings(void)
 void show_volume(void)
 {
     if (s_volume_label != nullptr) {
-        td_widget_printf(s_volume_label, "%3u%%%s", (unsigned)s_set.audio.volume,
-                         s_set.audio.mute ? "  muted" : "");
+        td_widget_printf(s_volume_label, "%3u%%", (unsigned)s_set.audio.volume);
     }
 }
 
@@ -509,7 +530,7 @@ const char *video_item(td_widget_t *, int index, int *fg, void *)
 
     (void)fg;
     if (index == 0) {
-        snprintf(text, sizeof text, "%-9s %s%s", "Palette",
+        snprintf(text, sizeof text, "%-8s%s%s", "Palette",
                  tang_gbc_palette_name(s_set.palette), s_dirty ? " *" : "");
         if (palette_inert()) {
             /* Greyed, and left readable: the name still says what is set. */
@@ -518,15 +539,15 @@ const char *video_item(td_widget_t *, int index, int *fg, void *)
         return text;
     }
     if (index == 1) {
-        snprintf(text, sizeof text, "%-9s %s%s", "Colour",
+        snprintf(text, sizeof text, "%-8s%s%s", "Colour",
                  tang_gbc_colour_name(s_set.colour), s_dirty ? " *" : "");
         return text;
     }
     return "";
 }
 
-/* Steps the selected row to its next value. The palette row does nothing for a
- * colour cartridge, so neither does its Change. */
+/* Steps the selected row to its next value, on a double-click or Enter. The
+ * palette row does nothing for a colour cartridge. */
 void on_video_row(td_widget_t *, void *)
 {
     const int row = s_video_list != nullptr ? td_list_selected(s_video_list) : -1;
@@ -824,33 +845,47 @@ uint32_t state_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
     return ~crc;
 }
 
-void state_lines(const char *const text[STATE_LINES])
-{
-    for (int i = 0; i < STATE_LINES; i++) {
-        if (s_state_line[i] != nullptr) {
-            td_widget_set_text(s_state_line[i], text[i] != nullptr ? text[i] : "");
-        }
-    }
-    if (s_win != nullptr) {
-        td_win_invalidate(s_win);
-    }
-}
-
-/* One saved file, in the page's words.  The stamp is the RTC-kept clock's
- * local time as the firmware wrote it; a save made before the clock had been
- * set says so rather than passing "no-clock" off as a date. */
-void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
-                   size_t cap)
+/* One saved file's last record, in the page's words: when, and what came of
+ * it.  The stamp is the RTC-kept clock's local time as the firmware wrote it;
+ * a save made before the clock had been set says so rather than passing
+ * "no-clock" off as a date.  The size is the details' to show, not this. */
+void describe_save(const td_saves_attempt_t &rec, char *out, size_t cap)
 {
     char when[32];
 
     td_saves_when(rec.stamp, when, sizeof when);
     if (rec.verdict[0] != '\0' && strcmp(rec.stamp, "no-clock") == 0) {
-        snprintf(out, cap, "%s, %lu B; clock was unset then", verb, rec.want);
+        snprintf(out, cap, "%s, clock was unset then", rec.verdict);
     } else if (rec.verdict[0] != '\0') {
-        snprintf(out, cap, "%s %s, %s, %lu B", verb, when, rec.verdict, rec.want);
+        snprintf(out, cap, "%s, %s", when, rec.verdict);
     } else {
-        snprintf(out, cap, "%s %s, did not finish", verb, when);
+        snprintf(out, cap, "%s, did not finish", when);
+    }
+}
+
+/* A row with its 8-column name, as the Input and Video pages lay theirs. */
+void saves_row(td_widget_t *w, const char *name, const char *text)
+{
+    char row[TD_TEXT_MAX];
+
+    if (w != nullptr) {
+        snprintf(row, sizeof row, "%-8s%s", name, text);
+        td_widget_set_text(w, row);
+    }
+}
+
+/* The details are secondary, so they take the theme's dim colour, read each
+ * time in case the theme has changed since the window opened. */
+void saves_details(const char *const text[DETAIL_LINES])
+{
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        if (s_detail[i] != nullptr) {
+            td_widget_set_color(s_detail[i], td_theme()->dim, TD_COLOR_DEFAULT);
+            td_widget_set_text(s_detail[i], text[i] != nullptr ? text[i] : "");
+        }
+    }
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
     }
 }
 
@@ -859,30 +894,35 @@ void describe_save(const td_saves_attempt_t &rec, const char *verb, char *out,
  * one TinyTang verifies it by, so the three can be matched by eye. */
 void state_show(void)
 {
-    static char line[STATE_LINES][TD_TEXT_MAX];
-    static char batt[TD_TEXT_MAX];
-    const char *text[STATE_LINES] = {};
+    static char detail[DETAIL_LINES][TD_TEXT_MAX];
+    const char *details[DETAIL_LINES] = {};
+    char text[TD_TEXT_MAX];
     const int row = s_lib_list != nullptr ? td_list_selected(s_lib_list) : -1;
 
     if (s_lib_entries == nullptr || row < 0 || row >= s_lib_count ||
         s_lib_entries[row].is_dir) {
-        text[0] = "Select a cartridge in the Library.";
-        state_lines(text);
-        if (s_batt_line != nullptr) {
-            td_widget_set_text(s_batt_line, "Battery save: select a cartridge.");
+        if (s_save_name != nullptr) {
+            td_widget_set_text(s_save_name, "Select a cartridge in the Library.");
         }
-        if (s_rtc_line != nullptr) {
-            td_widget_set_text(s_rtc_line, "");
-        }
+        saves_row(s_state_line, "State", "");
+        saves_row(s_batt_line, "Battery", "");
+        saves_row(s_rtc_line, "Clock", "");
+        saves_details(details);
         return;
     }
     const char *name = s_lib_entries[row].name;
     const char *dot = strrchr(name, '.');
     const int stem = dot != nullptr && dot != name ? (int)(dot - name) : (int)strlen(name);
 
-    /* The board's log, read once for both files: every line names the file it
-     * carried and is stamped with the RTC-kept clock's local time.  The files
-     * carry no date of their own, because FatFS has no clock on this board. */
+    if (s_save_name != nullptr) {
+        snprintf(text, sizeof text, "%.*s", stem, name);
+        td_widget_set_text(s_save_name, text);
+    }
+
+    /* The board's log, read once for the three files: every line names the
+     * file it carried and is stamped with the RTC-kept clock's local time.
+     * The files carry no date of their own, because FatFS has no clock on this
+     * board. */
     td_saves_attempt_t saved_state = {};
     td_saves_attempt_t saved_batt = {};
     td_saves_attempt_t saved_rtc = {};
@@ -914,37 +954,29 @@ void state_show(void)
             (void)f_close(&log);
         }
     }
-    if (s_batt_line != nullptr) {
-        if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
-            describe_save(saved_batt, "Battery save", batt, sizeof batt);
-        } else {
-            snprintf(batt, sizeof batt, "Battery save: none written yet.");
-        }
-        td_widget_set_text(s_batt_line, batt);
+    if (saved_batt.verdict[0] != '\0' || saved_batt.armed) {
+        describe_save(saved_batt, text, sizeof text);
+    } else {
+        snprintf(text, sizeof text, "none written yet");
     }
+    saves_row(s_batt_line, "Battery", text);
     /* The clock of an MBC3 or HuC3 cartridge, which the player keeps only
      * when this board's clock has the date; most cartridges have none. */
-    if (s_rtc_line != nullptr) {
-        static char clock[TD_TEXT_MAX];
-        if (saved_rtc.verdict[0] != '\0' || saved_rtc.armed) {
-            describe_save(saved_rtc, "Clock", clock, sizeof clock);
-        } else {
-            snprintf(clock, sizeof clock, "Clock: none kept for this cartridge.");
-        }
-        td_widget_set_text(s_rtc_line, clock);
+    if (saved_rtc.verdict[0] != '\0' || saved_rtc.armed) {
+        describe_save(saved_rtc, text, sizeof text);
+    } else if (s_board_clock_read && s_board_clock != TANG_CLOCK_SYNCED) {
+        snprintf(text, sizeof text, "not kept while the board clock is unset");
+    } else {
+        snprintf(text, sizeof text, "none kept for this cartridge");
     }
+    saves_row(s_rtc_line, "Clock", text);
 
     char real[TD_PATH_MAX + 8];
-    snprintf(line[0], sizeof line[0], "%.*s", stem, name);
-    snprintf(line[1], sizeof line[1], "%s/%.*s.state", STATE_SHOWN, stem, name);
     snprintf(real, sizeof real, "%s/%.*s.state", STATE_REAL, stem, name);
-    text[0] = line[0];
-    text[1] = line[1];
-
     FIL file;
     if (f_open(&file, real, FA_READ) != FR_OK) {
-        text[2] = "No save state yet. L saves one in the game.";
-        state_lines(text);
+        saves_row(s_state_line, "State", "none yet");
+        saves_details(details);
         return;
     }
     const uint32_t size = (uint32_t)f_size(&file);
@@ -969,29 +1001,31 @@ void state_show(void)
     }
     (void)f_close(&file);
 
-    snprintf(line[2], sizeof line[2], "Size %lu bytes, CRC-32 %08lx",
+    details[0] = "State details";
+    snprintf(detail[1], sizeof detail[1], "%lu B, CRC-32 %08lx",
              (unsigned long)size, (unsigned long)crc);
-    text[2] = line[2];
+    details[1] = detail[1];
     if (!ok || memcmp(h.magic, "TGS1", 4) != 0 || h.header_bytes != sizeof h ||
         h.length + sizeof h != size) {
-        text[3] = "Not a TinyGBC save state, or cut short.";
-    } else {
-        snprintf(line[3], sizeof line[3], "Game CRC-32 %08lx, frame %lu",
-                 (unsigned long)h.rom_crc, (unsigned long)h.frame);
-        snprintf(line[4], sizeof line[4], "Core gambatte %08lx",
-                 (unsigned long)h.gambatte);
-        text[3] = line[3];
-        text[4] = line[4];
+        saves_row(s_state_line, "State", "not a TinyGBC state, or cut short");
+        saves_details(details);
+        return;
     }
+    snprintf(detail[2], sizeof detail[2], "Game CRC-32 %08lx, frame %lu",
+             (unsigned long)h.rom_crc, (unsigned long)h.frame);
+    snprintf(detail[3], sizeof detail[3], "Core gambatte %08lx",
+             (unsigned long)h.gambatte);
+    details[2] = detail[2];
+    details[3] = detail[3];
     /* When it was written: the log's record, since the file itself predates
      * any clock.  A save that started and never finished says that instead. */
     if (saved_state.verdict[0] != '\0' || saved_state.armed) {
-        describe_save(saved_state, "Saved", line[5], sizeof line[5]);
+        describe_save(saved_state, text, sizeof text);
     } else {
-        snprintf(line[5], sizeof line[5], "Saved: no record in the log.");
+        snprintf(text, sizeof text, "on the card, no record in the log");
     }
-    text[5] = line[5];
-    state_lines(text);
+    saves_row(s_state_line, "State", text);
+    saves_details(details);
 }
 
 /* ---------------------------------------------------------------- actions */
@@ -1225,7 +1259,9 @@ void launch(void)
     s_lib_path = td_label(s_win, 1, 2, 0, "");
     s_lib_list = td_list(s_win, td_rect(1, 3, -1, LIB_ROWS), lib_get_item,
                          lib_on_activate, nullptr);
-    td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list);
+    /* The scrollbar belongs to the page like the list it moves: left off it,
+     * it stood greyed beside every other tab. */
+    page_add(0, td_scrollbar(s_win, -1, 3, LIB_ROWS, s_lib_list));
     page_add(0, s_lib_path);
     page_add(0, s_lib_list);
     page_add(0, td_button(s_win, 1, 16, "Launch", lib_on_launch, nullptr));
@@ -1238,70 +1274,83 @@ void launch(void)
         lib_say("Not enough memory for the list");
     }
 
-    /* Input: which controller button answers to each Game Boy button, edited
-     * a row at a time, written to /tinygbc.ini by Save and taken by the player
-     * when the next game starts. */
-    page_add(INPUT_TAB, td_label(s_win, 1, 2, 0, "Controller button per Game Boy button:"));
-    s_input_list = td_list(s_win, td_rect(1, 3, -1, INPUT_ROWS), input_item,
+    /* Input: which controller button answers to each Game Boy button, a row
+     * stepped on a double-click or Enter, and beside the rows the actions,
+     * laid out as TinyNES's page.  Save writes /tinygbc.ini and the player
+     * takes it when the next game starts. */
+    s_input_list = td_list(s_win, td_rect(1, 2, LIST_W, INPUT_ROWS), input_item,
                            on_row, nullptr);
     /* A list draws nothing until its count is set, whatever its height. */
     if (s_input_list != nullptr) {
         td_list_set_count(s_input_list, TANG_GBC_BUTTONS);
     }
     page_add(INPUT_TAB, s_input_list);
-    page_add(INPUT_TAB, td_button(s_win, 1, 12, "Change", on_row, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, 10, 12, "Restore", on_restore, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, 20, 12, "Save", on_save, nullptr));
-    page_add(INPUT_TAB, td_label(s_win, 1, 13, 0, "Change steps the selected row."));
-    page_add(INPUT_TAB, td_label(s_win, 1, 14, 0, "Taken when the next game starts."));
+    page_add(INPUT_TAB, td_button(s_win, ACTION_X, 2, "Restore defaults", on_restore, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, ACTION_X, 4, "Save", on_save, nullptr));
+    page_add(INPUT_TAB, td_label(s_win, 1, 11, 0, "Double-click a row or press Enter to step it."));
+    page_add(INPUT_TAB, td_label(s_win, 1, 12, 0, "Taken when the next game starts."));
 
     /* Video: the monochrome palette and the colour correction, both taken by
-     * the player when the next game starts. The palette row is greyed for a
-     * colour cartridge, which draws its own colours. */
-    page_add(VIDEO_TAB, td_label(s_win, 1, 1, 0, "Palette is for monochrome cartridges."));
-    s_video_list = td_list(s_win, td_rect(1, 3, -1, VIDEO_ROWS), video_item,
+     * the player when the next game starts, and beside them the Save, laid out
+     * as TinyNES's page. The palette row is greyed for a colour cartridge,
+     * which draws its own colours. */
+    s_video_list = td_list(s_win, td_rect(1, 2, LIST_W, VIDEO_ROWS), video_item,
                            on_video_row, nullptr);
     /* A list draws nothing until its count is set, whatever its height. */
     if (s_video_list != nullptr) {
         td_list_set_count(s_video_list, VIDEO_ROWS);
     }
     page_add(VIDEO_TAB, s_video_list);
-    page_add(VIDEO_TAB, td_button(s_win, 1, 7, "Change", on_video_row, nullptr));
-    page_add(VIDEO_TAB, td_button(s_win, 10, 7, "Save", on_save, nullptr));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 9, 0, "Off is the picture before these settings."));
-    page_add(VIDEO_TAB, td_label(s_win, 1, 10, 0, "Taken when the next game starts."));
+    page_add(VIDEO_TAB, td_button(s_win, ACTION_X, 2, "Save", on_save, nullptr));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 5, 0, "Double-click a row or press Enter to step it."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 6, 0, "Palette is for monochrome cartridges."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 7, 0, "Off is the picture before these settings."));
+    page_add(VIDEO_TAB, td_label(s_win, 1, 8, 0, "Taken when the next game starts."));
 
-    /* Audio: the master volume, its percentage, the mute, and the Save, laid
-     * out as the TinyNES app's page is. */
+    /* Audio: the master volume, its percentage, the mute and the Save, left
+     * to right on the slider's row, laid out as the TinyNES app's page is. */
     page_add(AUDIO_TAB, td_label(s_win, 1, 2, 0, "Volume, HDMI and Line Out together:"));
-    s_volume = td_slider(s_win, 1, 4, 20, TANG_VOLUME_STEP, on_volume, nullptr);
+    s_volume = td_slider(s_win, 1, 4, VOLUME_SLIDER_W, TANG_VOLUME_STEP, on_volume,
+                         nullptr);
     if (s_volume != nullptr) {
         td_slider_set(s_volume, s_set.audio.volume);
     }
     page_add(AUDIO_TAB, s_volume);
-    s_volume_label = td_label(s_win, 23, 4, 14, "");
+    s_volume_label = td_label(s_win, VOLUME_LABEL_X, 4, VOLUME_LABEL_W, "");
     page_add(AUDIO_TAB, s_volume_label);
     show_volume();
-    page_add(AUDIO_TAB, td_checkbox(s_win, 1, 6, "Mute", s_set.audio.mute != 0,
+    page_add(AUDIO_TAB, td_checkbox(s_win, MUTE_X, 4, "Mute", s_set.audio.mute != 0,
                                     on_mute, nullptr));
-    page_add(AUDIO_TAB, td_button(s_win, 1, 8, "Save", on_save, nullptr));
-    page_add(AUDIO_TAB, td_label(s_win, 1, 10, 0, "Left and Right move the slider 5%."));
-    page_add(AUDIO_TAB, td_label(s_win, 1, 11, 0, "Taken when the next game starts."));
+    page_add(AUDIO_TAB, td_button(s_win, AUDIO_SAVE_X, 4, "Save", on_save, nullptr));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 6, 0, "Left and Right move the slider 5%."));
+    page_add(AUDIO_TAB, td_label(s_win, 1, 7, 0, "Taken when the next game starts."));
 
-    /* Saves: the selected cartridge's save state, then where battery saves
-     * go.  L saves and R loads in the game; there is one state a cartridge. */
-    page_add(SAVES_TAB, td_label(s_win, 1, 2, 0, "Save state (L saves, R loads, with HOME):"));
-    for (int i = 0; i < STATE_LINES; i++) {
-        s_state_line[i] = td_label(s_win, 3, 3 + i, 0, "");
-        page_add(SAVES_TAB, s_state_line[i]);
-    }
-    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "Battery saves and clocks are in /root/saves/gbc"));
-    s_batt_line = td_label(s_win, 1, 11, 0, "Battery save: none written yet.");
+    /* Saves, as TinyNES's page: the selected cartridge, when its state, its
+     * battery save and its clock were last written, this board's clock, the
+     * two folders in that order (the clocks sit with the battery saves), how a
+     * state is made, and the state file's details dimmed under them.  There is
+     * one state a cartridge, and nothing here deletes any file. */
+    s_save_name = td_label(s_win, 1, 2, 0, "");
+    page_add(SAVES_TAB, s_save_name);
+    s_state_line = td_label(s_win, 1, 3, 0, "");
+    page_add(SAVES_TAB, s_state_line);
+    s_batt_line = td_label(s_win, 1, 4, 0, "");
     page_add(SAVES_TAB, s_batt_line);
-    s_rtc_line = td_label(s_win, 1, 12, 0, "");
+    s_rtc_line = td_label(s_win, 1, 5, 0, "");
     page_add(SAVES_TAB, s_rtc_line);
-    s_clock_line = td_label(s_win, 1, 13, 0, "");
+    s_clock_line = td_label(s_win, 1, 6, 0, "");
     page_add(SAVES_TAB, s_clock_line);
+    {
+        char folders[TD_TEXT_MAX];
+        snprintf(folders, sizeof folders, "%-8s%s, %s", "Folders", STATE_SHOWN, SAVES_SHOWN);
+        page_add(SAVES_TAB, td_label(s_win, 1, 7, 0, folders));
+    }
+    page_add(SAVES_TAB, td_label(s_win, 1, 9, 0, "In a game, HOME with L saves the state"));
+    page_add(SAVES_TAB, td_label(s_win, 1, 10, 0, "and HOME with R loads it."));
+    for (int i = 0; i < DETAIL_LINES; i++) {
+        s_detail[i] = td_label(s_win, 1, 12 + i, 0, "");
+        page_add(SAVES_TAB, s_detail[i]);
+    }
 
     /* One status label per page, because a widget shared between pages takes
      * the visibility of whichever page is shown last. */
