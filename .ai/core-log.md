@@ -2788,3 +2788,34 @@ TinySNES's player 2 map is saved by the Input page but not sent to the core, whi
 - User Test: PASS
 
 ---
+
+## 83 COMMIT Unreleased 2026-11-22T20:55:20-07:00
+
+#### Coming From:
+
+Unreleased 93787a9
+
+#### Purpose:
+
+Record the operator's pass of TinyGBA's entry 16, the 8BitDo playing a GBA game with the HOME gestures and the wired Classic driving TinyDesk over one through the core's 0x21 report, and correct this repository's documents that said neither happens.
+
+#### Outcome:
+
+As for TinyGBC in entry 81 and TinySNES in entry 82, the fix is the core's alone: this firmware already sends frame 0x09 to every core from `joystick_frame()` in `ports/bl616/tang_osd_desk.c` and reads response 0x21 from any core in `ports/bl616/fpga_frames.c`, so nothing here changed and nothing was flashed. TinyGBA's entry 16, pushed as `4776117` and recorded there as BRD-126, sends the wired Classic's report as 0x21 every 20 ms while it has one, plays Bluetooth Pad 1 as the wired Classic with X and Y also pressing A and B, makes the HOME tap and the minus + HOME exit from either pad, no longer lets Pad 2 into the one-player keypad, and lets both Bluetooth pads go 250 ms after the last 0x09 frame; its core, `tinygba.bin` of 4,844,214 bytes with SHA-256 `e76d36c04aba209937404ce3f8b3bbcf5391119d0095fa3c29d63bbaa2c15bd1`, built at seed 5 with every gate passing and no relaxation, was put on the card with `tools/tinytang_put.py` over the by-id console port, replacing TinyGBA entry 15's image. The operator played a GBA game with the 8BitDo and the wired Classic, tried the HOME tap, the desk over the game, the exit and an unplug, and passed it. `README.md` now says TinyNES, TinyGBC, TinySNES and TinyGBA send the 0x21 report. `manual/tinygba.md`, which entry 80 wrote saying no GBA game had been played with a Bluetooth pad, now says Bluetooth Pad 1 plays beside or instead of the wired controller with X and Y on A and B, that Pad 2 does not reach the game, that either pad makes the two HOME gestures, and that the wired Classic drives TinyDesk over a game with a core built after 2026-11-22. The Input page's placeholder in `ports/bl616/tinygba_app.cpp` is unchanged, since the core still has no pad map. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 83 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinyGBA's Input page sets nothing until the core takes a pad map, which needs a frame from `ports/bl616/tinygba_app.cpp` and a map in the core, and TinySNES's player 2 map is saved but not sent; either is a cycle that builds and flashes this firmware. Tiny89 takes only the keyboard. The next release decides whether it ships TinyGBC's entry 44 pair and TinySNES's entry 27 core, and TinyGBA's core is still not on a release card. Tiny89's README input line, the stale header comment in `ports/bl616/tinygbc_app.cpp`, TinyGutenberg's reading position, the README's OLED text, the site's TinyNES screenshots, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- README.md
+- manual/tinygba.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

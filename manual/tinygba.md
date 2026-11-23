@@ -38,13 +38,21 @@ USB-A port 2:
      X and Y                also A and B
      ZL and ZR              also L and R
 
-The core also takes Bluetooth Pad 1 and Pad 2 from the firmware, but
-no GBA game has been played with a Bluetooth pad yet.
+Bluetooth Pad 1 plays the same way, beside the wired controller or
+alone: its d-pad, A, B, L, R, START and SELECT are themselves, and its
+X and Y also press A and B. Pad 2 does not reach the game, because the
+GBA has one player.
 
 ## In a game
 
      Tap HOME          TinyDesk over the game, and back
      HOME with -       save the game and return to the desktop
+
+Either pad does both, and HOME and `-` may even be on different pads.
+With TinyDesk over the game, the wired Classic drives it as it does on
+the desktop: the left stick is the pointer, A and B its buttons, and
+the d-pad the arrow keys. This needs the TinyGBA core built after
+2026-11-22; an earlier one moves the pointer with the d-pad.
 
 The exit takes a second or two, because the save is written to the
 card before the desktop core is loaded again. TinyGBA has no save
