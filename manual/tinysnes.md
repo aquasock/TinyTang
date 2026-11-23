@@ -24,11 +24,12 @@ row, or press Enter on it, to step it to the next controller button, or
 to `none`. Restore defaults puts this player's standard map back, and
 Save writes /tinysnes.ini for the next game.
 
-The controller is a Wii Classic Controller in a Wii Nunchuck adapter on
-USB-A port 2, with the dock's two-wire mode on: in one-wire mode the
-adapter is not powered and the pad reads as absent. The core also takes
-Bluetooth Pad 1 and Pad 2 from the firmware, but no SNES game has been
-played with a Bluetooth pad yet.
+Player 1 is a Wii Classic Controller in a Wii Nunchuck adapter on
+USB-A port 2, with the dock's two-wire mode on (in one-wire mode the
+adapter is not powered and the pad reads as absent), or Bluetooth Pad 1,
+or both at once. The map applies to either. Bluetooth Pad 2 is player 2,
+but its map is not applied yet: it plays with the standard buttons
+whatever this page says.
 
 ## Video
 
@@ -51,7 +52,13 @@ Left and Right move the slider 5%. Save writes /tinysnes.ini.
      Tap HOME           TinyDesk over the game, and back
      HOME with SELECT   save the game and return to the desktop
 
-SELECT is the Classic's `-` button. There is no Stop button in the
+Either player 1 pad does both, and HOME and SELECT may even be on
+different pads. SELECT is the Classic's `-` button.
+
+With TinyDesk over the game, the wired Classic drives it as it does on
+the desktop: the left stick is the pointer, A and B its buttons, and
+the d-pad the arrow keys. This needs the TinySNES core built after
+v0.2.1; v0.2.1's moves the pointer with the d-pad. There is no Stop button in the
 window: a game ends from the pad, and the save is written on the way
 out, which takes a second or two.
 

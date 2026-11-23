@@ -2757,3 +2757,34 @@ TinySNES already merges 0x09, so a SNES game with the 8BitDo is the next cheap c
 - User Test: PASS
 
 ---
+
+## 82 COMMIT Unreleased 2026-11-22T20:08:12-07:00
+
+#### Coming From:
+
+Unreleased 917453c
+
+#### Purpose:
+
+Record the operator's pass of TinySNES's entry 27, the 8BitDo playing a SNES game and the wired Classic driving TinyDesk over one through the core's 0x21 report, and correct this repository's documents that said neither happens.
+
+#### Outcome:
+
+As with TinyGBC in entry 81, the fix is the core's alone: this firmware already sends frame 0x09 to every core from `joystick_frame()` in `ports/bl616/tang_osd_desk.c` and reads response 0x21 from any core in `ports/bl616/fpga_frames.c`, so nothing here changed and nothing was flashed. TinySNES's entry 27, pushed as `1db0beb`, sends the wired Classic's report as 0x21 at every 20 ms tick while it has one, ORs Bluetooth Pad 1 with the wired pad before the Input page's map, lets Pad 1's HOME and SELECT make the HOME tap and the HOME+SELECT exit, either half from either pad, and lets both Bluetooth pads go 250 ms after the last 0x09 frame; its core, `tinysnes.bin` of 5,222,380 bytes with SHA-256 `7d469e5cf630b1d9dff1d89421aef928127aad914f6fcf883a7d405f9f3ee8af`, built at seed 4 after seed 2 failed placement, was put on the card with `tools/tinytang_put.py` over the by-id console port, replacing TinySNES entry 26's image. The operator played a SNES game with the 8BitDo and the wired Classic, tried the HOME tap, the desk over the game, the exit and an unplug, and passed it. `README.md` now says TinyNES, TinyGBC and TinySNES send the 0x21 report. `manual/tinysnes.md`, which entry 80 wrote saying no SNES game had been played with a Bluetooth pad, now says player 1 is the wired Classic, Bluetooth Pad 1 or both under the same map, that Pad 2's map is not applied yet, that either player 1 pad makes the two HOME gestures, and that the wired Classic drives TinyDesk over a game with the core built after v0.2.1. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 82 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+TinySNES's player 2 map is saved by the Input page but not sent to the core, which needs a frame to carry it. TinyGBA ORs 0x09 into its pads in `gbatang_top.sv` but has not been played with a Bluetooth pad and sends no 0x21 report, and Tiny89 takes only the keyboard. The next release decides whether it ships TinyGBC's entry 44 pair and TinySNES's entry 27 core. Tiny89's README input line, the stale header comment in `ports/bl616/tinygbc_app.cpp`, TinyGutenberg's reading position, the README's OLED text, the site's TinyNES screenshots, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- README.md
+- manual/tinysnes.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: PASS
+
+---

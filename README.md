@@ -182,10 +182,10 @@ python tools/tinytang_sync.py
   held together are its Home; neither clicks again until both are let go. The
   Wii parts are read through the desktop core's own I2C engine, and a part the
   driver does not recognise is refused rather than decoded as the wrong
-  packing. A game core holds that bus itself; TinyNES and TinyGBC send their
-  first Classic's report up the link instead (frame 0x21), so over a running
-  TinyNES or TinyGBC game the wired Classic drives TinyDesk the same way,
-  while over other game cores it is still only their pad word. A wireless receiver made for the NES/SNES Classic -- an
+  packing. A game core holds that bus itself; TinyNES, TinyGBC and TinySNES
+  send their first Classic's report up the link instead (frame 0x21), so over
+  a running game on any of them the wired Classic drives TinyDesk the same
+  way, while over other game cores it is still only their pad word. A wireless receiver made for the NES/SNES Classic -- an
   8BitDo one -- identifies as a Classic and is put into data format 3, which
   it needs, but it never reports its pad's stick positions: it folds the
   sticks into the d-pad. Its buttons and d-pad work as above and it has no
