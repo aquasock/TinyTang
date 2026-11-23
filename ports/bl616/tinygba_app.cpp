@@ -14,10 +14,13 @@
 // core implements by reporting a tap of HOME as the pad word's desk-toggle bit,
 // and minus+HOME saves and ends it.  Saves: the selected cartridge's `.sav`, its
 // save type and size, and when it was last written, from the board's save log.
-// Input, Video and Audio are laid out as TinySNES's are but hold placeholder
-// values and change nothing: TinyGBA implements no frame yet for a pad map, a
-// picture shape or a volume, so these pages are the shape the real ones will
-// take, and each says so on its status line rather than pretending to save.
+// Input: the pad map, /tinygba.ini's [input], which tang_gba_load() sends to
+// the core as frame 0x1A at every launch (tang_gba_ini.h).  Each controller
+// button names the GBA key it presses -- the other way round from TinySNES's
+// page, because the GBA's default puts two buttons on one key.  Video and Audio
+// are laid out as TinySNES's are but hold placeholder values and change
+// nothing: TinyGBA implements no frame yet for a picture shape or a volume, so
+// each says so on its status line rather than pretending to save.
 //
 // SPDX-License-Identifier: MIT
 
@@ -30,6 +33,7 @@ extern "C" {
 #include "tdsh.h"
 #include "tang_core_load.h"
 #include "tang_fpga_link.h"
+#include "tang_gba_ini.h"
 #include "tang_gba_load.h"
 #include "tang_osd.h"
 #include "td_saves_log.h"
@@ -56,7 +60,7 @@ constexpr int LIB_ROWS = 12;
 /* The Input and Video pages, laid out as TinyNES's: a list in the 8-column
  * name, and two clear of its right edge the column its actions stand in.  A
  * row is drawn from the list's second column.  Input's widest row,
- * "R        R / ZR", is 15, so its list is TinyNES's 18; Video's,
+ * "Right    SELECT *", is 17, so its list is TinyNES's 18; Video's,
  * "Aspect  3:2, 1080x720 in a 1280 frame", is 37, so its list is 38. */
 constexpr int INPUT_LIST_W = 18;
 constexpr int INPUT_ACTION_X = 1 + INPUT_LIST_W + 2;
@@ -141,15 +145,15 @@ int s_tab_shown = -1;
 td_widget_t *s_status[TABS];   /* one per page: a shared widget cannot be shown
                                 * on one page and hidden on another */
 
-/* Placeholder pages.  The values are what a default would look like; nothing
- * reads or writes them, and no frame carries them to the core. */
-const int GBA_BUTTONS = 10;
-const char *const GBA_BUTTON_NAMES[GBA_BUTTONS] = {
-    "A", "B", "L", "R", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT",
-};
-const char *const PAD_SOURCES[GBA_BUTTONS] = {
-    "A", "B", "L / ZL", "R / ZR", "+", "-", "Up", "Down", "Left", "Right",
-};
+/* The Input page: the file as read when the window opened, the map being
+ * edited, and whether it differs from what was last saved. */
+tang_gba_settings_t s_set;
+uint8_t s_map[TANG_GBA_SOURCES];
+bool s_dirty;
+const char INPUT_HELP[] = "Double-click or Enter steps a row; Save keeps it.";
+
+/* Video and Audio are placeholders: the values are what a default would look
+ * like, and no frame carries them to the core. */
 const int VIDEO_ROWS = 2;
 const char PLACEHOLDER[] = "Placeholder: not connected to the core yet.";
 td_widget_t *s_input_list;
@@ -592,22 +596,74 @@ void on_tab(td_widget_t *, void *arg)
     show_tab(static_cast<int>(reinterpret_cast<uintptr_t>(arg)));
 }
 
-/* ------------------------------------------------- the placeholder pages */
+/* -------------------------------------------------------------- the input */
 
-/* Input: the GBA's ten buttons and the Classic Controller buttons the core
- * maps to them today, which is fixed in fabric (gbatang_top.sv, `joy_wii`).
- * The list is real information; the Player, Restore defaults and Save buttons
- * are not wired to anything yet. */
+/* One row: a controller button, and the GBA key it presses.  Every button
+ * always has a row -- one that presses nothing says "none" rather than
+ * disappearing -- so the list never changes height under the player.  The
+ * star marks a map that differs from the file. */
 const char *input_item(td_widget_t *, int index, int *fg, void *)
 {
     static char text[48];
-    (void)fg;
-    if (index < 0 || index >= GBA_BUTTONS) {
+    if (index < 0 || index >= TANG_GBA_SOURCES) {
         return "";
     }
-    snprintf(text, sizeof text, "%-8s %s", GBA_BUTTON_NAMES[index], PAD_SOURCES[index]);
+    const int key = s_map[index];
+    snprintf(text, sizeof text, "%-8s %s%s", tang_gba_source_name(index),
+             tang_gba_key_name(key), s_dirty ? " *" : "");
+    *fg = key >= TANG_GBA_KEY_NONE ? td_theme()->dim : TD_COLOR_DEFAULT;
     return text;
 }
+
+void input_changed(const char *say)
+{
+    s_dirty = memcmp(s_map, s_set.map, sizeof s_map) != 0;
+    if (s_win != nullptr) {
+        td_win_invalidate(s_win);
+    }
+    page_say(say);
+}
+
+/* Steps the selected row through the ten keys and then none, so one button
+ * reaches every state a binding can hold. */
+void on_input_row(td_widget_t *, void *)
+{
+    const int row = s_input_list != nullptr ? td_list_selected(s_input_list) : -1;
+    if (row < 0 || row >= TANG_GBA_SOURCES) {
+        return;
+    }
+    s_map[row] = (uint8_t)((s_map[row] + 1) % (TANG_GBA_KEY_NONE + 1));
+    input_changed(INPUT_HELP);
+}
+
+void on_restore(td_widget_t *, void *)
+{
+    tang_gba_default_map(s_map);
+    input_changed("Restored the default map; Save keeps it.");
+}
+
+void on_input_save(td_widget_t *, void *)
+{
+    char why[96];
+    tang_gba_settings_t next = s_set;
+    memcpy(next.map, s_map, sizeof s_map);
+    if (tang_gba_settings_save(&next, TANG_GBA_INI_REAL, why, sizeof why) != 0) {
+        page_say(why);
+        return;
+    }
+    s_set = next;
+    input_changed("Saved. Taken when the next game starts.");
+}
+
+/* The file as it is on the card now, for a window that has just opened. */
+void input_load(void)
+{
+    (void)tang_gba_settings_load(&s_set, TANG_GBA_INI_REAL);
+    memcpy(s_map, s_set.map, sizeof s_map);
+    s_dirty = false;
+}
+
+/* ------------------------------------------------- the placeholder pages */
 
 /* Video: two rows in TinySNES's shape, holding what the core draws now. */
 const char *video_item(td_widget_t *, int index, int *fg, void *)
@@ -922,17 +978,23 @@ void launch(void)
     page_add(0, td_button(s_win, 12, 16, "Up", lib_on_up, nullptr));
     page_add(0, td_button(s_win, 19, 16, "Refresh", lib_on_refresh, nullptr));
 
-    /* Input: placeholder, laid out as TinyNES's page.  The list is the map
-     * the core uses today. */
-    s_input_list = td_list(s_win, td_rect(1, 2, INPUT_LIST_W, GBA_BUTTONS), input_item,
-                           on_placeholder, nullptr);
+    /* Input: the pad map, laid out as TinyNES's page, fourteen rows on rows
+     * 2 to 15.  No Player button: the GBA has one player. */
+    input_load();
+    s_input_list = td_list(s_win, td_rect(1, 2, INPUT_LIST_W, TANG_GBA_SOURCES), input_item,
+                           on_input_row, nullptr);
     if (s_input_list != nullptr) {
-        td_list_set_count(s_input_list, GBA_BUTTONS);
+        td_list_set_count(s_input_list, TANG_GBA_SOURCES);
     }
     page_add(INPUT_TAB, s_input_list);
-    page_add(INPUT_TAB, td_button(s_win, INPUT_ACTION_X, 2, "Player 1", on_placeholder, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, INPUT_ACTION_X, 4, "Restore defaults", on_placeholder, nullptr));
-    page_add(INPUT_TAB, td_button(s_win, INPUT_ACTION_X, 6, "Save", on_placeholder, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, INPUT_ACTION_X, 2, "Restore defaults", on_restore, nullptr));
+    page_add(INPUT_TAB, td_button(s_win, INPUT_ACTION_X, 4, "Save", on_input_save, nullptr));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 7, 0, "Each controller button"));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 8, 0, "presses the GBA key"));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 9, 0, "beside it, on both pads."));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 11, 0, "HOME is the desk, and"));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 12, 0, "minus with HOME the exit,"));
+    page_add(INPUT_TAB, td_label(s_win, INPUT_ACTION_X, 13, 0, "whatever the map says."));
 
     /* Video: placeholder, in TinySNES's two-row shape and TinyNES's layout. */
     s_video_list = td_list(s_win, td_rect(1, 2, VIDEO_LIST_W, VIDEO_ROWS), video_item,
@@ -983,8 +1045,9 @@ void launch(void)
      * say what they are from the start. */
     for (int t = 0; t < TABS; t++) {
         s_status[t] = td_label(s_win, 1, 17, 0,
-                               t == INPUT_TAB || t == VIDEO_TAB || t == AUDIO_TAB
-                                   ? PLACEHOLDER : "");
+                               t == VIDEO_TAB || t == AUDIO_TAB ? PLACEHOLDER
+                               : t == INPUT_TAB                  ? INPUT_HELP
+                                                                 : "");
         page_add(t, s_status[t]);
     }
     s_lib_message = s_status[0];

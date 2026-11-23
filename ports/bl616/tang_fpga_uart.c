@@ -82,6 +82,7 @@
 #include "tang_gbc_ini.h"
 #include "tang_nes_ini.h"
 #include "tang_gba_load.h"
+#include "tang_gba_ini.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -1160,6 +1161,10 @@ static void gba_say(char *why, size_t why_len, const char *fmt, ...)
     }
 }
 
+/* Frame 0x1A in the TinyGBA core: the pad map, seven bytes
+ * (tang_gba_ini.h). */
+#define GBA_PAD_MAP 0x1Au
+
 int tang_gba_load(const char *label, const char *real, char *why, size_t why_len)
 {
 
@@ -1207,8 +1212,21 @@ int tang_gba_load(const char *label, const char *real, char *why, size_t why_len
     gba_say(why, why_len, "%u bytes -> the core at %u baud\r\n",
                 (unsigned)size, (unsigned)s_baud);
 
+    /* The pad map, before the cartridge: the pads are decoded in fabric, so a
+     * remapping can only be honoured by the core, and the file's [input]
+     * section goes as frame 0x1A (tinygba_pads.sv).  A failure is not fatal --
+     * a core that never hears the frame keeps the mapping it has always had --
+     * but it is said. */
+    tang_gba_settings_t pads;
+    (void)tang_gba_settings_load(&pads, TANG_GBA_INI_REAL);
+    uint8_t map_body[7];
+    tang_gba_map_bytes(pads.map, map_body);
+
     tang_fpga_lock();
     tang_fpga_drain();
+    if (tang_fpga_frame(GBA_PAD_MAP, map_body, sizeof map_body) != 0) {
+        gba_say(why, why_len, "could not send the pad map (continuing)\r\n");
+    }
 
     /* Non-zero holds the core in reset while the cartridge goes in. */
     if (tang_fpga_frame(FPGA_CMD_SET_LOAD, (const uint8_t[]){ 1 }, 1) != 0) {

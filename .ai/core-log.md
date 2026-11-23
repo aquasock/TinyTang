@@ -2819,3 +2819,41 @@ TinyGBA's Input page sets nothing until the core takes a pad map, which needs a 
 - User Test: PASS
 
 ---
+
+## 84 COMMIT Unreleased 2026-11-22T21:38:49-07:00
+
+#### Coming From:
+
+Unreleased c3f369c
+
+#### Purpose:
+
+Make TinyGBA's Input page set the core's pad map, kept in /tinygba.ini and sent as frame 0x1A at every launch, alongside TinyGBA's entry 17.
+
+#### Outcome:
+
+TinyGBA's Input page now sets which GBA key each of the controller's fourteen buttons presses (GBA-006); until this cycle it was a placeholder because the core had no pad map, which TinyGBA's entry 17, pushed as `7c883ad` and recorded there as BRD-127, added as frame 0x1A together with the dropped-reply fix. The new `ports/bl616/tang_gba_ini.c` and `.h` read and write `/tinygba.ini`'s `[input]`, one line per controller button naming a GBA key or `none`, through `tang_settings_walk` and the temporary-and-rename save `/tinysnes.ini` uses; the map runs from controller button to key, the other way round from TinySNES's, because the standard map puts two buttons on one key, and its defaults pack to `0x98765432321010`, the core's reset value. `tang_gba_load()` in `ports/bl616/tang_fpga_uart.c` sends the map as frame 0x1A before the cartridge, saying so and continuing if it fails. `ports/bl616/tinygba_app.cpp`'s Input page lists the fourteen buttons, steps a row through the ten keys and `none`, stars an unsaved map, restores the defaults and saves, drops the Player button since the GBA has one player, and notes that HOME and minus with HOME work whatever the map says. `tools/tests/tb_gba_ini.c`, run by `tools/tests/test_gba_ini.sh`, passes 32 checks, holding the defaults to the core's word, `l` against `left`, `none`, a corrupt entry sent as none, the frame's byte order and a save round trip; `tools/tests/test_tang_fpga_uart.sh` links the new module, and `tools/tests/run_all.sh --quick` passed 48 of 48 with its 9 slow tests skipped. `make` built `build/build_out/tinytang_bl616.bin`, 1,063,072 bytes with SHA-256 `54bf7cf163dbb8eb2c356f94cbe84180dcc290d139575e18078bc91bae69c9b5`, with no warning in the changed files; on the operator's go TinyGBA's `build/map_s5` core was put on the card first, then the firmware was flashed with `tools/tinytang_flash.py`, which reported the commit, and the board was power-cycled into two-wire with the relay script, the operator reporting it back up. The operator changed the map on the Input page, saved it, played a game with the change on the wired controller and the 8BitDo, checked the HOME tap and the exit, restored the defaults, and passed it. `README.md` and `manual/tinygba.md` describe the Input page, and GBA-005 carries a dated revision pointing to GBA-006. `third_party/tinydesk` still carries uncommitted changes that are not this project's and are left out of the commit. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds this entry, GBA-006 and the GBA-005 revision only, and this entry was validated as number 84 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values, with the reference store at 195 records and 195 unique ids.
+
+#### Next Steps:
+
+TinyGBA's Video and Audio pages are still placeholders until the core takes a picture shape and a volume, and TinySNES's player 2 map is saved but not sent. The next release decides whether it ships TinyGBC's entry 44 pair and TinySNES's entry 27 core, and TinyGBA's core is still not on a release card. Tiny89's README input line, the stale header comment in `ports/bl616/tinygbc_app.cpp`, TinyGutenberg's reading position, the README's OLED text, the site's TinyNES screenshots, the operator's social preview upload, Tiny89's window layout and entry 68's other items stand.
+
+#### Files Modified:
+
+- README.md
+- manual/tinygba.md
+- ports/bl616/tang_fpga_uart.c
+- ports/bl616/tang_gba_ini.c
+- ports/bl616/tang_gba_ini.h
+- ports/bl616/tinygba_app.cpp
+- tools/tests/tb_gba_ini.c
+- tools/tests/test_gba_ini.sh
+- tools/tests/test_tang_fpga_uart.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

@@ -21,17 +21,34 @@ computer first. A file that is not a GBA cartridge is refused. The
 loader finds the cartridge's save type itself while it streams the
 image.
 
-## Input, Video and Audio
+## Input
 
-These three pages are laid out as TinySNES's, but they change nothing
-yet: the GBA core has no setting for a pad map, the picture or the
-volume. Each says so on its status line. The picture is the GBA's
-240x160, scaled by 4.5, between black bars.
+Which GBA key each controller button presses. There is a row for each
+of the controller's fourteen buttons; double-click a row, or press
+Enter on it, to step it to the next GBA key, or to `none`. Several
+buttons may press the same key. A star marks a map that has not been
+saved. Restore defaults puts the standard map back, and Save writes
+/tinygba.ini for the next game.
+
+The map applies to the wired controller and Bluetooth Pad 1 alike; the
+8BitDo has no ZL or ZR, so those two rows only move the wired
+controller's. HOME and `-` with HOME work whatever the map says, so a
+remapping cannot take away the way out of a game.
+
+The map needs the TinyGBA core and the firmware built after
+2026-11-22; an older core keeps the standard map.
+
+## Video and Audio
+
+These two pages are laid out as TinySNES's, but they change nothing
+yet: the GBA core has no setting for the picture or the volume. Each
+says so on its status line. The picture is the GBA's 240x160, scaled
+by 4.5, between black bars.
 
 ## Controls
 
 The controller is a Wii Classic Controller in a Wii Nunchuck adapter on
-USB-A port 2:
+USB-A port 2. The standard map:
 
      d-pad, A, B, L, R      the same GBA buttons
      + / -                  START / SELECT

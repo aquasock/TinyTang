@@ -687,9 +687,13 @@ The Saves page shows the selected cartridge's `.sav` beside it, its save type an
 the size that type holds (found by scanning the image for its save marker, in a
 task of its own, since a GBA cartridge has no header field for it), and when the
 save was last written, from the `arm` and `finish` lines `tang_gba_save()` now
-stamps into `/root/saves/last.log`.  Input, Video and Audio are laid out as
-TinySNES's but hold placeholder values and change nothing, because the core has
-no frame for a pad map, a picture shape or a volume yet (GBA-005).
+stamps into `/root/saves/last.log`.  The Input page sets which GBA key each of
+the controller's fourteen buttons presses, kept in `/tinygba.ini` by
+`tang_gba_ini.c` and sent to the core as frame 0x1A at every launch (GBA-006);
+it runs from controller button to key, the other way round from TinySNES's,
+because the standard map puts two buttons on one key.  Video and Audio are laid
+out as TinySNES's but hold placeholder values and change nothing, because the
+core has no frame for a picture shape or a volume yet (GBA-005).
 
 A cartridge with a battery saves under `/root/saves/nes/`, named after the
 cartridge: `Zelda II - The Adventure of Link (USA).nes` saves to the same name
