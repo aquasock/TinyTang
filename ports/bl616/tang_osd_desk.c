@@ -968,12 +968,20 @@ void tang_osd_desk_feed(const void *data, size_t length)
     if (!s_enabled) {
         return;
     }
-    /* While TinyDesk draws the layer, the console's text is not on it. */
-    taskENTER_CRITICAL();
+    /* While TinyDesk draws the layer, the console's text is not on it.
+     *
+     * The scheduler is held, not the interrupts: no interrupt touches the
+     * emulator, and every task that does is kept off it either way on this
+     * one core, while interpreting a line -- a scroll moves the whole grid --
+     * took long enough with interrupts off that UART1's 32-byte receive FIFO
+     * overflowed at 2 Mbaud, losing bytes ae350run was reading (TinyVCMI
+     * core-log entry 47).  td_vterm_write never blocks, which it could not
+     * have done in the critical section either. */
+    vTaskSuspendAll();
     if (s_con != NULL) {
         td_vterm_write(&s_vt, (const uint8_t *)data, (int)length);
     }
-    taskEXIT_CRITICAL();
+    (void)xTaskResumeAll();
 }
 
 /* The console's emulator and shadow, fresh: a blank grid that matches nothing

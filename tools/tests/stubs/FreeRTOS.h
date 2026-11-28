@@ -32,6 +32,8 @@ static inline uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t wait)
 
 #define taskENTER_CRITICAL() do { } while (0)
 #define taskEXIT_CRITICAL()  do { } while (0)
+static inline void vTaskSuspendAll(void) { }
+static inline BaseType_t xTaskResumeAll(void) { return pdFALSE; }
 
 void      vTaskDelay(TickType_t ticks);
 TickType_t xTaskGetTickCount(void);

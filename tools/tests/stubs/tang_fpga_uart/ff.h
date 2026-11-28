@@ -36,4 +36,13 @@ FRESULT f_lseek(FIL *fp, FSIZE_t ofs);
 FRESULT f_mkdir(const char *path);
 FRESULT f_sync(FIL *fp);
 FRESULT f_rename(const char *from, const char *to);
+
+/* The directory surface ae350run's card file service uses. */
+#define AM_DIR 0x10
+typedef struct { FSIZE_t fsize; uint8_t fattrib; char fname[256]; } FILINFO;
+typedef struct { int index; char path[128]; } DIR;
+FRESULT f_stat(const char *path, FILINFO *info);
+FRESULT f_opendir(DIR *dir, const char *path);
+FRESULT f_readdir(DIR *dir, FILINFO *info);
+FRESULT f_closedir(DIR *dir);
 #endif

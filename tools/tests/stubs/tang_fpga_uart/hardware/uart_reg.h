@@ -13,6 +13,10 @@
 #define UART_FIFO_WDATA_OFFSET    0x04u
 #define UART_TX_FIFO_CNT_MASK     0x03ff0000u
 #define UART_TX_FIFO_CNT_SHIFT    16u
+/* The receive FIFO's sticky overflow flag and the clear that resets it. */
+#define UART_FIFO_CONFIG_0_OFFSET 0x08u
+#define UART_RX_FIFO_CLR          (1u << 3)
+#define UART_RX_FIFO_OVERFLOW     (1u << 6)
 
 #define UART_INTSTS_RX_FIFO (1u << 0)
 #define UART_INTSTS_RTO     (1u << 1)
@@ -31,5 +35,10 @@ static inline uint32_t getreg32(uint32_t address)
 static inline void putreg8(uint8_t value, uint32_t address)
 {
     host_reg_write(address, value);
+}
+void host_reg_write32(uint32_t address, uint32_t value);
+static inline void putreg32(uint32_t value, uint32_t address)
+{
+    host_reg_write32(address, value);
 }
 #endif

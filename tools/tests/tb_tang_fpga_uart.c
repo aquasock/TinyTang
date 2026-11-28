@@ -201,8 +201,25 @@ int bflb_uart_putchar(struct bflb_device_s *dev, int ch) { (void)dev; (void)ch; 
 void bflb_gpio_uart_init(void *dev, uint32_t pin, int func) { (void)dev; (void)pin; (void)func; }
 void host_set_intstatus(uint32_t bits) { intstatus = bits; }
 
+/* UART_FIFO_CONFIG_0: the receive FIFO's sticky overflow flag, which only
+ * its clear resets. */
+static int rx_overflow_flag;
+static int fifo0_clears;
+
+void host_reg_write32(uint32_t address, uint32_t value)
+{
+    if (address == s_uart1.reg_base + UART_FIFO_CONFIG_0_OFFSET &&
+        (value & UART_RX_FIFO_CLR)) {
+        fifo0_clears++;
+        rx_overflow_flag = 0;
+    }
+}
+
 uint32_t host_reg_read(uint32_t address)
 {
+    if (address == s_uart1.reg_base + UART_FIFO_CONFIG_0_OFFSET) {
+        return rx_overflow_flag ? UART_RX_FIFO_OVERFLOW : 0u;
+    }
     if (address == s_uart1.reg_base + UART_FIFO_CONFIG_1_OFFSET) {
         const uint32_t room = fifo_stuck ? 0u : (uint32_t)fifo_room;
         return (room << UART_TX_FIFO_CNT_SHIFT) & UART_TX_FIFO_CNT_MASK;
@@ -359,6 +376,52 @@ FRESULT f_mkdir(const char *path) { (void)path; return FR_OK; }
 FRESULT f_sync(FIL *fp) { (void)fp; return FR_OK; }
 FRESULT f_rename(const char *from, const char *to) { (void)from; (void)to; return FR_OK; }
 
+/* A directory is any path some fake file lies under. */
+static bool under(const char *file, const char *dir)
+{
+    const size_t n = strlen(dir);
+    return strncmp(file, dir, n) == 0 && file[n] == '/';
+}
+FRESULT f_stat(const char *path, FILINFO *info)
+{
+    const struct fake_file *f = find_file(path);
+    memset(info, 0, sizeof *info);
+    if (f) {
+        info->fsize = (FSIZE_t)f->len;
+        return FR_OK;
+    }
+    for (int i = 0; i < file_count; i++)
+        if (under(files[i].path, path)) {
+            info->fattrib = AM_DIR;
+            return FR_OK;
+        }
+    return FR_NO_FILE;
+}
+FRESULT f_opendir(DIR *dir, const char *path)
+{
+    FILINFO info;
+    if (f_stat(path, &info) != FR_OK || !(info.fattrib & AM_DIR)) return FR_NO_PATH;
+    dir->index = 0;
+    snprintf(dir->path, sizeof dir->path, "%s", path);
+    return FR_OK;
+}
+/* Only the files directly in the directory: enough for the service's paging. */
+FRESULT f_readdir(DIR *dir, FILINFO *info)
+{
+    memset(info, 0, sizeof *info);
+    while (dir->index < file_count) {
+        const struct fake_file *f = &files[dir->index++];
+        const char *name = f->path + strlen(dir->path) + 1;
+        if (under(f->path, dir->path) && strchr(name, '/') == NULL) {
+            info->fsize = (FSIZE_t)f->len;
+            snprintf(info->fname, sizeof info->fname, "%s", name);
+            return FR_OK;
+        }
+    }
+    return FR_OK;      /* fname empty: the end */
+}
+FRESULT f_closedir(DIR *dir) { (void)dir; return FR_OK; }
+
 /* The link's own headers carry the constants. */
 #include "tang_fpga_link.h"
 #include "fpga_frames.h"
@@ -423,6 +486,9 @@ static void reset_world(void)
     s_lock_depth = 0;
     s_rx_head = s_rx_tail = 0;
     s_rx_drops = 0;
+    s_rx_overflows = 0;
+    rx_overflow_flag = 0;
+    fifo0_clears = 0;
     s_pipe = false;
     fpga_frames_reset();
     if (s_tx_lock) s_tx_lock = NULL;
@@ -497,6 +563,44 @@ static bool zeros_at(size_t at)
 {
     return wire_len >= at + 4 && wire[at] == 0 && wire[at + 1] == 0 &&
            wire[at + 2] == 0 && wire[at + 3] == 0;
+}
+
+/* ae350run's file service against a boot ROM that takes everything: the
+ * bytes sent, and the 24-byte TNL1 header's fields read back out of them. */
+static uint8_t svc_sent[65536];
+static size_t svc_len;
+static int svc_write(void *ctx, const uint8_t *data, size_t length)
+{
+    (void)ctx;
+    if (svc_len + length <= sizeof svc_sent) memcpy(svc_sent + svc_len, data, length);
+    svc_len += length;
+    return 0;
+}
+static int svc_ack(void *ctx, uint32_t timeout_ms)
+{
+    (void)ctx; (void)timeout_ms;
+    return AE350_LOAD_ACK;
+}
+static uint32_t svc_le32(size_t at)
+{
+    return (uint32_t)svc_sent[at] | (uint32_t)svc_sent[at + 1] << 8 |
+           (uint32_t)svc_sent[at + 2] << 16 | (uint32_t)svc_sent[at + 3] << 24;
+}
+static ae350_run_t svc_run;
+static void svc_ask(const char *request)
+{
+    const ae350_link_t link = {
+        .ctx = &svc_run, .write = svc_write, .read_byte = svc_ack,
+        .text = ae350_text, .image = NULL,
+    };
+    svc_len = 0;
+    out_len = 0;
+    out_text[0] = '\0';
+    ae350_file_service(&svc_run, &link, request);
+}
+static void text_line(ae350_run_t *run, const char *line)
+{
+    while (*line) ae350_text(run, (uint8_t)*line++);
 }
 
 int main(void)
@@ -1076,6 +1180,106 @@ int main(void)
         CHECK_EQ(wire_len, 4u);
         CHECK(zeros_at(0));
         CHECK_EQ(critical_imbalance, 0);
+    }
+
+    /* -------------------------------------------- receive FIFO overflow --
+     * The interrupt empties the FIFO, then finds the sticky overflow flag:
+     * it counts it and clears it, and the bytes it read are kept. */
+    reset_world();
+    (void)tang_fpga_link_open();
+    {
+        memcpy(rx_fifo, "abc", 3);
+        rx_head = 3;
+        rx_tail = 0;
+        rx_overflow_flag = 1;
+        intstatus = UART_INTSTS_RX_FIFO;
+        attached_isr(0, NULL);
+        CHECK_EQ(s_rx_overflows, 1u);
+        CHECK_EQ(fifo0_clears, 1);
+        CHECK_EQ(rx_overflow_flag, 0);
+        uint8_t b = 0;
+        CHECK(rx_pop(&b) && b == 'a');
+        attached_isr(0, NULL);              /* no flag: no count, no clear */
+        CHECK_EQ(s_rx_overflows, 1u);
+        CHECK_EQ(fifo0_clears, 1);
+    }
+
+    /* ------------------------------------------- ae350run's damaged lines --
+     * A line during which the FIFO overflowed or the ring dropped, or one
+     * longer than the buffer, is marked damaged; the next clean one is not. */
+    reset_world();
+    {
+        ae350_run_t run;
+        memset(&run, 0, sizeof run);
+        run.lost_mark = s_rx_overflows + s_rx_drops;
+        text_line(&run, "TinyVCMI FILE STAT 40000000 10 a\n");
+        CHECK(run.line_ready && !run.line_damaged);
+        text_line(&run, "TinyVCMI FILE STAT");
+        s_rx_overflows++;
+        text_line(&run, " 40000000 10 a\n");
+        CHECK(run.line_damaged);
+        text_line(&run, "TinyVCMI FILE STAT 40000000 10 a\n");
+        CHECK(!run.line_damaged);
+        s_rx_drops++;
+        text_line(&run, "x\n");
+        CHECK(run.line_damaged);
+        for (int i = 0; i < AE350_LINE_MAX + 40; i++) ae350_text(&run, 'x');
+        ae350_text(&run, '\n');
+        CHECK(run.line_damaged);
+        CHECK_EQ(strlen(run.line), (size_t)AE350_LINE_MAX - 1);
+        text_line(&run, "ok\n");
+        CHECK(!run.line_damaged);
+    }
+
+    /* ----------------------------------------------- the card file service --
+     * Each answer's length is the 16-byte header and the bytes that follow:
+     * a STAT sends the header alone, its count the kind, and READ and LIST
+     * their count of bytes (core-log entry 47: a STAT once claimed its kind
+     * as bytes to send and failed every time). */
+    reset_world();
+    {
+        static uint8_t block[AE350_LOAD_BLOCK];
+        s_ae350_block = block;      /* ae350_run's own, while a run lasts */
+        memset(&svc_run, 0, sizeof svc_run);
+        files[0].path = "/sd/root/media/vcmi/data/x.lod";
+        memcpy(files[0].data, "0123456789", 10);
+        files[0].len = 10;
+        file_count = 1;
+
+        svc_ask("STAT 40001000 10 data/x.lod");
+        CHECK_EQ(svc_le32(4), 0x40001000u);
+        CHECK_EQ(svc_le32(8), 16u);              /* the header alone */
+        CHECK_EQ(svc_len, 24u + 16u + 4u);
+        CHECK_EQ(svc_le32(24), 0x31465654u);     /* "TVF1" */
+        CHECK_EQ(svc_le32(28), 0u);
+        CHECK_EQ(svc_le32(32), 10u);             /* size */
+        CHECK_EQ(svc_le32(36), 1u);              /* a file */
+        CHECK(strstr(out_text, "ae350run:") == NULL);
+
+        svc_ask("STAT 40001000 10 data");
+        CHECK_EQ(svc_le32(8), 16u);
+        CHECK_EQ(svc_le32(36), 2u);              /* a directory */
+        CHECK(strstr(out_text, "ae350run:") == NULL);
+
+        svc_ask("STAT 40001000 10 data/none");
+        CHECK_EQ(svc_le32(8), 16u);
+        CHECK_EQ(svc_le32(28), (uint32_t)-2);
+
+        svc_ask("READ 40001000 1010 2 4 data/x.lod");
+        CHECK_EQ(svc_le32(8), 20u);
+        CHECK_EQ(svc_le32(36), 4u);
+        CHECK(memcmp(svc_sent + 40, "2345", 4) == 0);
+
+        svc_ask("LIST 40001000 1010 0 data");
+        CHECK_EQ(svc_le32(8), 16u + 6u + 5u);
+        CHECK_EQ(svc_le32(32), 1u);              /* entries in the directory */
+        CHECK_EQ(svc_sent[40], 1);               /* a file */
+        CHECK(memcmp(svc_sent + 46, "x.lod", 5) == 0);
+
+        svc_ask("STAT 40001000 10 ../x");        /* refused, header only */
+        CHECK_EQ(svc_le32(8), 16u);
+        CHECK_EQ(svc_le32(28), (uint32_t)-22);
+        s_ae350_block = NULL;
     }
 
     /* ------------------------------------------------------- registration -- */

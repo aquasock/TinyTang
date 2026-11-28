@@ -136,6 +136,9 @@ static volatile uint32_t s_rx_tail;
 /* Bytes the ring had no room for.  Kept because a save that comes back short
  * has to say which buffer lost them: this one, or the frame queue. */
 static volatile uint32_t s_rx_drops;
+/* Times the UART's own receive FIFO overflowed before the interrupt emptied
+ * it, each losing bytes from the middle of the stream. */
+static volatile uint32_t s_rx_overflows;
 
 static uint8_t s_rom_chunk[FPGA_ROM_CHUNK];
 
@@ -165,6 +168,16 @@ static void fpga_uart_rx_isr(int irq, void *arg)
         if (status & UART_INTSTS_RTO) {
             bflb_uart_int_clear(s_uart, UART_INTCLR_RTO);
         }
+    }
+    /* The FIFO overflowed while this interrupt was held off: bytes are gone
+     * from the middle of the stream.  The flag is sticky and only the FIFO's
+     * clear resets it; the FIFO has just been emptied, so the clear costs at
+     * most a byte that arrived since.  Counted, so that a reader can tell a
+     * line was damaged (ae350run's file service refuses such a request). */
+    const uint32_t fifo0 = getreg32(s_uart->reg_base + UART_FIFO_CONFIG_0_OFFSET);
+    if (fifo0 & UART_RX_FIFO_OVERFLOW) {
+        putreg32(fifo0 | UART_RX_FIFO_CLR, s_uart->reg_base + UART_FIFO_CONFIG_0_OFFSET);
+        s_rx_overflows++;
     }
 }
 
@@ -1938,7 +1951,9 @@ static int cmd_fpgapipe(tdsh_session_t *session, int argc, char **argv)
 /* The link while ae350run holds it: bytes from the ring, sent in pieces
  * with a yield between, so USB and the console keep running through an
  * 8 KiB block. */
-#define AE350_LINE_MAX 160
+/* Room for TinyVCMI's longest file request: four hex numbers and a path of up
+ * to 191 characters (firmware/rt/card.c's PATH_MAX_) after its 19-byte head. */
+#define AE350_LINE_MAX 320
 #define AE350_SILENT_S 300
 /* A battery save rides the link as hex text: in link mode the FPGA frames the
  * AE350's bytes as TinyTang's text frames, and that receiver drops CR and ends
@@ -1963,6 +1978,12 @@ typedef struct {
     char line[AE350_LINE_MAX];
     size_t line_len;
     bool line_ready;
+    /* The line just finished lost bytes: the UART's FIFO overflowed or the
+     * ring dropped since the last one ended, or it ran past AE350_LINE_MAX.
+     * lost_mark is s_rx_overflows + s_rx_drops when the last line ended. */
+    bool line_damaged;
+    bool line_long;
+    uint32_t lost_mark;
 } ae350_run_t;
 
 static int ae350_write(void *ctx, const uint8_t *data, size_t length)
@@ -2005,7 +2026,11 @@ static void ae350_text(void *ctx, uint8_t byte)
         return;
     }
     if (byte == '\n') {
+        const uint32_t lost = s_rx_overflows + s_rx_drops;
         run->line[run->line_len] = 0;
+        run->line_damaged = run->line_long || lost != run->lost_mark;
+        run->lost_mark = lost;
+        run->line_long = false;
         tdsh_printf("%s\r\n", run->line);
         run->line_ready = true;
         run->line_len = 0;
@@ -2013,6 +2038,8 @@ static void ae350_text(void *ctx, uint8_t byte)
     }
     if (run->line_len < AE350_LINE_MAX - 1) {
         run->line[run->line_len++] = (char)byte;
+    } else {
+        run->line_long = true;
     }
 }
 
@@ -3147,14 +3174,18 @@ static void ae350_file_service(ae350_run_t *run, const ae350_link_t *link,
         size = 0;
     }
     ae350_reply_header(&reply, status, size, count);
+    /* What follows the header: count bytes for READ and LIST, nothing for
+     * STAT, whose count is the entry's kind. */
+    const uint32_t body_length =
+        (reply.file != NULL || reply.body != NULL) ? count : 0u;
 
     char reason = 0;
     ae350_link_t reply_link = *link;
     reply_link.image = ae350_reply_bytes;
     run->blob = (const uint8_t *)&reply;
-    run->blob_length = AE350_FILE_REPLY + count;
+    run->blob_length = AE350_FILE_REPLY + body_length;
     const int rc = ae350_send_image(&reply_link, (uint32_t)address,
-                                    AE350_FILE_REPLY + count, (uint32_t)address,
+                                    AE350_FILE_REPLY + body_length, (uint32_t)address,
                                     5, s_ae350_block, &reason);
     if (rc != AE350_OK) {
         tdsh_printf("ae350run: answering a file request: %s\r\n", ae350_error(rc));
@@ -3266,6 +3297,8 @@ static int ae350_run(const char *player, const char *data)
     s_pipe = true;
     taskEXIT_CRITICAL();
     tang_fpga_drain();
+    const uint32_t overflows_before = s_rx_overflows;
+    run.lost_mark = s_rx_overflows + s_rx_drops;
 
     /* The boot ROM says it is waiting about once a second. */
     bool waiting = false;
@@ -3324,6 +3357,12 @@ static int ae350_run(const char *player, const char *data)
             continue;
         }
         if (ae350_says(run.line, "FILE ", &rest)) {
+            /* A request that lost bytes may still parse, as another offset
+             * or path, so it is not answered; the program asks again. */
+            if (run.line_damaged) {
+                tdsh_printf("ae350run: a file request arrived damaged; not answered\r\n");
+                continue;
+            }
             ae350_file_service(&run, &link, rest);
             continue;
         }
@@ -3500,6 +3539,10 @@ static int ae350_run(const char *player, const char *data)
     }
 
 release:
+    if (s_rx_overflows != overflows_before) {
+        tdsh_printf("ae350run: UART1's receive FIFO overflowed %lu times\r\n",
+                    (unsigned long)(s_rx_overflows - overflows_before));
+    }
     tang_fpga_drain();
     taskENTER_CRITICAL();
     s_pipe = false;
