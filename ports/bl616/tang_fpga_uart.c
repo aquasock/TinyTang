@@ -2115,7 +2115,7 @@ static bool starts_with(const char *s, const char *prefix)
 static const char *ae350_past_name(const char *line)
 {
     static const char *const names[] = {
-        "TinyNES ", "TinyGBC ", "Tiny89 ", "TinyCreature "
+        "TinyNES ", "TinyGBC ", "Tiny89 ", "TinyCreature ", "TinyVCMI "
     };
 
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
@@ -2943,6 +2943,230 @@ static void ae350_send_named(ae350_run_t *run, const ae350_link_t *link,
     run->save_file = NULL;
 }
 
+/* ---------------------------------------------------- the card file service
+ *
+ * TinyVCMI's runtime reads the game data from the card while its program
+ * runs, a piece at a time, because VCMI opens archives of up to 106 MB and
+ * seeks in them; one whole file per run is no use to it.  A request is one
+ * line, and the answer goes back to the address the program named in the
+ * boot ROM's load protocol, as a cartridge is sent:
+ *
+ *   TinyVCMI FILE READ <address> <room> <offset> <length> <path>
+ *   TinyVCMI FILE STAT <address> <room> <path>
+ *   TinyVCMI FILE LIST <address> <room> <index> <path>
+ *
+ * all numbers hex.  The answer is a 16-byte header, then its data:
+ *
+ *   "TVF1", status, size, count (little-endian 32-bit words)
+ *
+ * status 0, or one of the AE350_FILE_ codes below.  READ: size is the file's
+ * length and count the bytes that follow, from offset, at most length and
+ * what room leaves after the header.  STAT: size is the length, count is 1
+ * for a file and 2 for a directory, and nothing follows.  LIST: size is the
+ * number of entries in the directory, count the bytes that follow, which are
+ * records from entry index on, as many as fit -- a kind byte (1 file, 2
+ * directory), the size (32 bits, little-endian), the name's length byte and
+ * the name -- so a large directory is read a page at a time.
+ *
+ * Paths are relative to /root/media/vcmi on the card and may not name a
+ * parent directory, so a program sees its own data and nothing else.  The
+ * card is FAT, so names are matched without regard to case. */
+#define AE350_FILE_ROOT      "/sd/root/media/vcmi/"
+#define AE350_FILE_TVF1      0x31465654u   /* "TVF1" */
+#define AE350_FILE_REPLY     16u
+#define AE350_FILE_OK         0
+#define AE350_FILE_NONE      -2           /* no such file or directory */
+#define AE350_FILE_ISDIR     -21          /* READ of a directory */
+#define AE350_FILE_NOTDIR    -20          /* LIST of a file */
+#define AE350_FILE_IO        -5           /* the card failed a read */
+#define AE350_FILE_INVAL     -22          /* a malformed request or path */
+#define AE350_FILE_LIST_MAX  4096u        /* the most a LIST sends at once */
+
+static FIL s_ae350_range_file;
+
+typedef struct {
+    uint8_t header[AE350_FILE_REPLY];
+    FIL *file;            /* READ's file, or NULL */
+    uint32_t base;        /* READ's offset in it */
+    const uint8_t *body;  /* LIST's records, or NULL */
+} ae350_reply_t;
+
+static void ae350_put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static void ae350_reply_header(ae350_reply_t *r, int status, uint32_t size,
+                               uint32_t count)
+{
+    ae350_put32(r->header, AE350_FILE_TVF1);
+    ae350_put32(r->header + 4, (uint32_t)status);
+    ae350_put32(r->header + 8, size);
+    ae350_put32(r->header + 12, count);
+}
+
+/* The header, then the file's range or the listing's records. */
+static int ae350_reply_bytes(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length)
+{
+    ae350_run_t *run = ctx;
+    const ae350_reply_t *r = (const ae350_reply_t *)run->blob;
+    while (length != 0 && offset < AE350_FILE_REPLY) {
+        *dst++ = r->header[offset++];
+        length--;
+    }
+    if (length == 0) {
+        return 0;
+    }
+    offset -= AE350_FILE_REPLY;
+    if (r->file != NULL) {
+        return ae350_file_read(r->file, r->base + offset, dst, length);
+    }
+    if (r->body != NULL) {
+        memcpy(dst, r->body + offset, length);
+        return 0;
+    }
+    return -1;
+}
+
+/* "/sd/root/media/vcmi/" + path, the empty path being the root itself, with
+ * no trailing slash; a parent directory or an absolute path is refused. */
+static bool ae350_file_path(const char *path, char *real, size_t size)
+{
+    if (path[0] == '/' || strstr(path, "..") != NULL) {
+        return false;
+    }
+    const int n = snprintf(real, size, AE350_FILE_ROOT "%s", path);
+    if (n <= 0 || (size_t)n >= size) {
+        return false;
+    }
+    size_t len = (size_t)n;
+    while (len > 1 && real[len - 1] == '/') {
+        real[--len] = '\0';
+    }
+    return true;
+}
+
+static void ae350_file_service(ae350_run_t *run, const ae350_link_t *link,
+                               const char *args)
+{
+    static ae350_reply_t reply;
+    char real[TDSH_MAX_REAL_PATH];
+    unsigned long address = 0, room = 0, a = 0, b = 0;
+    int used = 0, status = AE350_FILE_OK;
+    uint32_t size = 0, count = 0;
+    uint8_t *body = NULL;
+    const char *op = args;
+
+    memset(&reply, 0, sizeof reply);
+    if (strncmp(op, "READ ", 5) == 0 &&
+        sscanf(op + 5, "%lx %lx %lx %lx %n", &address, &room, &a, &b, &used) == 4) {
+        if (room < AE350_FILE_REPLY || !ae350_file_path(op + 5 + used, real, sizeof real)) {
+            status = AE350_FILE_INVAL;
+        } else {
+            FILINFO info;
+            if (f_stat(real, &info) != FR_OK) {
+                status = AE350_FILE_NONE;
+            } else if (info.fattrib & AM_DIR) {
+                status = AE350_FILE_ISDIR;
+            } else if (f_open(&s_ae350_range_file, real, FA_READ) != FR_OK) {
+                status = AE350_FILE_IO;
+            } else {
+                size = (uint32_t)f_size(&s_ae350_range_file);
+                const uint32_t start = a < size ? (uint32_t)a : size;
+                count = size - start;
+                if (count > b) {
+                    count = (uint32_t)b;
+                }
+                if (count > room - AE350_FILE_REPLY) {
+                    count = (uint32_t)(room - AE350_FILE_REPLY);
+                }
+                reply.file = &s_ae350_range_file;
+                reply.base = start;
+            }
+        }
+    } else if (strncmp(op, "STAT ", 5) == 0 &&
+               sscanf(op + 5, "%lx %lx %n", &address, &room, &used) == 2) {
+        FILINFO info;
+        if (room < AE350_FILE_REPLY || !ae350_file_path(op + 5 + used, real, sizeof real)) {
+            status = AE350_FILE_INVAL;
+        } else if (f_stat(real, &info) != FR_OK) {
+            status = AE350_FILE_NONE;
+        } else {
+            size = (uint32_t)info.fsize;
+            count = (info.fattrib & AM_DIR) ? 2u : 1u;
+        }
+    } else if (strncmp(op, "LIST ", 5) == 0 &&
+               sscanf(op + 5, "%lx %lx %lx %n", &address, &room, &a, &used) == 3) {
+        DIR dir;
+        FILINFO info;
+        if (room < AE350_FILE_REPLY || !ae350_file_path(op + 5 + used, real, sizeof real)) {
+            status = AE350_FILE_INVAL;
+        } else if (f_opendir(&dir, real) != FR_OK) {
+            FILINFO what;
+            status = f_stat(real, &what) == FR_OK ? AE350_FILE_NOTDIR : AE350_FILE_NONE;
+        } else {
+            uint32_t limit = (uint32_t)(room - AE350_FILE_REPLY);
+            if (limit > AE350_FILE_LIST_MAX) {
+                limit = AE350_FILE_LIST_MAX;
+            }
+            body = malloc(limit != 0 ? limit : 1);
+            if (body == NULL) {
+                status = AE350_FILE_IO;
+            } else {
+                uint32_t index = 0;
+                bool full = false;
+                while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
+                    const size_t n = strlen(info.fname);
+                    if (index++ < a || full) {
+                        continue;
+                    }
+                    if (n > 255 || count + 6 + n > limit) {
+                        full = true;    /* the program asks again from here */
+                        continue;
+                    }
+                    body[count] = (info.fattrib & AM_DIR) ? 2 : 1;
+                    ae350_put32(body + count + 1, (uint32_t)info.fsize);
+                    body[count + 5] = (uint8_t)n;
+                    memcpy(body + count + 6, info.fname, n);
+                    count += 6 + (uint32_t)n;
+                }
+                size = index;
+                reply.body = body;
+            }
+            (void)f_closedir(&dir);
+        }
+    } else {
+        tdsh_printf("ae350run: a file request it cannot read\r\n");
+        return;
+    }
+    if (status != AE350_FILE_OK) {
+        count = 0;
+        size = 0;
+    }
+    ae350_reply_header(&reply, status, size, count);
+
+    char reason = 0;
+    ae350_link_t reply_link = *link;
+    reply_link.image = ae350_reply_bytes;
+    run->blob = (const uint8_t *)&reply;
+    run->blob_length = AE350_FILE_REPLY + count;
+    const int rc = ae350_send_image(&reply_link, (uint32_t)address,
+                                    AE350_FILE_REPLY + count, (uint32_t)address,
+                                    5, s_ae350_block, &reason);
+    if (rc != AE350_OK) {
+        tdsh_printf("ae350run: answering a file request: %s\r\n", ae350_error(rc));
+    }
+    run->blob = NULL;
+    run->blob_length = 0;
+    if (reply.file != NULL) {
+        f_close(&s_ae350_range_file);
+    }
+    free(body);
+}
+
 /* Send a settings blob to the address the program asked for, in the boot
  * ROM's load protocol, as a cartridge is sent. */
 static int ae350_send_blob(ae350_run_t *run, const ae350_link_t *link,
@@ -3097,6 +3321,10 @@ static int ae350_run(const char *player, const char *data)
             if (rc != AE350_OK) {
                 tdsh_printf("ae350run: sending %s: %s\r\n", data, ae350_error(rc));
             }
+            continue;
+        }
+        if (ae350_says(run.line, "FILE ", &rest)) {
+            ae350_file_service(&run, &link, rest);
             continue;
         }
         {
