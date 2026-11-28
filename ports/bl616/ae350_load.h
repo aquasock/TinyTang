@@ -25,6 +25,10 @@
 #define AE350_LOAD_NAK         0x15u
 #define AE350_SDRAM_BASE       0x40000000u
 #define AE350_SDRAM_END        0x42000000u
+/* TinyVCMI's AE350 runs from 1 GiB of DDR3 at the same base, up to its block
+ * RAM at 0x7fff0000 (TinyVCMI firmware/include/tinyvcmi.h, TV_DDR3_BYTES),
+ * and its boot ROM takes an image anywhere in that window. */
+#define AE350_DDR3_END         0x7fff0000u
 /* The payload a program asks for with "TinyNES WANT": this magic, the
  * file's length and the file. */
 #define AE350_FILE_MAGIC       0x31524e54u   /* "TNR1" */
@@ -40,6 +44,9 @@ typedef struct {
     void (*text)(void *ctx, uint8_t byte);
     /* The image's bytes [offset, offset + length); 0 on success. */
     int (*image)(void *ctx, uint32_t offset, uint8_t *dst, uint32_t length);
+    /* The end of the memory an image may be sent into, from AE350_SDRAM_BASE;
+     * 0 is AE350_SDRAM_END, the SDRAM every core but TinyVCMI has. */
+    uint32_t end;
 } ae350_link_t;
 
 enum {
@@ -85,6 +92,12 @@ int ae350_elf_parse(ae350_elf_t *elf,
                     int (*read)(void *ctx, uint32_t offset, uint8_t *dst,
                                 uint32_t length),
                     void *ctx);
+
+/* ae350_elf_parse for memory ending at `end` rather than AE350_SDRAM_END. */
+int ae350_elf_parse_within(ae350_elf_t *elf,
+                           int (*read)(void *ctx, uint32_t offset, uint8_t *dst,
+                                       uint32_t length),
+                           void *ctx, uint32_t end);
 
 /* The image's bytes [offset, offset + length), read from the file with
  * `read`; for ae350_link_t.image. */

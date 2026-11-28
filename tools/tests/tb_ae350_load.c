@@ -180,13 +180,16 @@ static void reset(receiver_t *r, uint8_t *mem)
     memset(mem, 0xee, MEM_BYTES);
 }
 
+/* The link's memory end: 0, the SDRAM, unless a check sets it. */
+static uint32_t s_end;
+
 static int send(receiver_t *r, uint32_t address, uint32_t length,
                 uint32_t entry, int retries, char *reason)
 {
     static uint8_t block[AE350_LOAD_BLOCK];
     const ae350_link_t link = {
         .ctx = r, .write = rx_write, .read_byte = rx_read,
-        .text = rx_text, .image = image_bytes,
+        .text = rx_text, .image = image_bytes, .end = s_end,
     };
     return ae350_send_image(&link, address, length, entry, retries, block,
                             reason);
@@ -265,7 +268,19 @@ int main(void)
     check_int("below the SDRAM", send(&rx, 0x3ffff000u, 16, 0x3ffff000u, 5, &reason), AE350_ERR_RANGE);
     check_int("past its end", send(&rx, 0x41fffff0u, 32, 0x41fffff0u, 5, &reason), AE350_ERR_RANGE);
     check_int("entry outside", send(&rx, base, 64, base + 64, 5, &reason), AE350_ERR_RANGE);
+    /* An address past the end once wrapped the length check and passed. */
+    check_int("start past its end", send(&rx, 0x50000000u, 16, 0x50000000u, 5, &reason), AE350_ERR_RANGE);
     check_int("nothing written", (long)rx.in_len, 0);
+
+    printf("6b. TinyVCMI's DDR3 window: the link's end replaces the SDRAM's\n");
+    reset(&rx, mem);
+    s_end = AE350_DDR3_END;
+    rx.silent = 1;                          /* only the range check is under test */
+    check_int("above the SDRAM is in range",
+              send(&rx, 0x50000000u, 16, 0x50000000u, 5, &reason) != AE350_ERR_RANGE, 1);
+    check_int("past the DDR3", send(&rx, 0x7ffefff0u, 32, 0x7ffefff0u, 5, &reason), AE350_ERR_RANGE);
+    check_int("start past the DDR3", send(&rx, 0x90000000u, 16, 0x90000000u, 5, &reason), AE350_ERR_RANGE);
+    s_end = 0;
 
     printf("7. ELF: two segments with a gap become one zero-filled image\n");
     {
@@ -306,6 +321,14 @@ int main(void)
         for (int i = 512; i < 1024; i++) good &= out[i] == 0;
         for (int i = 0; i < 256; i++) good &= out[1024 + i] == (uint8_t)(0x30 + i);
         check_int("image bytes", good, 1);
+
+        put32(file + 52 + 12, 0x50000000u);    /* first segment in the DDR3 only */
+        put32(file + 24, 0x50000100u);
+        check_int("past the SDRAM", ae350_elf_parse(&elf, file_read, NULL), AE350_ERR_RANGE);
+        check_int("within the DDR3",
+                  ae350_elf_parse_within(&elf, file_read, NULL, AE350_DDR3_END), AE350_OK);
+        check_int("DDR3 image end", (long)elf.end, 0x50000200L);
+        put32(file + 24, 0x40000100u);
 
         put32(file + 52 + 12, 0x30000000u);    /* first segment below the SDRAM */
         check_int("outside the SDRAM", ae350_elf_parse(&elf, file_read, NULL), AE350_ERR_RANGE);

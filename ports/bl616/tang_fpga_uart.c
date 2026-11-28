@@ -3280,7 +3280,10 @@ static int ae350_run(const char *player, const char *data)
         }
     }
     static ae350_elf_t elf;
-    int rc = ae350_elf_parse(&elf, ae350_file_read, &s_ae350_elf_file);
+    /* Parsed against the largest memory any core has; the core's own is
+     * checked once its boot ROM names it. */
+    int rc = ae350_elf_parse_within(&elf, ae350_file_read, &s_ae350_elf_file,
+                                    AE350_DDR3_END);
     if (rc != AE350_OK) {
         tdsh_printf("ae350run: %s: %s\r\n", player, ae350_error(rc));
         goto close_files;
@@ -3306,13 +3309,23 @@ static int ae350_run(const char *player, const char *data)
         waiting = ae350_next_line(&run, 1500) && ae350_says(run.line, "LOAD", NULL);
     }
     int code = 1;
+    /* The memory the waiting boot ROM has: TinyVCMI's DDR3, or the 32 MiB
+     * SDRAM of the others.  Every image this run sends -- the program, its
+     * file, a save, a card file reply -- must lie inside it. */
+    const uint32_t memory_end =
+        waiting && starts_with(run.line, "TinyVCMI ") ? AE350_DDR3_END : AE350_SDRAM_END;
     const ae350_link_t link = {
         .ctx = &run, .write = ae350_write, .read_byte = ae350_read_byte,
-        .text = ae350_text, .image = ae350_program_bytes,
+        .text = ae350_text, .image = ae350_program_bytes, .end = memory_end,
     };
     char reason = 0;
     if (!waiting) {
         tdsh_printf("ae350run: no boot ROM is waiting on UART1 (is the core loaded?)\r\n");
+        goto release;
+    }
+    if (elf.end > memory_end) {
+        tdsh_printf("ae350run: %s ends at 0x%08lx, past this core's memory at 0x%08lx\r\n",
+                    player, (unsigned long)elf.end, (unsigned long)memory_end);
         goto release;
     }
     tdsh_printf("ae350run: %s, %lu bytes at 0x%08lx\r\n", player,

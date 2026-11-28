@@ -70,8 +70,9 @@ int ae350_send_image(const ae350_link_t *link, uint32_t address,
     if (reason) {
         *reason = 0;
     }
-    if (address < AE350_SDRAM_BASE || length == 0 ||
-        length > AE350_SDRAM_END - address || entry < address ||
+    const uint32_t end = link->end != 0 ? link->end : AE350_SDRAM_END;
+    if (address < AE350_SDRAM_BASE || address >= end || length == 0 ||
+        length > end - address || entry < address ||
         entry - address >= length) {
         return AE350_ERR_RANGE;
     }
@@ -146,6 +147,14 @@ int ae350_elf_parse(ae350_elf_t *elf,
                                 uint32_t length),
                     void *ctx)
 {
+    return ae350_elf_parse_within(elf, read, ctx, AE350_SDRAM_END);
+}
+
+int ae350_elf_parse_within(ae350_elf_t *elf,
+                           int (*read)(void *ctx, uint32_t offset, uint8_t *dst,
+                                       uint32_t length),
+                           void *ctx, uint32_t end)
+{
     uint8_t h[52];
     memset(elf, 0, sizeof(*elf));
     if (read(ctx, 0, h, sizeof(h)) != 0) {
@@ -195,7 +204,7 @@ int ae350_elf_parse(ae350_elf_t *elf,
             elf->end = s->address + s->size;
         }
     }
-    if (elf->base < AE350_SDRAM_BASE || elf->end > AE350_SDRAM_END ||
+    if (elf->base < AE350_SDRAM_BASE || elf->end > end ||
         elf->entry < elf->base || elf->entry >= elf->end) {
         return AE350_ERR_RANGE;
     }
